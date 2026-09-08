@@ -1,0 +1,115 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  ANALYST
+}
+
+enum PodRegion {
+  INDIA
+  UK
+  EU
+  AUSTRALIA
+}
+
+enum PodStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum FrameworkCode {
+  ISO27001
+  SOC2
+  GDPR
+  DPDP
+}
+
+model Organization {
+  id            String   @id @default(uuid())
+  name          String
+  primaryRegion String   @default("India")
+  createdAt     DateTime @default(now())
+
+  users        User[]
+  regionalPods RegionalPod[]
+  auditLogs    AuditLogEntry[]
+
+  @@map("organizations")
+}
+
+model User {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  email          String   @unique
+  passwordHash   String
+  role           Role     @default(ANALYST)
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("users")
+}
+
+model RegionalPod {
+  id             String    @id @default(uuid())
+  organizationId String
+  region         PodRegion
+  status         PodStatus @default(INACTIVE)
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, region])
+  @@index([organizationId])
+  @@map("regional_pods")
+}
+
+model Framework {
+  id        String        @id @default(uuid())
+  code      FrameworkCode @unique
+  name      String
+  createdAt DateTime      @default(now())
+
+  clauses FrameworkClause[]
+
+  @@map("frameworks")
+}
+
+model FrameworkClause {
+  id          String   @id @default(uuid())
+  frameworkId String
+  code        String
+  title       String
+  createdAt   DateTime @default(now())
+
+  framework Framework @relation(fields: [frameworkId], references: [id], onDelete: Cascade)
+
+  @@index([frameworkId])
+  @@map("framework_clauses")
+}
+
+model AuditLogEntry {
+  id             String   @id @default(uuid())
+  organizationId String
+  actorId        String
+  action         String
+  entityType     String
+  entityId       String
+  metadata       Json
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([actorId])
+  @@map("audit_log_entries")
+}
