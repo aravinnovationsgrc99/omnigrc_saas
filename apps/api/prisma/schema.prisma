@@ -29,6 +29,8 @@ enum FrameworkCode {
   SOC2
   GDPR
   DPDP
+  ISO42001
+  HIPAA
 }
 
 enum AssetType {

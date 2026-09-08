@@ -20,6 +20,8 @@ export enum FrameworkCode {
   SOC2 = "SOC2",
   GDPR = "GDPR",
   DPDP = "DPDP",
+  ISO42001 = "ISO42001",
+  HIPAA = "HIPAA",
 }
 
 export enum AssetType {

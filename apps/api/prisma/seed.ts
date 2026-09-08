@@ -1,4 +1,5 @@
-import { PrismaClient, Role, PodRegion, PodStatus, FrameworkCode, AssetType, AssetCriticality, RiskStatus } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
+import { Role, PodRegion, PodStatus, FrameworkCode, AssetType, AssetCriticality, RiskStatus } from '@omnigrc/shared';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
@@ -57,11 +58,14 @@ async function main() {
   }
 
   // Seed Frameworks
+  // TODO: confirm and add pending framework — see correction note
   const frameworks = [
     { code: FrameworkCode.ISO27001, name: 'ISO/IEC 27001:2022 Information Security' },
+    { code: FrameworkCode.ISO42001, name: 'ISO/IEC 42001:2023 Artificial Intelligence Management System' },
     { code: FrameworkCode.SOC2, name: 'SOC 2 Type II Trust Services Criteria' },
     { code: FrameworkCode.GDPR, name: 'General Data Protection Regulation (EU GDPR)' },
     { code: FrameworkCode.DPDP, name: 'Digital Personal Data Protection Act (India DPDP 2023)' },
+    { code: FrameworkCode.HIPAA, name: 'Health Insurance Portability and Accountability Act (HIPAA)' },
   ];
 
   for (const fw of frameworks) {

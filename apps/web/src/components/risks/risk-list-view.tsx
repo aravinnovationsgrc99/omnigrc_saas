@@ -270,7 +270,7 @@ export function RiskListView() {
               </tr>
             </thead>
             <tbody>
-              {risks.map((risk, index) => {
+              {risks.map((risk: RiskDto, index: number) => {
                 const scoreBadge = getScoreBadge(risk.score, risk.scoreBand);
                 const statusBadge = getStatusBadge(risk.status);
                 const isLast = index === risks.length - 1;
@@ -283,8 +283,8 @@ export function RiskListView() {
                       borderBottom: isLast ? 'none' : '1px solid #EDEFED',
                       cursor: 'pointer', transition: 'background .12s ease',
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = '#F6F7F6')}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    onMouseEnter={(e: React.MouseEvent<HTMLTableRowElement>) => (e.currentTarget.style.background = '#F6F7F6')}
+                    onMouseLeave={(e: React.MouseEvent<HTMLTableRowElement>) => (e.currentTarget.style.background = 'transparent')}
                   >
                     <td style={{ padding: '14px 16px', fontWeight: 600, color: '#1B2430' }}>
                       {risk.title}

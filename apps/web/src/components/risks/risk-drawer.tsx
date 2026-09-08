@@ -105,7 +105,7 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess }: RiskDrawerProps
 
     try {
       if (isEdit && risk) {
-        const payload: UpdateAssetDto & UpdateRiskDto = {
+        const payload: UpdateRiskDto = {
           title: title.trim(),
           description: description.trim() || undefined,
           likelihood,
