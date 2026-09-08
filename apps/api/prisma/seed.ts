@@ -1,4 +1,4 @@
-import { PrismaClient, Role, PodRegion, PodStatus, FrameworkCode, AssetType, AssetCriticality } from '@prisma/client';
+import { PrismaClient, Role, PodRegion, PodStatus, FrameworkCode, AssetType, AssetCriticality, RiskStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
@@ -56,7 +56,7 @@ async function main() {
     });
   }
 
-  // Seed Frameworks (schema only, no clause data yet per Phase 1 spec)
+  // Seed Frameworks
   const frameworks = [
     { code: FrameworkCode.ISO27001, name: 'ISO/IEC 27001:2022 Information Security' },
     { code: FrameworkCode.SOC2, name: 'SOC 2 Type II Trust Services Criteria' },
@@ -75,7 +75,7 @@ async function main() {
     });
   }
 
-  // Seed 7 Realistic Demo Assets across types & criticality levels
+  // Seed 7 Realistic Demo Assets
   const demoAssets = [
     {
       id: 'a0000000-0000-0000-0000-000000000001',
@@ -176,7 +176,160 @@ async function main() {
     });
   }
 
-  console.log('Seeding completed successfully with 7 demo assets.');
+  // Seed 11 Realistic Demo Risks across likelihood x impact grid (1-5) and statuses
+  const demoRisks = [
+    {
+      id: 'r0000000-0000-0000-0000-000000000001',
+      title: 'Unencrypted Patient Health Data in Transit',
+      description: 'Legacy internal API endpoints communicating over unencrypted HTTP.',
+      likelihood: 4,
+      impact: 5,
+      status: RiskStatus.OPEN,
+      owner: 'SecOps Team',
+      assetId: 'a0000000-0000-0000-0000-000000000002',
+      treatmentPlan: 'Enforce mandatory TLS 1.3 across all internal and public services by Q3.',
+    },
+    {
+      id: 'r0000000-0000-0000-0000-000000000002',
+      title: 'AWS S3 Bucket Public Access Misconfiguration',
+      description: 'Risk of diagnostic images being stored in publicly accessible cloud buckets.',
+      likelihood: 3,
+      impact: 5,
+      status: RiskStatus.IN_TREATMENT,
+      owner: 'DevOps Lead',
+      assetId: 'a0000000-0000-0000-0000-000000000001',
+      treatmentPlan: 'Enable AWS S3 Block Public Access globally and deploy automated guardrails.',
+    },
+    {
+      id: 'r0000000-0000-0000-0000-000000000003',
+      title: 'Payment Gateway Integration Outage',
+      description: 'Downtime in payment gateway processing during peak consultation hours.',
+      likelihood: 3,
+      impact: 4,
+      status: RiskStatus.OPEN,
+      owner: 'Finance & Ops',
+      assetId: 'a0000000-0000-0000-0000-000000000003',
+      treatmentPlan: 'Implement secondary backup gateway failover (BillDesk / PayU).',
+    },
+    {
+      id: 'r0000000-0000-0000-0000-000000000004',
+      title: 'Unpatched OS Vulnerabilities on Workstations',
+      description: 'Outdated operating system patches on employee laptops exposing endpoints to malware.',
+      likelihood: 4,
+      impact: 3,
+      status: RiskStatus.IN_TREATMENT,
+      owner: 'IT Support',
+      assetId: 'a0000000-0000-0000-0000-000000000004',
+      treatmentPlan: 'Configure automated patch management via MDM with 7-day enforcement window.',
+    },
+    {
+      id: 'r0000000-0000-0000-0000-000000000005',
+      title: 'Insufficient Data Audit Retention for DPDP Compliance',
+      description: 'Audit logs retained for only 90 days instead of mandatory 1-year compliance window.',
+      likelihood: 2,
+      impact: 4,
+      status: RiskStatus.ACCEPTED,
+      owner: 'Compliance Officer',
+      treatmentPlan: 'Formal risk acceptance signed off by CISO pending cloud log archive deployment.',
+    },
+    {
+      id: 'r0000000-0000-0000-0000-000000000006',
+      title: 'Stale User Access Permissions in Marketing CRM',
+      description: 'Former sales employees retaining active CRM login credentials.',
+      likelihood: 3,
+      impact: 3,
+      status: RiskStatus.IN_TREATMENT,
+      owner: 'Sales Ops',
+      assetId: 'a0000000-0000-0000-0000-000000000005',
+      treatmentPlan: 'Enforce automated Okta SAML de-provisioning sync.',
+    },
+    {
+      id: 'r0000000-0000-0000-0000-000000000007',
+      title: 'Missing Multi-Factor Authentication on Slack Workspace',
+      description: 'Sub-contractors accessing team communication channels without mandatory 2FA.',
+      likelihood: 2,
+      impact: 3,
+      status: RiskStatus.ACCEPTED,
+      owner: 'Internal IT',
+      assetId: 'a0000000-0000-0000-0000-000000000006',
+      treatmentPlan: 'Temporary risk acceptance until enterprise SSO migration completes.',
+    },
+    {
+      id: 'r0000000-0000-0000-0000-000000000008',
+      title: 'Physical Tampering of HQ Camera Storage Recorder',
+      description: 'Unrestricted physical access to server rack housing CCTV video recorder.',
+      likelihood: 1,
+      impact: 3,
+      status: RiskStatus.CLOSED,
+      owner: 'Physical Security',
+      assetId: 'a0000000-0000-0000-0000-000000000007',
+      treatmentPlan: 'Installed biometric access lock on HQ server room. Risk resolved.',
+    },
+    {
+      id: 'r0000000-0000-0000-0000-000000000009',
+      title: 'Phishing & Executive Impersonation Campaign',
+      description: 'Targeted spear-phishing attempts soliciting wire transfers.',
+      likelihood: 4,
+      impact: 4,
+      status: RiskStatus.OPEN,
+      owner: 'SecOps Team',
+      treatmentPlan: 'Deploy email security filtering and conduct quarterly simulated phishing tests.',
+    },
+    {
+      id: 'r0000000-0000-0000-0000-000000000010',
+      title: 'Ransomware Infection via Email Attachment',
+      description: 'Malicious attachment execution locking local hospital file shares.',
+      likelihood: 3,
+      impact: 5,
+      status: RiskStatus.IN_TREATMENT,
+      owner: 'Infrastructure Lead',
+      treatmentPlan: 'Deploy CrowdStrike EDR agents across all enterprise endpoints.',
+    },
+    {
+      id: 'r0000000-0000-0000-0000-000000000011',
+      title: 'API Rate Limiting Absence on Public Auth Endpoints',
+      description: 'Lack of IP throttling on authentication endpoints leading to brute-force risks.',
+      likelihood: 2,
+      impact: 2,
+      status: RiskStatus.CLOSED,
+      owner: 'DevOps Team',
+      treatmentPlan: 'Deployed NestJS ThrottlerGuard on all public API routes. Closed.',
+    },
+  ];
+
+  for (const risk of demoRisks) {
+    const score = risk.likelihood * risk.impact;
+    await prisma.risk.upsert({
+      where: { id: risk.id },
+      update: {
+        title: risk.title,
+        description: risk.description,
+        likelihood: risk.likelihood,
+        impact: risk.impact,
+        score,
+        status: risk.status,
+        owner: risk.owner,
+        assetId: risk.assetId || null,
+        treatmentPlan: risk.treatmentPlan,
+      },
+      create: {
+        id: risk.id,
+        organizationId: org.id,
+        title: risk.title,
+        description: risk.description,
+        likelihood: risk.likelihood,
+        impact: risk.impact,
+        score,
+        status: risk.status,
+        owner: risk.owner,
+        assetId: risk.assetId || null,
+        treatmentPlan: risk.treatmentPlan,
+        createdById: adminUser.id,
+      },
+    });
+  }
+
+  console.log('Seeding completed successfully with 7 assets and 11 demo risks.');
 }
 
 main()

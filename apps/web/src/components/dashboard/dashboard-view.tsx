@@ -8,7 +8,7 @@ import { apiRequest } from '@/lib/api-client';
 export const BUILD_PHASES = [
   { id: 1, name: 'Foundation', desc: 'Shell, navigation, auth, design system', done: true },
   { id: 2, name: 'Asset & Inventory', desc: 'Assets and vendors that risks & controls reference', done: true },
-  { id: 3, name: 'Risk Register', desc: 'Risk log, likelihood × impact heatmap, treatment plans', done: false },
+  { id: 3, name: 'Risk Register', desc: 'Risk log, likelihood × impact heatmap, treatment plans', done: true },
   { id: 4, name: 'Control Mapping', desc: 'AI-assisted mapping, framework citations, sign-off', done: false },
   { id: 5, name: 'Compliance Board', desc: 'Kanban, due-dates, 30/60/90 dashboard', done: false },
   { id: 6, name: 'Cross-cutting', desc: 'Audit log, RBAC, regional settings, live metrics', done: false },
@@ -61,18 +61,24 @@ export function DashboardView() {
   const { user } = useAuth();
   const firstName = user?.name?.split(' ')[0] || 'User';
   const [assetCount, setAssetCount] = useState<number | string>(0);
+  const [openRiskCount, setOpenRiskCount] = useState<number | string>(0);
   const nextPhase = BUILD_PHASES.find((p) => !p.done);
 
   useEffect(() => {
-    async function fetchAssetCount() {
+    async function fetchCounts() {
       try {
-        const res = await apiRequest<{ count: number }>('/assets/count');
-        setAssetCount(res.count);
+        const [assetRes, riskRes] = await Promise.all([
+          apiRequest<{ count: number }>('/assets/count').catch(() => ({ count: 0 })),
+          apiRequest<{ count: number }>('/risks/open-count').catch(() => ({ count: 0 })),
+        ]);
+        setAssetCount(assetRes.count);
+        setOpenRiskCount(riskRes.count);
       } catch {
         setAssetCount(0);
+        setOpenRiskCount(0);
       }
     }
-    fetchAssetCount();
+    fetchCounts();
   }, []);
 
   return (
@@ -89,7 +95,7 @@ export function DashboardView() {
         display: 'flex', background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10,
         marginBottom: 24, overflow: 'hidden',
       }}>
-        <StatStripItem label="Open risks" value="0" />
+        <StatStripItem label="Open risks" value={openRiskCount} />
         <StatStripItem label="Assets tracked" value={assetCount} />
         <StatStripItem label="Controls mapped" value="0" />
         <StatStripItem label="Tasks due this week" value="0" last />

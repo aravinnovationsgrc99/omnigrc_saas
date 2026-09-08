@@ -5,6 +5,7 @@ import { AuthModule } from './auth/auth.module';
 import { RegionalPodsModule } from './regional-pods/regional-pods.module';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import { AssetsModule } from './assets/assets.module';
+import { RisksModule } from './risks/risks.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { AssetsModule } from './assets/assets.module';
     RegionalPodsModule,
     AuditLogsModule,
     AssetsModule,
+    RisksModule,
   ],
 })
 export class AppModule {}

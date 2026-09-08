@@ -20,6 +20,21 @@ OMNiGRC is an enterprise Governance, Risk, and Compliance (GRC) monorepo applica
 
 ---
 
+## Risk Score Banding Thresholds
+
+Risk scores are calculated server-side as `Likelihood (1–5) × Impact (1–5)` yielding values from 1 to 25.
+The score-banding thresholds chosen for UI badge styling and filter categories are:
+
+- **LOW (Teal `#0F6E6A` / `#E4F1F0`)**: Scores **1 – 6** (e.g. 1×1, 1×5, 2×3, 3×2)
+- **MEDIUM (Amber `#B5750A` / `#FCEFD9`)**: Scores **8 – 12** (e.g. 2×4, 3×3, 3×4, 4×3)
+- **HIGH (Rose `#B23A48` / `#F8E6E8`)**: Scores **15 – 25** (e.g. 3×5, 4×4, 4×5, 5×5)
+
+To adjust these thresholds in the future:
+- **Backend**: Modify `RisksService.getScoreBand()` in [`apps/api/src/risks/risks.service.ts`](file:///e:/Arav%20Innovations/omnigrc/apps/api/src/risks/risks.service.ts) and query filter logic in `findAll()`.
+- **Frontend**: Update badge styles in [`apps/web/src/components/risks/risk-list-view.tsx`](file:///e:/Arav%20Innovations/omnigrc/apps/web/src/components/risks/risk-list-view.tsx) and matrix helpers in [`apps/web/src/components/risks/risk-heatmap.tsx`](file:///e:/Arav%20Innovations/omnigrc/apps/web/src/components/risks/risk-heatmap.tsx).
+
+---
+
 ## Local Setup
 
 Follow these manual steps to initialize your local PostgreSQL database, apply migrations, seed demo data, and run the monorepo dev servers.

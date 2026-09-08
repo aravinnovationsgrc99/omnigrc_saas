@@ -36,6 +36,19 @@ export enum AssetCriticality {
   HIGH = "HIGH",
 }
 
+export enum RiskStatus {
+  OPEN = "OPEN",
+  IN_TREATMENT = "IN_TREATMENT",
+  ACCEPTED = "ACCEPTED",
+  CLOSED = "CLOSED",
+}
+
+export enum RiskScoreBand {
+  LOW = "LOW",
+  MEDIUM = "MEDIUM",
+  HIGH = "HIGH",
+}
+
 export interface UserDto {
   id: string;
   organizationId: string;
@@ -119,6 +132,78 @@ export interface AuditLogEntryDto {
   entityId: string;
   metadata: Record<string, any>;
   createdAt: string;
+}
+
+export interface RiskDto {
+  id: string;
+  organizationId: string;
+  title: string;
+  description?: string | null;
+  likelihood: number;
+  impact: number;
+  score: number;
+  scoreBand: RiskScoreBand;
+  status: RiskStatus;
+  owner: string;
+  assetId?: string | null;
+  assetName?: string | null;
+  treatmentPlan?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdById: string;
+  deletedAt?: string | null;
+}
+
+export interface CreateRiskDto {
+  title: string;
+  description?: string;
+  likelihood: number;
+  impact: number;
+  status?: RiskStatus;
+  owner: string;
+  assetId?: string;
+  treatmentPlan?: string;
+}
+
+export interface UpdateRiskDto {
+  title?: string;
+  description?: string;
+  likelihood?: number;
+  impact?: number;
+  status?: RiskStatus;
+  owner?: string;
+  assetId?: string | null;
+  treatmentPlan?: string;
+}
+
+export interface RiskQueryDto {
+  page?: number;
+  limit?: number;
+  search?: string;
+  status?: RiskStatus;
+  scoreBand?: RiskScoreBand;
+  likelihood?: number;
+  impact?: number;
+}
+
+export interface PaginatedRisksDto {
+  items: RiskDto[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface HeatmapCellDto {
+  likelihood: number;
+  impact: number;
+  count: number;
+  score: number;
+  scoreBand: RiskScoreBand;
+}
+
+export interface HeatmapSummaryDto {
+  matrix: HeatmapCellDto[];
+  totalOpenCount: number;
 }
 
 export interface AuthTokens {
