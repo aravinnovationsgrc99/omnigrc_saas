@@ -31,6 +31,20 @@ enum FrameworkCode {
   DPDP
 }
 
+enum AssetType {
+  HARDWARE
+  SOFTWARE
+  VENDOR
+  DATA_STORE
+  OTHER
+}
+
+enum AssetCriticality {
+  LOW
+  MEDIUM
+  HIGH
+}
+
 model Organization {
   id            String   @id @default(uuid())
   name          String
@@ -40,8 +54,33 @@ model Organization {
   users        User[]
   regionalPods RegionalPod[]
   auditLogs    AuditLogEntry[]
+  assets       Asset[]
 
   @@map("organizations")
+}
+
+model Asset {
+  id                  String           @id @default(uuid())
+  organizationId      String
+  name                String
+  type                AssetType
+  description         String?
+  owner               String
+  criticality         AssetCriticality @default(MEDIUM)
+  vendorName          String?
+  dataResidencyRegion String?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  createdById         String
+  deletedAt           DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([deletedAt])
+  @@index([type])
+  @@index([criticality])
+  @@map("assets")
 }
 
 model User {

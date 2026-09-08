@@ -1,12 +1,13 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sparkles, ArrowRight, CheckCircle2, Circle } from 'lucide-react';
 import { useAuth } from '@/context/auth-context';
+import { apiRequest } from '@/lib/api-client';
 
 export const BUILD_PHASES = [
   { id: 1, name: 'Foundation', desc: 'Shell, navigation, auth, design system', done: true },
-  { id: 2, name: 'Asset & Inventory', desc: 'Assets and vendors that risks & controls reference', done: false },
+  { id: 2, name: 'Asset & Inventory', desc: 'Assets and vendors that risks & controls reference', done: true },
   { id: 3, name: 'Risk Register', desc: 'Risk log, likelihood × impact heatmap, treatment plans', done: false },
   { id: 4, name: 'Control Mapping', desc: 'AI-assisted mapping, framework citations, sign-off', done: false },
   { id: 5, name: 'Compliance Board', desc: 'Kanban, due-dates, 30/60/90 dashboard', done: false },
@@ -14,7 +15,7 @@ export const BUILD_PHASES = [
   { id: 7, name: 'Polish', desc: 'Search, notifications, empty/error states, mobile', done: false },
 ];
 
-function StatStripItem({ label, value, last }: { label: string; value: string; last?: boolean }) {
+function StatStripItem({ label, value, last }: { label: string; value: string | number; last?: boolean }) {
   return (
     <div style={{
       flex: 1, padding: '16px 22px', borderRight: last ? 'none' : '1px solid #E2E6E4',
@@ -59,7 +60,20 @@ function RoadmapRow({ phase, isCurrent }: { phase: (typeof BUILD_PHASES)[0]; isC
 export function DashboardView() {
   const { user } = useAuth();
   const firstName = user?.name?.split(' ')[0] || 'User';
+  const [assetCount, setAssetCount] = useState<number | string>(0);
   const nextPhase = BUILD_PHASES.find((p) => !p.done);
+
+  useEffect(() => {
+    async function fetchAssetCount() {
+      try {
+        const res = await apiRequest<{ count: number }>('/assets/count');
+        setAssetCount(res.count);
+      } catch {
+        setAssetCount(0);
+      }
+    }
+    fetchAssetCount();
+  }, []);
 
   return (
     <div className="omni-fade-in" style={{ padding: '28px 32px', maxWidth: 1080 }}>
@@ -76,7 +90,7 @@ export function DashboardView() {
         marginBottom: 24, overflow: 'hidden',
       }}>
         <StatStripItem label="Open risks" value="0" />
-        <StatStripItem label="Assets tracked" value="0" />
+        <StatStripItem label="Assets tracked" value={assetCount} />
         <StatStripItem label="Controls mapped" value="0" />
         <StatStripItem label="Tasks due this week" value="0" last />
       </div>

@@ -21,7 +21,7 @@ export const NAV_SECTIONS = [
     label: 'Workspaces',
     items: [
       { key: 'risk', label: 'Risk Register', icon: ShieldAlert, enabled: false, phase: 'Phase 3' },
-      { key: 'assets', label: 'Asset & Inventory', icon: Boxes, enabled: false, phase: 'Phase 2' },
+      { key: 'assets', label: 'Asset & Inventory', icon: Boxes, enabled: true },
       { key: 'controls', label: 'Control Mapping', icon: GitMerge, enabled: false, phase: 'Phase 4' },
       { key: 'board', label: 'Compliance Board', icon: KanbanSquare, enabled: false, phase: 'Phase 5' },
     ],

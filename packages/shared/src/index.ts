@@ -22,6 +22,20 @@ export enum FrameworkCode {
   DPDP = "DPDP",
 }
 
+export enum AssetType {
+  HARDWARE = "HARDWARE",
+  SOFTWARE = "SOFTWARE",
+  VENDOR = "VENDOR",
+  DATA_STORE = "DATA_STORE",
+  OTHER = "OTHER",
+}
+
+export enum AssetCriticality {
+  LOW = "LOW",
+  MEDIUM = "MEDIUM",
+  HIGH = "HIGH",
+}
+
 export interface UserDto {
   id: string;
   organizationId: string;
@@ -43,6 +57,68 @@ export interface RegionalPodDto {
   region: PodRegion;
   status: PodStatus;
   organizationId: string;
+}
+
+export interface AssetDto {
+  id: string;
+  organizationId: string;
+  name: string;
+  type: AssetType;
+  description?: string | null;
+  owner: string;
+  criticality: AssetCriticality;
+  vendorName?: string | null;
+  dataResidencyRegion?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdById: string;
+  deletedAt?: string | null;
+}
+
+export interface CreateAssetDto {
+  name: string;
+  type: AssetType;
+  description?: string;
+  owner: string;
+  criticality: AssetCriticality;
+  vendorName?: string;
+  dataResidencyRegion?: string;
+}
+
+export interface UpdateAssetDto {
+  name?: string;
+  type?: AssetType;
+  description?: string;
+  owner?: string;
+  criticality?: AssetCriticality;
+  vendorName?: string;
+  dataResidencyRegion?: string;
+}
+
+export interface AssetQueryDto {
+  page?: number;
+  limit?: number;
+  search?: string;
+  type?: AssetType;
+  criticality?: AssetCriticality;
+}
+
+export interface PaginatedAssetsDto {
+  items: AssetDto[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface AuditLogEntryDto {
+  id: string;
+  organizationId: string;
+  actorId: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  metadata: Record<string, any>;
+  createdAt: string;
 }
 
 export interface AuthTokens {

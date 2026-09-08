@@ -7,6 +7,7 @@ import { Sidebar, NAV_SECTIONS } from '@/components/layout/sidebar';
 import { Topbar } from '@/components/layout/topbar';
 import { DashboardView } from '@/components/dashboard/dashboard-view';
 import { SettingsView } from '@/components/settings/settings-view';
+import { AssetListView } from '@/components/assets/asset-list-view';
 import { ComingSoon } from '@/components/dashboard/coming-soon';
 
 export default function MainPage() {
@@ -32,6 +33,7 @@ export default function MainPage() {
         <Topbar />
         <div style={{ flex: 1, overflowY: 'auto' }} className="omni-scroll">
           {view === 'dashboard' && <DashboardView />}
+          {view === 'assets' && <AssetListView />}
           {view === 'settings' && <SettingsView />}
           {activeItem && !activeItem.enabled && (
             <ComingSoon label={activeItem.label} phase={activeItem.phase || 'Phase N'} />
