@@ -109,3 +109,44 @@ npm run dev --workspace=apps/web
 - **Refresh**: `POST /auth/refresh` — Rotates tokens using valid Refresh Token.
 - **Role Guard**: `@Roles(Role.ADMIN)` decorates administrative routes.
 - **SSO/SAML Stub**: Located at `apps/api/src/auth/sso/saml.strategy.ts` (SOW Section 5.1).
+
+---
+
+## AI Provider Setup & Local Redis Queue
+
+The Framework Library & Control Mapping pillar uses a two-tier AI provider layer backed by a BullMQ background job queue.
+
+### 1. API Keys & Configuration
+Configure API keys in `apps/api/.env`:
+
+```env
+# Gemini API Key (Tier 1 Routine Mappings ~80%)
+GEMINI_API_KEY="your-gemini-api-key"
+
+# Anthropic API Key (Tier 2 Escalations ~20%)
+ANTHROPIC_API_KEY="your-anthropic-api-key"
+
+# Redis Queue Connection
+REDIS_URL="redis://localhost:6379"
+```
+
+- **Where to get keys**:
+  - **Gemini**: Obtain from Google AI Studio ([aistudio.google.com](https://aistudio.google.com/)).
+  - **Anthropic (Claude)**: Obtain from Anthropic Console ([console.anthropic.com](https://console.anthropic.com/)).
+
+### 2. Mock AI Fallback Mode
+If either key is absent or Redis is unreachable in local dev:
+- The system automatically falls back to `MockAiProvider`, generating deterministic fake suggestions with zero API cost.
+- If `ANTHROPIC_API_KEY` is missing, Tier 2 calls seamlessly route to Gemini or Mock mode.
+- Log warnings indicate when mock mode or fallback routing is active.
+
+### 3. Local Redis Server Setup
+To run the BullMQ job queue with a live Redis instance:
+```bash
+# Option A: Run via Docker
+docker run -d -p 6379:6379 --name omnigrc-redis redis:alpine
+
+# Option B: Run via local Redis installation
+redis-server
+```
+If Redis is not running, the application gracefully processes mapping jobs in an in-memory queue.

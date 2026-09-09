@@ -54,6 +54,18 @@ enum RiskStatus {
   CLOSED
 }
 
+enum MappingStatus {
+  SUGGESTED
+  APPROVED
+  OVERRIDDEN
+  REJECTED
+}
+
+enum ModelTier {
+  TIER_1
+  TIER_2
+}
+
 model Organization {
   id            String   @id @default(uuid())
   name          String
@@ -65,6 +77,7 @@ model Organization {
   auditLogs    AuditLogEntry[]
   assets       Asset[]
   risks        Risk[]
+  controls     Control[]
 
   @@map("organizations")
 }
@@ -169,10 +182,51 @@ model FrameworkClause {
   title       String
   createdAt   DateTime @default(now())
 
-  framework Framework @relation(fields: [frameworkId], references: [id], onDelete: Cascade)
+  framework Framework               @relation(fields: [frameworkId], references: [id], onDelete: Cascade)
+  mappings  ControlFrameworkMapping[]
 
   @@index([frameworkId])
   @@map("framework_clauses")
+}
+
+model Control {
+  id             String    @id @default(uuid())
+  organizationId String
+  name           String
+  description    String
+  category       String?
+  createdById    String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  organization Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  mappings     ControlFrameworkMapping[]
+
+  @@index([organizationId])
+  @@index([deletedAt])
+  @@map("controls")
+}
+
+model ControlFrameworkMapping {
+  id                String        @id @default(uuid())
+  controlId         String
+  frameworkClauseId String
+  status            MappingStatus @default(SUGGESTED)
+  confidenceScore   Float?
+  modelTier         ModelTier     @default(TIER_1)
+  reviewedById      String?
+  reviewedAt        DateTime?
+  createdAt         DateTime      @default(now())
+
+  control         Control         @relation(fields: [controlId], references: [id], onDelete: Cascade)
+  frameworkClause FrameworkClause @relation(fields: [frameworkClauseId], references: [id], onDelete: Cascade)
+
+  @@unique([controlId, frameworkClauseId])
+  @@index([controlId])
+  @@index([frameworkClauseId])
+  @@index([status])
+  @@map("control_framework_mappings")
 }
 
 model AuditLogEntry {

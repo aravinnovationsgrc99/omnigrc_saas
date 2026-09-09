@@ -51,6 +51,18 @@ export enum RiskScoreBand {
   HIGH = "HIGH",
 }
 
+export enum MappingStatus {
+  SUGGESTED = "SUGGESTED",
+  APPROVED = "APPROVED",
+  OVERRIDDEN = "OVERRIDDEN",
+  REJECTED = "REJECTED",
+}
+
+export enum ModelTier {
+  TIER_1 = "TIER_1",
+  TIER_2 = "TIER_2",
+}
+
 export interface UserDto {
   id: string;
   organizationId: string;
@@ -241,4 +253,88 @@ export interface JwtPayload {
   email: string;
   organizationId: string;
   role: Role;
+}
+
+export interface FrameworkClauseDto {
+  id: string;
+  frameworkId: string;
+  frameworkCode: FrameworkCode;
+  code: string;
+  title: string;
+  createdAt: string;
+}
+
+export interface ControlFrameworkMappingDto {
+  id: string;
+  controlId: string;
+  frameworkClauseId: string;
+  clauseCode?: string;
+  clauseTitle?: string;
+  frameworkCode?: FrameworkCode;
+  status: MappingStatus;
+  confidenceScore?: number | null;
+  modelTier: ModelTier;
+  reviewedById?: string | null;
+  reviewedAt?: string | null;
+  createdAt: string;
+}
+
+export interface ControlDto {
+  id: string;
+  organizationId: string;
+  name: string;
+  description: string;
+  category?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdById: string;
+  deletedAt?: string | null;
+  mappings?: ControlFrameworkMappingDto[];
+}
+
+export interface CreateControlDto {
+  name: string;
+  description: string;
+  category?: string;
+}
+
+export interface UpdateControlDto {
+  name?: string;
+  description?: string;
+  category?: string;
+}
+
+export interface ControlQueryDto {
+  page?: number;
+  limit?: number;
+  search?: string;
+  category?: string;
+  status?: MappingStatus;
+}
+
+export interface PaginatedControlsDto {
+  items: ControlDto[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface SuggestMappingsResponseDto {
+  jobId: string;
+  status: string;
+  message: string;
+}
+
+export interface MappingJobStatusDto {
+  jobId: string;
+  status: 'queued' | 'processing' | 'done' | 'failed';
+  progress?: number;
+  mappings?: ControlFrameworkMappingDto[];
+  error?: string;
+}
+
+export interface SignOffMappingDto {
+  decision: 'APPROVE' | 'OVERRIDE';
+  overrideClauseId?: string;
+  note?: string;
 }
