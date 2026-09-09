@@ -64,6 +64,17 @@
   color: #B9C2CE;
 }
 
+.omni-navitem:focus-visible,
+.omni-btn-primary:focus-visible,
+.omni-btn-ghost:focus-visible,
+.omni-input:focus-visible,
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid #0F6E6A;
+  outline-offset: 2px;
+}
+
 .omni-btn-primary {
   background: #0F6E6A;
   color: #fff;
@@ -111,6 +122,46 @@
   border-color: #0F6E6A;
 }
 
+/* Accessible Badge Styles with WCAG AA Contrast Ratio */
+.omni-badge-teal {
+  background: #E4F1F0;
+  color: #0C5A56;
+  border: 1px solid #B8DFDB;
+  font-weight: 600;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.omni-badge-amber {
+  background: #FCEFD9;
+  color: #8F5900;
+  border: 1px solid #F5D7A1;
+  font-weight: 600;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.omni-badge-rose {
+  background: #F8E6E8;
+  color: #801F2B;
+  border: 1px solid #F1BCC2;
+  font-weight: 600;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .omni-fade-in {
   animation: omniFadeIn .28s ease;
 }
@@ -125,3 +176,12 @@
     transform: translateY(0);
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .omni-fade-in,
+  .animate-pulse {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+

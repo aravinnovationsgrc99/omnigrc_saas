@@ -3,8 +3,12 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/auth-context';
 import { apiRequest } from '@/lib/api-client';
-import { AuditLogEntryDto, PaginatedAuditLogsDto, Role } from '@omnigrc/shared';
-import { Search, FileText, ChevronRight, ChevronDown, ShieldAlert, RefreshCw, Lock, Filter } from 'lucide-react';
+import { PaginatedAuditLogsDto, Role } from '@omnigrc/shared';
+import { Lock, FileText, RefreshCw, Search, Filter, ChevronDown, ChevronRight } from 'lucide-react';
+import { SkeletonTable } from '@/components/ui/skeleton';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InlineErrorState } from '@/components/ui/inline-error-state';
+
 
 export function AuditLogView() {
   const { user } = useAuth();
@@ -36,7 +40,7 @@ export function AuditLogView() {
       const res = await apiRequest<PaginatedAuditLogsDto>(`/audit-log?${params.toString()}`);
       setData(res);
     } catch (err: any) {
-      setError(err.message || 'Failed to fetch audit log entries');
+      setError(err?.message || 'Failed to fetch audit log entries from server. Check network connection or pod status.');
     } finally {
       setLoading(false);
     }
@@ -62,7 +66,7 @@ export function AuditLogView() {
           width: 52, height: 52, borderRadius: 12, background: '#F8E6E8',
           display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16,
         }}>
-          <Lock size={24} color="#B23A48" />
+          <Lock size={24} color="#801F2B" />
         </div>
         <h2 style={{ fontSize: 18, fontWeight: 600, color: '#1B2430' }}>Access Denied</h2>
         <p style={{ fontSize: 13, color: '#5B6672', marginTop: 6, maxWidth: 360 }}>
@@ -72,17 +76,17 @@ export function AuditLogView() {
     );
   }
 
-  const getActionColor = (actionName: string) => {
+  const getActionBadgeClass = (actionName: string) => {
     if (actionName.includes('CREATED') || actionName.includes('ACTIVATED') || actionName.includes('APPROVED')) {
-      return { bg: '#E4F1F0', color: '#0F6E6A' };
+      return 'omni-badge-teal';
     }
     if (actionName.includes('UPDATED') || actionName.includes('CHANGED') || actionName.includes('OVERRIDDEN')) {
-      return { bg: '#FCEFD9', color: '#B5750A' };
+      return 'omni-badge-amber';
     }
     if (actionName.includes('DELETED') || actionName.includes('DEACTIVATED') || actionName.includes('REJECTED')) {
-      return { bg: '#F8E6E8', color: '#B23A48' };
+      return 'omni-badge-rose';
     }
-    return { bg: '#EDEFED', color: '#5B6672' };
+    return 'omni-badge-teal';
   };
 
   return (
@@ -93,10 +97,7 @@ export function AuditLogView() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <FileText size={20} color="#0F6E6A" />
             <h1 style={{ fontSize: 19, fontWeight: 600, color: '#1B2430' }}>Audit Log Explorer</h1>
-            <span style={{
-              fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
-              background: '#E4F1F0', color: '#0F6E6A', border: '1px solid #BCE3E0',
-            }}>ADMIN ONLY</span>
+            <span className="omni-badge-teal">ADMIN ONLY</span>
           </div>
           <p style={{ fontSize: 12.5, color: '#5B6672', marginTop: 3 }}>
             Immutable event audit trail across all organization entities and system activities
@@ -105,8 +106,9 @@ export function AuditLogView() {
 
         <button
           onClick={() => fetchLogs(page)}
-          className="omni-btn-secondary"
+          className="omni-btn-ghost"
           style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5 }}
+          aria-label="Refresh audit log"
         >
           <RefreshCw size={14} className={loading ? 'spin' : ''} />
           <span>Refresh</span>
@@ -128,9 +130,10 @@ export function AuditLogView() {
               onChange={(e) => setSearch(e.target.value)}
               className="omni-input"
               style={{ paddingLeft: 32, height: 34, fontSize: 12.5 }}
+              aria-label="Search audit logs"
             />
           </div>
-          <button type="submit" className="omni-btn-secondary" style={{ height: 34, padding: '0 14px', fontSize: 12 }}>
+          <button type="submit" className="omni-btn-ghost" style={{ height: 34, padding: '0 14px', fontSize: 12 }}>
             Search
           </button>
         </form>
@@ -143,6 +146,7 @@ export function AuditLogView() {
             onChange={(e) => { setEntityType(e.target.value); setPage(1); }}
             className="omni-input"
             style={{ height: 34, fontSize: 12, padding: '0 8px', width: 140 }}
+            aria-label="Filter by entity type"
           >
             <option value="">All Entities</option>
             <option value="ASSET">Asset</option>
@@ -157,55 +161,51 @@ export function AuditLogView() {
 
       {/* Error state */}
       {error && (
-        <div style={{
-          background: '#F8E6E8', border: '1px solid #ECA8B0', borderRadius: 8,
-          padding: '12px 16px', color: '#B23A48', fontSize: 13, marginBottom: 16,
-          display: 'flex', alignItems: 'center', gap: 8,
-        }}>
-          <ShieldAlert size={16} />
-          <span>{error}</span>
-        </div>
+        <InlineErrorState
+          title="Failed to fetch audit log"
+          message={error}
+          onRetry={() => fetchLogs(page)}
+        />
       )}
 
-      {/* Table */}
-      <div style={{ background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10, overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, textAlign: 'left' }}>
-          <thead>
-            <tr style={{ background: '#FAFBFB', borderBottom: '1px solid #E2E6E4', color: '#5B6672', fontWeight: 600 }}>
-              <th style={{ padding: '10px 16px', width: 36 }}></th>
-              <th style={{ padding: '10px 16px', width: 170 }}>Timestamp</th>
-              <th style={{ padding: '10px 16px' }}>Action</th>
-              <th style={{ padding: '10px 16px' }}>Entity Type</th>
-              <th style={{ padding: '10px 16px' }}>Entity ID</th>
-              <th style={{ padding: '10px 16px' }}>Actor ID</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading && !data ? (
-              <tr>
-                <td colSpan={6} style={{ padding: '32px', textAlign: 'center', color: '#8B95A1' }}>
-                  Loading audit logs...
-                </td>
+      {/* Loading Skeleton / Table / Empty State */}
+      {loading && !data ? (
+        <SkeletonTable rows={8} cols={6} />
+      ) : !data || data.items.length === 0 ? (
+        <EmptyState
+          icon={FileText}
+          title="No audit events recorded"
+          description="No system audit events match your current search or filter criteria."
+        />
+      ) : !error ? (
+        <div style={{ background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10, overflow: 'hidden' }} className="overflow-x-auto">
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, textAlign: 'left' }}>
+            <thead>
+              <tr style={{ background: '#FAFBFB', borderBottom: '1px solid #E2E6E4', color: '#5B6672', fontWeight: 600 }}>
+                <th style={{ padding: '10px 16px', width: 36 }}></th>
+                <th style={{ padding: '10px 16px', width: 170 }}>Timestamp</th>
+                <th style={{ padding: '10px 16px' }}>Action</th>
+                <th style={{ padding: '10px 16px' }}>Entity Type</th>
+                <th style={{ padding: '10px 16px' }}>Entity ID</th>
+                <th style={{ padding: '10px 16px' }}>Actor ID</th>
               </tr>
-            ) : !data || data.items.length === 0 ? (
-              <tr>
-                <td colSpan={6} style={{ padding: '32px', textAlign: 'center', color: '#8B95A1' }}>
-                  No audit log entries matching criteria.
-                </td>
-              </tr>
-            ) : (
-              data.items.map((log) => {
+            </thead>
+            <tbody>
+              {data.items.map((log) => {
                 const isExpanded = expandedId === log.id;
-                const actStyle = getActionColor(log.action);
+                const actBadgeClass = getActionBadgeClass(log.action);
                 return (
                   <React.Fragment key={log.id}>
                     <tr
                       onClick={() => setExpandedId(isExpanded ? null : log.id)}
+                      tabIndex={0}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setExpandedId(isExpanded ? null : log.id); }}
                       style={{
                         borderBottom: '1px solid #EDEFED', cursor: 'pointer',
                         background: isExpanded ? '#FAFBFB' : 'transparent',
                         transition: 'background 0.15s ease',
                       }}
+                      className="hover:bg-gray-50/80 focus:bg-gray-50 focus:outline-none"
                     >
                       <td style={{ padding: '10px 16px', textAlign: 'center' }}>
                         {isExpanded ? <ChevronDown size={15} color="#5B6672" /> : <ChevronRight size={15} color="#8B95A1" />}
@@ -214,10 +214,7 @@ export function AuditLogView() {
                         {new Date(log.createdAt).toLocaleString()}
                       </td>
                       <td style={{ padding: '10px 16px' }}>
-                        <span style={{
-                          fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
-                          background: actStyle.bg, color: actStyle.color,
-                        }} className="omni-mono">
+                        <span className={`${actBadgeClass} omni-mono`}>
                           {log.action}
                         </span>
                       </td>
@@ -265,44 +262,45 @@ export function AuditLogView() {
                     )}
                   </React.Fragment>
                 );
-              })
-            )}
-          </tbody>
-        </table>
+              })}
+            </tbody>
+          </table>
 
-        {/* Pagination Bar */}
-        {data && data.totalPages > 1 && (
-          <div style={{
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            padding: '12px 16px', borderTop: '1px solid #E2E6E4', background: '#FAFBFB',
-          }}>
-            <span style={{ fontSize: 12, color: '#5B6672' }}>
-              Showing {((data.page - 1) * data.limit) + 1} – {Math.min(data.page * data.limit, data.total)} of {data.total} entries
-            </span>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <button
-                disabled={page <= 1}
-                onClick={() => setPage(page - 1)}
-                className="omni-btn-secondary"
-                style={{ height: 30, padding: '0 10px', fontSize: 12 }}
-              >
-                Previous
-              </button>
-              <span style={{ fontSize: 12, display: 'flex', alignItems: 'center', padding: '0 8px', color: '#1B2430' }}>
-                Page {data.page} of {data.totalPages}
+          {/* Pagination Bar */}
+          {data && data.totalPages > 1 && (
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '12px 16px', borderTop: '1px solid #E2E6E4', background: '#FAFBFB',
+            }}>
+              <span style={{ fontSize: 12, color: '#5B6672' }}>
+                Showing {((data.page - 1) * data.limit) + 1} – {Math.min(data.page * data.limit, data.total)} of {data.total} entries
               </span>
-              <button
-                disabled={page >= data.totalPages}
-                onClick={() => setPage(page + 1)}
-                className="omni-btn-secondary"
-                style={{ height: 30, padding: '0 10px', fontSize: 12 }}
-              >
-                Next
-              </button>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  disabled={page <= 1}
+                  onClick={() => setPage(page - 1)}
+                  className="omni-btn-ghost"
+                  style={{ height: 30, padding: '0 10px', fontSize: 12 }}
+                >
+                  Previous
+                </button>
+                <span style={{ fontSize: 12, display: 'flex', alignItems: 'center', padding: '0 8px', color: '#1B2430' }}>
+                  Page {data.page} of {data.totalPages}
+                </span>
+                <button
+                  disabled={page >= data.totalPages}
+                  onClick={() => setPage(page + 1)}
+                  className="omni-btn-ghost"
+                  style={{ height: 30, padding: '0 10px', fontSize: 12 }}
+                >
+                  Next
+                </button>
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
+

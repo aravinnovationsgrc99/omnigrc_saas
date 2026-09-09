@@ -15,10 +15,13 @@ import { AuditLogView } from '@/components/audit-logs/audit-log-view';
 import { ComingSoon } from '@/components/dashboard/coming-soon';
 import { OnboardingWizard } from '@/components/onboarding/onboarding-wizard';
 
+import { ToastProvider } from '@/context/toast-context';
+
 export default function MainPage() {
   const { user, organization, loading } = useAuth();
   const [view, setView] = useState('dashboard');
   const [showWizard, setShowWizard] = useState<boolean>(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   useEffect(() => {
     if (organization && organization.onboardingCompleted === false) {
@@ -43,27 +46,38 @@ export default function MainPage() {
   const activeItem = NAV_SECTIONS.flatMap((s) => s.items).find((i) => i.key === view);
 
   return (
-    <div className="omni-root" style={{ height: '100vh', display: 'flex' }}>
-      <Sidebar view={view} setView={setView} />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        <Topbar />
-        <div style={{ flex: 1, overflowY: 'auto' }} className="omni-scroll">
-          {view === 'dashboard' && <DashboardView />}
-          {view === 'risk' && <RiskListView />}
-          {view === 'assets' && <AssetListView />}
-          {view === 'controls' && <ControlMappingView />}
-          {view === 'board' && <ComplianceBoardView />}
-          {view === 'settings' && <SettingsView />}
-          {view === 'audit' && <AuditLogView />}
-          {activeItem && !activeItem.enabled && (
-            <ComingSoon label={activeItem.label} phase={activeItem.phase || 'Phase N'} />
-          )}
+    <ToastProvider>
+      <div className="omni-root" style={{ height: '100vh', display: 'flex', position: 'relative', overflow: 'hidden' }}>
+        <Sidebar
+          view={view}
+          setView={(v) => {
+            setView(v);
+            setMobileSidebarOpen(false);
+          }}
+          mobileOpen={mobileSidebarOpen}
+          onCloseMobile={() => setMobileSidebarOpen(false)}
+        />
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          <Topbar onToggleMobileSidebar={() => setMobileSidebarOpen((v) => !v)} />
+          <div style={{ flex: 1, overflowY: 'auto' }} className="omni-scroll">
+            {view === 'dashboard' && <DashboardView />}
+            {view === 'risk' && <RiskListView />}
+            {view === 'assets' && <AssetListView />}
+            {view === 'controls' && <ControlMappingView />}
+            {view === 'board' && <ComplianceBoardView />}
+            {view === 'settings' && <SettingsView />}
+            {view === 'audit' && <AuditLogView />}
+            {activeItem && !activeItem.enabled && (
+              <ComingSoon label={activeItem.label} phase={activeItem.phase || 'Phase N'} />
+            )}
+          </div>
         </div>
-      </div>
 
-      {showWizard && (
-        <OnboardingWizard onComplete={() => setShowWizard(false)} />
-      )}
-    </div>
+        {showWizard && (
+          <OnboardingWizard onComplete={() => setShowWizard(false)} />
+        )}
+      </div>
+    </ToastProvider>
   );
 }
+

@@ -1,16 +1,24 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, Plus, GitMerge, Filter, ChevronRight, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
 import { ControlDto, PaginatedControlsDto, MappingStatus } from '@omnigrc/shared';
 import { apiRequest } from '@/lib/api-client';
+import { useToast } from '@/context/toast-context';
+import { SkeletonTable } from '@/components/ui/skeleton';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InlineErrorState } from '@/components/ui/inline-error-state';
 import { ControlDrawer } from './control-drawer';
 import { ControlDetailView } from './control-detail-view';
+import { Plus, Search, Filter, GitMerge, ChevronRight } from 'lucide-react';
+
+
 
 export function ControlMappingView() {
+  const { showToast } = useToast();
   const [controls, setControls] = useState<ControlDto[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Active Selected Control ID for Detail View
   const [selectedControlId, setSelectedControlId] = useState<string | null>(null);
@@ -25,6 +33,7 @@ export function ControlMappingView() {
 
   const fetchControls = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const params = new URLSearchParams();
       if (search.trim()) params.set('search', search.trim());
@@ -35,9 +44,10 @@ export function ControlMappingView() {
       const data = await apiRequest<PaginatedControlsDto>(`/controls${queryString}`);
       setControls(data.items);
       setTotalCount(data.total);
-    } catch {
+    } catch (err: any) {
       setControls([]);
       setTotalCount(0);
+      setError(err?.message || 'Failed to fetch controls from server. Check connection or pod status and try again.');
     } finally {
       setLoading(false);
     }
@@ -60,19 +70,19 @@ export function ControlMappingView() {
     );
   }
 
-  const getMappingSummaryText = (control: ControlDto) => {
+  const getMappingSummaryBadgeClass = (control: ControlDto) => {
     if (!control.mappings || control.mappings.length === 0) {
-      return { label: 'Unmapped', color: '#8B95A1', bg: '#EDEFED' };
+      return { label: 'Unmapped', className: 'omni-badge-amber' };
     }
     const approved = control.mappings.filter((m) => m.status === MappingStatus.APPROVED || m.status === MappingStatus.OVERRIDDEN).length;
     const pending = control.mappings.filter((m) => m.status === MappingStatus.SUGGESTED).length;
 
     if (approved > 0 && pending > 0) {
-      return { label: `${approved} approved · ${pending} pending`, color: '#B5750A', bg: '#FCEFD9' };
+      return { label: `${approved} approved · ${pending} pending`, className: 'omni-badge-amber' };
     } else if (approved > 0) {
-      return { label: `${approved} approved`, color: '#0F6E6A', bg: '#E4F1F0' };
+      return { label: `${approved} approved`, className: 'omni-badge-teal' };
     } else {
-      return { label: `${pending} pending review`, color: '#B5750A', bg: '#FCEFD9' };
+      return { label: `${pending} pending review`, className: 'omni-badge-amber' };
     }
   };
 
@@ -109,6 +119,7 @@ export function ControlMappingView() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ paddingLeft: 32 }}
+            aria-label="Search controls"
           />
         </div>
 
@@ -120,6 +131,7 @@ export function ControlMappingView() {
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
             style={{ width: 160 }}
+            aria-label="Filter by mapping status"
           >
             <option value="">All Mapping Statuses</option>
             <option value={MappingStatus.APPROVED}>APPROVED</option>
@@ -129,45 +141,35 @@ export function ControlMappingView() {
         </div>
       </div>
 
-      {/* Control Table / Empty State */}
+      {/* Error state */}
+      {error && (
+        <InlineErrorState
+          title="Failed to fetch controls"
+          message={error}
+          onRetry={fetchControls}
+        />
+      )}
+
+      {/* Control Table / Skeleton / Empty State */}
       {loading ? (
-        <div style={{
-          background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10,
-          padding: '40px 20px', textAlign: 'center', color: '#8B95A1', fontSize: 13,
-        }}>
-          Loading control mappings...
-        </div>
-      ) : controls.length === 0 ? (
-        <div style={{
-          background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10,
-          padding: '56px 24px', textAlign: 'center', display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center',
-        }}>
-          <div style={{
-            width: 48, height: 48, borderRadius: 12, background: '#E4F1F0', color: '#0F6E6A',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16,
-          }}>
-            <GitMerge size={22} />
-          </div>
-          <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1B2430' }}>No security controls created</h3>
-          <p style={{ fontSize: 13, color: '#5B6672', marginTop: 6, maxWidth: 360, lineHeight: 1.5 }}>
-            {search || statusFilter
-              ? 'No controls match your current search or filter criteria. Try clearing filters.'
-              : 'Add your security controls and policies to generate AI-assisted framework mappings.'}
-          </p>
-          <button
-            onClick={() => setIsDrawerOpen(true)}
-            className="omni-btn-primary"
-            style={{ marginTop: 20, display: 'flex', alignItems: 'center', gap: 6 }}
-          >
-            <Plus size={15} /> New Control
-          </button>
-        </div>
-      ) : (
+        <SkeletonTable rows={5} cols={5} />
+      ) : controls.length === 0 && !error ? (
+        <EmptyState
+          icon={GitMerge}
+          title="No security controls created"
+          description={
+            search || statusFilter
+              ? 'No controls match your search or filter criteria. Clear filters or add a new control.'
+              : 'Add your security controls and policies to generate AI-assisted framework mappings.'
+          }
+          actionLabel="New Control"
+          onAction={() => setIsDrawerOpen(true)}
+        />
+      ) : !error ? (
         <div style={{
           background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10,
           overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-        }}>
+        }} className="overflow-x-auto">
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
             <thead>
               <tr style={{ background: '#F6F7F6', borderBottom: '1px solid #E2E6E4', color: '#5B6672' }}>
@@ -180,19 +182,20 @@ export function ControlMappingView() {
             </thead>
             <tbody>
               {controls.map((control, index) => {
-                const summary = getMappingSummaryText(control);
+                const summary = getMappingSummaryBadgeClass(control);
                 const isLast = index === controls.length - 1;
 
                 return (
                   <tr
                     key={control.id}
                     onClick={() => setSelectedControlId(control.id)}
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedControlId(control.id); }}
                     style={{
                       borderBottom: isLast ? 'none' : '1px solid #EDEFED',
                       cursor: 'pointer', transition: 'background .12s ease',
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = '#F6F7F6')}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    className="hover:bg-gray-50/80 focus:bg-gray-50 focus:outline-none"
                   >
                     <td style={{ padding: '14px 16px', fontWeight: 600, color: '#1B2430' }}>
                       {control.name}
@@ -206,10 +209,7 @@ export function ControlMappingView() {
                       </span>
                     </td>
                     <td style={{ padding: '14px 16px' }}>
-                      <span style={{
-                        fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999,
-                        color: summary.color, background: summary.bg, letterSpacing: 0.3,
-                      }}>
+                      <span className={summary.className}>
                         {summary.label}
                       </span>
                     </td>
@@ -234,7 +234,7 @@ export function ControlMappingView() {
             <span>Tenant scoped</span>
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* Slide-over Drawer for Create */}
       <ControlDrawer
@@ -246,3 +246,4 @@ export function ControlMappingView() {
     </div>
   );
 }
+

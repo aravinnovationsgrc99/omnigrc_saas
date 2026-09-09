@@ -1,16 +1,23 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, Plus, ShieldAlert, Filter, LayoutGrid, List, X } from 'lucide-react';
-import { RiskDto, RiskStatus, RiskScoreBand, PaginatedRisksDto } from '@omnigrc/shared';
+import { RiskDto, PaginatedRisksDto, RiskStatus, RiskScoreBand } from '@omnigrc/shared';
 import { apiRequest } from '@/lib/api-client';
-import { RiskDrawer } from './risk-drawer';
+import { useToast } from '@/context/toast-context';
+import { SkeletonTable } from '@/components/ui/skeleton';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InlineErrorState } from '@/components/ui/inline-error-state';
 import { RiskHeatmap } from './risk-heatmap';
+import { RiskDrawer } from './risk-drawer';
+import { Plus, List, LayoutGrid, Search, X, ShieldAlert } from 'lucide-react';
+
 
 export function RiskListView() {
+  const { showToast } = useToast();
   const [risks, setRisks] = useState<RiskDto[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Tab State
   const [activeTab, setActiveTab] = useState<'list' | 'heatmap'>('list');
@@ -28,6 +35,7 @@ export function RiskListView() {
 
   const fetchRisks = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const params = new URLSearchParams();
       if (search.trim()) params.set('search', search.trim());
@@ -40,9 +48,10 @@ export function RiskListView() {
       const data = await apiRequest<PaginatedRisksDto>(`/risks${queryString}`);
       setRisks(data.items);
       setTotalCount(data.total);
-    } catch {
+    } catch (err: any) {
       setRisks([]);
       setTotalCount(0);
+      setError(err?.message || 'Failed to fetch risk register from server. Check your connection or pod status and try again.');
     } finally {
       setLoading(false);
     }
@@ -73,29 +82,29 @@ export function RiskListView() {
     setIsDrawerOpen(true);
   };
 
-  const getScoreBadge = (score: number, scoreBand: RiskScoreBand) => {
+  const getScoreBadgeClass = (scoreBand: RiskScoreBand) => {
     switch (scoreBand) {
       case RiskScoreBand.HIGH:
-        return { color: '#B23A48', bg: '#F8E6E8', label: `HIGH (${score})` };
+        return 'omni-badge-rose';
       case RiskScoreBand.MEDIUM:
-        return { color: '#B5750A', bg: '#FCEFD9', label: `MED (${score})` };
+        return 'omni-badge-amber';
       case RiskScoreBand.LOW:
       default:
-        return { color: '#0F6E6A', bg: '#E4F1F0', label: `LOW (${score})` };
+        return 'omni-badge-teal';
     }
   };
 
-  const getStatusBadge = (status: RiskStatus) => {
+  const getStatusBadgeClass = (status: RiskStatus) => {
     switch (status) {
       case RiskStatus.OPEN:
-        return { color: '#B23A48', bg: '#F8E6E8' };
+        return 'omni-badge-rose';
       case RiskStatus.IN_TREATMENT:
-        return { color: '#B5750A', bg: '#FCEFD9' };
+        return 'omni-badge-amber';
       case RiskStatus.ACCEPTED:
-        return { color: '#0F6E6A', bg: '#E4F1F0' };
+        return 'omni-badge-teal';
       case RiskStatus.CLOSED:
       default:
-        return { color: '#5B6672', bg: '#EDEFED' };
+        return 'omni-badge-teal';
     }
   };
 
@@ -162,6 +171,7 @@ export function RiskListView() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               style={{ paddingLeft: 32 }}
+              aria-label="Search risks"
             />
           </div>
 
@@ -171,6 +181,7 @@ export function RiskListView() {
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
             style={{ width: 140 }}
+            aria-label="Filter by risk status"
           >
             <option value="">All Statuses</option>
             <option value={RiskStatus.OPEN}>OPEN</option>
@@ -185,6 +196,7 @@ export function RiskListView() {
             value={scoreBandFilter}
             onChange={(e) => setScoreBandFilter(e.target.value)}
             style={{ width: 140 }}
+            aria-label="Filter by severity band"
           >
             <option value="">All Severities</option>
             <option value={RiskScoreBand.HIGH}>HIGH (15–25)</option>
@@ -219,45 +231,35 @@ export function RiskListView() {
         </div>
       )}
 
-      {/* List Table / Empty State */}
+      {/* Error State */}
+      {error && (
+        <InlineErrorState
+          title="Failed to fetch risks"
+          message={error}
+          onRetry={fetchRisks}
+        />
+      )}
+
+      {/* List Table / Skeleton / Empty State */}
       {loading ? (
-        <div style={{
-          background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10,
-          padding: '40px 20px', textAlign: 'center', color: '#8B95A1', fontSize: 13,
-        }}>
-          Loading risk register...
-        </div>
-      ) : risks.length === 0 ? (
-        <div style={{
-          background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10,
-          padding: '56px 24px', textAlign: 'center', display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center',
-        }}>
-          <div style={{
-            width: 48, height: 48, borderRadius: 12, background: '#FCEFD9', color: '#B5750A',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16,
-          }}>
-            <ShieldAlert size={22} />
-          </div>
-          <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1B2430' }}>No risks recorded</h3>
-          <p style={{ fontSize: 13, color: '#5B6672', marginTop: 6, maxWidth: 360, lineHeight: 1.5 }}>
-            {search || statusFilter || scoreBandFilter || cellLikelihood
-              ? 'No risks match your current search or filter criteria. Try clearing filters.'
-              : 'Establish your risk log by logging security, operational, compliance, or vendor risks.'}
-          </p>
-          <button
-            onClick={handleOpenCreate}
-            className="omni-btn-primary"
-            style={{ marginTop: 20, display: 'flex', alignItems: 'center', gap: 6 }}
-          >
-            <Plus size={15} /> New Risk
-          </button>
-        </div>
-      ) : (
+        <SkeletonTable rows={5} cols={6} />
+      ) : risks.length === 0 && !error ? (
+        <EmptyState
+          icon={ShieldAlert}
+          title="No risks recorded"
+          description={
+            search || statusFilter || scoreBandFilter || cellLikelihood
+              ? 'No risks match your search or filter criteria. Clear filters or record a new risk.'
+              : 'Establish your risk log by logging security, operational, compliance, or vendor risks.'
+          }
+          actionLabel="New Risk"
+          onAction={handleOpenCreate}
+        />
+      ) : !error ? (
         <div style={{
           background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10,
           overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-        }}>
+        }} className="overflow-x-auto">
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
             <thead>
               <tr style={{ background: '#F6F7F6', borderBottom: '1px solid #E2E6E4', color: '#5B6672' }}>
@@ -271,20 +273,21 @@ export function RiskListView() {
             </thead>
             <tbody>
               {risks.map((risk: RiskDto, index: number) => {
-                const scoreBadge = getScoreBadge(risk.score, risk.scoreBand);
-                const statusBadge = getStatusBadge(risk.status);
+                const scoreBadgeClass = getScoreBadgeClass(risk.scoreBand);
+                const statusBadgeClass = getStatusBadgeClass(risk.status);
                 const isLast = index === risks.length - 1;
 
                 return (
                   <tr
                     key={risk.id}
                     onClick={() => handleOpenEdit(risk)}
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleOpenEdit(risk); }}
                     style={{
                       borderBottom: isLast ? 'none' : '1px solid #EDEFED',
                       cursor: 'pointer', transition: 'background .12s ease',
                     }}
-                    onMouseEnter={(e: React.MouseEvent<HTMLTableRowElement>) => (e.currentTarget.style.background = '#F6F7F6')}
-                    onMouseLeave={(e: React.MouseEvent<HTMLTableRowElement>) => (e.currentTarget.style.background = 'transparent')}
+                    className="hover:bg-gray-50/80 focus:bg-gray-50 focus:outline-none"
                   >
                     <td style={{ padding: '14px 16px', fontWeight: 600, color: '#1B2430' }}>
                       {risk.title}
@@ -295,18 +298,12 @@ export function RiskListView() {
                       )}
                     </td>
                     <td style={{ padding: '14px 16px' }}>
-                      <span className="omni-mono" style={{
-                        fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 999,
-                        color: scoreBadge.color, background: scoreBadge.bg, letterSpacing: 0.4,
-                      }}>
-                        {scoreBadge.label}
+                      <span className={`${scoreBadgeClass} omni-mono`}>
+                        {risk.scoreBand} ({risk.score})
                       </span>
                     </td>
                     <td style={{ padding: '14px 16px' }}>
-                      <span style={{
-                        fontSize: 10.5, fontWeight: 700, padding: '3px 8px', borderRadius: 999,
-                        color: statusBadge.color, background: statusBadge.bg, letterSpacing: 0.4,
-                      }}>
+                      <span className={statusBadgeClass}>
                         {risk.status}
                       </span>
                     </td>
@@ -328,15 +325,18 @@ export function RiskListView() {
             <span>Tenant scoped</span>
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* Slide-over Drawer */}
       <RiskDrawer
         risk={selectedRisk}
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
-        onSuccess={fetchRisks}
+        onSuccess={() => {
+          fetchRisks();
+        }}
       />
     </div>
   );
 }
+

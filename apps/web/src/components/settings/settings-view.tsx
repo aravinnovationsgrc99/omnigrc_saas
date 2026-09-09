@@ -2,14 +2,19 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/auth-context';
+import { useToast } from '@/context/toast-context';
 import { apiRequest } from '@/lib/api-client';
 import { RegionalPodDto, PodStatus, Role } from '@omnigrc/shared';
 import { Globe2, ShieldAlert, CheckCircle2, Lock, AlertTriangle, Send, Mail, Link, Layers, Check } from 'lucide-react';
+import { SkeletonLine } from '@/components/ui/skeleton';
+import { InlineErrorState } from '@/components/ui/inline-error-state';
 
 export function SettingsView() {
   const { user, organization } = useAuth();
+  const { addToast } = useToast();
   const [pods, setPods] = useState<RegionalPodDto[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [selectedPod, setSelectedPod] = useState<RegionalPodDto | null>(null);
   const [updating, setUpdating] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
@@ -23,11 +28,12 @@ export function SettingsView() {
   const [slackConfigured, setSlackConfigured] = useState(false);
   const [savingSlack, setSavingSlack] = useState(false);
   const [testingSlack, setTestingSlack] = useState(false);
-  const [slackFeedback, setSlackFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const isAdmin = user?.role === Role.ADMIN;
 
   const fetchPods = async () => {
+    setLoading(true);
+    setFetchError(null);
     try {
       const data = await apiRequest<RegionalPodDto[]>('/regional-pods');
       setPods(data);
@@ -86,8 +92,11 @@ export function SettingsView() {
 
       setPods((prev) => prev.map((p) => (p.id === updatedPod.id ? updatedPod : p)));
       setSelectedPod(null);
+      addToast(`Updated pod status for ${selectedPod.region} to ${nextStatus}`, 'success');
     } catch (err: any) {
-      setModalError(err.message || 'Failed to update regional pod status.');
+      const errMsg = err.message || 'Failed to update regional pod status.';
+      setModalError(errMsg);
+      addToast(errMsg, 'error');
     } finally {
       setUpdating(false);
     }
@@ -102,8 +111,10 @@ export function SettingsView() {
         method: 'PATCH',
         body: JSON.stringify({ emailNotifications: nextVal }),
       });
+      addToast(`Email notifications ${nextVal ? 'enabled' : 'disabled'}`, 'success');
     } catch {
       setEmailNotifs(!nextVal); // Revert on failure
+      addToast('Failed to update email preferences', 'error');
     } finally {
       setSavingEmailPref(false);
     }
@@ -113,16 +124,15 @@ export function SettingsView() {
     e.preventDefault();
     if (!isAdmin) return;
     setSavingSlack(true);
-    setSlackFeedback(null);
     try {
       const res = await apiRequest<{ message: string; configured: boolean }>('/integrations/slack/webhook-url', {
         method: 'POST',
         body: JSON.stringify({ webhookUrl: slackWebhook }),
       });
       setSlackConfigured(res.configured);
-      setSlackFeedback({ type: 'success', message: 'Slack webhook URL saved successfully.' });
+      addToast('Slack webhook URL configured successfully', 'success');
     } catch (err: any) {
-      setSlackFeedback({ type: 'error', message: err.message || 'Failed to save Slack webhook URL.' });
+      addToast(err.message || 'Failed to save Slack webhook URL.', 'error');
     } finally {
       setSavingSlack(false);
     }
@@ -131,59 +141,55 @@ export function SettingsView() {
   const handleTestSlack = async () => {
     if (!isAdmin) return;
     setTestingSlack(true);
-    setSlackFeedback(null);
     try {
       await apiRequest<{ success: boolean; message: string }>('/integrations/slack/test', {
         method: 'POST',
       });
-      setSlackFeedback({ type: 'success', message: 'Test message successfully sent to Slack channel!' });
+      addToast('Test message sent to Slack channel!', 'success');
     } catch (err: any) {
-      setSlackFeedback({ type: 'error', message: err.message || 'Failed to deliver test message to Slack webhook.' });
+      addToast(err.message || 'Failed to deliver test message to Slack webhook.', 'error');
     } finally {
       setTestingSlack(false);
     }
   };
 
   return (
-    <div className="omni-fade-in" style={{ padding: '28px 32px', maxWidth: 720 }}>
-      <h1 style={{ fontSize: 19, fontWeight: 600, marginBottom: 18, color: '#1B2430' }}>Settings</h1>
+    <div className="omni-fade-in px-4 py-6 md:px-8 max-w-3xl">
+      <h1 className="text-xl font-semibold text-[#1B2430] mb-5">Settings</h1>
 
       {/* Organization Info Card */}
-      <div style={{ background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10, padding: '18px 22px', marginBottom: 20 }}>
-        <h2 style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 14, color: '#1B2430' }}>Organization Context</h2>
-        <div style={{ fontSize: 13, color: '#5B6672', display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #EDEFED' }}>
+      <div className="bg-white border border-[#E2E6E4] rounded-lg p-5 mb-5 shadow-sm">
+        <h2 className="text-sm font-semibold text-[#1B2430] mb-3.5">Organization Context</h2>
+        <div className="text-xs text-[#5B6672] flex justify-between py-2 border-b border-[#EDEFED]">
           <span>Organization Name</span>
-          <span style={{ color: '#1B2430', fontWeight: 500 }}>{organization?.name || 'N/A'}</span>
+          <span className="text-[#1B2430] font-medium">{organization?.name || 'N/A'}</span>
         </div>
-        <div style={{ fontSize: 13, color: '#5B6672', display: 'flex', justifyContent: 'space-between', padding: '8px 0' }}>
+        <div className="text-xs text-[#5B6672] flex justify-between py-2">
           <span>Current Session User</span>
-          <span style={{ color: '#1B2430', fontWeight: 500 }}>
-            {user?.name} · <span className="omni-mono" style={{ fontSize: 11.5, background: '#EDEFED', padding: '2px 6px', borderRadius: 4 }}>{user?.role}</span>
+          <span className="text-[#1B2430] font-medium">
+            {user?.name} · <span className="omni-mono text-[11px] bg-[#EDEFED] px-1.5 py-0.5 rounded">{user?.role}</span>
           </span>
         </div>
       </div>
 
       {/* User Preferences Card */}
-      <div style={{ background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10, padding: '18px 22px', marginBottom: 20 }}>
-        <h2 style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 14, color: '#1B2430' }}>User Preferences</h2>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Mail size={16} color="#0F6E6A" />
+      <div className="bg-white border border-[#E2E6E4] rounded-lg p-5 mb-5 shadow-sm">
+        <h2 className="text-sm font-semibold text-[#1B2430] mb-3.5">User Preferences</h2>
+        <div className="flex justify-between items-center py-2">
+          <div className="flex items-center gap-2.5">
+            <Mail size={16} className="text-teal-700" />
             <div>
-              <span style={{ fontSize: 13, fontWeight: 500, color: '#1B2430' }}>Resend Email Notifications</span>
-              <p style={{ fontSize: 12, color: '#5B6672', margin: 0 }}>Receive email alerts for task assignments and due-date reminders</p>
+              <span className="text-xs font-medium text-[#1B2430]">Resend Email Notifications</span>
+              <p className="text-[11.5px] text-[#5B6672] m-0">Receive email alerts for task assignments and due-date reminders</p>
             </div>
           </div>
           <button
             onClick={handleToggleEmailPref}
             disabled={savingEmailPref}
-            style={{
-              padding: '4px 12px', borderRadius: 999, fontSize: 11.5, fontWeight: 700,
-              border: '1px solid', cursor: 'pointer', transition: 'all 0.15s ease',
-              color: emailNotifs ? '#0F6E6A' : '#5B6672',
-              background: emailNotifs ? '#E4F1F0' : '#EDEFED',
-              borderColor: emailNotifs ? '#BCE3E0' : '#D5DCD8',
-            }}
+            className={`omni-badge transition-all cursor-pointer ${
+              emailNotifs ? 'omni-badge-teal' : 'bg-gray-100 text-gray-600 border-gray-300'
+            }`}
+            aria-label={`Toggle email notifications, currently ${emailNotifs ? 'enabled' : 'disabled'}`}
           >
             {emailNotifs ? 'ENABLED' : 'DISABLED'}
           </button>
@@ -191,71 +197,52 @@ export function SettingsView() {
       </div>
 
       {/* Integrations Card */}
-      <div style={{ background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10, padding: '18px 22px', marginBottom: 20 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+      <div className="bg-white border border-[#E2E6E4] rounded-lg p-5 mb-5 shadow-sm">
+        <div className="flex justify-between items-center mb-3.5">
           <div>
-            <h2 style={{ fontSize: 13.5, fontWeight: 600, color: '#1B2430' }}>Platform Integrations</h2>
-            <p style={{ fontSize: 12, color: '#5B6672', marginTop: 2 }}>
+            <h2 className="text-sm font-semibold text-[#1B2430]">Platform Integrations</h2>
+            <p className="text-xs text-[#5B6672] mt-0.5">
               Connect external messaging platforms, issue trackers, and identity directories
             </p>
           </div>
           {!isAdmin && (
-            <span style={{ fontSize: 11, color: '#8493A5', display: 'flex', alignItems: 'center', gap: 4, background: '#FAFBFB', padding: '4px 8px', borderRadius: 6, border: '1px solid #E2E6E4' }}>
+            <span className="text-[11px] text-[#8493A5] flex items-center gap-1 bg-[#FAFBFB] px-2 py-1 rounded border border-[#E2E6E4]">
               <Lock size={12} /> Read-only (ANALYST)
             </span>
           )}
         </div>
 
-        {/* Feedback Alert Banner */}
-        {slackFeedback && (
-          <div style={{
-            padding: '10px 14px', borderRadius: 8, fontSize: 12.5, marginBottom: 14,
-            display: 'flex', alignItems: 'center', gap: 8,
-            background: slackFeedback.type === 'success' ? '#E4F1F0' : '#F8E6E8',
-            color: slackFeedback.type === 'success' ? '#0F6E6A' : '#B23A48',
-            border: `1px solid ${slackFeedback.type === 'success' ? '#BCE3E0' : '#ECA8B0'}`,
-          }}>
-            {slackFeedback.type === 'success' ? <CheckCircle2 size={16} /> : <ShieldAlert size={16} />}
-            <span>{slackFeedback.message}</span>
-          </div>
-        )}
-
         {/* Slack Integration Block */}
-        <div style={{ border: '1px solid #EDEFED', borderRadius: 8, padding: 14, marginBottom: 12, background: '#FAFBFB' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 16 }}>💬</span>
+        <div className="border border-[#EDEFED] rounded-lg p-3.5 mb-3 bg-[#FAFBFB]">
+          <div className="flex justify-between items-center mb-2.5">
+            <div className="flex items-center gap-2">
+              <span className="text-base">💬</span>
               <div>
-                <span style={{ fontSize: 13, fontWeight: 600, color: '#1B2430' }}>Slack Incoming Webhook</span>
-                <span style={{ fontSize: 11, color: '#5B6672', marginLeft: 8 }}>Org-level critical alerts (`MAPPING_OVERRIDDEN`, `POD_STATUS_CHANGED`)</span>
+                <span className="text-xs font-semibold text-[#1B2430]">Slack Incoming Webhook</span>
+                <span className="text-[11px] text-[#5B6672] ml-2">Org-level critical alerts (<code className="omni-mono">MAPPING_OVERRIDDEN</code>, <code className="omni-mono">POD_STATUS_CHANGED</code>)</span>
               </div>
             </div>
-            <span style={{
-              fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
-              color: slackConfigured ? '#0F6E6A' : '#8B95A1',
-              background: slackConfigured ? '#E4F1F0' : '#EDEFED',
-            }}>
+            <span className={`omni-badge ${slackConfigured ? 'omni-badge-teal' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>
               {slackConfigured ? 'CONNECTED' : 'NOT CONFIGURED'}
             </span>
           </div>
 
-          <form onSubmit={handleSaveSlackWebhook} style={{ display: 'flex', gap: 8 }}>
+          <form onSubmit={handleSaveSlackWebhook} className="flex gap-2 flex-wrap sm:flex-nowrap">
             <input
               type="text"
               placeholder="https://hooks.slack.com/services/T00/B00/XXXX"
               value={slackWebhook}
               onChange={(e) => setSlackWebhook(e.target.value)}
               disabled={!isAdmin || savingSlack}
-              className="omni-input"
-              style={{ flex: 1, height: 34, fontSize: 12 }}
+              className="omni-input flex-1 h-8 text-xs"
+              aria-label="Slack Webhook URL"
             />
             {isAdmin && (
               <>
                 <button
                   type="submit"
                   disabled={savingSlack}
-                  className="omni-btn-secondary"
-                  style={{ height: 34, padding: '0 12px', fontSize: 12 }}
+                  className="omni-btn-secondary text-xs h-8 px-3 whitespace-nowrap"
                 >
                   {savingSlack ? 'Saving...' : 'Save Webhook'}
                 </button>
@@ -264,8 +251,8 @@ export function SettingsView() {
                     type="button"
                     onClick={handleTestSlack}
                     disabled={testingSlack}
-                    className="omni-btn-primary"
-                    style={{ height: 34, padding: '0 12px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}
+                    className="omni-btn-primary text-xs h-8 px-3 flex items-center gap-1 whitespace-nowrap"
+                    aria-label="Send test notification to Slack"
                   >
                     <Send size={12} />
                     {testingSlack ? 'Sending...' : 'Test Alert'}
@@ -277,18 +264,18 @@ export function SettingsView() {
         </div>
 
         {/* Jira Software Card (Structured Stub) */}
-        <div style={{ border: '1px solid #EDEFED', borderRadius: 8, padding: 14, marginBottom: 12, background: '#FAFBFB', opacity: 0.8 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 16 }}>🔷</span>
+        <div className="border border-[#EDEFED] rounded-lg p-3.5 mb-3 bg-[#FAFBFB] opacity-75">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-2">
+              <span className="text-base">🔷</span>
               <div>
-                <span style={{ fontSize: 13, fontWeight: 600, color: '#1B2430' }}>Jira Software Cloud</span>
-                <span style={{ fontSize: 11, color: '#5B6672', marginLeft: 8 }}>Bidirectional issue & compliance task sync</span>
+                <span className="text-xs font-semibold text-[#1B2430]">Jira Software Cloud</span>
+                <span className="text-[11px] text-[#5B6672] ml-2">Bidirectional issue & compliance task sync</span>
               </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span className="omni-mono" style={{ fontSize: 9.5, color: '#6E7A8A', background: '#EDEFED', padding: '2px 6px', borderRadius: 4 }}>Coming soon</span>
-              <button disabled className="omni-btn-secondary" style={{ opacity: 0.5, cursor: 'not-allowed', height: 28, fontSize: 11.5 }}>
+            <div className="flex items-center gap-2">
+              <span className="omni-mono text-[9.5px] text-[#6E7A8A] bg-[#EDEFED] px-1.5 py-0.5 rounded">Coming soon</span>
+              <button disabled className="omni-btn-secondary opacity-50 cursor-not-allowed h-7 text-[11.5px] px-2.5">
                 Connect
               </button>
             </div>
@@ -296,18 +283,18 @@ export function SettingsView() {
         </div>
 
         {/* Google Workspace Card (Structured Stub) */}
-        <div style={{ border: '1px solid #EDEFED', borderRadius: 8, padding: 14, background: '#FAFBFB', opacity: 0.8 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 16 }}>📁</span>
+        <div className="border border-[#EDEFED] rounded-lg p-3.5 bg-[#FAFBFB] opacity-75">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-2">
+              <span className="text-base">📁</span>
               <div>
-                <span style={{ fontSize: 13, fontWeight: 600, color: '#1B2430' }}>Google Workspace</span>
-                <span style={{ fontSize: 11, color: '#5B6672', marginLeft: 8 }}>Directory user sync & Google Drive audit evidence</span>
+                <span className="text-xs font-semibold text-[#1B2430]">Google Workspace</span>
+                <span className="text-[11px] text-[#5B6672] ml-2">Directory user sync & Google Drive audit evidence</span>
               </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span className="omni-mono" style={{ fontSize: 9.5, color: '#6E7A8A', background: '#EDEFED', padding: '2px 6px', borderRadius: 4 }}>Coming soon</span>
-              <button disabled className="omni-btn-secondary" style={{ opacity: 0.5, cursor: 'not-allowed', height: 28, fontSize: 11.5 }}>
+            <div className="flex items-center gap-2">
+              <span className="omni-mono text-[9.5px] text-[#6E7A8A] bg-[#EDEFED] px-1.5 py-0.5 rounded">Coming soon</span>
+              <button disabled className="omni-btn-secondary opacity-50 cursor-not-allowed h-7 text-[11.5px] px-2.5">
                 Connect
               </button>
             </div>
@@ -316,37 +303,46 @@ export function SettingsView() {
       </div>
 
       {/* Regional Hosting Pods Card */}
-      <div style={{ background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10, padding: '18px 22px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+      <div className="bg-white border border-[#E2E6E4] rounded-lg p-5 shadow-sm">
+        <div className="flex justify-between items-center mb-3.5">
           <div>
-            <h2 style={{ fontSize: 13.5, fontWeight: 600, color: '#1B2430' }}>Regional Hosting Pods</h2>
-            <p style={{ fontSize: 12, color: '#5B6672', marginTop: 2 }}>
+            <h2 className="text-sm font-semibold text-[#1B2430]">Regional Hosting Pods</h2>
+            <p className="text-xs text-[#5B6672] mt-0.5">
               Multi-region cloud infrastructure tenancy & data residency options
             </p>
           </div>
           {!isAdmin && (
-            <span style={{ fontSize: 11, color: '#8493A5', display: 'flex', alignItems: 'center', gap: 4, background: '#FAFBFB', padding: '4px 8px', borderRadius: 6, border: '1px solid #E2E6E4' }}>
+            <span className="text-[11px] text-[#8493A5] flex items-center gap-1 bg-[#FAFBFB] px-2 py-1 rounded border border-[#E2E6E4]">
               <Lock size={12} /> Read-only (ANALYST)
             </span>
           )}
         </div>
 
+        {fetchError && (
+          <div className="mb-3">
+            <InlineErrorState message={fetchError} onRetry={fetchPods} />
+          </div>
+        )}
+
         {loading ? (
-          <div style={{ fontSize: 12.5, color: '#8B95A1', padding: '12px 0' }}>Loading regional pod data from API...</div>
+          <div className="space-y-3 py-2">
+            <SkeletonLine height="24px" width="100%" />
+            <SkeletonLine height="24px" width="100%" />
+            <SkeletonLine height="24px" width="100%" />
+          </div>
         ) : (
           pods.map((r, i, arr) => {
             const isActive = r.status === PodStatus.ACTIVE;
             return (
-              <div key={r.id || r.region} style={{
-                fontSize: 13, display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                padding: '12px 0', borderBottom: i < arr.length - 1 ? '1px solid #EDEFED' : 'none',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <Globe2 size={16} color={isActive ? '#0F6E6A' : '#8B95A1'} />
+              <div key={r.id || r.region} className={`text-xs flex justify-between items-center py-3 ${
+                i < arr.length - 1 ? 'border-b border-[#EDEFED]' : ''
+              }`}>
+                <div className="flex items-center gap-2.5">
+                  <Globe2 size={16} className={isActive ? 'text-teal-700' : 'text-gray-400'} />
                   <div>
-                    <span style={{ color: '#1B2430', fontWeight: 500 }}>{regionNameMap[r.region] || r.region}</span>
+                    <span className="text-[#1B2430] font-medium">{regionNameMap[r.region] || r.region}</span>
                     {r.region === 'INDIA' && (
-                      <span style={{ marginLeft: 8, fontSize: 10, color: '#0F6E6A', background: '#E4F1F0', padding: '1px 6px', borderRadius: 4, fontWeight: 600 }}>Primary</span>
+                      <span className="ml-2 omni-badge omni-badge-teal text-[10px] py-0 px-1.5">Primary</span>
                     )}
                   </div>
                 </div>
@@ -354,24 +350,16 @@ export function SettingsView() {
                 {isAdmin ? (
                   <button
                     onClick={() => handleToggleClick(r)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 6,
-                      fontSize: 11.5, fontWeight: 700, padding: '4px 12px', borderRadius: 999,
-                      border: '1px solid', cursor: 'pointer', transition: 'all 0.15s ease',
-                      color: isActive ? '#0F6E6A' : '#5B6672',
-                      background: isActive ? '#E4F1F0' : '#EDEFED',
-                      borderColor: isActive ? '#BCE3E0' : '#D5DCD8',
-                    }}
+                    className={`omni-badge transition-all cursor-pointer ${
+                      isActive ? 'omni-badge-teal' : 'omni-badge-rose'
+                    }`}
+                    aria-label={`Toggle pod status for ${r.region}, currently ${r.status}`}
                   >
                     <span>{r.status}</span>
-                    <span style={{ fontSize: 10, opacity: 0.75 }}> (Click to toggle)</span>
+                    <span className="text-[10px] opacity-75 ml-1">(Toggle)</span>
                   </button>
                 ) : (
-                  <span style={{
-                    fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
-                    color: isActive ? '#0F6E6A' : '#8B95A1',
-                    background: isActive ? '#E4F1F0' : '#EDEFED',
-                  }}>
+                  <span className={`omni-badge ${isActive ? 'omni-badge-teal' : 'omni-badge-rose'}`}>
                     {r.status}
                   </span>
                 )}
@@ -383,38 +371,25 @@ export function SettingsView() {
 
       {/* Infrastructure & Billing Confirmation Modal */}
       {selectedPod && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(3px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
-        }}>
-          <div className="omni-fade-in" style={{
-            background: '#FFFFFF', borderRadius: 12, width: '100%', maxWidth: 480,
-            padding: 24, boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-            border: '1px solid #E2E6E4',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-              <div style={{
-                width: 36, height: 36, borderRadius: 9, background: '#FCEFD9',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                <AlertTriangle size={20} color="#B5750A" />
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="omni-fade-in bg-white rounded-xl w-full max-w-md p-6 shadow-xl border border-[#E2E6E4]">
+            <div className="flex items-center gap-2.5 mb-3.5">
+              <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle size={20} className="text-amber-600" />
               </div>
               <div>
-                <h3 style={{ fontSize: 15, fontWeight: 600, color: '#1B2430', margin: 0 }}>
+                <h3 className="text-sm font-semibold text-[#1B2430] m-0">
                   Confirm Pod Status Toggle
                 </h3>
-                <span style={{ fontSize: 12, color: '#5B6672' }}>
+                <span className="text-xs text-[#5B6672]">
                   {regionNameMap[selectedPod.region]} · <span className="omni-mono">{selectedPod.status}</span> → <span className="omni-mono">{selectedPod.status === PodStatus.ACTIVE ? PodStatus.INACTIVE : PodStatus.ACTIVE}</span>
                 </span>
               </div>
             </div>
 
             {/* Cost Projection & Manual Provisioning Notice (Cost Projection doc §6) */}
-            <div style={{
-              background: '#FAFBFB', border: '1px solid #E2E6E4', borderRadius: 8,
-              padding: '12px 14px', fontSize: 12.5, color: '#5B6672', lineHeight: 1.5, marginBottom: 16,
-            }}>
-              <strong style={{ color: '#1B2430', display: 'block', marginBottom: 4 }}>
+            <div className="bg-[#FAFBFB] border border-[#E2E6E4] rounded-lg p-3 text-xs text-[#5B6672] leading-relaxed mb-4">
+              <strong className="text-[#1B2430] block mb-1">
                 Billing & Cloud Infrastructure Decision Notice:
               </strong>
               Activating or deactivating a regional hosting pod is a billing and cloud infrastructure decision requiring manual cloud provisioning. This action updates the platform status record in the database only and does not automatically provision or de-provision cloud resources.
@@ -422,31 +397,27 @@ export function SettingsView() {
 
             {/* Modal Error State (e.g. Active Pod Guard violation) */}
             {modalError && (
-              <div style={{
-                background: '#F8E6E8', border: '1px solid #ECA8B0', borderRadius: 8,
-                padding: '10px 14px', color: '#B23A48', fontSize: 12.5, marginBottom: 16,
-                display: 'flex', alignItems: 'center', gap: 8,
-              }}>
-                <ShieldAlert size={16} style={{ flexShrink: 0 }} />
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-xs mb-4 flex items-center gap-2">
+                <ShieldAlert size={16} className="flex-shrink-0" />
                 <span>{modalError}</span>
               </div>
             )}
 
             {/* Actions */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+            <div className="flex justify-end gap-2.5">
               <button
                 disabled={updating}
                 onClick={() => setSelectedPod(null)}
-                className="omni-btn-secondary"
-                style={{ fontSize: 12.5 }}
+                className="omni-btn-secondary text-xs"
               >
                 Cancel
               </button>
               <button
                 disabled={updating}
                 onClick={handleConfirmToggle}
-                className="omni-btn-primary"
-                style={{ fontSize: 12.5, background: selectedPod.status === PodStatus.ACTIVE ? '#B23A48' : '#0F6E6A' }}
+                className={`omni-btn-primary text-xs ${
+                  selectedPod.status === PodStatus.ACTIVE ? 'bg-red-700 hover:bg-red-800' : 'bg-teal-700 hover:bg-teal-800'
+                }`}
               >
                 {updating ? 'Updating Status...' : selectedPod.status === PodStatus.ACTIVE ? 'Confirm Deactivation' : 'Confirm Activation'}
               </button>
@@ -457,3 +428,4 @@ export function SettingsView() {
     </div>
   );
 }
+

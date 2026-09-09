@@ -1,9 +1,11 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, Trash2, ShieldAlert, History, Clock } from 'lucide-react';
-import { RiskDto, RiskStatus, RiskScoreBand, CreateRiskDto, UpdateRiskDto, AuditLogEntryDto, AssetDto, PaginatedAssetsDto } from '@omnigrc/shared';
+import { RiskDto, RiskStatus, AssetDto, AuditLogEntryDto, CreateRiskDto, UpdateRiskDto } from '@omnigrc/shared';
 import { apiRequest } from '@/lib/api-client';
+import { useToast } from '@/context/toast-context';
+import { ShieldAlert, X, Trash2, History, Clock } from 'lucide-react';
+
 
 interface RiskDrawerProps {
   risk: RiskDto | null; // null = Create Mode, RiskDto = Edit/Detail Mode
@@ -29,6 +31,7 @@ export const IMPACT_LABELS: Record<number, string> = {
 };
 
 export function RiskDrawer({ risk, isOpen, onClose, onSuccess }: RiskDrawerProps) {
+  const { showToast } = useToast();
   const isEdit = Boolean(risk);
 
   const [title, setTitle] = useState('');
@@ -46,6 +49,10 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess }: RiskDrawerProps
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Form Validation State
+  const [titleTouched, setTitleTouched] = useState(false);
+  const [ownerTouched, setOwnerTouched] = useState(false);
 
   // Fetch available assets for dropdown selection
   useEffect(() => {
@@ -84,20 +91,28 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess }: RiskDrawerProps
       setAuditLogs([]);
     }
     setErrorMsg(null);
+    setTitleTouched(false);
+    setOwnerTouched(false);
   }, [risk, isOpen]);
 
   if (!isOpen) return null;
 
   const currentScore = likelihood * impact;
   const currentScoreBand = currentScore >= 15 ? RiskScoreBand.HIGH : currentScore >= 8 ? RiskScoreBand.MEDIUM : RiskScoreBand.LOW;
-  const badgeColors = currentScoreBand === RiskScoreBand.HIGH
-    ? { bg: '#F8E6E8', color: '#B23A48' }
+  const badgeClass = currentScoreBand === RiskScoreBand.HIGH
+    ? 'omni-badge-rose'
     : currentScoreBand === RiskScoreBand.MEDIUM
-    ? { bg: '#FCEFD9', color: '#B5750A' }
-    : { bg: '#E4F1F0', color: '#0F6E6A' };
+    ? 'omni-badge-amber'
+    : 'omni-badge-teal';
+
+  const isTitleInvalid = titleTouched && !title.trim();
+  const isOwnerInvalid = ownerTouched && !owner.trim();
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    setTitleTouched(true);
+    setOwnerTouched(true);
+
     if (!title.trim() || !owner.trim() || saving) return;
 
     setSaving(true);
@@ -119,6 +134,7 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess }: RiskDrawerProps
           method: 'PATCH',
           body: JSON.stringify(payload),
         });
+        showToast('Risk updated');
       } else {
         const payload: CreateRiskDto = {
           title: title.trim(),
@@ -134,11 +150,12 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess }: RiskDrawerProps
           method: 'POST',
           body: JSON.stringify(payload),
         });
+        showToast('Risk created');
       }
       onSuccess();
       onClose();
     } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to save risk');
+      setErrorMsg(err.message || 'Failed to save risk. Check entries and network connection.');
     } finally {
       setSaving(false);
     }
@@ -153,6 +170,7 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess }: RiskDrawerProps
 
     try {
       await apiRequest(`/risks/${risk.id}`, { method: 'DELETE' });
+      showToast('Risk deleted');
       onSuccess();
       onClose();
     } catch (err: any) {
@@ -167,10 +185,7 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess }: RiskDrawerProps
       position: 'fixed', inset: 0, zIndex: 50, display: 'flex', justifyContent: 'flex-end',
       background: 'rgba(15, 26, 46, 0.4)', backdropFilter: 'blur(2px)',
     }}>
-      <div className="omni-fade-in" style={{
-        width: 500, maxWidth: '100%', background: '#FFFFFF', height: '100%',
-        display: 'flex', flexDirection: 'column', boxShadow: '-8px 0 24px rgba(0,0,0,0.12)',
-      }}>
+      <div className="omni-fade-in w-full sm:max-w-xl h-full bg-white flex flex-col shadow-2xl">
         {/* Header */}
         <div style={{
           height: 60, borderBottom: '1px solid #E2E6E4', padding: '0 20px',
@@ -178,17 +193,23 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess }: RiskDrawerProps
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{
-              width: 32, height: 32, borderRadius: 8, background: '#FCEFD9', color: '#B5750A',
+              width: 32, height: 32, borderRadius: 8, background: '#FCEFD9', color: '#8F5900',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
               <ShieldAlert size={16} />
             </div>
-            <h2 style={{ fontSize: 16, fontWeight: 600, color: '#1B2430' }}>
-              {isEdit ? 'Risk Details' : 'New Risk Entry'}
-            </h2>
+            <div>
+              <h2 style={{ fontSize: 16, fontWeight: 600, color: '#1B2430' }}>
+                {isEdit ? 'Risk Details' : 'New Risk Entry'}
+              </h2>
+              <p style={{ fontSize: 11.5, color: '#5B6672' }}>
+                {isEdit ? 'Update score, likelihood × impact matrix, or treatment plan' : 'Log a risk event and assign severity rating'}
+              </p>
+            </div>
           </div>
           <button
             onClick={onClose}
+            aria-label="Close drawer"
             style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#5B6672' }}
           >
             <X size={18} />
@@ -200,24 +221,29 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess }: RiskDrawerProps
           {errorMsg && (
             <div style={{
               padding: '10px 12px', background: '#F8E6E8', border: '1px solid #B23A48',
-              borderRadius: 6, color: '#B23A48', fontSize: 13, marginBottom: 16,
+              borderRadius: 6, color: '#801F2B', fontSize: 13, marginBottom: 16,
             }}>
               {errorMsg}
             </div>
           )}
 
           <form id="risk-form" onSubmit={handleSave}>
-            <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
-              Risk Title *
-            </label>
-            <input
-              className="omni-input"
-              placeholder="e.g. Unencrypted Patient Health Data in Transit"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              required
-              style={{ marginBottom: 16 }}
-            />
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
+                Risk Title *
+              </label>
+              <input
+                className={`omni-input ${isTitleInvalid ? 'border-rose-500' : ''}`}
+                placeholder="e.g. Unencrypted Patient Health Data in Transit"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                onBlur={() => setTitleTouched(true)}
+                required
+              />
+              {isTitleInvalid && (
+                <span className="text-xs text-rose-600 font-medium mt-1 block">Risk title is required.</span>
+              )}
+            </div>
 
             <div style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -225,13 +251,10 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess }: RiskDrawerProps
             }}>
               <span style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672' }}>Calculated Risk Score</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span className="omni-mono" style={{ fontSize: 16, fontWeight: 700, color: badgeColors.color }}>
+                <span className="omni-mono" style={{ fontSize: 16, fontWeight: 700 }}>
                   {currentScore}
                 </span>
-                <span style={{
-                  fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
-                  background: badgeColors.bg, color: badgeColors.color,
-                }}>
+                <span className={badgeClass}>
                   {currentScoreBand}
                 </span>
               </div>
@@ -291,12 +314,16 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess }: RiskDrawerProps
                   Risk Owner *
                 </label>
                 <input
-                  className="omni-input"
+                  className={`omni-input ${isOwnerInvalid ? 'border-rose-500' : ''}`}
                   placeholder="e.g. SecOps Team"
                   value={owner}
                   onChange={(e) => setOwner(e.target.value)}
+                  onBlur={() => setOwnerTouched(true)}
                   required
                 />
+                {isOwnerInvalid && (
+                  <span className="text-xs text-rose-600 font-medium mt-1 block">Risk owner team or person is required.</span>
+                )}
               </div>
             </div>
 
@@ -415,3 +442,4 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess }: RiskDrawerProps
     </div>
   );
 }
+

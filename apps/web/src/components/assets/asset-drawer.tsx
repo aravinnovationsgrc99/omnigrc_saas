@@ -1,9 +1,13 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, Trash2, Shield, History, Clock } from 'lucide-react';
-import { AssetDto, AssetType, AssetCriticality, CreateAssetDto, UpdateAssetDto, AuditLogEntryDto } from '@omnigrc/shared';
+import { AssetDto, AssetType, AssetCriticality, AuditLogEntryDto, CreateAssetDto, UpdateAssetDto } from '@omnigrc/shared';
+
 import { apiRequest } from '@/lib/api-client';
+import { useToast } from '@/context/toast-context';
+import { X, Server, Trash2, ShieldAlert, Shield, History, Clock } from 'lucide-react';
+
+
 
 interface AssetDrawerProps {
   asset: AssetDto | null; // null = Create Mode, AssetDto = Edit/Detail Mode
@@ -13,7 +17,10 @@ interface AssetDrawerProps {
 }
 
 export function AssetDrawer({ asset, isOpen, onClose, onSuccess }: AssetDrawerProps) {
+  const { showToast, addToast } = useToast();
   const isEdit = Boolean(asset);
+
+
 
   const [name, setName] = useState('');
   const [type, setType] = useState<AssetType>(AssetType.SOFTWARE);
@@ -28,6 +35,10 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess }: AssetDrawerPr
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Form Validation State
+  const [nameTouched, setNameTouched] = useState(false);
+  const [ownerTouched, setOwnerTouched] = useState(false);
 
   useEffect(() => {
     if (asset) {
@@ -56,12 +67,20 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess }: AssetDrawerPr
       setAuditLogs([]);
     }
     setErrorMsg(null);
+    setNameTouched(false);
+    setOwnerTouched(false);
   }, [asset, isOpen]);
 
   if (!isOpen) return null;
 
+  const isNameInvalid = nameTouched && !name.trim();
+  const isOwnerInvalid = ownerTouched && !owner.trim();
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    setNameTouched(true);
+    setOwnerTouched(true);
+
     if (!name.trim() || !owner.trim() || saving) return;
 
     setSaving(true);
@@ -82,6 +101,7 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess }: AssetDrawerPr
           method: 'PATCH',
           body: JSON.stringify(payload),
         });
+        showToast('Asset updated');
       } else {
         const payload: CreateAssetDto = {
           name: name.trim(),
@@ -96,11 +116,12 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess }: AssetDrawerPr
           method: 'POST',
           body: JSON.stringify(payload),
         });
+        showToast('Asset created');
       }
       onSuccess();
       onClose();
     } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to save asset');
+      setErrorMsg(err.message || 'Failed to save asset. Check your entries and network connection.');
     } finally {
       setSaving(false);
     }
@@ -115,6 +136,7 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess }: AssetDrawerPr
 
     try {
       await apiRequest(`/assets/${asset.id}`, { method: 'DELETE' });
+      showToast('Asset deleted');
       onSuccess();
       onClose();
     } catch (err: any) {
@@ -129,10 +151,7 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess }: AssetDrawerPr
       position: 'fixed', inset: 0, zIndex: 50, display: 'flex', justifyContent: 'flex-end',
       background: 'rgba(15, 26, 46, 0.4)', backdropFilter: 'blur(2px)',
     }}>
-      <div className="omni-fade-in" style={{
-        width: 480, maxWidth: '100%', background: '#FFFFFF', height: '100%',
-        display: 'flex', flexDirection: 'column', boxShadow: '-8px 0 24px rgba(0,0,0,0.12)',
-      }}>
+      <div className="omni-fade-in w-full sm:max-w-xl h-full bg-white flex flex-col shadow-2xl">
         {/* Header */}
         <div style={{
           height: 60, borderBottom: '1px solid #E2E6E4', padding: '0 20px',
@@ -145,12 +164,18 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess }: AssetDrawerPr
             }}>
               <Shield size={16} />
             </div>
-            <h2 style={{ fontSize: 16, fontWeight: 600, color: '#1B2430' }}>
-              {isEdit ? 'Asset Details' : 'New Asset'}
-            </h2>
+            <div>
+              <h2 style={{ fontSize: 16, fontWeight: 600, color: '#1B2430' }}>
+                {isEdit ? 'Asset Details' : 'New Asset'}
+              </h2>
+              <p style={{ fontSize: 11.5, color: '#5B6672' }}>
+                {isEdit ? 'Update metadata, criticality, or view audit logs' : 'Register a new infrastructure or software asset'}
+              </p>
+            </div>
           </div>
           <button
             onClick={onClose}
+            aria-label="Close drawer"
             style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#5B6672' }}
           >
             <X size={18} />
@@ -162,24 +187,29 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess }: AssetDrawerPr
           {errorMsg && (
             <div style={{
               padding: '10px 12px', background: '#F8E6E8', border: '1px solid #B23A48',
-              borderRadius: 6, color: '#B23A48', fontSize: 13, marginBottom: 16,
+              borderRadius: 6, color: '#801F2B', fontSize: 13, marginBottom: 16,
             }}>
               {errorMsg}
             </div>
           )}
 
           <form id="asset-form" onSubmit={handleSave}>
-            <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
-              Asset Name *
-            </label>
-            <input
-              className="omni-input"
-              placeholder="e.g. AWS Production Cloud Infrastructure"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              style={{ marginBottom: 16 }}
-            />
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
+                Asset Name *
+              </label>
+              <input
+                className={`omni-input ${isNameInvalid ? 'border-rose-500' : ''}`}
+                placeholder="e.g. AWS Production Cloud Infrastructure"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                onBlur={() => setNameTouched(true)}
+                required
+              />
+              {isNameInvalid && (
+                <span className="text-xs text-rose-600 font-medium mt-1 block">Asset name is required.</span>
+              )}
+            </div>
 
             <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
               <div style={{ flex: 1 }}>
@@ -215,17 +245,22 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess }: AssetDrawerPr
               </div>
             </div>
 
-            <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
-              Owner (Team / Individual) *
-            </label>
-            <input
-              className="omni-input"
-              placeholder="e.g. DevOps Team or Priya Nair"
-              value={owner}
-              onChange={(e) => setOwner(e.target.value)}
-              required
-              style={{ marginBottom: 16 }}
-            />
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
+                Owner (Team / Individual) *
+              </label>
+              <input
+                className={`omni-input ${isOwnerInvalid ? 'border-rose-500' : ''}`}
+                placeholder="e.g. DevOps Team or Priya Nair"
+                value={owner}
+                onChange={(e) => setOwner(e.target.value)}
+                onBlur={() => setOwnerTouched(true)}
+                required
+              />
+              {isOwnerInvalid && (
+                <span className="text-xs text-rose-600 font-medium mt-1 block">Owner team or person is required.</span>
+              )}
+            </div>
 
             <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
               <div style={{ flex: 1 }}>
@@ -339,3 +374,4 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess }: AssetDrawerPr
     </div>
   );
 }
+

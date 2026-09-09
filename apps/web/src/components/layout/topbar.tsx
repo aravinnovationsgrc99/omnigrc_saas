@@ -1,12 +1,16 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Building2, ChevronDown, LogOut, Bell, CheckCheck, Clock } from 'lucide-react';
+import { Building2, ChevronDown, LogOut, Bell, CheckCheck, Clock, Menu } from 'lucide-react';
 import { useAuth } from '@/context/auth-context';
 import { apiRequest } from '@/lib/api-client';
 import { NotificationDto, PaginatedNotificationsDto, NotificationType } from '@omnigrc/shared';
 
-export function Topbar() {
+interface TopbarProps {
+  onToggleMobileSidebar?: () => void;
+}
+
+export function Topbar({ onToggleMobileSidebar }: TopbarProps) {
   const { user, organization, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -109,13 +113,13 @@ export function Topbar() {
   const getNotifBadgeStyle = (type: NotificationType) => {
     switch (type) {
       case NotificationType.MAPPING_OVERRIDDEN:
-        return { bg: '#FCEFD9', color: '#B5750A', label: 'Override' };
+        return { bg: '#FCEFD9', color: '#8F5900', label: 'Override' };
       case NotificationType.POD_STATUS_CHANGED:
-        return { bg: '#E4F1F0', color: '#0F6E6A', label: 'Pod Change' };
+        return { bg: '#E4F1F0', color: '#0C5A56', label: 'Pod Change' };
       case NotificationType.TASK_ASSIGNED:
         return { bg: '#EBF3FF', color: '#1E64D4', label: 'Task' };
       case NotificationType.DUE_DATE_REMINDER:
-        return { bg: '#F8E6E8', color: '#B23A48', label: 'Due Soon' };
+        return { bg: '#F8E6E8', color: '#801F2B', label: 'Due Soon' };
       default:
         return { bg: '#EDEFED', color: '#5B6672', label: 'System' };
     }
@@ -126,10 +130,22 @@ export function Topbar() {
       height: 56, minHeight: 56, borderBottom: '1px solid #E2E6E4', background: '#FFFFFF',
       display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 22px',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, fontWeight: 500, color: '#1B2430' }}>
-        <Building2 size={15} color="#5B6672" />
-        {orgName}
-        <span style={{ color: '#8B95A1', fontWeight: 400 }}>· Pilot workspace</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 13.5, fontWeight: 500, color: '#1B2430' }}>
+        {onToggleMobileSidebar && (
+          <button
+            onClick={onToggleMobileSidebar}
+            className="lg:hidden omni-btn-ghost"
+            style={{ padding: 6 }}
+            aria-label="Toggle Navigation Sidebar"
+          >
+            <Menu size={18} />
+          </button>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Building2 size={15} color="#5B6672" />
+          {orgName}
+          <span style={{ color: '#8B95A1', fontWeight: 400 }}>· Pilot workspace</span>
+        </div>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -137,6 +153,8 @@ export function Topbar() {
         <div style={{ position: 'relative' }}>
           <button
             onClick={handleToggleNotif}
+            aria-label={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ''}`}
+            aria-expanded={notifOpen}
             style={{
               background: notifOpen ? '#F4F6F5' : 'transparent', border: 'none', borderRadius: 8,
               padding: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -156,6 +174,7 @@ export function Topbar() {
               </span>
             )}
           </button>
+
 
           {/* Notifications Dropdown Popover */}
           {notifOpen && (

@@ -1,10 +1,17 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { ArrowLeft, Sparkles, CheckCircle2, RotateCw, ShieldCheck, Layers, GitMerge } from 'lucide-react';
-import { ControlDto, ControlFrameworkMappingDto, FrameworkCode, MappingStatus, ModelTier, MappingJobStatusDto } from '@omnigrc/shared';
+import { FrameworkCode, ControlDto, ControlFrameworkMappingDto, MappingJobStatusDto, MappingStatus, ModelTier } from '@omnigrc/shared';
+
 import { apiRequest } from '@/lib/api-client';
+import { useToast } from '@/context/toast-context';
+import { InlineErrorState } from '@/components/ui/inline-error-state';
+import { ArrowLeft, Sparkles, RotateCw, CheckCircle2, AlertTriangle, ShieldAlert, Edit3 } from 'lucide-react';
 import { OverrideClauseModal } from './override-clause-modal';
+
+
+
+
 
 interface ControlDetailViewProps {
   controlId: string;
@@ -21,8 +28,10 @@ const FRAMEWORK_DISPLAY: Record<FrameworkCode, { name: string; subtitle: string;
 };
 
 export function ControlDetailView({ controlId, onBack }: ControlDetailViewProps) {
+  const { showToast } = useToast();
   const [control, setControl] = useState<ControlDto | null>(null);
   const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Job Polling State
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
@@ -35,11 +44,13 @@ export function ControlDetailView({ controlId, onBack }: ControlDetailViewProps)
   const [overrideMappingId, setOverrideMappingId] = useState<string | null>(null);
 
   const fetchControl = useCallback(async () => {
+    setErrorMsg(null);
     try {
       const data = await apiRequest<ControlDto>(`/controls/${controlId}`);
       setControl(data);
-    } catch {
+    } catch (err: any) {
       setControl(null);
+      setErrorMsg(err?.message || 'Failed to fetch control details. Check connection or retry.');
     } finally {
       setLoading(false);
     }
@@ -62,11 +73,12 @@ export function ControlDetailView({ controlId, onBack }: ControlDetailViewProps)
         if (res.status === 'done') {
           clearInterval(interval);
           setActiveJobId(null);
+          showToast('Generated AI mapping suggestions');
           fetchControl();
         } else if (res.status === 'failed') {
           clearInterval(interval);
           setActiveJobId(null);
-          alert(`AI Suggestion job failed: ${res.error || 'Unknown error'}`);
+          setErrorMsg(`AI suggestion job failed: ${res.error || 'Provider execution error'}`);
         }
       } catch {
         clearInterval(interval);
@@ -75,10 +87,11 @@ export function ControlDetailView({ controlId, onBack }: ControlDetailViewProps)
     }, 1500);
 
     return () => clearInterval(interval);
-  }, [activeJobId, controlId, fetchControl]);
+  }, [activeJobId, controlId, fetchControl, showToast]);
 
   const handleTriggerSuggestMappings = async () => {
     if (activeJobId) return;
+    setErrorMsg(null);
     try {
       const res = await apiRequest<{ jobId: string }>(`/controls/${controlId}/suggest-mappings`, {
         method: 'POST',
@@ -87,7 +100,7 @@ export function ControlDetailView({ controlId, onBack }: ControlDetailViewProps)
       setJobStatus('queued');
       setJobProgress(10);
     } catch (err: any) {
-      alert(err.message || 'Failed to trigger AI suggestions');
+      setErrorMsg(err.message || 'Failed to trigger AI suggestions');
     }
   };
 
@@ -97,9 +110,10 @@ export function ControlDetailView({ controlId, onBack }: ControlDetailViewProps)
         method: 'PATCH',
         body: JSON.stringify({ decision: 'APPROVE' }),
       });
+      showToast('Approved control mapping');
       fetchControl();
     } catch (err: any) {
-      alert(err.message || 'Failed to approve mapping');
+      setErrorMsg(err.message || 'Failed to approve mapping');
     }
   };
 
@@ -121,27 +135,29 @@ export function ControlDetailView({ controlId, onBack }: ControlDetailViewProps)
           overrideClauseId: clauseId,
         }),
       });
+      showToast('Mapping overridden');
       setOverrideModalOpen(false);
       setOverrideMappingId(null);
       fetchControl();
     } catch (err: any) {
-      alert(err.message || 'Failed to override mapping');
+      setErrorMsg(err.message || 'Failed to override mapping');
     }
   };
 
-  const getConfidenceBadge = (score?: number | null) => {
+  const getConfidenceBadgeClass = (score?: number | null) => {
     if (score === null || score === undefined) {
-      return { bg: '#EDEFED', color: '#5B6672', text: 'Human Override' };
+      return { className: 'omni-badge-teal', text: 'Human Override' };
     }
     const percent = Math.round(score * 100);
     if (percent >= 85) {
-      return { bg: '#E4F1F0', color: '#0F6E6A', text: `${percent}% Confidence` };
+      return { className: 'omni-badge-teal', text: `${percent}% Confidence` };
     } else if (percent >= 60) {
-      return { bg: '#FCEFD9', color: '#B5750A', text: `${percent}% Confidence` };
+      return { className: 'omni-badge-amber', text: `${percent}% Confidence` };
     } else {
-      return { bg: '#F8E6E8', color: '#B23A48', text: `${percent}% Confidence` };
+      return { className: 'omni-badge-rose', text: `${percent}% Confidence` };
     }
   };
+
 
   if (loading) {
     return (
@@ -262,7 +278,8 @@ export function ControlDetailView({ controlId, onBack }: ControlDetailViewProps)
         {allFrameworks.map((fwCode) => {
           const info = FRAMEWORK_DISPLAY[fwCode];
           const mapping = mappingsByFw.get(fwCode);
-          const badge = getConfidenceBadge(mapping?.confidenceScore);
+          const badge = getConfidenceBadgeClass(mapping?.confidenceScore);
+
 
           return (
             <div
@@ -290,13 +307,11 @@ export function ControlDetailView({ controlId, onBack }: ControlDetailViewProps)
                   </div>
 
                   {mapping && (
-                    <span style={{
-                      fontSize: 10.5, fontWeight: 700, padding: '3px 9px', borderRadius: 999,
-                      background: badge.bg, color: badge.color, letterSpacing: 0.4,
-                    }}>
+                    <span className={`omni-badge ${badge.className}`}>
                       {badge.text}
                     </span>
                   )}
+
                 </div>
 
                 {/* Suggested Clause Content */}

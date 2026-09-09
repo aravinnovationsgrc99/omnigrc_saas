@@ -1,15 +1,22 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, Plus, Boxes, Filter } from 'lucide-react';
-import { AssetDto, AssetType, AssetCriticality, PaginatedAssetsDto } from '@omnigrc/shared';
+import { AssetDto, PaginatedAssetsDto, AssetType, AssetCriticality } from '@omnigrc/shared';
 import { apiRequest } from '@/lib/api-client';
+import { useToast } from '@/context/toast-context';
+import { SkeletonTable } from '@/components/ui/skeleton';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InlineErrorState } from '@/components/ui/inline-error-state';
 import { AssetDrawer } from './asset-drawer';
+import { Plus, Search, Filter, Boxes } from 'lucide-react';
+
 
 export function AssetListView() {
+  const { showToast } = useToast();
   const [assets, setAssets] = useState<AssetDto[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Filters & Search
   const [search, setSearch] = useState('');
@@ -22,6 +29,7 @@ export function AssetListView() {
 
   const fetchAssets = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const params = new URLSearchParams();
       if (search.trim()) params.set('search', search.trim());
@@ -32,9 +40,10 @@ export function AssetListView() {
       const data = await apiRequest<PaginatedAssetsDto>(`/assets${queryString}`);
       setAssets(data.items);
       setTotalCount(data.total);
-    } catch {
+    } catch (err: any) {
       setAssets([]);
       setTotalCount(0);
+      setError(err?.message || 'Failed to fetch asset inventory from server. Check your connection or pod status and try again.');
     } finally {
       setLoading(false);
     }
@@ -54,15 +63,15 @@ export function AssetListView() {
     setIsDrawerOpen(true);
   };
 
-  const getCriticalityBadge = (criticality: AssetCriticality) => {
+  const getCriticalityBadgeClass = (criticality: AssetCriticality) => {
     switch (criticality) {
       case AssetCriticality.HIGH:
-        return { color: '#B23A48', bg: '#F8E6E8' };
+        return 'omni-badge-rose';
       case AssetCriticality.MEDIUM:
-        return { color: '#B5750A', bg: '#FCEFD9' };
+        return 'omni-badge-amber';
       case AssetCriticality.LOW:
       default:
-        return { color: '#0F6E6A', bg: '#E4F1F0' };
+        return 'omni-badge-teal';
     }
   };
 
@@ -99,6 +108,7 @@ export function AssetListView() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ paddingLeft: 32 }}
+            aria-label="Search assets"
           />
         </div>
 
@@ -110,6 +120,7 @@ export function AssetListView() {
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
             style={{ width: 140 }}
+            aria-label="Filter by asset type"
           >
             <option value="">All Types</option>
             <option value={AssetType.SOFTWARE}>SOFTWARE</option>
@@ -127,6 +138,7 @@ export function AssetListView() {
             value={criticalityFilter}
             onChange={(e) => setCriticalityFilter(e.target.value)}
             style={{ width: 150 }}
+            aria-label="Filter by criticality"
           >
             <option value="">All Criticality</option>
             <option value={AssetCriticality.HIGH}>HIGH</option>
@@ -136,45 +148,35 @@ export function AssetListView() {
         </div>
       </div>
 
-      {/* Asset Table / Empty State */}
+      {/* Error state */}
+      {error && (
+        <InlineErrorState
+          title="Failed to fetch assets"
+          message={error}
+          onRetry={fetchAssets}
+        />
+      )}
+
+      {/* Loading Skeleton / Table / Empty State */}
       {loading ? (
-        <div style={{
-          background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10,
-          padding: '40px 20px', textAlign: 'center', color: '#8B95A1', fontSize: 13,
-        }}>
-          Loading asset inventory...
-        </div>
-      ) : assets.length === 0 ? (
-        <div style={{
-          background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10,
-          padding: '56px 24px', textAlign: 'center', display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center',
-        }}>
-          <div style={{
-            width: 48, height: 48, borderRadius: 12, background: '#E4F1F0', color: '#0F6E6A',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16,
-          }}>
-            <Boxes size={22} />
-          </div>
-          <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1B2430' }}>No assets tracked yet</h3>
-          <p style={{ fontSize: 13, color: '#5B6672', marginTop: 6, maxWidth: 360, lineHeight: 1.5 }}>
-            {search || typeFilter || criticalityFilter
-              ? 'No assets match your current search or filter criteria. Try clearing filters.'
-              : 'Add your infrastructure, software applications, data stores, and vendors to establish your GRC asset inventory.'}
-          </p>
-          <button
-            onClick={handleOpenCreate}
-            className="omni-btn-primary"
-            style={{ marginTop: 20, display: 'flex', alignItems: 'center', gap: 6 }}
-          >
-            <Plus size={15} /> New Asset
-          </button>
-        </div>
-      ) : (
+        <SkeletonTable rows={5} cols={6} />
+      ) : assets.length === 0 && !error ? (
+        <EmptyState
+          icon={Boxes}
+          title="No assets tracked yet"
+          description={
+            search || typeFilter || criticalityFilter
+              ? 'No assets match your search or filter criteria. Clear filters or add a new asset.'
+              : 'Add your infrastructure, software applications, data stores, and vendors to establish your GRC asset inventory.'
+          }
+          actionLabel="New Asset"
+          onAction={handleOpenCreate}
+        />
+      ) : !error ? (
         <div style={{
           background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10,
           overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-        }}>
+        }} className="overflow-x-auto">
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
             <thead>
               <tr style={{ background: '#F6F7F6', borderBottom: '1px solid #E2E6E4', color: '#5B6672' }}>
@@ -188,18 +190,19 @@ export function AssetListView() {
             </thead>
             <tbody>
               {assets.map((asset, index) => {
-                const badge = getCriticalityBadge(asset.criticality);
+                const badgeClass = getCriticalityBadgeClass(asset.criticality);
                 const isLast = index === assets.length - 1;
                 return (
                   <tr
                     key={asset.id}
                     onClick={() => handleOpenEdit(asset)}
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleOpenEdit(asset); }}
                     style={{
                       borderBottom: isLast ? 'none' : '1px solid #EDEFED',
                       cursor: 'pointer', transition: 'background .12s ease',
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = '#F6F7F6')}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    className="hover:bg-gray-50/80 focus:bg-gray-50 focus:outline-none"
                   >
                     <td style={{ padding: '14px 16px', fontWeight: 600, color: '#1B2430' }}>
                       {asset.name}
@@ -215,10 +218,7 @@ export function AssetListView() {
                       </span>
                     </td>
                     <td style={{ padding: '14px 16px' }}>
-                      <span style={{
-                        fontSize: 10.5, fontWeight: 700, padding: '3px 8px', borderRadius: 999,
-                        color: badge.color, background: badge.bg, letterSpacing: 0.4,
-                      }}>
+                      <span className={badgeClass}>
                         {asset.criticality}
                       </span>
                     </td>
@@ -240,15 +240,18 @@ export function AssetListView() {
             <span>Tenant scoped</span>
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* Slide-over Drawer */}
       <AssetDrawer
         asset={selectedAsset}
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
-        onSuccess={fetchAssets}
+        onSuccess={() => {
+          fetchAssets();
+        }}
       />
     </div>
   );
 }
+

@@ -1,10 +1,18 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Search, Calendar, AlertCircle, Clock, CheckCircle2, Shield, MoreHorizontal, User, Filter } from 'lucide-react';
-import { ComplianceTaskDto, TaskStatus, ComplianceTaskSummaryDto, PaginatedComplianceTasksDto } from '@omnigrc/shared';
+import { ComplianceTaskDto, PaginatedComplianceTasksDto, ComplianceTaskSummaryDto, TaskStatus } from '@omnigrc/shared';
+
 import { apiRequest } from '@/lib/api-client';
+import { useToast } from '@/context/toast-context';
+import { SkeletonBoard } from '@/components/ui/skeleton';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InlineErrorState } from '@/components/ui/inline-error-state';
 import { TaskDrawer } from './task-drawer';
+import { Plus, Search, Shield, Calendar } from 'lucide-react';
+
+
+
 
 const KANBAN_COLUMNS: Array<{ status: TaskStatus; title: string; color: string; border: string }> = [
   { status: TaskStatus.NOT_STARTED, title: 'Not Started', color: '#5B6672', border: '#D2D7D5' },
@@ -22,10 +30,10 @@ function getOwnerInitials(name: string): string {
   return name.substring(0, 2).toUpperCase();
 }
 
-function getDueDateBadge(dueDateStr?: string | null, status?: TaskStatus) {
+function getDueDateBadgeClass(dueDateStr?: string | null, status?: TaskStatus) {
   if (!dueDateStr) return null;
   if (status === TaskStatus.COMPLETE) {
-    return { label: new Date(dueDateStr).toLocaleDateString(), color: '#5B6672', bg: '#EDEFED', isOverdue: false };
+    return { label: new Date(dueDateStr).toLocaleDateString(), className: 'omni-badge-teal' };
   }
 
   const due = new Date(dueDateStr);
@@ -33,18 +41,20 @@ function getDueDateBadge(dueDateStr?: string | null, status?: TaskStatus) {
   const diffDays = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
   if (diffDays < 0) {
-    return { label: `Overdue ${Math.abs(diffDays)}d`, color: '#B23A48', bg: '#F8E6E8', isOverdue: true };
+    return { label: `Overdue ${Math.abs(diffDays)}d`, className: 'omni-badge-rose' };
   } else if (diffDays <= 7) {
-    return { label: `Due in ${diffDays}d`, color: '#B5750A', bg: '#FCEFD9', isOverdue: false };
+    return { label: `Due in ${diffDays}d`, className: 'omni-badge-amber' };
   } else {
-    return { label: due.toLocaleDateString(), color: '#5B6672', bg: '#EDEFED', isOverdue: false };
+    return { label: due.toLocaleDateString(), className: 'omni-badge-teal' };
   }
 }
 
 export function ComplianceBoardView() {
+  const { showToast } = useToast();
   const [tasks, setTasks] = useState<ComplianceTaskDto[]>([]);
   const [summary, setSummary] = useState<ComplianceTaskSummaryDto>({ overdue: 0, due30: 0, due60: 0, due90: 0, totalOpen: 0 });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Filters & Search
   const [search, setSearch] = useState('');
@@ -56,6 +66,7 @@ export function ComplianceBoardView() {
 
   const fetchTasksAndSummary = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const [tasksRes, summaryRes] = await Promise.all([
         apiRequest<PaginatedComplianceTasksDto>('/compliance-tasks?limit=150'),
@@ -63,8 +74,9 @@ export function ComplianceBoardView() {
       ]);
       setTasks(tasksRes.items);
       setSummary(summaryRes);
-    } catch {
+    } catch (err: any) {
       setTasks([]);
+      setError(err?.message || 'Failed to fetch compliance board tasks. Check connection or pod status and try again.');
     } finally {
       setLoading(false);
     }
@@ -100,6 +112,7 @@ export function ComplianceBoardView() {
         method: 'PATCH',
         body: JSON.stringify({ status: targetStatus }),
       });
+      showToast(`Task status updated to ${targetStatus.replace('_', ' ')}`);
       fetchTasksAndSummary();
     } catch {
       fetchTasksAndSummary(); // Revert on failure
@@ -117,6 +130,7 @@ export function ComplianceBoardView() {
         method: 'PATCH',
         body: JSON.stringify({ status: targetStatus }),
       });
+      showToast(`Task status updated to ${targetStatus.replace('_', ' ')}`);
       fetchTasksAndSummary();
     } catch {
       fetchTasksAndSummary();
@@ -170,10 +184,10 @@ export function ComplianceBoardView() {
         <div style={{
           flex: 1, minWidth: 160, background: '#FFFFFF', border: '1px solid #F1C7CC', borderRadius: 10, padding: '16px 20px',
         }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: '#B23A48', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#801F2B', textTransform: 'uppercase', letterSpacing: 0.5 }}>
             Overdue Tasks
           </div>
-          <div className="omni-mono" style={{ fontSize: 26, fontWeight: 700, color: '#B23A48', marginTop: 4 }}>
+          <div className="omni-mono" style={{ fontSize: 26, fontWeight: 700, color: '#801F2B', marginTop: 4 }}>
             {summary.overdue}
           </div>
           <div style={{ fontSize: 11.5, color: '#8B95A1', marginTop: 2 }}>Requires immediate action</div>
@@ -182,10 +196,10 @@ export function ComplianceBoardView() {
         <div style={{
           flex: 1, minWidth: 160, background: '#FFFFFF', border: '1px solid #F8E2BC', borderRadius: 10, padding: '16px 20px',
         }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: '#B5750A', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#8F5900', textTransform: 'uppercase', letterSpacing: 0.5 }}>
             Due in 30 Days
           </div>
-          <div className="omni-mono" style={{ fontSize: 26, fontWeight: 700, color: '#B5750A', marginTop: 4 }}>
+          <div className="omni-mono" style={{ fontSize: 26, fontWeight: 700, color: '#8F5900', marginTop: 4 }}>
             {summary.due30}
           </div>
           <div style={{ fontSize: 11.5, color: '#8B95A1', marginTop: 2 }}>Short-term deliverables</div>
@@ -206,10 +220,10 @@ export function ComplianceBoardView() {
         <div style={{
           flex: 1, minWidth: 160, background: '#FFFFFF', border: '1px solid #BEE3E0', borderRadius: 10, padding: '16px 20px',
         }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: '#0F6E6A', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#0C5A56', textTransform: 'uppercase', letterSpacing: 0.5 }}>
             Due in 90 Days
           </div>
-          <div className="omni-mono" style={{ fontSize: 26, fontWeight: 700, color: '#0F6E6A', marginTop: 4 }}>
+          <div className="omni-mono" style={{ fontSize: 26, fontWeight: 700, color: '#0C5A56', marginTop: 4 }}>
             {summary.due90}
           </div>
           <div style={{ fontSize: 11.5, color: '#8B95A1', marginTop: 2 }}>Quarterly targets</div>
@@ -229,153 +243,160 @@ export function ComplianceBoardView() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ paddingLeft: 32 }}
+            aria-label="Filter compliance tasks"
           />
         </div>
       </div>
 
-      {/* 4-Column Kanban Board */}
+      {/* Error state */}
+      {error && (
+        <InlineErrorState
+          title="Failed to fetch compliance tasks"
+          message={error}
+          onRetry={fetchTasksAndSummary}
+        />
+      )}
+
+      {/* 4-Column Kanban Board / Skeleton / Empty State */}
       {loading ? (
-        <div style={{
-          background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10,
-          padding: '40px 20px', textAlign: 'center', color: '#8B95A1', fontSize: 13,
-        }}>
-          Loading compliance board...
-        </div>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, alignItems: 'flex-start' }}>
-          {KANBAN_COLUMNS.map((col) => {
-            const colTasks = filteredTasks.filter((t) => t.status === col.status);
+        <SkeletonBoard columns={4} />
+      ) : tasks.length === 0 && !error ? (
+        <EmptyState
+          icon={Plus}
+          title="No compliance tasks assigned"
+          description={
+            search
+              ? 'No tasks match your search query. Clear search or add a new task.'
+              : 'Create compliance tasks linked to controls and assign owners to drive your roadmap.'
+          }
+          actionLabel="New Task"
+          onAction={handleOpenCreate}
+        />
+      ) : !error ? (
+        <div className="overflow-x-auto pb-4">
+          <div className="min-w-[900px] grid grid-cols-4 gap-4 items-start">
+            {KANBAN_COLUMNS.map((col) => {
+              const colTasks = filteredTasks.filter((t) => t.status === col.status);
 
-            return (
-              <div
-                key={col.status}
-                onDragOver={handleDragOver}
-                onDrop={(e) => handleDrop(e, col.status)}
-                style={{
-                  background: '#F6F7F6', border: '1px solid #E2E6E4', borderRadius: 10,
-                  padding: 14, minHeight: 480, display: 'flex', flexDirection: 'column',
-                }}
-              >
-                {/* Column Header */}
-                <div style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14,
-                  paddingBottom: 10, borderBottom: `2px solid ${col.border}`,
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 13.5, fontWeight: 700, color: col.color }}>{col.title}</span>
-                    <span className="omni-mono" style={{
-                      fontSize: 11, fontWeight: 700, background: '#FFFFFF', color: col.color,
-                      padding: '2px 7px', borderRadius: 999, border: '1px solid #E2E6E4',
-                    }}>
-                      {colTasks.length}
-                    </span>
+              return (
+                <div
+                  key={col.status}
+                  onDragOver={handleDragOver}
+                  onDrop={(e) => handleDrop(e, col.status)}
+                  style={{
+                    background: '#F6F7F6', border: '1px solid #E2E6E4', borderRadius: 10,
+                    padding: 14, minHeight: 480, display: 'flex', flexDirection: 'column',
+                  }}
+                >
+                  {/* Column Header */}
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14,
+                    paddingBottom: 10, borderBottom: `2px solid ${col.border}`,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 13.5, fontWeight: 700, color: col.color }}>{col.title}</span>
+                      <span className="omni-mono" style={{
+                        fontSize: 11, fontWeight: 700, background: '#FFFFFF', color: col.color,
+                        padding: '2px 7px', borderRadius: 999, border: '1px solid #E2E6E4',
+                      }}>
+                        {colTasks.length}
+                      </span>
+                    </div>
                   </div>
-                </div>
 
-                {/* Column Task Cards */}
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {colTasks.map((task) => {
-                    const dueBadge = getDueDateBadge(task.dueDate, task.status);
+                  {/* Column Task Cards */}
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {colTasks.map((task) => {
+                      const dueBadge = getDueDateBadgeClass(task.dueDate, task.status);
 
-                    return (
-                      <div
-                        key={task.id}
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, task.id)}
-                        onClick={() => handleOpenEdit(task)}
-                        style={{
-                          background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 8,
-                          padding: 14, cursor: 'grab', boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-                          transition: 'all .15s ease', position: 'relative',
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.borderColor = '#0F6E6A';
-                          e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.06)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.borderColor = '#E2E6E4';
-                          e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.02)';
-                        }}
-                      >
-                        {/* Task Title */}
-                        <div style={{ fontSize: 13.5, fontWeight: 600, color: '#1B2430', marginBottom: 8, lineHeight: 1.4 }}>
-                          {task.title}
-                        </div>
-
-                        {/* Linked Control Pill */}
-                        {task.controlName && (
-                          <div style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600,
-                            color: '#0F6E6A', background: '#E4F1F0', padding: '3px 8px', borderRadius: 4, marginBottom: 10,
-                            maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                          }}>
-                            <Shield size={11} /> {task.controlName}
+                      return (
+                        <div
+                          key={task.id}
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, task.id)}
+                          onClick={() => handleOpenEdit(task)}
+                          tabIndex={0}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleOpenEdit(task); }}
+                          style={{
+                            background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 8,
+                            padding: 14, cursor: 'grab', boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+                            transition: 'all .15s ease', position: 'relative',
+                          }}
+                          className="hover:border-teal-700 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                        >
+                          {/* Task Title */}
+                          <div style={{ fontSize: 13.5, fontWeight: 600, color: '#1B2430', marginBottom: 8, lineHeight: 1.4 }}>
+                            {task.title}
                           </div>
-                        )}
 
-                        {/* Card Footer: Owner Initials + Due Date + Keyboard Accessibility Move Menu */}
-                        <div style={{
-                          display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4,
-                          paddingTop: 8, borderTop: '1px solid #EDEFED',
-                        }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            {/* Owner Avatar Badge */}
-                            <div style={{
-                              width: 24, height: 24, borderRadius: 999, background: '#16233F', color: '#FFFFFF',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 10.5,
-                            }} title={`Owner: ${task.owner}`}>
-                              {getOwnerInitials(task.owner)}
+                          {/* Linked Control Pill */}
+                          {task.controlName && (
+                            <div className="omni-badge-teal" style={{ marginBottom: 10, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              <Shield size={11} /> {task.controlName}
+                            </div>
+                          )}
+
+                          {/* Card Footer: Owner Initials + Due Date + Keyboard Move Select */}
+                          <div style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4,
+                            paddingTop: 8, borderTop: '1px solid #EDEFED',
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              {/* Owner Avatar Badge */}
+                              <div style={{
+                                width: 24, height: 24, borderRadius: 999, background: '#16233F', color: '#FFFFFF',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 10.5,
+                              }} title={`Owner: ${task.owner}`}>
+                                {getOwnerInitials(task.owner)}
+                              </div>
+
+                              {/* Due Date Badge */}
+                              {dueBadge && (
+                                <span className={dueBadge.className}>
+                                  <Calendar size={10} /> {dueBadge.label}
+                                </span>
+                              )}
                             </div>
 
-                            {/* Due Date Badge */}
-                            {dueBadge && (
-                              <span style={{
-                                fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 999,
-                                background: dueBadge.bg, color: dueBadge.color, display: 'flex', alignItems: 'center', gap: 3,
-                              }}>
-                                <Calendar size={10} /> {dueBadge.label}
-                              </span>
-                            )}
+                            {/* Keyboard Move Column Select (Accessibility) */}
+                            <select
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                handleKeyboardMoveStatus(task.id, e.target.value as TaskStatus);
+                              }}
+                              value={task.status}
+                              aria-label={`Move status for task "${task.title}"`}
+                              style={{
+                                fontSize: 10.5, background: '#F6F7F6', border: '1px solid #E2E6E4', borderRadius: 4,
+                                color: '#5B6672', cursor: 'pointer', padding: '1px 3px',
+                              }}
+                            >
+                              <option value={TaskStatus.NOT_STARTED}>Not Started</option>
+                              <option value={TaskStatus.IN_PROGRESS}>In Progress</option>
+                              <option value={TaskStatus.UNDER_REVIEW}>Under Review</option>
+                              <option value={TaskStatus.COMPLETE}>Complete</option>
+                            </select>
                           </div>
-
-                          {/* Keyboard Move Column Select (Accessibility) */}
-                          <select
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => {
-                              e.stopPropagation();
-                              handleKeyboardMoveStatus(task.id, e.target.value as TaskStatus);
-                            }}
-                            value={task.status}
-                            title="Move column via keyboard"
-                            style={{
-                              fontSize: 10.5, background: '#F6F7F6', border: '1px solid #E2E6E4', borderRadius: 4,
-                              color: '#5B6672', cursor: 'pointer', padding: '1px 3px',
-                            }}
-                          >
-                            <option value={TaskStatus.NOT_STARTED}>Not Started</option>
-                            <option value={TaskStatus.IN_PROGRESS}>In Progress</option>
-                            <option value={TaskStatus.UNDER_REVIEW}>Under Review</option>
-                            <option value={TaskStatus.COMPLETE}>Complete</option>
-                          </select>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
 
-                  {colTasks.length === 0 && (
-                    <div style={{
-                      padding: '28px 12px', border: '1px dashed #D2D7D5', borderRadius: 8,
-                      textAlign: 'center', color: '#8B95A1', fontSize: 12, background: '#FFFFFF',
-                    }}>
-                      No tasks in this stage
-                    </div>
-                  )}
+                    {colTasks.length === 0 && (
+                      <div style={{
+                        padding: '28px 12px', border: '1px dashed #D2D7D5', borderRadius: 8,
+                        textAlign: 'center', color: '#8B95A1', fontSize: 12, background: '#FFFFFF',
+                      }}>
+                        No tasks in this stage
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
-      )}
+      ) : null}
 
       {/* Slide-over Drawer */}
       <TaskDrawer
@@ -387,3 +408,4 @@ export function ComplianceBoardView() {
     </div>
   );
 }
+

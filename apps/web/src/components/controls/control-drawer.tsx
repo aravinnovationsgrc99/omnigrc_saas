@@ -1,9 +1,11 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, Trash2, GitMerge, History, Clock } from 'lucide-react';
-import { ControlDto, CreateControlDto, UpdateControlDto, AuditLogEntryDto } from '@omnigrc/shared';
+import { ControlDto, AuditLogEntryDto, CreateControlDto, UpdateControlDto } from '@omnigrc/shared';
 import { apiRequest } from '@/lib/api-client';
+import { useToast } from '@/context/toast-context';
+import { GitMerge, X, Trash2, History, Clock } from 'lucide-react';
+
 
 interface ControlDrawerProps {
   control: ControlDto | null; // null = Create Mode, ControlDto = Edit Mode
@@ -13,6 +15,7 @@ interface ControlDrawerProps {
 }
 
 export function ControlDrawer({ control, isOpen, onClose, onSuccess }: ControlDrawerProps) {
+  const { showToast } = useToast();
   const isEdit = Boolean(control);
 
   const [name, setName] = useState('');
@@ -24,6 +27,10 @@ export function ControlDrawer({ control, isOpen, onClose, onSuccess }: ControlDr
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Form Validation State
+  const [nameTouched, setNameTouched] = useState(false);
+  const [descTouched, setDescTouched] = useState(false);
 
   useEffect(() => {
     if (control) {
@@ -43,12 +50,20 @@ export function ControlDrawer({ control, isOpen, onClose, onSuccess }: ControlDr
       setAuditLogs([]);
     }
     setErrorMsg(null);
+    setNameTouched(false);
+    setDescTouched(false);
   }, [control, isOpen]);
 
   if (!isOpen) return null;
 
+  const isNameInvalid = nameTouched && !name.trim();
+  const isDescInvalid = descTouched && !description.trim();
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    setNameTouched(true);
+    setDescTouched(true);
+
     if (!name.trim() || !description.trim() || saving) return;
 
     setSaving(true);
@@ -65,6 +80,7 @@ export function ControlDrawer({ control, isOpen, onClose, onSuccess }: ControlDr
           method: 'PATCH',
           body: JSON.stringify(payload),
         });
+        showToast('Control updated');
       } else {
         const payload: CreateControlDto = {
           name: name.trim(),
@@ -75,11 +91,12 @@ export function ControlDrawer({ control, isOpen, onClose, onSuccess }: ControlDr
           method: 'POST',
           body: JSON.stringify(payload),
         });
+        showToast('Control created');
       }
       onSuccess();
       onClose();
     } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to save control');
+      setErrorMsg(err.message || 'Failed to save control. Check entries and network connection.');
     } finally {
       setSaving(false);
     }
@@ -94,6 +111,7 @@ export function ControlDrawer({ control, isOpen, onClose, onSuccess }: ControlDr
 
     try {
       await apiRequest(`/controls/${control.id}`, { method: 'DELETE' });
+      showToast('Control deleted');
       onSuccess();
       onClose();
     } catch (err: any) {
@@ -108,10 +126,7 @@ export function ControlDrawer({ control, isOpen, onClose, onSuccess }: ControlDr
       position: 'fixed', inset: 0, zIndex: 50, display: 'flex', justifyContent: 'flex-end',
       background: 'rgba(15, 26, 46, 0.4)', backdropFilter: 'blur(2px)',
     }}>
-      <div className="omni-fade-in" style={{
-        width: 480, maxWidth: '100%', background: '#FFFFFF', height: '100%',
-        display: 'flex', flexDirection: 'column', boxShadow: '-8px 0 24px rgba(0,0,0,0.12)',
-      }}>
+      <div className="omni-fade-in w-full sm:max-w-xl h-full bg-white flex flex-col shadow-2xl">
         {/* Header */}
         <div style={{
           height: 60, borderBottom: '1px solid #E2E6E4', padding: '0 20px',
@@ -124,11 +139,16 @@ export function ControlDrawer({ control, isOpen, onClose, onSuccess }: ControlDr
             }}>
               <GitMerge size={16} />
             </div>
-            <h2 style={{ fontSize: 16, fontWeight: 600, color: '#1B2430' }}>
-              {isEdit ? 'Control Details' : 'New Security Control'}
-            </h2>
+            <div>
+              <h2 style={{ fontSize: 16, fontWeight: 600, color: '#1B2430' }}>
+                {isEdit ? 'Control Details' : 'New Security Control'}
+              </h2>
+              <p style={{ fontSize: 11.5, color: '#5B6672' }}>
+                {isEdit ? 'Update control statement or category' : 'Register a new control to map against framework standards'}
+              </p>
+            </div>
           </div>
-          <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#5B6672' }}>
+          <button onClick={onClose} aria-label="Close drawer" style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#5B6672' }}>
             <X size={18} />
           </button>
         </div>
@@ -138,24 +158,29 @@ export function ControlDrawer({ control, isOpen, onClose, onSuccess }: ControlDr
           {errorMsg && (
             <div style={{
               padding: '10px 12px', background: '#F8E6E8', border: '1px solid #B23A48',
-              borderRadius: 6, color: '#B23A48', fontSize: 13, marginBottom: 16,
+              borderRadius: 6, color: '#801F2B', fontSize: 13, marginBottom: 16,
             }}>
               {errorMsg}
             </div>
           )}
 
           <form id="control-form" onSubmit={handleSave}>
-            <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
-              Control Name *
-            </label>
-            <input
-              className="omni-input"
-              placeholder="e.g. Mandatory TLS 1.3 Data Encryption In-Transit"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              style={{ marginBottom: 16 }}
-            />
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
+                Control Name *
+              </label>
+              <input
+                className={`omni-input ${isNameInvalid ? 'border-rose-500' : ''}`}
+                placeholder="e.g. Mandatory TLS 1.3 Data Encryption In-Transit"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                onBlur={() => setNameTouched(true)}
+                required
+              />
+              {isNameInvalid && (
+                <span className="text-xs text-rose-600 font-medium mt-1 block">Control name is required.</span>
+              )}
+            </div>
 
             <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
               Category
@@ -168,18 +193,24 @@ export function ControlDrawer({ control, isOpen, onClose, onSuccess }: ControlDr
               style={{ marginBottom: 16 }}
             />
 
-            <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
-              Description & Operational Safeguards *
-            </label>
-            <textarea
-              className="omni-input"
-              rows={4}
-              placeholder="Detailed description of operational security procedure or technical enforcement..."
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              required
-              style={{ marginBottom: 20, resize: 'vertical' }}
-            />
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
+                Description & Operational Safeguards *
+              </label>
+              <textarea
+                className={`omni-input ${isDescInvalid ? 'border-rose-500' : ''}`}
+                rows={4}
+                placeholder="Detailed description of operational security procedure or technical enforcement..."
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                onBlur={() => setDescTouched(true)}
+                required
+                style={{ resize: 'vertical' }}
+              />
+              {isDescInvalid && (
+                <span className="text-xs text-rose-600 font-medium mt-1 block">Description is required for AI mapping generation.</span>
+              )}
+            </div>
           </form>
 
           {/* Audit History (Edit mode only) */}
@@ -255,3 +286,4 @@ export function ControlDrawer({ control, isOpen, onClose, onSuccess }: ControlDr
     </div>
   );
 }
+
