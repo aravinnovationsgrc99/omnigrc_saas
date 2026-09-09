@@ -10,6 +10,7 @@ import { SettingsView } from '@/components/settings/settings-view';
 import { AssetListView } from '@/components/assets/asset-list-view';
 import { RiskListView } from '@/components/risks/risk-list-view';
 import { ControlMappingView } from '@/components/controls/control-mapping-view';
+import { ComplianceBoardView } from '@/components/compliance-board/compliance-board-view';
 import { ComingSoon } from '@/components/dashboard/coming-soon';
 
 export default function MainPage() {
@@ -38,6 +39,7 @@ export default function MainPage() {
           {view === 'risk' && <RiskListView />}
           {view === 'assets' && <AssetListView />}
           {view === 'controls' && <ControlMappingView />}
+          {view === 'board' && <ComplianceBoardView />}
           {view === 'settings' && <SettingsView />}
           {activeItem && !activeItem.enabled && (
             <ComingSoon label={activeItem.label} phase={activeItem.phase || 'Phase N'} />

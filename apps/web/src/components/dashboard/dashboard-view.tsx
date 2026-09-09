@@ -10,7 +10,7 @@ export const BUILD_PHASES = [
   { id: 2, name: 'Asset & Inventory', desc: 'Assets and vendors that risks & controls reference', done: true },
   { id: 3, name: 'Risk Register', desc: 'Risk log, likelihood × impact heatmap, treatment plans', done: true },
   { id: 4, name: 'Control Mapping', desc: 'AI-assisted mapping, framework citations, sign-off', done: true },
-  { id: 5, name: 'Compliance Board', desc: 'Kanban, due-dates, 30/60/90 dashboard', done: false },
+  { id: 5, name: 'Compliance Board', desc: 'Kanban, due-dates, 30/60/90 dashboard', done: true },
   { id: 6, name: 'Cross-cutting', desc: 'Audit log, RBAC, regional settings, live metrics', done: false },
   { id: 7, name: 'Polish', desc: 'Search, notifications, empty/error states, mobile', done: false },
 ];
@@ -63,23 +63,27 @@ export function DashboardView() {
   const [assetCount, setAssetCount] = useState<number | string>(0);
   const [openRiskCount, setOpenRiskCount] = useState<number | string>(0);
   const [mappedControlCount, setMappedControlCount] = useState<number | string>(0);
+  const [dueThisWeekCount, setDueThisWeekCount] = useState<number | string>(0);
   const nextPhase = BUILD_PHASES.find((p) => !p.done);
 
   useEffect(() => {
     async function fetchCounts() {
       try {
-        const [assetRes, riskRes, controlRes] = await Promise.all([
+        const [assetRes, riskRes, controlRes, dueRes] = await Promise.all([
           apiRequest<{ count: number }>('/assets/count').catch(() => ({ count: 0 })),
           apiRequest<{ count: number }>('/risks/open-count').catch(() => ({ count: 0 })),
           apiRequest<{ count: number }>('/controls/approved-count').catch(() => ({ count: 0 })),
+          apiRequest<{ count: number }>('/compliance-tasks/due-this-week-count').catch(() => ({ count: 0 })),
         ]);
         setAssetCount(assetRes.count);
         setOpenRiskCount(riskRes.count);
         setMappedControlCount(controlRes.count);
+        setDueThisWeekCount(dueRes.count);
       } catch {
         setAssetCount(0);
         setOpenRiskCount(0);
         setMappedControlCount(0);
+        setDueThisWeekCount(0);
       }
     }
     fetchCounts();
@@ -102,7 +106,7 @@ export function DashboardView() {
         <StatStripItem label="Open risks" value={openRiskCount} />
         <StatStripItem label="Assets tracked" value={assetCount} />
         <StatStripItem label="Controls mapped" value={mappedControlCount} />
-        <StatStripItem label="Tasks due this week" value="0" last />
+        <StatStripItem label="Tasks due this week" value={dueThisWeekCount} last />
       </div>
 
       <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>

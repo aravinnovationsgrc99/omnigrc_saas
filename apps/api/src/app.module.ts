@@ -7,6 +7,7 @@ import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import { AssetsModule } from './assets/assets.module';
 import { RisksModule } from './risks/risks.module';
 import { ControlsModule } from './controls/controls.module';
+import { ComplianceTasksModule } from './compliance-tasks/compliance-tasks.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { ControlsModule } from './controls/controls.module';
     AssetsModule,
     RisksModule,
     ControlsModule,
+    ComplianceTasksModule,
   ],
 })
 export class AppModule {}

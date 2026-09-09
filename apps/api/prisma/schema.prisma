@@ -66,18 +66,26 @@ enum ModelTier {
   TIER_2
 }
 
+enum TaskStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  UNDER_REVIEW
+  COMPLETE
+}
+
 model Organization {
   id            String   @id @default(uuid())
   name          String
   primaryRegion String   @default("India")
   createdAt     DateTime @default(now())
 
-  users        User[]
-  regionalPods RegionalPod[]
-  auditLogs    AuditLogEntry[]
-  assets       Asset[]
-  risks        Risk[]
-  controls     Control[]
+  users           User[]
+  regionalPods    RegionalPod[]
+  auditLogs       AuditLogEntry[]
+  assets          Asset[]
+  risks           Risk[]
+  controls        Control[]
+  complianceTasks ComplianceTask[]
 
   @@map("organizations")
 }
@@ -200,8 +208,9 @@ model Control {
   updatedAt      DateTime  @updatedAt
   deletedAt      DateTime?
 
-  organization Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  mappings     ControlFrameworkMapping[]
+  organization    Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  mappings        ControlFrameworkMapping[]
+  complianceTasks ComplianceTask[]
 
   @@index([organizationId])
   @@index([deletedAt])
@@ -227,6 +236,31 @@ model ControlFrameworkMapping {
   @@index([frameworkClauseId])
   @@index([status])
   @@map("control_framework_mappings")
+}
+
+model ComplianceTask {
+  id             String     @id @default(uuid())
+  organizationId String
+  title          String
+  description    String?
+  status         TaskStatus @default(NOT_STARTED)
+  owner          String
+  dueDate        DateTime?
+  controlId      String?
+  createdById    String
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  deletedAt      DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  control      Control?     @relation(fields: [controlId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([deletedAt])
+  @@index([status])
+  @@index([dueDate])
+  @@index([controlId])
+  @@map("compliance_tasks")
 }
 
 model AuditLogEntry {

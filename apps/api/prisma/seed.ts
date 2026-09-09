@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { Role, PodRegion, PodStatus, FrameworkCode, AssetType, AssetCriticality, RiskStatus, MappingStatus, ModelTier } from '@omnigrc/shared';
+import { Role, PodRegion, PodStatus, FrameworkCode, AssetType, AssetCriticality, RiskStatus, MappingStatus, ModelTier, TaskStatus } from '@omnigrc/shared';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
@@ -605,7 +605,135 @@ async function main() {
     }
   }
 
-  console.log('Seeding completed successfully with 7 assets, 11 demo risks, and 8 demo controls mapped across 6 frameworks.');
+  // Seed 11 Demo Compliance Tasks across all 4 status columns and 30/60/90 day buckets
+  const now = new Date();
+  const days = (d: number) => new Date(now.getTime() + d * 24 * 60 * 60 * 1000);
+
+  const demoTasks = [
+    {
+      id: 't0000000-0000-0000-0000-000000000001',
+      title: 'Enforce TLS 1.3 Minimum Cryptographic Version on Cloud Gateway',
+      description: 'Disable legacy TLS 1.0/1.1 protocols and mandate TLS 1.3 across all AWS ALB listeners.',
+      status: TaskStatus.COMPLETE,
+      owner: 'DevOps Lead',
+      dueDate: days(-10), // Completed in past
+      controlId: 'c0000000-0000-0000-0000-000000000001',
+    },
+    {
+      id: 't0000000-0000-0000-0000-000000000002',
+      title: 'Conduct Q2 Quarterly RBAC User Access Permission Audit',
+      description: 'Review active Okta directory permissions and revoke non-essential administrative access.',
+      status: TaskStatus.IN_PROGRESS,
+      owner: 'SecOps Team',
+      dueDate: days(-3), // OVERDUE (3 days ago)
+      controlId: 'c0000000-0000-0000-0000-000000000002',
+    },
+    {
+      id: 't0000000-0000-0000-0000-000000000003',
+      title: 'Verify Encrypted Database Snapshot Failover to Secondary Region',
+      description: 'Execute periodic disaster recovery drill validating RDS snapshot restoration in ap-southeast-1.',
+      status: TaskStatus.NOT_STARTED,
+      owner: 'DBA Team',
+      dueDate: days(-1), // OVERDUE (1 day ago)
+      controlId: 'c0000000-0000-0000-0000-000000000003',
+    },
+    {
+      id: 't0000000-0000-0000-0000-000000000004',
+      title: 'Perform AI Model Data Protection Impact Assessment (DPIA)',
+      description: 'Document diagnostic AI algorithm training data sources and privacy impact report.',
+      status: TaskStatus.UNDER_REVIEW,
+      owner: 'Privacy Lead',
+      dueDate: days(4), // Due in 4 days (<= 30D)
+      controlId: 'c0000000-0000-0000-0000-000000000004',
+    },
+    {
+      id: 't0000000-0000-0000-0000-000000000005',
+      title: 'Deploy SIEM Log Ingestion Forwarders to All Kubernetes Nodes',
+      description: 'Install Fluentd log collection daemons across production EKS clusters.',
+      status: TaskStatus.IN_PROGRESS,
+      owner: 'SecOps Lead',
+      dueDate: days(14), // Due in 14 days (<= 30D)
+      controlId: 'c0000000-0000-0000-0000-000000000005',
+    },
+    {
+      id: 't0000000-0000-0000-0000-000000000006',
+      title: 'Execute Vendor SOC 2 Audit Report Review for Razorpay & HubSpot',
+      description: 'Collect annual SOC 2 Type II compliance attestations from critical cloud vendors.',
+      status: TaskStatus.NOT_STARTED,
+      owner: 'Compliance Officer',
+      dueDate: days(22), // Due in 22 days (<= 30D)
+      controlId: 'c0000000-0000-0000-0000-000000000006',
+    },
+    {
+      id: 't0000000-0000-0000-0000-000000000007',
+      title: 'Review 72-Hour Data Breach Incident Notification Playbook',
+      description: 'Validate reporting procedures with external legal counsel for DPDP and GDPR breach requirements.',
+      status: TaskStatus.UNDER_REVIEW,
+      owner: 'Legal & Risk',
+      dueDate: days(45), // Due in 45 days (30D - 60D)
+      controlId: 'c0000000-0000-0000-0000-000000000007',
+    },
+    {
+      id: 't0000000-0000-0000-0000-000000000008',
+      title: 'Mandate MDM BitLocker Encryption Enforcement on Corporate Workstations',
+      description: 'Configure automated remote wipe and full-disk encryption policies for corporate laptops.',
+      status: TaskStatus.IN_PROGRESS,
+      owner: 'IT Support',
+      dueDate: days(58), // Due in 58 days (30D - 60D)
+      controlId: 'c0000000-0000-0000-0000-000000000008',
+    },
+    {
+      id: 't0000000-0000-0000-0000-000000000009',
+      title: 'Annual ISO 27001 Internal Audit Preparation & Evidence Gathering',
+      description: 'Gather audit evidence files and control documentation for stage 2 recertification audit.',
+      status: TaskStatus.NOT_STARTED,
+      owner: 'Compliance Officer',
+      dueDate: days(72), // Due in 72 days (60D - 90D)
+    },
+    {
+      id: 't0000000-0000-0000-0000-000000000010',
+      title: 'Conduct Employee Phishing Awareness Simulation Training',
+      description: 'Launch quarterly simulated spear-phishing campaigns to test employee reporting capabilities.',
+      status: TaskStatus.COMPLETE,
+      owner: 'SecOps Team',
+      dueDate: days(-15),
+    },
+    {
+      id: 't0000000-0000-0000-0000-000000000011',
+      title: 'Establish DPDP Data Protection Officer (DPO) Public Notice',
+      description: 'Publish DPO contact information on patient health portal per DPDP Section 10 obligations.',
+      status: TaskStatus.NOT_STARTED,
+      owner: 'Privacy Lead',
+      dueDate: days(88), // Due in 88 days (60D - 90D)
+    },
+  ];
+
+  for (const t of demoTasks) {
+    await prisma.complianceTask.upsert({
+      where: { id: t.id },
+      update: {
+        title: t.title,
+        description: t.description,
+        status: t.status,
+        owner: t.owner,
+        dueDate: t.dueDate,
+        controlId: t.controlId || null,
+      },
+      create: {
+        id: t.id,
+        organizationId: org.id,
+        title: t.title,
+        description: t.description,
+        status: t.status,
+        owner: t.owner,
+        dueDate: t.dueDate,
+        controlId: t.controlId || null,
+        createdById: adminUser.id,
+      },
+    });
+  }
+
+  console.log('Seeding completed successfully with 7 assets, 11 demo risks, 8 demo controls, and 11 compliance tasks.');
 }
 
 main()

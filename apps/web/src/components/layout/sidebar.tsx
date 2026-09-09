@@ -3,7 +3,7 @@
 import React from 'react';
 import {
   LayoutDashboard, ShieldAlert, Boxes, GitMerge, KanbanSquare,
-  Settings, Globe2
+  Settings, Globe2, type LucideIcon
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -12,7 +12,20 @@ interface SidebarProps {
   orgName?: string;
 }
 
-export const NAV_SECTIONS = [
+export interface NavItem {
+  key: string;
+  label: string;
+  icon: LucideIcon;
+  enabled: boolean;
+  phase?: string;
+}
+
+export interface NavSection {
+  label: string;
+  items: NavItem[];
+}
+
+export const NAV_SECTIONS: NavSection[] = [
   {
     label: 'Overview',
     items: [{ key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, enabled: true }],
@@ -23,7 +36,7 @@ export const NAV_SECTIONS = [
       { key: 'risk', label: 'Risk Register', icon: ShieldAlert, enabled: true },
       { key: 'assets', label: 'Asset & Inventory', icon: Boxes, enabled: true },
       { key: 'controls', label: 'Control Mapping', icon: GitMerge, enabled: true },
-      { key: 'board', label: 'Compliance Board', icon: KanbanSquare, enabled: false, phase: 'Phase 5' },
+      { key: 'board', label: 'Compliance Board', icon: KanbanSquare, enabled: true },
     ],
   },
   {

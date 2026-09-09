@@ -63,6 +63,13 @@ export enum ModelTier {
   TIER_2 = "TIER_2",
 }
 
+export enum TaskStatus {
+  NOT_STARTED = "NOT_STARTED",
+  IN_PROGRESS = "IN_PROGRESS",
+  UNDER_REVIEW = "UNDER_REVIEW",
+  COMPLETE = "COMPLETE",
+}
+
 export interface UserDto {
   id: string;
   organizationId: string;
@@ -337,4 +344,61 @@ export interface SignOffMappingDto {
   decision: 'APPROVE' | 'OVERRIDE';
   overrideClauseId?: string;
   note?: string;
+}
+
+export interface ComplianceTaskDto {
+  id: string;
+  organizationId: string;
+  title: string;
+  description?: string | null;
+  status: TaskStatus;
+  owner: string;
+  dueDate?: string | null;
+  controlId?: string | null;
+  controlName?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdById: string;
+  deletedAt?: string | null;
+}
+
+export interface CreateComplianceTaskDto {
+  title: string;
+  description?: string;
+  status?: TaskStatus;
+  owner: string;
+  dueDate?: string;
+  controlId?: string;
+}
+
+export interface UpdateComplianceTaskDto {
+  title?: string;
+  description?: string;
+  status?: TaskStatus;
+  owner?: string;
+  dueDate?: string | null;
+  controlId?: string | null;
+}
+
+export interface ComplianceTaskQueryDto {
+  page?: number;
+  limit?: number;
+  search?: string;
+  status?: TaskStatus;
+  controlId?: string;
+}
+
+export interface PaginatedComplianceTasksDto {
+  items: ComplianceTaskDto[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface ComplianceTaskSummaryDto {
+  overdue: number;
+  due30: number;
+  due60: number;
+  due90: number;
+  totalOpen: number;
 }

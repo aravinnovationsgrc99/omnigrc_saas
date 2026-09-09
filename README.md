@@ -150,3 +150,19 @@ docker run -d -p 6379:6379 --name omnigrc-redis redis:alpine
 redis-server
 ```
 If Redis is not running, the application gracefully processes mapping jobs in an in-memory queue.
+
+---
+
+## Compliance Board & Drag-and-Drop Accessibility
+
+The Compliance Board (Phase 5) provides a 4-column Kanban workflow (**Not Started**, **In Progress**, **Under Review**, **Complete**) for tracking compliance activities across controls.
+
+### Drag-and-Drop Interaction
+- **Mouse Users**: Drag any task card and drop it onto a target column header or container. The status updates instantly and triggers a dedicated audit log entry (`COMPLIANCE_TASK_STATUS_CHANGED`).
+- **Visual Feedback**: Dragged cards show a subtle shadow shift, while active column drop targets highlight with a colored border ring.
+
+### Keyboard & Screen Reader Accessibility
+- **Accessible Menu**: Every task card includes a quick-action status selector menu accessible via `Tab` key navigation.
+- **Keyboard Shortcut**: Press `Enter` or `Space` on the task status menu button to open column options (**Move to In Progress**, **Move to Under Review**, etc.).
+- **Immediate Dispatch**: Selecting an option dispatches the exact same status-change PATCH payload as mouse drag-and-drop, complete with audit trail logging.
+
