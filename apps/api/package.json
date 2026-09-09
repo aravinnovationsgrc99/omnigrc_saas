@@ -13,8 +13,8 @@
     "seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.18.0",
-    "@google/generative-ai": "^0.2.1",
+    "@anthropic-ai/sdk": "^0.124.0",
+    "@google/generative-ai": "^0.24.1",
     "@nestjs/common": "^10.3.0",
     "@nestjs/core": "^10.3.0",
     "@nestjs/jwt": "^10.2.0",

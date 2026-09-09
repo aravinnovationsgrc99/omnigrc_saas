@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
 import { AiProvider, CandidateClause, AiMappingResponse, SuggestedMappingItem } from './ai-provider.interface';
 import { ModelTier } from '@omnigrc/shared';
 
@@ -32,6 +32,17 @@ export class GeminiProvider implements AiProvider {
     }
 
     const { controlName, controlDescription, candidates } = params;
+
+    // GUARD: If candidate list is empty, skip external API call
+    if (!candidates || candidates.length === 0) {
+      this.logger.warn('Candidate clause list is empty — skipping Gemini API call.');
+      return {
+        suggestions: [],
+        modelTier: ModelTier.TIER_1,
+        providerName: 'GeminiProvider (Tier 1)',
+      };
+    }
+
     const candidateIds = candidates.map((c) => c.id);
 
     const candidateListPrompt = candidates.map((c) => ({
@@ -51,28 +62,29 @@ Description: "${controlDescription}"
 CANDIDATE CLAUSES LIST:
 ${JSON.stringify(candidateListPrompt, null, 2)}`;
 
-    // Constrain Gemini using responseSchema enum tool constraints
+    // Constrain Gemini using native responseSchema and enum tool constraints
     const model = this.genAI.getGenerativeModel({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-2.5-flash-lite',
       generationConfig: {
         responseMimeType: 'application/json',
         responseSchema: {
-          type: 'OBJECT',
+          type: SchemaType.OBJECT,
           properties: {
             suggestions: {
-              type: 'ARRAY',
+              type: SchemaType.ARRAY,
               items: {
-                type: 'OBJECT',
+                type: SchemaType.OBJECT,
                 properties: {
                   clauseId: {
-                    type: 'STRING',
-                    enum: candidateIds.length > 0 ? candidateIds : undefined,
+                    type: SchemaType.STRING,
+                    format: 'enum',
+                    enum: candidateIds,
                     description: 'The exact candidate clause ID selected from candidates',
                   },
-                  frameworkCode: { type: 'STRING' },
-                  clauseCode: { type: 'STRING' },
-                  confidenceScore: { type: 'NUMBER' },
-                  reasoning: { type: 'STRING' },
+                  frameworkCode: { type: SchemaType.STRING },
+                  clauseCode: { type: SchemaType.STRING },
+                  confidenceScore: { type: SchemaType.NUMBER },
+                  reasoning: { type: SchemaType.STRING },
                 },
                 required: ['clauseId', 'frameworkCode', 'clauseCode', 'confidenceScore', 'reasoning'],
               },
@@ -80,7 +92,7 @@ ${JSON.stringify(candidateListPrompt, null, 2)}`;
           },
           required: ['suggestions'],
         },
-      } as any,
+      },
     });
 
     const result = await model.generateContent(systemPrompt);
@@ -93,7 +105,7 @@ ${JSON.stringify(candidateListPrompt, null, 2)}`;
       frameworkCode: s.frameworkCode,
       clauseCode: s.clauseCode,
       confidenceScore: typeof s.confidenceScore === 'number' ? s.confidenceScore : 0.85,
-      reasoning: s.reasoning || 'Gemini 1.5 Flash structured tool-constrained mapping recommendation.',
+      reasoning: s.reasoning || 'Gemini 2.5 Flash-Lite structured mapping recommendation.',
     }));
 
     return {

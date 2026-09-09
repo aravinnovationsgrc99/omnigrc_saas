@@ -32,6 +32,17 @@ export class ClaudeProvider implements AiProvider {
     }
 
     const { controlName, controlDescription, candidates } = params;
+
+    // GUARD: If candidate list is empty, skip external API call
+    if (!candidates || candidates.length === 0) {
+      this.logger.warn('Candidate clause list is empty — skipping Claude API call.');
+      return {
+        suggestions: [],
+        modelTier: ModelTier.TIER_2,
+        providerName: 'ClaudeProvider (Tier 2)',
+      };
+    }
+
     const candidateIds = candidates.map((c) => c.id);
 
     const candidateListPrompt = candidates.map((c) => ({
@@ -47,9 +58,9 @@ Control Description: "${controlDescription}"
 Candidate Clauses List:
 ${JSON.stringify(candidateListPrompt, null, 2)}`;
 
-    // Constrain Claude using strict Tool Calling (function choice) with enum schema
-    const response: any = await this.anthropic.messages.create({
-      model: 'claude-3-opus-20240229',
+    // Constrain Claude using strict Tool Calling with enum schema & model claude-haiku-4-5-20251001
+    const response = await this.anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 1000,
       tools: [
         {
@@ -65,7 +76,7 @@ ${JSON.stringify(candidateListPrompt, null, 2)}`;
                   properties: {
                     clauseId: {
                       type: 'string',
-                      enum: candidateIds.length > 0 ? candidateIds : undefined,
+                      enum: candidateIds,
                       description: 'The exact ID of the clause selected from the candidate list',
                     },
                     frameworkCode: { type: 'string' },
@@ -83,17 +94,17 @@ ${JSON.stringify(candidateListPrompt, null, 2)}`;
       ],
       tool_choice: { type: 'tool', name: 'submit_mapping_suggestions' },
       messages: [{ role: 'user', content: userMessage }],
-    } as any);
+    });
 
-    const toolUseBlock = response.content?.find((b: any) => b.type === 'tool_use');
-    const rawSuggestions = toolUseBlock?.input?.suggestions || [];
+    const toolUseBlock = response.content.find((b) => b.type === 'tool_use') as Anthropic.ToolUseBlock | undefined;
+    const rawSuggestions = (toolUseBlock?.input as any)?.suggestions || [];
 
     const suggestions: SuggestedMappingItem[] = rawSuggestions.map((s: any) => ({
       clauseId: s.clauseId,
       frameworkCode: s.frameworkCode,
       clauseCode: s.clauseCode,
       confidenceScore: typeof s.confidenceScore === 'number' ? s.confidenceScore : 0.92,
-      reasoning: s.reasoning || 'Claude 3 Opus Tier 2 tool-constrained high-stakes compliance recommendation.',
+      reasoning: s.reasoning || 'Claude Haiku 4.5 Tier 2 tool-constrained high-stakes compliance recommendation.',
     }));
 
     return {
