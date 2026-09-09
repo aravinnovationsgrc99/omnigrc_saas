@@ -1,4 +1,5 @@
-import { Module } from '@nestjs/common';
+import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './prisma/prisma.module';
 import { TenantModule } from './tenant/tenant.module';
@@ -11,6 +12,9 @@ import { ControlsModule } from './controls/controls.module';
 import { ComplianceTasksModule } from './compliance-tasks/compliance-tasks.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { IntegrationsModule } from './integrations/integrations.module';
+import { HealthModule } from './health/health.module';
+import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
+import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
 
 @Module({
   imports: [
@@ -26,6 +30,17 @@ import { IntegrationsModule } from './integrations/integrations.module';
     ComplianceTasksModule,
     NotificationsModule,
     IntegrationsModule,
+    HealthModule,
+  ],
+  providers: [
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: SentryInterceptor,
+    },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(RequestContextMiddleware).forRoutes('*');
+  }
+}

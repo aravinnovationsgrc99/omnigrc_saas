@@ -197,3 +197,44 @@ To enable org-level critical alerts (`MAPPING_OVERRIDDEN`, `POD_STATUS_CHANGED`)
 - Jira Software and Google Workspace are scaffolded as structured stubs in `/apps/api/src/integrations/jira/` and `/apps/api/src/integrations/google-workspace/`.
 - Both folders contain an `IntegrationProvider` service stub, commented-out controller scaffold, and a `README.md` documenting required OAuth 2.0 scopes (`read:jira-work`, `write:jira-work`, `admin.directory.user.readonly`, `drive.readonly`).
 
+---
+
+## Pilot-Launch Readiness (Phase 8)
+
+Phase 8 elevates OMNiGRC to production-credible status with end-to-end testing, observability, containerization, and a skippable POC onboarding wizard.
+
+### 1. System Health Check & Observability
+- Endpoint: `GET /health` (Public)
+- Returns a comprehensive status matrix covering Database (`SELECT 1`), Redis ping/queue, Gemini/Claude AI keys, Resend Email, Slack Webhook, and Sentry DSN.
+- Every HTTP request receives an auto-generated or passed `x-request-id` header for trace propagation across logs and Sentry error interceptors.
+
+### 2. Testing Suite
+- **Unit Tests**: Run service-layer unit tests covering tenant scoping and audit logging across all modules:
+  ```bash
+  npm test --workspace=apps/api
+  ```
+- **E2E Smoke Test**: Run the 8-phase straight-line integration test exercising registration, asset seeding, risk calculation, control mapping, task board status updates, audit exploration, and onboarding completion:
+  ```bash
+  npm run test:e2e --workspace=apps/api
+  ```
+
+### 3. Containerization & Deployment Stack
+- **Docker Compose**: Start PostgreSQL, Redis, NestJS API, and Next.js Web concurrently:
+  ```bash
+  docker-compose up --build
+  ```
+- **Regional Deployment Environments**: Per-region `.env` templates are provided in `apps/api/`:
+  - `.env.india.example` (Region: INDIA, ap-south-1)
+  - `.env.uk.example` (Region: UK, eu-west-2)
+  - `.env.eu.example` (Region: EU, eu-central-1)
+  - `.env.australia.example` (Region: AUSTRALIA, ap-southeast-2)
+
+### 4. POC Onboarding Wizard
+- On first login after registration, new organization administrators are greeted by a non-blocking 4-step wizard:
+  1. Primary Framework selection (ISO27001, SOC2, GDPR, DPDP, ISO42001, HIPAA).
+  2. Quick CSV Asset import & batch seeding.
+  3. Team invitations (ADMIN & ANALYST roles).
+  4. Instant platform launch.
+- The wizard is skippable at every step to ensure immediate platform access.
+
+

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/auth-context';
 import { LoginScreen } from '@/components/auth/login-screen';
 import { Sidebar, NAV_SECTIONS } from '@/components/layout/sidebar';
@@ -13,15 +13,27 @@ import { ControlMappingView } from '@/components/controls/control-mapping-view';
 import { ComplianceBoardView } from '@/components/compliance-board/compliance-board-view';
 import { AuditLogView } from '@/components/audit-logs/audit-log-view';
 import { ComingSoon } from '@/components/dashboard/coming-soon';
+import { OnboardingWizard } from '@/components/onboarding/onboarding-wizard';
 
 export default function MainPage() {
-  const { user, loading } = useAuth();
+  const { user, organization, loading } = useAuth();
   const [view, setView] = useState('dashboard');
+  const [showWizard, setShowWizard] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (organization && organization.onboardingCompleted === false) {
+      setShowWizard(true);
+    } else {
+      setShowWizard(false);
+    }
+  }, [organization]);
 
   if (loading) {
-    return <div className="omni-root" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ color: '#0F6E6A', fontWeight: 600 }}>Loading OMNiGRC...</div>
-    </div>;
+    return (
+      <div className="omni-root" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ color: '#0F6E6A', fontWeight: 600 }}>Loading OMNiGRC...</div>
+      </div>
+    );
   }
 
   if (!user) {
@@ -48,6 +60,10 @@ export default function MainPage() {
           )}
         </div>
       </div>
+
+      {showWizard && (
+        <OnboardingWizard onComplete={() => setShowWizard(false)} />
+      )}
     </div>
   );
 }

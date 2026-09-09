@@ -3,7 +3,18 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import * as bcrypt from 'bcrypt';
-import { RegisterDto, LoginDto, Role, PodRegion, PodStatus, AuthResponseDto } from '@omnigrc/shared';
+import {
+  RegisterDto,
+  LoginDto,
+  Role,
+  PodRegion,
+  PodStatus,
+  AuthResponseDto,
+  OnboardingCompleteDto,
+  InviteTeamMemberDto,
+  AssetType,
+  AssetCriticality,
+} from '@omnigrc/shared';
 
 @Injectable()
 export class AuthService {
@@ -79,6 +90,8 @@ export class AuthService {
         id: organization.id,
         name: organization.name,
         primaryRegion: organization.primaryRegion,
+        primaryFramework: organization.primaryFramework,
+        onboardingCompleted: organization.onboardingCompleted,
         createdAt: organization.createdAt.toISOString(),
       },
       tokens,
@@ -125,6 +138,8 @@ export class AuthService {
         id: user.organization.id,
         name: user.organization.name,
         primaryRegion: user.organization.primaryRegion,
+        primaryFramework: user.organization.primaryFramework,
+        onboardingCompleted: user.organization.onboardingCompleted,
         createdAt: user.organization.createdAt.toISOString(),
       },
       tokens,
@@ -177,6 +192,8 @@ export class AuthService {
         id: user.organization.id,
         name: user.organization.name,
         primaryRegion: user.organization.primaryRegion,
+        primaryFramework: user.organization.primaryFramework,
+        onboardingCompleted: user.organization.onboardingCompleted,
         createdAt: user.organization.createdAt.toISOString(),
       },
       tokens,
@@ -192,6 +209,109 @@ export class AuthService {
     return {
       id: updated.id,
       emailNotifications: updated.emailNotifications,
+    };
+  }
+
+  async completeOnboarding(userId: string, dto: OnboardingCompleteDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { organization: true },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    const updateData: any = { onboardingCompleted: true };
+    if (dto.primaryFramework) {
+      updateData.primaryFramework = dto.primaryFramework;
+    }
+
+    await this.prisma.organization.update({
+      where: { id: user.organizationId },
+      data: updateData,
+    });
+
+    let importedAssetCount = 0;
+    if (dto.assets && dto.assets.length > 0) {
+      const assetData = dto.assets.map((asset) => ({
+        organizationId: user.organizationId,
+        name: asset.name,
+        type: asset.type || ('SOFTWARE' as AssetType),
+        owner: asset.owner || user.name,
+        criticality: asset.criticality || ('MEDIUM' as AssetCriticality),
+        createdById: userId,
+      }));
+
+      await this.prisma.asset.createMany({
+        data: assetData,
+      });
+      importedAssetCount = assetData.length;
+    }
+
+    await this.auditLogsService.log({
+      organizationId: user.organizationId,
+      actorId: userId,
+      action: 'ONBOARDING_COMPLETED',
+      entityType: 'Organization',
+      entityId: user.organizationId,
+      metadata: {
+        primaryFramework: dto.primaryFramework || null,
+        importedAssetCount,
+      },
+    });
+
+    return {
+      success: true,
+      onboardingCompleted: true,
+      primaryFramework: dto.primaryFramework || null,
+      importedAssetCount,
+    };
+  }
+
+  async inviteTeamMember(userId: string, dto: InviteTeamMemberDto) {
+    const inviter = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!inviter) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
+
+    if (existingUser) {
+      throw new ConflictException('User with this email already exists');
+    }
+
+    const tempPasswordHash = await bcrypt.hash('OmniGRC2026!', 10);
+
+    const newUser = await this.prisma.user.create({
+      data: {
+        organizationId: inviter.organizationId,
+        name: dto.name || dto.email.split('@')[0],
+        email: dto.email,
+        passwordHash: tempPasswordHash,
+        role: dto.role || Role.ANALYST,
+      },
+    });
+
+    await this.auditLogsService.log({
+      organizationId: inviter.organizationId,
+      actorId: userId,
+      action: 'TEAM_MEMBER_INVITED',
+      entityType: 'User',
+      entityId: newUser.id,
+      metadata: { invitedEmail: dto.email, role: dto.role },
+    });
+
+    return {
+      id: newUser.id,
+      email: newUser.email,
+      role: newUser.role,
+      message: 'Team member invited successfully',
     };
   }
 

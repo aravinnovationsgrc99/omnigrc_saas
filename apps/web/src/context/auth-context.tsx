@@ -8,6 +8,7 @@ interface AuthContextType {
   user: UserDto | null;
   organization: OrganizationDto | null;
   loading: boolean;
+  refreshUser: () => Promise<void>;
   login: (dto: LoginDto) => Promise<void>;
   register: (dto: RegisterDto) => Promise<void>;
   logout: () => Promise<void>;
@@ -80,7 +81,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, organization, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, organization, loading, refreshUser: initAuth, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

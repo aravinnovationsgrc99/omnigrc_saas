@@ -84,6 +84,8 @@ export interface OrganizationDto {
   id: string;
   name: string;
   primaryRegion: string;
+  primaryFramework?: string | null;
+  onboardingCompleted?: boolean;
   createdAt: string;
 }
 
@@ -465,3 +467,34 @@ export interface UpdateSlackWebhookDto {
 export interface UpdateEmailPreferenceDto {
   emailNotifications: boolean;
 }
+
+export interface HealthCheckDto {
+  status: "ok" | "degraded" | "error";
+  timestamp: string;
+  services: {
+    database: { status: "up" | "down"; latencyMs?: number };
+    redis: { status: "up" | "down" | "mocked"; latencyMs?: number };
+    gemini: { status: "configured" | "mocked" };
+    claude: { status: "configured" | "mocked" };
+    email: { status: "configured" | "console_mock" };
+    slack: { status: "configured" | "not_configured" };
+    sentry: { status: "configured" | "not_configured" };
+  };
+}
+
+export interface OnboardingCompleteDto {
+  primaryFramework?: string;
+  assets?: Array<{
+    name: string;
+    type: AssetType;
+    owner: string;
+    criticality: AssetCriticality;
+  }>;
+}
+
+export interface InviteTeamMemberDto {
+  email: string;
+  role: Role;
+  name?: string;
+}
+

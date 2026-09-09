@@ -81,11 +81,13 @@ enum NotificationType {
 }
 
 model Organization {
-  id              String   @id @default(uuid())
-  name            String
-  primaryRegion   String   @default("India")
-  slackWebhookUrl String?
-  createdAt       DateTime @default(now())
+  id                  String   @id @default(uuid())
+  name                String
+  primaryRegion       String   @default("India")
+  slackWebhookUrl     String?
+  primaryFramework    String?
+  onboardingCompleted Boolean  @default(false)
+  createdAt           DateTime @default(now())
 
   users           User[]
   regionalPods    RegionalPod[]

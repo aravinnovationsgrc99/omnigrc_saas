@@ -62,7 +62,7 @@ export class ControlsService {
     ]);
 
     return {
-      items: items.map(this.mapToDto),
+      items: items.map((item) => this.mapToDto(item)),
       total,
       page,
       limit,
@@ -387,7 +387,7 @@ export class ControlsService {
       updatedAt: control.updatedAt.toISOString(),
       createdById: control.createdById,
       deletedAt: control.deletedAt ? control.deletedAt.toISOString() : null,
-      mappings: control.mappings ? control.mappings.map(this.mapMappingToDto) : [],
+      mappings: control.mappings ? control.mappings.map((m: any) => this.mapMappingToDto(m)) : [],
     };
   }
 
