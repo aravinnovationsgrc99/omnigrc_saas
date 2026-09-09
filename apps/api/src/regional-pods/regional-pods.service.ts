@@ -1,13 +1,15 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
-import { RegionalPodDto, PodRegion, PodStatus } from '@omnigrc/shared';
+import { NotificationsService } from '../notifications/notifications.service';
+import { RegionalPodDto, PodRegion, PodStatus, NotificationType } from '@omnigrc/shared';
 
 @Injectable()
 export class RegionalPodsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async getPodsForOrganization(organizationId: string): Promise<RegionalPodDto[]> {
@@ -77,6 +79,14 @@ export class RegionalPodsService {
         previousStatus: pod.status,
         newStatus: targetStatus,
       },
+    });
+
+    await this.notificationsService.notify({
+      organizationId,
+      type: NotificationType.POD_STATUS_CHANGED,
+      message: `Regional hosting pod "${pod.region}" status was changed from ${pod.status} to ${targetStatus}.`,
+      entityType: 'REGIONAL_POD',
+      entityId: pod.id,
     });
 
     return {

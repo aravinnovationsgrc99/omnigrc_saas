@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Body, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -34,5 +34,14 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   async getMe(@CurrentUser('userId') userId: string) {
     return this.authService.getMe(userId);
+  }
+
+  @Patch('me/preferences')
+  @UseGuards(JwtAuthGuard)
+  async updatePreferences(
+    @CurrentUser('userId') userId: string,
+    @Body('emailNotifications') emailNotifications: boolean,
+  ) {
+    return this.authService.updatePreferences(userId, emailNotifications);
   }
 }

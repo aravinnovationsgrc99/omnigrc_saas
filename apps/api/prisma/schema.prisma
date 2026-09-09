@@ -73,11 +73,19 @@ enum TaskStatus {
   COMPLETE
 }
 
+enum NotificationType {
+  DUE_DATE_REMINDER
+  MAPPING_OVERRIDDEN
+  TASK_ASSIGNED
+  POD_STATUS_CHANGED
+}
+
 model Organization {
-  id            String   @id @default(uuid())
-  name          String
-  primaryRegion String   @default("India")
-  createdAt     DateTime @default(now())
+  id              String   @id @default(uuid())
+  name            String
+  primaryRegion   String   @default("India")
+  slackWebhookUrl String?
+  createdAt       DateTime @default(now())
 
   users           User[]
   regionalPods    RegionalPod[]
@@ -86,6 +94,7 @@ model Organization {
   risks           Risk[]
   controls        Control[]
   complianceTasks ComplianceTask[]
+  notifications   Notification[]
 
   @@map("organizations")
 }
@@ -144,18 +153,40 @@ model Risk {
 }
 
 model User {
-  id             String   @id @default(uuid())
-  organizationId String
-  name           String
-  email          String   @unique
-  passwordHash   String
-  role           Role     @default(ANALYST)
-  createdAt      DateTime @default(now())
+  id                 String   @id @default(uuid())
+  organizationId     String
+  name               String
+  email              String   @unique
+  passwordHash       String
+  role               Role     @default(ANALYST)
+  emailNotifications Boolean  @default(true)
+  createdAt          DateTime @default(now())
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  notifications Notification[]
 
   @@index([organizationId])
   @@map("users")
+}
+
+model Notification {
+  id             String           @id @default(uuid())
+  organizationId String
+  userId         String
+  type           NotificationType
+  message        String
+  entityType     String
+  entityId       String
+  read           Boolean          @default(false)
+  createdAt      DateTime         @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([read])
+  @@map("notifications")
 }
 
 model RegionalPod {

@@ -166,3 +166,34 @@ The Compliance Board (Phase 5) provides a 4-column Kanban workflow (**Not Starte
 - **Keyboard Shortcut**: Press `Enter` or `Space` on the task status menu button to open column options (**Move to In Progress**, **Move to Under Review**, etc.).
 - **Immediate Dispatch**: Selecting an option dispatches the exact same status-change PATCH payload as mouse drag-and-drop, complete with audit trail logging.
 
+---
+
+## Notifications & Integrations Setup
+
+OMNiGRC (Phase 7) provides a unified notifications and webhooks engine supporting Resend email delivery, Slack channel alerts, and structured stubs for Jira and Google Workspace.
+
+### 1. Resend Email Provider Setup (`RESEND_API_KEY`)
+Configure your Resend API Key in `apps/api/.env`:
+
+```env
+# Resend API Key for transactional emails
+RESEND_API_KEY="re_123456789_your_resend_api_key"
+
+# Optional Sender Address
+SMTP_FROM="OMNiGRC Notifications <notifications@omnigrc.com>"
+```
+
+- **Obtaining a Key**: Sign up at [resend.com](https://resend.com), verify your domain, and generate an API key.
+- **Mock Mode Fallback**: If `RESEND_API_KEY` is not present in `.env`, the system operates in **Mock Mode**, logging full email subjects, recipients, and HTML bodies to the NestJS server console with zero API call costs.
+
+### 2. Slack Incoming Webhook Setup
+To enable org-level critical alerts (`MAPPING_OVERRIDDEN`, `POD_STATUS_CHANGED`) in Slack:
+1. Create an Incoming Webhook in your Slack Workspace ([api.slack.com/messaging/webhooks](https://api.slack.com/messaging/webhooks)).
+2. Navigate to **Settings → Integrations** in the OMNiGRC Web App (signed in as `ADMIN`).
+3. Paste your Webhook URL into the Slack card and click **Save Webhook**.
+4. Click **Send Test Alert** to verify live message delivery.
+
+### 3. Jira & Google Workspace Integrations
+- Jira Software and Google Workspace are scaffolded as structured stubs in `/apps/api/src/integrations/jira/` and `/apps/api/src/integrations/google-workspace/`.
+- Both folders contain an `IntegrationProvider` service stub, commented-out controller scaffold, and a `README.md` documenting required OAuth 2.0 scopes (`read:jira-work`, `write:jira-work`, `admin.directory.user.readonly`, `drive.readonly`).
+

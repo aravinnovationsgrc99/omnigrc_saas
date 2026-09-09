@@ -76,6 +76,7 @@ export interface UserDto {
   name: string;
   email: string;
   role: Role;
+  emailNotifications: boolean;
   createdAt: string;
 }
 
@@ -428,4 +429,39 @@ export interface UpdateRegionalPodStatusDto {
 
 export function hasRole(userRole: Role, allowedRoles: Role[]): boolean {
   return allowedRoles.includes(userRole);
+}
+
+export enum NotificationType {
+  DUE_DATE_REMINDER = "DUE_DATE_REMINDER",
+  MAPPING_OVERRIDDEN = "MAPPING_OVERRIDDEN",
+  TASK_ASSIGNED = "TASK_ASSIGNED",
+  POD_STATUS_CHANGED = "POD_STATUS_CHANGED",
+}
+
+export interface NotificationDto {
+  id: string;
+  organizationId: string;
+  userId: string;
+  type: NotificationType;
+  message: string;
+  entityType: string;
+  entityId: string;
+  read: boolean;
+  createdAt: string;
+}
+
+export interface PaginatedNotificationsDto {
+  items: NotificationDto[];
+  total: number;
+  unreadCount: number;
+  page: number;
+  limit: number;
+}
+
+export interface UpdateSlackWebhookDto {
+  webhookUrl: string;
+}
+
+export interface UpdateEmailPreferenceDto {
+  emailNotifications: boolean;
 }

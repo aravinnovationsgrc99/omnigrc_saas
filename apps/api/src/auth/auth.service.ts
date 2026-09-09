@@ -72,6 +72,7 @@ export class AuthService {
         name: user.name,
         email: user.email,
         role: user.role as Role,
+        emailNotifications: user.emailNotifications ?? true,
         createdAt: user.createdAt.toISOString(),
       },
       organization: {
@@ -117,6 +118,7 @@ export class AuthService {
         name: user.name,
         email: user.email,
         role: user.role as Role,
+        emailNotifications: user.emailNotifications ?? true,
         createdAt: user.createdAt.toISOString(),
       },
       organization: {
@@ -168,6 +170,7 @@ export class AuthService {
         name: user.name,
         email: user.email,
         role: user.role as Role,
+        emailNotifications: user.emailNotifications,
         createdAt: user.createdAt.toISOString(),
       },
       organization: {
@@ -177,6 +180,18 @@ export class AuthService {
         createdAt: user.organization.createdAt.toISOString(),
       },
       tokens,
+    };
+  }
+
+  async updatePreferences(userId: string, emailNotifications: boolean) {
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { emailNotifications },
+    });
+
+    return {
+      id: updated.id,
+      emailNotifications: updated.emailNotifications,
     };
   }
 

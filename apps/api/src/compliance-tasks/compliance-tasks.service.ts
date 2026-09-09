@@ -1,14 +1,16 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateComplianceTaskDto, UpdateComplianceTaskDto, ComplianceTaskQueryDto } from './dto/compliance-tasks.dto';
-import { ComplianceTaskDto, PaginatedComplianceTasksDto, TaskStatus, ComplianceTaskSummaryDto } from '@omnigrc/shared';
+import { ComplianceTaskDto, PaginatedComplianceTasksDto, TaskStatus, ComplianceTaskSummaryDto, NotificationType } from '@omnigrc/shared';
 
 @Injectable()
 export class ComplianceTasksService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async findAll(organizationId: string, query: ComplianceTaskQueryDto): Promise<PaginatedComplianceTasksDto> {
@@ -159,6 +161,15 @@ export class ComplianceTasksService {
         owner: task.owner,
         dueDate: task.dueDate ? task.dueDate.toISOString() : null,
       },
+    });
+
+    await this.notificationsService.notify({
+      organizationId,
+      userId,
+      type: NotificationType.TASK_ASSIGNED,
+      message: `New compliance task assigned: "${task.title}" (Owner: ${task.owner}).`,
+      entityType: 'COMPLIANCE_TASK',
+      entityId: task.id,
     });
 
     return this.mapToDto(task);

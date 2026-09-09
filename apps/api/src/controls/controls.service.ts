@@ -1,14 +1,16 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateControlDto, UpdateControlDto, ControlQueryDto, SignOffMappingDto } from './dto/controls.dto';
-import { ControlDto, PaginatedControlsDto, MappingStatus, ControlFrameworkMappingDto, FrameworkCode } from '@omnigrc/shared';
+import { ControlDto, PaginatedControlsDto, MappingStatus, ControlFrameworkMappingDto, FrameworkCode, NotificationType } from '@omnigrc/shared';
 
 @Injectable()
 export class ControlsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async findAll(organizationId: string, query: ControlQueryDto): Promise<PaginatedControlsDto> {
@@ -339,6 +341,14 @@ export class ControlsService {
           frameworkCode: newClause.framework.code,
           note: dto.note || null,
         },
+      });
+
+      await this.notificationsService.notify({
+        organizationId,
+        type: NotificationType.MAPPING_OVERRIDDEN,
+        message: `Framework clause mapping for control "${control.name}" was manually overridden (Clause: ${newClause.code}).`,
+        entityType: 'CONTROL_MAPPING',
+        entityId: mappingId,
       });
 
       return this.mapMappingToDto(updated);
