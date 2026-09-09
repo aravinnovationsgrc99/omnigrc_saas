@@ -2,11 +2,14 @@ import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards } f
 import { ComplianceTasksService } from './compliance-tasks.service';
 import { CreateComplianceTaskDto, UpdateComplianceTaskDto, UpdateTaskStatusDto, ComplianceTaskQueryDto } from './dto/compliance-tasks.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { JwtPayload } from '@omnigrc/shared';
+import { Role, JwtPayload } from '@omnigrc/shared';
 
 @Controller('compliance-tasks')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(Role.ADMIN, Role.ANALYST)
 export class ComplianceTasksController {
   constructor(private readonly complianceTasksService: ComplianceTasksService) {}
 

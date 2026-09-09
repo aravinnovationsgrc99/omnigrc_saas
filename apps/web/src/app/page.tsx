@@ -11,6 +11,7 @@ import { AssetListView } from '@/components/assets/asset-list-view';
 import { RiskListView } from '@/components/risks/risk-list-view';
 import { ControlMappingView } from '@/components/controls/control-mapping-view';
 import { ComplianceBoardView } from '@/components/compliance-board/compliance-board-view';
+import { AuditLogView } from '@/components/audit-logs/audit-log-view';
 import { ComingSoon } from '@/components/dashboard/coming-soon';
 
 export default function MainPage() {
@@ -41,6 +42,7 @@ export default function MainPage() {
           {view === 'controls' && <ControlMappingView />}
           {view === 'board' && <ComplianceBoardView />}
           {view === 'settings' && <SettingsView />}
+          {view === 'audit' && <AuditLogView />}
           {activeItem && !activeItem.enabled && (
             <ComingSoon label={activeItem.label} phase={activeItem.phase || 'Phase N'} />
           )}

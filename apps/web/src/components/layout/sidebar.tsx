@@ -1,9 +1,11 @@
 'use client';
 
 import React from 'react';
+import { useAuth } from '@/context/auth-context';
+import { Role, hasRole } from '@omnigrc/shared';
 import {
   LayoutDashboard, ShieldAlert, Boxes, GitMerge, KanbanSquare,
-  Settings, Globe2, type LucideIcon
+  Settings, Globe2, FileText, Lock, type LucideIcon
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -18,6 +20,7 @@ export interface NavItem {
   icon: LucideIcon;
   enabled: boolean;
   phase?: string;
+  roles?: Role[];
 }
 
 export interface NavSection {
@@ -41,11 +44,17 @@ export const NAV_SECTIONS: NavSection[] = [
   },
   {
     label: 'System',
-    items: [{ key: 'settings', label: 'Settings', icon: Settings, enabled: true }],
+    items: [
+      { key: 'settings', label: 'Settings', icon: Settings, enabled: true },
+      { key: 'audit', label: 'Audit Log', icon: FileText, enabled: true, roles: [Role.ADMIN] },
+    ],
   },
 ];
 
 export function Sidebar({ view, setView }: SidebarProps) {
+  const { user } = useAuth();
+  const userRole = user?.role || Role.ANALYST;
+
   return (
     <div style={{
       width: 232, minWidth: 232, background: '#16233F', display: 'flex', flexDirection: 'column',
@@ -71,16 +80,28 @@ export function Sidebar({ view, setView }: SidebarProps) {
             {section.items.map((item) => {
               const Icon = item.icon;
               const isActive = view === item.key;
+              const isPermitted = !item.roles || hasRole(userRole, item.roles);
+              const isDisabled = !item.enabled || !isPermitted;
+
               return (
                 <div
                   key={item.key}
-                  className={`omni-navitem ${isActive ? 'active' : ''} ${!item.enabled ? 'disabled' : ''}`}
-                  onClick={() => item.enabled && setView(item.key)}
-                  title={!item.enabled ? `Opens in ${item.phase}` : undefined}
+                  className={`omni-navitem ${isActive ? 'active' : ''} ${isDisabled ? 'disabled' : ''}`}
+                  onClick={() => item.enabled && isPermitted && setView(item.key)}
+                  title={!isPermitted ? 'Restricted to ADMIN role' : !item.enabled ? `Opens in ${item.phase}` : undefined}
+                  style={{
+                    opacity: !isPermitted ? 0.55 : 1,
+                    cursor: isDisabled ? 'not-allowed' : 'pointer',
+                  }}
                 >
                   <Icon size={16} strokeWidth={2} />
                   <span style={{ flex: 1 }}>{item.label}</span>
-                  {!item.enabled && (
+                  {!isPermitted && (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 9.5, color: '#8493A5', background: 'rgba(255,255,255,0.06)', padding: '2px 5px', borderRadius: 4 }}>
+                      <Lock size={10} /> ADMIN
+                    </span>
+                  )}
+                  {isPermitted && !item.enabled && (
                     <span className="omni-mono" style={{ fontSize: 9.5, color: '#6E7A8A' }}>{item.phase}</span>
                   )}
                 </div>

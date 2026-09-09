@@ -402,3 +402,30 @@ export interface ComplianceTaskSummaryDto {
   due90: number;
   totalOpen: number;
 }
+
+export interface AuditLogQueryDto {
+  page?: number;
+  limit?: number;
+  search?: string;
+  entityType?: string;
+  action?: string;
+  actorId?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface PaginatedAuditLogsDto {
+  items: AuditLogEntryDto[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export interface UpdateRegionalPodStatusDto {
+  status: PodStatus;
+}
+
+export function hasRole(userRole: Role, allowedRoles: Role[]): boolean {
+  return allowedRoles.includes(userRole);
+}

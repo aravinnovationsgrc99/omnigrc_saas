@@ -3,11 +3,14 @@ import { ControlsService } from './controls.service';
 import { MappingQueueService } from './ai/mapping-queue.service';
 import { CreateControlDto, UpdateControlDto, ControlQueryDto, SignOffMappingDto } from './dto/controls.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { JwtPayload, MappingJobStatusDto } from '@omnigrc/shared';
+import { Role, JwtPayload, MappingJobStatusDto } from '@omnigrc/shared';
 
 @Controller('controls')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(Role.ADMIN, Role.ANALYST)
 export class ControlsController {
   constructor(
     private readonly controlsService: ControlsService,
