@@ -32,6 +32,7 @@ export class ClaudeProvider implements AiProvider {
     }
 
     const { controlName, controlDescription, candidates } = params;
+    const candidateIds = candidates.map((c) => c.id);
 
     const candidateListPrompt = candidates.map((c) => ({
       clauseId: c.id,
@@ -40,34 +41,59 @@ export class ClaudeProvider implements AiProvider {
       clauseTitle: c.title,
     }));
 
-    const systemPrompt = `You are a high-tier enterprise GRC Compliance Mapping AI.
-Map the given control to the single best candidate clause per framework.
-Constraint: You MUST ONLY select clauseId values from the provided Candidate List.
-Return strictly valid JSON with key "suggestions".`;
-
     const userMessage = `Control Name: "${controlName}"
 Control Description: "${controlDescription}"
 
 Candidate Clauses List:
 ${JSON.stringify(candidateListPrompt, null, 2)}`;
 
-    const response = await this.anthropic.messages.create({
+    // Constrain Claude using strict Tool Calling (function choice) with enum schema
+    const response: any = await this.anthropic.messages.create({
       model: 'claude-3-opus-20240229',
       max_tokens: 1000,
-      messages: [{ role: 'user', content: `${systemPrompt}\n\n${userMessage}` }],
-    });
+      tools: [
+        {
+          name: 'submit_mapping_suggestions',
+          description: 'Submit control framework mapping suggestions using ONLY valid candidate clause IDs from the provided list',
+          input_schema: {
+            type: 'object',
+            properties: {
+              suggestions: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    clauseId: {
+                      type: 'string',
+                      enum: candidateIds.length > 0 ? candidateIds : undefined,
+                      description: 'The exact ID of the clause selected from the candidate list',
+                    },
+                    frameworkCode: { type: 'string' },
+                    clauseCode: { type: 'string' },
+                    confidenceScore: { type: 'number' },
+                    reasoning: { type: 'string' },
+                  },
+                  required: ['clauseId', 'frameworkCode', 'clauseCode', 'confidenceScore', 'reasoning'],
+                },
+              },
+            },
+            required: ['suggestions'],
+          },
+        },
+      ],
+      tool_choice: { type: 'tool', name: 'submit_mapping_suggestions' },
+      messages: [{ role: 'user', content: userMessage }],
+    } as any);
 
-    const contentBlock = response.content[0];
-    const text = contentBlock.type === 'text' ? contentBlock.text : '';
-    const cleanJsonText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const parsed = JSON.parse(cleanJsonText);
+    const toolUseBlock = response.content?.find((b: any) => b.type === 'tool_use');
+    const rawSuggestions = toolUseBlock?.input?.suggestions || [];
 
-    const suggestions: SuggestedMappingItem[] = (parsed.suggestions || []).map((s: any) => ({
+    const suggestions: SuggestedMappingItem[] = rawSuggestions.map((s: any) => ({
       clauseId: s.clauseId,
       frameworkCode: s.frameworkCode,
       clauseCode: s.clauseCode,
       confidenceScore: typeof s.confidenceScore === 'number' ? s.confidenceScore : 0.92,
-      reasoning: s.reasoning || 'Claude 3 Opus Tier 2 high-stakes compliance recommendation.',
+      reasoning: s.reasoning || 'Claude 3 Opus Tier 2 tool-constrained high-stakes compliance recommendation.',
     }));
 
     return {

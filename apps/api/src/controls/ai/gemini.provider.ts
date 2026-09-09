@@ -32,8 +32,8 @@ export class GeminiProvider implements AiProvider {
     }
 
     const { controlName, controlDescription, candidates } = params;
+    const candidateIds = candidates.map((c) => c.id);
 
-    // Structured candidate list for model
     const candidateListPrompt = candidates.map((c) => ({
       clauseId: c.id,
       frameworkCode: c.frameworkCode,
@@ -41,39 +41,50 @@ export class GeminiProvider implements AiProvider {
       clauseTitle: c.title,
     }));
 
-    const systemPrompt = `
-You are an expert GRC Compliance Mapping AI Assistant.
+    const systemPrompt = `You are an expert GRC Compliance Mapping AI Assistant.
 Analyze the following Security Control and map it to the MOST RELEVANT candidate clause for EACH candidate framework present in the candidate list.
-
-STRICT RULES FOR OUTPUT:
-1. You MUST ONLY pick clauseId values that exist explicitly in the Candidate List provided below. DO NOT invent or hallucinate any clauseId.
-2. Provide a confidenceScore between 0.50 and 0.99 reflecting mapping accuracy.
-3. Return raw JSON matching this exact structure:
-{
-  "suggestions": [
-    {
-      "clauseId": "exact_id_from_candidate_list",
-      "frameworkCode": "FRAMEWORK_CODE",
-      "clauseCode": "CLAUSE_CODE",
-      "confidenceScore": 0.92,
-      "reasoning": "Short justification"
-    }
-  ]
-}
 
 CONTROL TO MAP:
 Name: "${controlName}"
 Description: "${controlDescription}"
 
 CANDIDATE CLAUSES LIST:
-${JSON.stringify(candidateListPrompt, null, 2)}
-`;
+${JSON.stringify(candidateListPrompt, null, 2)}`;
 
-    const model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    // Constrain Gemini using responseSchema enum tool constraints
+    const model = this.genAI.getGenerativeModel({
+      model: 'gemini-1.5-flash',
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: 'OBJECT',
+          properties: {
+            suggestions: {
+              type: 'ARRAY',
+              items: {
+                type: 'OBJECT',
+                properties: {
+                  clauseId: {
+                    type: 'STRING',
+                    enum: candidateIds.length > 0 ? candidateIds : undefined,
+                    description: 'The exact candidate clause ID selected from candidates',
+                  },
+                  frameworkCode: { type: 'STRING' },
+                  clauseCode: { type: 'STRING' },
+                  confidenceScore: { type: 'NUMBER' },
+                  reasoning: { type: 'STRING' },
+                },
+                required: ['clauseId', 'frameworkCode', 'clauseCode', 'confidenceScore', 'reasoning'],
+              },
+            },
+          },
+          required: ['suggestions'],
+        },
+      } as any,
+    });
+
     const result = await model.generateContent(systemPrompt);
     const responseText = result.response.text();
-
-    // Parse JSON output safely
     const cleanJsonText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     const parsed = JSON.parse(cleanJsonText);
 
@@ -82,7 +93,7 @@ ${JSON.stringify(candidateListPrompt, null, 2)}
       frameworkCode: s.frameworkCode,
       clauseCode: s.clauseCode,
       confidenceScore: typeof s.confidenceScore === 'number' ? s.confidenceScore : 0.85,
-      reasoning: s.reasoning || 'Gemini 1.5 Flash structured mapping recommendation.',
+      reasoning: s.reasoning || 'Gemini 1.5 Flash structured tool-constrained mapping recommendation.',
     }));
 
     return {

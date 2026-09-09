@@ -14,8 +14,8 @@ export class ResendMailerService {
   private readonly fromAddress: string;
 
   constructor() {
-    this.apiKey = process.env.RESEND_API_KEY || process.env.SMTP_PASS;
-    this.fromAddress = process.env.SMTP_FROM || 'OMNiGRC Notifications <notifications@omnigrc.com>';
+    this.apiKey = process.env.RESEND_API_KEY;
+    this.fromAddress = process.env.RESEND_FROM || process.env.SMTP_FROM || 'OMNiGRC Notifications <notifications@omnigrc.com>';
 
     if (!this.apiKey) {
       this.logger.warn(
