@@ -27,10 +27,6 @@ export class ClaudeProvider implements AiProvider {
     controlDescription: string;
     candidates: CandidateClause[];
   }): Promise<AiMappingResponse> {
-    if (!this.anthropic) {
-      throw new Error('Claude API client not initialized.');
-    }
-
     const { controlName, controlDescription, candidates } = params;
 
     // GUARD: If candidate list is empty, skip external API call
@@ -41,6 +37,10 @@ export class ClaudeProvider implements AiProvider {
         modelTier: ModelTier.TIER_2,
         providerName: 'ClaudeProvider (Tier 2)',
       };
+    }
+
+    if (!this.anthropic) {
+      throw new Error('Claude API client not initialized.');
     }
 
     const candidateIds = candidates.map((c) => c.id);

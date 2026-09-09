@@ -27,10 +27,6 @@ export class GeminiProvider implements AiProvider {
     controlDescription: string;
     candidates: CandidateClause[];
   }): Promise<AiMappingResponse> {
-    if (!this.genAI) {
-      throw new Error('Gemini API client not initialized.');
-    }
-
     const { controlName, controlDescription, candidates } = params;
 
     // GUARD: If candidate list is empty, skip external API call
@@ -41,6 +37,10 @@ export class GeminiProvider implements AiProvider {
         modelTier: ModelTier.TIER_1,
         providerName: 'GeminiProvider (Tier 1)',
       };
+    }
+
+    if (!this.genAI) {
+      throw new Error('Gemini API client not initialized.');
     }
 
     const candidateIds = candidates.map((c) => c.id);

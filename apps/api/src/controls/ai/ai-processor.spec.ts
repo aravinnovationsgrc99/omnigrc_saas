@@ -198,4 +198,26 @@ describe('AI Job Processor & Router Unit Tests', () => {
       expect(res.acceptedSuggestions[0].clauseId).toBe('valid-clause-1');
     });
   });
+
+  describe('(d) Empty Candidates Guard', () => {
+    it('should return empty suggestions and skip API calls when candidates list is empty', async () => {
+      const gemini = new GeminiProvider();
+      const claude = new ClaudeProvider();
+
+      const geminiRes = await gemini.suggestMappings({
+        controlName: 'Test Control',
+        controlDescription: 'Test Description',
+        candidates: [],
+      });
+      expect(geminiRes.suggestions).toHaveLength(0);
+
+      const claudeRes = await claude.suggestMappings({
+        controlName: 'Test Control',
+        controlDescription: 'Test Description',
+        candidates: [],
+      });
+      expect(claudeRes.suggestions).toHaveLength(0);
+    });
+  });
 });
+
