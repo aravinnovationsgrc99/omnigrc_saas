@@ -4,10 +4,31 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  /* OMNiGRC Core Colors */
+  --omni-primary: #0F6E6A;
+  --omni-primary-hover: #0C5A56;
+  --omni-text-primary: #1B2430;
+  --omni-text-secondary: #5B6672;
+  --omni-text-muted: #8B95A1;
+  --omni-canvas: #F7F7F4;
+  --omni-surface: #FFFFFF;
+  --omni-border: #E2E6E4;
+  --omni-border-subtle: #EDEFED;
+
+  /* Arav Innovations Accent Layer */
+  --arav-gold: #D97706;
+  --arav-gold-light: #FEF3C7;
+  --arav-peach: #F97316;
+  --arav-peach-light: #FFEDD5;
+  --arav-lavender: #8B5CF6;
+  --arav-lavender-light: #F3E8FF;
+}
+
 .omni-root {
   font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
-  color: #1B2430;
-  background: #F6F7F6;
+  color: var(--omni-text-primary);
+  background: var(--omni-canvas);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -51,7 +72,7 @@
 .omni-navitem.active {
   background: rgba(255, 255, 255, 0.09);
   color: #FFFFFF;
-  border-left: 2px solid #0F6E6A;
+  border-left: 2px solid var(--omni-primary);
 }
 
 .omni-navitem.disabled {
@@ -71,12 +92,12 @@
 button:focus-visible,
 a:focus-visible,
 [role="button"]:focus-visible {
-  outline: 2px solid #0F6E6A;
+  outline: 2px solid var(--omni-primary);
   outline-offset: 2px;
 }
 
 .omni-btn-primary {
-  background: #0F6E6A;
+  background: var(--omni-primary);
   color: #fff;
   font-weight: 600;
   font-size: 13.5px;
@@ -88,38 +109,38 @@ a:focus-visible,
 }
 
 .omni-btn-primary:hover {
-  background: #0C5A56;
+  background: var(--omni-primary-hover);
 }
 
 .omni-btn-ghost {
   background: transparent;
-  color: #5B6672;
+  color: var(--omni-text-secondary);
   font-weight: 500;
   font-size: 13.5px;
   padding: 8px 14px;
   border-radius: 6px;
-  border: 1px solid #E2E6E4;
+  border: 1px solid var(--omni-border);
   cursor: pointer;
   transition: background .12s ease;
 }
 
 .omni-btn-ghost:hover {
-  background: #EDEFED;
+  background: var(--omni-border-subtle);
 }
 
 .omni-input {
   width: 100%;
   font-size: 14px;
   padding: 10px 12px;
-  border: 1px solid #E2E6E4;
+  border: 1px solid var(--omni-border);
   border-radius: 6px;
-  background: #fff;
+  background: var(--omni-surface);
   outline: none;
   transition: border-color .12s ease;
 }
 
 .omni-input:focus {
-  border-color: #0F6E6A;
+  border-color: var(--omni-primary);
 }
 
 /* Accessible Badge Styles with WCAG AA Contrast Ratio */
@@ -162,6 +183,33 @@ a:focus-visible,
   gap: 4px;
 }
 
+/* Arav Innovations Restrained Accent Utilities */
+.arav-badge-gold {
+  background: var(--arav-gold-light);
+  color: var(--arav-gold);
+  border: 1px solid #FDE68A;
+  font-weight: 600;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.arav-badge-peach {
+  background: var(--arav-peach-light);
+  color: #C2410C;
+  border: 1px solid #FDBA74;
+  font-weight: 600;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .omni-fade-in {
   animation: omniFadeIn .28s ease;
 }
@@ -184,4 +232,5 @@ a:focus-visible,
     transition: none !important;
   }
 }
+
 

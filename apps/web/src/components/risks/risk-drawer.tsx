@@ -1,7 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { RiskDto, RiskStatus, AssetDto, AuditLogEntryDto, CreateRiskDto, UpdateRiskDto } from '@omnigrc/shared';
+import { RiskDto, RiskStatus, RiskScoreBand, AssetDto, PaginatedAssetsDto, AuditLogEntryDto, CreateRiskDto, UpdateRiskDto } from '@omnigrc/shared';
+
+
 import { apiRequest } from '@/lib/api-client';
 import { useToast } from '@/context/toast-context';
 import { ShieldAlert, X, Trash2, History, Clock } from 'lucide-react';
