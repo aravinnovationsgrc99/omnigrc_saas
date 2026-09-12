@@ -32,6 +32,11 @@ export class ControlsController {
     return this.controlsService.getAllFrameworkClauses();
   }
 
+  @Get('frameworks')
+  async getFrameworks() {
+    return this.controlsService.getFrameworks();
+  }
+
   @Get(':id')
   async findOne(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     return this.controlsService.findOne(user.organizationId, id);

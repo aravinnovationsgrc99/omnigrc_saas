@@ -13,9 +13,26 @@ import { Plus, Search, Filter, GitMerge, ChevronRight } from 'lucide-react';
 
 
 
+interface FrameworkApiDto {
+  id: string;
+  code: string;
+  name: string;
+  clauseCount?: number;
+}
+
+const FRAMEWORK_ACCENTS: Record<string, { bg: string; color: string; border: string; label: string }> = {
+  ISO27001: { bg: '#E4F1F0', color: '#0C5A56', border: '#B8DFDB', label: 'ISO 27001' },
+  SOC2: { bg: '#EFF6FF', color: '#1E40AF', border: '#BFDBFE', label: 'SOC 2' },
+  GDPR: { bg: '#F3E8FF', color: '#7C3AED', border: '#DDD6FE', label: 'GDPR' },
+  DPDP: { bg: '#FEF3C7', color: '#B5750A', border: '#FDE68A', label: 'DPDP' },
+  ISO42001: { bg: '#ECFDF5', color: '#059669', border: '#A7F3D0', label: 'ISO 42001' },
+  HIPAA: { bg: '#FFE4E6', color: '#E11D48', border: '#FECDD3', label: 'HIPAA' },
+};
+
 export function ControlMappingView() {
   const { showToast } = useToast();
   const [controls, setControls] = useState<ControlDto[]>([]);
+  const [frameworks, setFrameworks] = useState<FrameworkApiDto[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -56,6 +73,26 @@ export function ControlMappingView() {
   useEffect(() => {
     fetchControls();
   }, [fetchControls]);
+
+  useEffect(() => {
+    async function fetchFrameworks() {
+      try {
+        const data = await apiRequest<FrameworkApiDto[]>('/controls/frameworks');
+        setFrameworks(data);
+      } catch {
+        // Fallback default framework set if API is building or offline
+        setFrameworks([
+          { id: '1', code: 'ISO27001', name: 'Information Security Management' },
+          { id: '2', code: 'SOC2', name: 'Trust Services Criteria' },
+          { id: '3', code: 'GDPR', name: 'General Data Protection Regulation' },
+          { id: '4', code: 'DPDP', name: 'Digital Personal Data Protection Act' },
+          { id: '5', code: 'ISO42001', name: 'Artificial Intelligence Management' },
+          { id: '6', code: 'HIPAA', name: 'Health Insurance Portability & Accountability' },
+        ]);
+      }
+    }
+    fetchFrameworks();
+  }, []);
 
   // If user selected a control, render Detail View
   if (selectedControlId) {
@@ -104,6 +141,52 @@ export function ControlMappingView() {
           <Plus size={15} /> New Control
         </button>
       </div>
+
+      {/* Dynamic Framework Badge Strip (Data-Driven from Framework API) */}
+      {frameworks.length > 0 && (
+        <div style={{
+          display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 20,
+          background: '#FFFFFF', padding: '14px 18px', border: '1px solid #E2E6E4', borderRadius: 10,
+          boxShadow: '0 1px 3px rgba(0,0,0,0.02)', alignItems: 'center',
+        }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: '#5B6672', textTransform: 'uppercase', letterSpacing: 0.5, marginRight: 4 }}>
+            Supported Frameworks:
+          </span>
+          {frameworks.map((fw) => {
+            const accent = FRAMEWORK_ACCENTS[fw.code] || {
+              bg: '#F4F6F5', color: '#1B2430', border: '#E2E6E4', label: fw.code,
+            };
+            return (
+              <div
+                key={fw.id || fw.code}
+                style={{
+                  background: accent.bg,
+                  color: accent.color,
+                  border: `1px solid ${accent.border}`,
+                  padding: '4px 10px',
+                  borderRadius: 6,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  transition: 'transform 0.15s ease, filter 0.15s ease',
+                  cursor: 'default',
+                }}
+                className="hover:scale-[1.02]"
+                title={`${fw.name}${fw.clauseCount ? ` (${fw.clauseCount} clauses)` : ''}`}
+              >
+                <span>{accent.label || fw.code}</span>
+                {fw.clauseCount ? (
+                  <span style={{ opacity: 0.75, fontSize: 10, fontWeight: 500 }} className="omni-mono">
+                    {fw.clauseCount} clauses
+                  </span>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Filter Strip */}
       <div style={{
@@ -193,9 +276,8 @@ export function ControlMappingView() {
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedControlId(control.id); }}
                     style={{
                       borderBottom: isLast ? 'none' : '1px solid #EDEFED',
-                      cursor: 'pointer', transition: 'background .12s ease',
                     }}
-                    className="hover:bg-gray-50/80 focus:bg-gray-50 focus:outline-none"
+                    className="omni-table-row focus:outline-none"
                   >
                     <td style={{ padding: '14px 16px', fontWeight: 600, color: '#1B2430' }}>
                       {control.name}

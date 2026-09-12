@@ -201,11 +201,10 @@ export function AuditLogView() {
                       tabIndex={0}
                       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setExpandedId(isExpanded ? null : log.id); }}
                       style={{
-                        borderBottom: '1px solid #EDEFED', cursor: 'pointer',
-                        background: isExpanded ? '#FAFBFB' : 'transparent',
-                        transition: 'background 0.15s ease',
+                        borderBottom: '1px solid #EDEFED',
+                        background: isExpanded ? '#FAFBFB' : undefined,
                       }}
-                      className="hover:bg-gray-50/80 focus:bg-gray-50 focus:outline-none"
+                      className="omni-table-row focus:outline-none"
                     >
                       <td style={{ padding: '10px 16px', textAlign: 'center' }}>
                         {isExpanded ? <ChevronDown size={15} color="#5B6672" /> : <ChevronRight size={15} color="#8B95A1" />}

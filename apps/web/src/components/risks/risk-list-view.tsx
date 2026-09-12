@@ -285,9 +285,8 @@ export function RiskListView() {
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleOpenEdit(risk); }}
                     style={{
                       borderBottom: isLast ? 'none' : '1px solid #EDEFED',
-                      cursor: 'pointer', transition: 'background .12s ease',
                     }}
-                    className="hover:bg-gray-50/80 focus:bg-gray-50 focus:outline-none"
+                    className="omni-table-row focus:outline-none"
                   >
                     <td style={{ padding: '14px 16px', fontWeight: 600, color: '#1B2430' }}>
                       {risk.title}

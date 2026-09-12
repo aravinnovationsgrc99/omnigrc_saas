@@ -16,8 +16,11 @@
   --omni-border: #E2E6E4;
   --omni-border-subtle: #EDEFED;
 
+  /* Canvas Deep - Documented dark navy shade for login brand panel & ambient contrast surfaces */
+  --omni-canvas-deep: #0F1A2E;
+
   /* Arav Innovations Accent Layer */
-  --arav-gold: #D97706;
+  --arav-gold: #B5750A;
   --arav-gold-light: #FEF3C7;
   --arav-peach: #F97316;
   --arav-peach-light: #FFEDD5;
@@ -60,13 +63,14 @@
   font-size: 13.5px;
   font-weight: 500;
   cursor: pointer;
-  transition: background .12s ease, color .12s ease;
+  transition: background .18s ease-in-out, color .18s ease-in-out, transform .15s ease-in-out;
   border-left: 2px solid transparent;
 }
 
 .omni-navitem:hover {
   background: rgba(255, 255, 255, 0.06);
   color: #EDF1F5;
+  transform: translateX(2px);
 }
 
 .omni-navitem.active {
@@ -83,6 +87,7 @@
 .omni-navitem.disabled:hover {
   background: transparent;
   color: #B9C2CE;
+  transform: none;
 }
 
 .omni-navitem:focus-visible,
@@ -105,11 +110,18 @@ a:focus-visible,
   border-radius: 6px;
   border: none;
   cursor: pointer;
-  transition: background .12s ease;
+  transition: background .18s ease-in-out, transform .15s ease-in-out, box-shadow .18s ease-in-out;
 }
 
 .omni-btn-primary:hover {
   background: var(--omni-primary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(15, 110, 106, 0.25);
+}
+
+.omni-btn-primary:active {
+  transform: translateY(0);
+  box-shadow: none;
 }
 
 .omni-btn-ghost {
@@ -121,11 +133,18 @@ a:focus-visible,
   border-radius: 6px;
   border: 1px solid var(--omni-border);
   cursor: pointer;
-  transition: background .12s ease;
+  transition: background .18s ease-in-out, color .18s ease-in-out, border-color .18s ease-in-out, transform .15s ease-in-out;
 }
 
 .omni-btn-ghost:hover {
   background: var(--omni-border-subtle);
+  color: var(--omni-text-primary);
+  border-color: #D2D7D5;
+  transform: translateY(-1px);
+}
+
+.omni-btn-ghost:active {
+  transform: translateY(0);
 }
 
 .omni-input {
@@ -136,11 +155,36 @@ a:focus-visible,
   border-radius: 6px;
   background: var(--omni-surface);
   outline: none;
-  transition: border-color .12s ease;
+  transition: border-color .15s ease-in-out, box-shadow .15s ease-in-out;
 }
 
 .omni-input:focus {
   border-color: var(--omni-primary);
+  box-shadow: 0 0 0 3px rgba(15, 110, 106, 0.1);
+}
+
+/* Standardized Interactive Table Rows with Crisp Hover Contrast */
+.omni-table-row {
+  transition: background-color 150ms ease-in-out;
+  cursor: pointer;
+}
+
+.omni-table-row:hover {
+  background-color: #EEF4F3 !important;
+}
+
+/* Card Visual Refinement Utility */
+.omni-card {
+  background: #FFFFFF;
+  border: 1px solid var(--omni-border);
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+  transition: border-color 0.18s ease-in-out, box-shadow 0.18s ease-in-out;
+}
+
+.omni-card:hover {
+  border-color: #D6DAD7;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.04);
 }
 
 /* Accessible Badge Styles with WCAG AA Contrast Ratio */
@@ -155,6 +199,11 @@ a:focus-visible,
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  transition: filter 0.15s ease-in-out;
+}
+
+.omni-badge-teal:hover {
+  filter: brightness(0.97);
 }
 
 .omni-badge-amber {
@@ -168,6 +217,11 @@ a:focus-visible,
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  transition: filter 0.15s ease-in-out;
+}
+
+.omni-badge-amber:hover {
+  filter: brightness(0.97);
 }
 
 .omni-badge-rose {
@@ -181,6 +235,11 @@ a:focus-visible,
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  transition: filter 0.15s ease-in-out;
+}
+
+.omni-badge-rose:hover {
+  filter: brightness(0.97);
 }
 
 /* Arav Innovations Restrained Accent Utilities */
@@ -195,6 +254,11 @@ a:focus-visible,
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  transition: filter 0.15s ease-in-out;
+}
+
+.arav-badge-gold:hover {
+  filter: brightness(0.97);
 }
 
 .arav-badge-peach {
@@ -208,10 +272,15 @@ a:focus-visible,
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  transition: filter 0.15s ease-in-out;
+}
+
+.arav-badge-peach:hover {
+  filter: brightness(0.97);
 }
 
 .omni-fade-in {
-  animation: omniFadeIn .28s ease;
+  animation: omniFadeIn .25s ease-in-out;
 }
 
 @keyframes omniFadeIn {
@@ -227,9 +296,14 @@ a:focus-visible,
 
 @media (prefers-reduced-motion: reduce) {
   .omni-fade-in,
-  .animate-pulse {
+  .animate-pulse,
+  .omni-btn-primary,
+  .omni-btn-ghost,
+  .omni-navitem,
+  .omni-table-row {
     animation: none !important;
     transition: none !important;
+    transform: none !important;
   }
 }
 

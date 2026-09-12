@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Sparkles, ArrowRight, CheckCircle2, Circle } from 'lucide-react';
 import { useAuth } from '@/context/auth-context';
 import { apiRequest } from '@/lib/api-client';
+import { AnimatedCountUp } from '@/components/ui/animated-count-up';
 
 export const BUILD_PHASES = [
   { id: 1, name: 'Foundation', desc: 'Shell, navigation, auth, design system', done: true },
@@ -19,8 +20,11 @@ function StatStripItem({ label, value, last }: { label: string; value: string | 
   return (
     <div style={{
       flex: 1, padding: '16px 22px', borderRight: last ? 'none' : '1px solid #E2E6E4',
-    }}>
-      <div className="omni-mono" style={{ fontSize: 24, fontWeight: 600, color: '#16233F' }}>{value}</div>
+      transition: 'background .15s ease-in-out',
+    }} className="hover:bg-slate-50/50">
+      <div className="omni-mono" style={{ fontSize: 24, fontWeight: 600, color: '#16233F' }}>
+        <AnimatedCountUp value={value} />
+      </div>
       <div style={{ fontSize: 12, color: '#5B6672', marginTop: 3 }}>{label}</div>
     </div>
   );

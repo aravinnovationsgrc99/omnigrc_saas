@@ -119,6 +119,23 @@ export class ControlsService {
     }));
   }
 
+  async getFrameworks() {
+    const frameworks = await this.prisma.framework.findMany({
+      include: {
+        _count: { select: { clauses: true } },
+      },
+      orderBy: { code: 'asc' },
+    });
+
+    return frameworks.map((f) => ({
+      id: f.id,
+      code: f.code as FrameworkCode,
+      name: f.name,
+      clauseCount: f._count.clauses,
+      createdAt: f.createdAt.toISOString(),
+    }));
+  }
+
   async create(organizationId: string, userId: string, dto: CreateControlDto): Promise<ControlDto> {
     const control = await this.prisma.control.create({
       data: {

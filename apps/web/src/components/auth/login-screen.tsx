@@ -50,8 +50,10 @@ export function LoginScreen() {
     <div className="omni-root omni-fade-in" style={{ minHeight: '100vh', display: 'flex' }}>
       {/* Left brand panel */}
       <div style={{
-        width: '42%', minWidth: 320, background: 'linear-gradient(165deg, #0F1A2E, #16233F)',
+        width: '42%', minWidth: 320,
+        background: 'radial-gradient(circle at 10% 20%, rgba(15, 110, 106, 0.25) 0%, transparent 45%), radial-gradient(circle at 90% 80%, rgba(181, 117, 10, 0.15) 0%, transparent 45%), linear-gradient(165deg, var(--omni-canvas-deep, #0F1A2E), #16233F)',
         color: '#fff', padding: '56px 44px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+        position: 'relative', overflow: 'hidden',
       }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

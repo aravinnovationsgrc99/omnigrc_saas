@@ -127,7 +127,8 @@ export function Topbar({ onToggleMobileSidebar }: TopbarProps) {
 
   return (
     <div style={{
-      height: 56, minHeight: 56, borderBottom: '1px solid #E2E6E4', background: '#FFFFFF',
+      height: 56, minHeight: 56, borderBottom: '1px solid #E2E6E4',
+      background: 'linear-gradient(90deg, #FFFFFF 0%, #FAFCFB 60%, rgba(15, 110, 106, 0.03) 85%, rgba(181, 117, 10, 0.02) 100%)',
       display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 22px',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 13.5, fontWeight: 500, color: '#1B2430' }}>
