@@ -57,9 +57,9 @@ export default function MainPage() {
           mobileOpen={mobileSidebarOpen}
           onCloseMobile={() => setMobileSidebarOpen(false)}
         />
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
           <Topbar onToggleMobileSidebar={() => setMobileSidebarOpen((v) => !v)} />
-          <div style={{ flex: 1, overflowY: 'auto' }} className="omni-scroll">
+          <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }} className="omni-scroll w-full max-w-full">
             {view === 'dashboard' && <DashboardView />}
             {view === 'risk' && <RiskListView />}
             {view === 'assets' && <AssetListView />}

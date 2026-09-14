@@ -76,34 +76,30 @@ export function AssetListView() {
   };
 
   return (
-    <div className="omni-fade-in" style={{ padding: '28px 32px', maxWidth: 1140, margin: '0 auto' }}>
+    <div className="omni-fade-in w-full max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-8 overflow-x-hidden">
       {/* Top Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 mb-5">
         <div>
-          <h1 style={{ fontSize: 21, fontWeight: 600, color: '#1B2430' }}>Asset & Inventory</h1>
-          <p style={{ fontSize: 13.5, color: '#5B6672', marginTop: 3 }}>
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Asset & Inventory</h1>
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">
             Track software, hardware, vendors, and data stores across your organization.
           </p>
         </div>
         <button
           onClick={handleOpenCreate}
-          className="omni-btn-primary"
-          style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+          className="omni-btn-primary w-full md:w-auto justify-center shrink-0 flex items-center gap-1.5"
         >
           <Plus size={15} /> New Asset
         </button>
       </div>
 
       {/* Filter Strip */}
-      <div style={{
-        display: 'flex', gap: 12, alignItems: 'center', marginBottom: 20,
-        background: '#FFFFFF', padding: '12px 16px', border: '1px solid #E2E6E4', borderRadius: 8,
-      }}>
+      <div className="flex flex-col md:flex-row gap-2.5 sm:gap-3 items-stretch md:items-center mb-5 bg-white p-3.5 border border-slate-200 rounded-xl shadow-sm w-full max-w-full overflow-hidden">
         {/* Search */}
-        <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
-          <Search size={15} color="#8B95A1" style={{ position: 'absolute', left: 10, top: 11 }} />
+        <div className="relative flex-1 w-full">
+          <Search size={15} color="#8B95A1" className="absolute left-2.5 top-3" />
           <input
-            className="omni-input"
+            className="omni-input w-full"
             placeholder="Search assets by name, owner, vendor..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -113,13 +109,12 @@ export function AssetListView() {
         </div>
 
         {/* Type Filter */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Filter size={14} color="#5B6672" />
+        <div className="flex items-center gap-2 w-full md:w-auto">
+          <Filter size={14} color="#5B6672" className="shrink-0 hidden md:inline" />
           <select
-            className="omni-input"
+            className="omni-input w-full md:w-36"
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
-            style={{ width: 140 }}
             aria-label="Filter by asset type"
           >
             <option value="">All Types</option>
@@ -132,12 +127,11 @@ export function AssetListView() {
         </div>
 
         {/* Criticality Filter */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div className="flex items-center gap-2 w-full md:w-auto">
           <select
-            className="omni-input"
+            className="omni-input w-full md:w-36"
             value={criticalityFilter}
             onChange={(e) => setCriticalityFilter(e.target.value)}
-            style={{ width: 150 }}
             aria-label="Filter by criticality"
           >
             <option value="">All Criticality</option>

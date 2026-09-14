@@ -28,12 +28,28 @@
   --arav-lavender-light: #F3E8FF;
 }
 
+html, body {
+  overflow-x: hidden !important;
+  max-width: 100vw !important;
+  width: 100% !important;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+*, *:before, *:after {
+  box-sizing: border-box;
+}
+
 .omni-root {
   font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
   color: var(--omni-text-primary);
   background: var(--omni-canvas);
   -webkit-font-smoothing: antialiased;
+  max-width: 100vw;
+  overflow-x: hidden;
 }
+
 
 .omni-mono {
   font-family: 'IBM Plex Mono', ui-monospace, monospace;

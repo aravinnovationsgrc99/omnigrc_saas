@@ -109,39 +109,35 @@ export function RiskListView() {
   };
 
   return (
-    <div className="omni-fade-in" style={{ padding: '28px 32px', maxWidth: 1140, margin: '0 auto' }}>
+    <div className="omni-fade-in w-full max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-8 overflow-x-hidden">
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 mb-5">
         <div>
-          <h1 style={{ fontSize: 21, fontWeight: 600, color: '#1B2430' }}>Risk Register</h1>
-          <p style={{ fontSize: 13.5, color: '#5B6672', marginTop: 3 }}>
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Risk Register</h1>
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">
             Identify, assess likelihood × impact, track treatment plans, and accept organizational risks.
           </p>
         </div>
         <button
           onClick={handleOpenCreate}
-          className="omni-btn-primary"
-          style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+          className="omni-btn-primary w-full md:w-auto justify-center shrink-0 flex items-center gap-1.5"
         >
           <Plus size={15} /> New Risk
         </button>
       </div>
 
       {/* Tabs & Filters Control Bar */}
-      <div style={{
-        display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', justifyContent: 'space-between',
-        marginBottom: 20, background: '#FFFFFF', padding: '12px 16px', border: '1px solid #E2E6E4', borderRadius: 8,
-      }}>
+      <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between mb-5 bg-white p-3.5 border border-slate-200 rounded-xl shadow-sm w-full max-w-full overflow-hidden">
         {/* Tab Buttons */}
-        <div style={{ display: 'flex', background: '#F6F7F6', borderRadius: 6, padding: 3, gap: 2 }}>
+        <div className="flex bg-slate-100 p-1 rounded-lg gap-1 shrink-0 w-full md:w-auto">
           <button
             onClick={() => setActiveTab('list')}
             style={{
-              padding: '6px 14px', borderRadius: 5, border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+              padding: '6px 14px', borderRadius: 6, border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer',
               background: activeTab === 'list' ? '#FFFFFF' : 'transparent',
               color: activeTab === 'list' ? '#1B2430' : '#5B6672',
               boxShadow: activeTab === 'list' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-              display: 'flex', alignItems: 'center', gap: 6,
+              display: 'flex', alignItems: 'center', gap: 6, flex: 1, justifyContent: 'center',
             }}
           >
             <List size={14} /> List View
@@ -149,11 +145,11 @@ export function RiskListView() {
           <button
             onClick={() => setActiveTab('heatmap')}
             style={{
-              padding: '6px 14px', borderRadius: 5, border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+              padding: '6px 14px', borderRadius: 6, border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer',
               background: activeTab === 'heatmap' ? '#FFFFFF' : 'transparent',
               color: activeTab === 'heatmap' ? '#1B2430' : '#5B6672',
               boxShadow: activeTab === 'heatmap' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-              display: 'flex', alignItems: 'center', gap: 6,
+              display: 'flex', alignItems: 'center', gap: 6, flex: 1, justifyContent: 'center',
             }}
           >
             <LayoutGrid size={14} /> Heatmap View
@@ -161,12 +157,12 @@ export function RiskListView() {
         </div>
 
         {/* Filters */}
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flex: 1, justifyContent: 'flex-end' }}>
+        <div className="flex flex-col md:flex-row gap-2.5 items-stretch md:items-center w-full md:w-auto flex-1 md:justify-end">
           {/* Search */}
-          <div style={{ position: 'relative', width: 220 }}>
-            <Search size={15} color="#8B95A1" style={{ position: 'absolute', left: 10, top: 11 }} />
+          <div className="relative w-full md:w-52">
+            <Search size={15} color="#8B95A1" className="absolute left-2.5 top-3" />
             <input
-              className="omni-input"
+              className="omni-input w-full"
               placeholder="Search risk title, owner..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -177,10 +173,9 @@ export function RiskListView() {
 
           {/* Status Filter */}
           <select
-            className="omni-input"
+            className="omni-input w-full md:w-36"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            style={{ width: 140 }}
             aria-label="Filter by risk status"
           >
             <option value="">All Statuses</option>
@@ -192,10 +187,9 @@ export function RiskListView() {
 
           {/* Score Band Filter */}
           <select
-            className="omni-input"
+            className="omni-input w-full md:w-36"
             value={scoreBandFilter}
             onChange={(e) => setScoreBandFilter(e.target.value)}
-            style={{ width: 140 }}
             aria-label="Filter by severity band"
           >
             <option value="">All Severities</option>

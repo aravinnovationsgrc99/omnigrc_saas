@@ -94,30 +94,25 @@ export function DashboardView() {
   }, []);
 
   return (
-    <div className="omni-fade-in" style={{ padding: '28px 32px', maxWidth: 1080 }}>
-      <div style={{ marginBottom: 22 }}>
-        <h1 style={{ fontSize: 21, fontWeight: 600 }}>Welcome, {firstName}</h1>
-        <p style={{ fontSize: 13.5, color: '#5B6672', marginTop: 3 }}>
+    <div className="omni-fade-in w-full max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-8 overflow-x-hidden">
+      <div className="mb-5">
+        <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Welcome, {firstName}</h1>
+        <p className="text-xs sm:text-sm text-slate-500 mt-1">
           This is the foundation build — the workspaces below come online as each phase ships.
         </p>
       </div>
 
       {/* stat strip */}
-      <div style={{
-        display: 'flex', background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10,
-        marginBottom: 24, overflow: 'hidden',
-      }}>
+      <div className="grid grid-cols-2 md:grid-cols-4 bg-white border border-slate-200 rounded-xl mb-6 overflow-hidden shadow-sm divide-y md:divide-y-0 md:divide-x divide-slate-100">
         <StatStripItem label="Open risks" value={openRiskCount} />
         <StatStripItem label="Assets tracked" value={assetCount} />
         <StatStripItem label="Controls mapped" value={mappedControlCount} />
         <StatStripItem label="Tasks due this week" value={dueThisWeekCount} last />
       </div>
 
-      <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
+      <div className="flex flex-col lg:flex-row gap-5 items-stretch">
         {/* build roadmap */}
-        <div style={{
-          flex: 1.4, background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10, padding: '18px 22px',
-        }}>
+        <div className="flex-1 bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-sm">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
             <Sparkles size={15} color="#0F6E6A" />
             <h2 style={{ fontSize: 14.5, fontWeight: 600 }}>Build roadmap</h2>

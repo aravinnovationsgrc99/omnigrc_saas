@@ -126,30 +126,33 @@ export function Topbar({ onToggleMobileSidebar }: TopbarProps) {
   };
 
   return (
-    <div style={{
-      height: 56, minHeight: 56, borderBottom: '1px solid #E2E6E4',
-      background: 'linear-gradient(90deg, #FFFFFF 0%, #FAFCFB 60%, rgba(15, 110, 106, 0.03) 85%, rgba(181, 117, 10, 0.02) 100%)',
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 22px',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 13.5, fontWeight: 500, color: '#1B2430' }}>
+    <div 
+      className="w-full max-w-full overflow-hidden px-3 sm:px-6"
+      style={{
+        height: 56, minHeight: 56, borderBottom: '1px solid #E2E6E4',
+        background: 'linear-gradient(90deg, #FFFFFF 0%, #FAFCFB 60%, rgba(15, 110, 106, 0.03) 85%, rgba(181, 117, 10, 0.02) 100%)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, fontWeight: 500, color: '#1B2430', minWidth: 0 }}>
         {onToggleMobileSidebar && (
           <button
             onClick={onToggleMobileSidebar}
-            className="lg:hidden omni-btn-ghost"
+            className="lg:hidden omni-btn-ghost shrink-0"
             style={{ padding: 6 }}
             aria-label="Toggle Navigation Sidebar"
           >
             <Menu size={18} />
           </button>
         )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Building2 size={15} color="#5B6672" />
-          {orgName}
-          <span style={{ color: '#8B95A1', fontWeight: 400 }}>· Pilot workspace</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+          <Building2 size={15} color="#5B6672" className="shrink-0" />
+          <span className="truncate max-w-[120px] sm:max-w-[200px] md:max-w-none font-bold text-slate-900">{orgName}</span>
+          <span className="text-slate-400 font-normal hidden md:inline">· Pilot workspace</span>
         </div>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }} className="shrink-0">
         {/* Notification Bell Icon */}
         <div style={{ position: 'relative' }}>
           <button
@@ -179,9 +182,9 @@ export function Topbar({ onToggleMobileSidebar }: TopbarProps) {
 
           {/* Notifications Dropdown Popover */}
           {notifOpen && (
-            <div className="omni-fade-in" style={{
-              position: 'absolute', right: -40, top: 44, background: '#FFFFFF', border: '1px solid #E2E6E4',
-              borderRadius: 10, boxShadow: '0 12px 30px rgba(15,23,42,0.12)', width: 340, overflow: 'hidden', zIndex: 50,
+            <div className="omni-fade-in -right-10 sm:right-0 w-[300px] sm:w-[340px] max-w-[calc(100vw-24px)]" style={{
+              position: 'absolute', top: 44, background: '#FFFFFF', border: '1px solid #E2E6E4',
+              borderRadius: 10, boxShadow: '0 12px 30px rgba(15,23,42,0.12)', overflow: 'hidden', zIndex: 50,
             }}>
               <div style={{
                 padding: '12px 14px', borderBottom: '1px solid #EDEFED', display: 'flex',
@@ -264,19 +267,19 @@ export function Topbar({ onToggleMobileSidebar }: TopbarProps) {
         <div style={{ position: 'relative' }}>
           <div
             onClick={() => { setMenuOpen((v) => !v); setNotifOpen(false); }}
-            style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '6px 8px', borderRadius: 6 }}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', padding: '4px 6px', borderRadius: 6 }}
           >
             <div style={{
               width: 28, height: 28, borderRadius: '50%', background: '#E4F1F0', color: '#0F6E6A',
               display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, fontWeight: 700,
-            }}>
+            }} className="shrink-0">
               {initials}
             </div>
-            <div style={{ lineHeight: 1.2 }}>
+            <div className="hidden md:block" style={{ lineHeight: 1.2 }}>
               <div style={{ fontSize: 13, fontWeight: 600 }}>{userName}</div>
               <div style={{ fontSize: 11, color: '#8B95A1' }}>{roleName}</div>
             </div>
-            <ChevronDown size={14} color="#8B95A1" />
+            <ChevronDown size={14} color="#8B95A1" className="shrink-0" />
           </div>
 
           {menuOpen && (

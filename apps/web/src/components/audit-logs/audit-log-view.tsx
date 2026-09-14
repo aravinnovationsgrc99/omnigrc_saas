@@ -90,24 +90,23 @@ export function AuditLogView() {
   };
 
   return (
-    <div className="omni-fade-in" style={{ padding: '24px 32px' }}>
+    <div className="omni-fade-in w-full max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-8 overflow-x-hidden">
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 mb-5">
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div className="flex items-center gap-2">
             <FileText size={20} color="#0F6E6A" />
-            <h1 style={{ fontSize: 19, fontWeight: 600, color: '#1B2430' }}>Audit Log Explorer</h1>
+            <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Audit Log Explorer</h1>
             <span className="omni-badge-teal">ADMIN ONLY</span>
           </div>
-          <p style={{ fontSize: 12.5, color: '#5B6672', marginTop: 3 }}>
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">
             Immutable event audit trail across all organization entities and system activities
           </p>
         </div>
 
         <button
           onClick={() => fetchLogs(page)}
-          className="omni-btn-ghost"
-          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5 }}
+          className="omni-btn-ghost flex items-center gap-1.5 text-xs w-full md:w-auto justify-center"
           aria-label="Refresh audit log"
         >
           <RefreshCw size={14} className={loading ? 'spin' : ''} />
@@ -116,36 +115,33 @@ export function AuditLogView() {
       </div>
 
       {/* Filter Bar */}
-      <div style={{
-        background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10,
-        padding: '12px 16px', marginBottom: 20, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap',
-      }}>
-        <form onSubmit={handleSearchSubmit} style={{ display: 'flex', flex: 1, gap: 8, minWidth: 240 }}>
-          <div style={{ position: 'relative', flex: 1 }}>
-            <Search size={15} color="#8B95A1" style={{ position: 'absolute', left: 10, top: 10 }} />
+      <div className="bg-white border border-slate-200 rounded-xl p-3.5 mb-5 flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between w-full max-w-full overflow-hidden shadow-sm">
+        <form onSubmit={handleSearchSubmit} className="flex flex-col md:flex-row flex-1 gap-2 w-full">
+          <div className="relative flex-1 w-full">
+            <Search size={15} color="#8B95A1" className="absolute left-2.5 top-2.5" />
             <input
               type="text"
               placeholder="Search action, actor ID, or entity ID..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="omni-input"
-              style={{ paddingLeft: 32, height: 34, fontSize: 12.5 }}
+              className="omni-input w-full"
+              style={{ paddingLeft: 32, height: 36, fontSize: 13 }}
               aria-label="Search audit logs"
             />
           </div>
-          <button type="submit" className="omni-btn-ghost" style={{ height: 34, padding: '0 14px', fontSize: 12 }}>
+          <button type="submit" className="omni-btn-ghost w-full md:w-auto" style={{ height: 36, padding: '0 16px', fontSize: 12.5 }}>
             Search
           </button>
         </form>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Filter size={14} color="#5B6672" />
-          <span style={{ fontSize: 12, fontWeight: 500, color: '#5B6672' }}>Entity:</span>
+        <div className="flex items-center gap-2 w-full md:w-auto">
+          <Filter size={14} color="#5B6672" className="shrink-0 hidden md:inline" />
+          <span className="text-xs font-medium text-slate-500 shrink-0">Entity:</span>
           <select
             value={entityType}
             onChange={(e) => { setEntityType(e.target.value); setPage(1); }}
-            className="omni-input"
-            style={{ height: 34, fontSize: 12, padding: '0 8px', width: 140 }}
+            className="omni-input w-full md:w-36"
+            style={{ height: 36, fontSize: 12.5 }}
             aria-label="Filter by entity type"
           >
             <option value="">All Entities</option>

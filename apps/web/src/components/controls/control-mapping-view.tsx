@@ -124,19 +124,18 @@ export function ControlMappingView() {
   };
 
   return (
-    <div className="omni-fade-in" style={{ padding: '28px 32px', maxWidth: 1140, margin: '0 auto' }}>
+    <div className="omni-fade-in w-full max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-8 overflow-x-hidden">
       {/* Top Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 mb-5">
         <div>
-          <h1 style={{ fontSize: 21, fontWeight: 600, color: '#1B2430' }}>Control Mapping & Framework Library</h1>
-          <p style={{ fontSize: 13.5, color: '#5B6672', marginTop: 3 }}>
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Control Mapping & Framework Library</h1>
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">
             Map operational security controls to ISO 27001, ISO 42001, SOC 2, GDPR, DPDP, and HIPAA standards using AI suggestions.
           </p>
         </div>
         <button
           onClick={() => setIsDrawerOpen(true)}
-          className="omni-btn-primary"
-          style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+          className="omni-btn-primary w-full md:w-auto justify-center shrink-0 flex items-center gap-1.5"
         >
           <Plus size={15} /> New Control
         </button>
@@ -144,12 +143,8 @@ export function ControlMappingView() {
 
       {/* Dynamic Framework Badge Strip (Data-Driven from Framework API) */}
       {frameworks.length > 0 && (
-        <div style={{
-          display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 20,
-          background: '#FFFFFF', padding: '14px 18px', border: '1px solid #E2E6E4', borderRadius: 10,
-          boxShadow: '0 1px 3px rgba(0,0,0,0.02)', alignItems: 'center',
-        }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: '#5B6672', textTransform: 'uppercase', letterSpacing: 0.5, marginRight: 4 }}>
+        <div className="flex flex-wrap gap-2 sm:gap-2.5 mb-5 bg-white p-3.5 border border-slate-200 rounded-xl shadow-sm items-center w-full max-w-full overflow-hidden">
+          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider mr-1 w-full sm:w-auto">
             Supported Frameworks:
           </span>
           {frameworks.map((fw) => {
@@ -189,15 +184,12 @@ export function ControlMappingView() {
       )}
 
       {/* Filter Strip */}
-      <div style={{
-        display: 'flex', gap: 12, alignItems: 'center', marginBottom: 20,
-        background: '#FFFFFF', padding: '12px 16px', border: '1px solid #E2E6E4', borderRadius: 8,
-      }}>
+      <div className="flex flex-col md:flex-row gap-2.5 sm:gap-3 items-stretch md:items-center mb-5 bg-white p-3.5 border border-slate-200 rounded-xl shadow-sm w-full max-w-full overflow-hidden">
         {/* Search */}
-        <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
-          <Search size={15} color="#8B95A1" style={{ position: 'absolute', left: 10, top: 11 }} />
+        <div className="relative flex-1 w-full">
+          <Search size={15} color="#8B95A1" className="absolute left-2.5 top-3" />
           <input
-            className="omni-input"
+            className="omni-input w-full"
             placeholder="Search control name, description, category..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -207,13 +199,12 @@ export function ControlMappingView() {
         </div>
 
         {/* Status Filter */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Filter size={14} color="#5B6672" />
+        <div className="flex items-center gap-2 w-full md:w-auto">
+          <Filter size={14} color="#5B6672" className="shrink-0 hidden md:inline" />
           <select
-            className="omni-input"
+            className="omni-input w-full md:w-44"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            style={{ width: 160 }}
             aria-label="Filter by mapping status"
           >
             <option value="">All Mapping Statuses</option>

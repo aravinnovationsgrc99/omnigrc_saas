@@ -159,28 +159,25 @@ export function ComplianceBoardView() {
   });
 
   return (
-    <div className="omni-fade-in" style={{ padding: '28px 32px', maxWidth: 1240, margin: '0 auto' }}>
+    <div className="omni-fade-in w-full max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-8 overflow-x-hidden">
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 mb-5">
         <div>
-          <h1 style={{ fontSize: 21, fontWeight: 600, color: '#1B2430' }}>Compliance Board</h1>
-          <p style={{ fontSize: 13.5, color: '#5B6672', marginTop: 3 }}>
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Compliance Board</h1>
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">
             Track compliance tasks, drag-and-drop workflow status, link Phase 4 Controls, and monitor 30/60/90 day rolling deadlines.
           </p>
         </div>
         <button
           onClick={handleOpenCreate}
-          className="omni-btn-primary"
-          style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+          className="omni-btn-primary w-full md:w-auto justify-center shrink-0 flex items-center gap-1.5"
         >
           <Plus size={15} /> New Task
         </button>
       </div>
 
       {/* 30/60/90 Day Dashboard Strip */}
-      <div style={{
-        display: 'flex', gap: 16, marginBottom: 24, flexWrap: 'wrap',
-      }}>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 mb-6">
         <div style={{
           flex: 1, minWidth: 160, background: '#FFFFFF', border: '1px solid #F1C7CC', borderRadius: 10, padding: '16px 20px',
         }}>
