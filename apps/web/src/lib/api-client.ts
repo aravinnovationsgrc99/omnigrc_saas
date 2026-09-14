@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/+$/, '');
 
 const ACCESS_TOKEN_KEY = 'omnigrc_access_token';
 const REFRESH_TOKEN_KEY = 'omnigrc_refresh_token';

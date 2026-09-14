@@ -47,14 +47,9 @@ export function LoginScreen() {
   };
 
   return (
-    <div className="omni-root omni-fade-in" style={{ minHeight: '100vh', display: 'flex' }}>
-      {/* Left brand panel */}
-      <div style={{
-        width: '42%', minWidth: 320,
-        background: 'radial-gradient(circle at 10% 20%, rgba(15, 110, 106, 0.25) 0%, transparent 45%), radial-gradient(circle at 90% 80%, rgba(181, 117, 10, 0.15) 0%, transparent 45%), linear-gradient(165deg, var(--omni-canvas-deep, #0F1A2E), #16233F)',
-        color: '#fff', padding: '56px 44px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
-        position: 'relative', overflow: 'hidden',
-      }}>
+    <div className="omni-root omni-fade-in min-h-screen flex flex-col md:flex-row bg-slate-50 dark:bg-[#0A111F]">
+      {/* Left brand panel - visible on desktop */}
+      <div className="hidden md:flex w-[42%] min-w-[320px] bg-[radial-gradient(circle_at_10%_20%,rgba(15,110,106,0.25)_0%,transparent_45%),radial-gradient(circle_at_90%_80%,rgba(181,117,10,0.15)_0%,transparent_45%),linear-gradient(165deg,var(--omni-canvas-deep,#0F1A2E),#16233F)] text-white p-10 lg:p-14 flex-col justify-between relative overflow-hidden">
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{
@@ -80,8 +75,16 @@ export function LoginScreen() {
       </div>
 
       {/* Right form panel */}
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <div style={{ width: 360 }}>
+      <div className="flex-1 flex items-center justify-center p-6 sm:p-10 w-full">
+        <div className="w-full max-w-sm">
+          {/* Mobile Logo Header */}
+          <div className="flex md:hidden items-center justify-center gap-2 mb-6">
+            <div className="w-8 h-8 rounded-lg bg-[#0F6E6A] flex items-center justify-center font-bold text-white text-base">
+              Ω
+            </div>
+            <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">OMNiGRC</span>
+          </div>
+
           <h2 style={{ fontSize: 19, fontWeight: 600, marginBottom: 4 }}>
             {isRegisterMode ? 'Scaffold new organization' : 'Sign in to your workspace'}
           </h2>

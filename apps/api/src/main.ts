@@ -5,10 +5,14 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  const rawFrontendUrls = process.env.FRONTEND_URL
+    ? process.env.FRONTEND_URL.split(',').map((url) => url.trim().replace(/\/+$/, ''))
+    : [];
+
   const allowedOrigins = [
     'http://localhost:3000',
     'http://127.0.0.1:3000',
-    process.env.FRONTEND_URL,
+    ...rawFrontendUrls,
   ].filter((url): url is string => typeof url === 'string' && url.length > 0);
 
   app.enableCors({
