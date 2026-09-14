@@ -127,7 +127,7 @@ export function Topbar({ onToggleMobileSidebar }: TopbarProps) {
 
   return (
     <div 
-      className="w-full max-w-full overflow-hidden px-3 sm:px-6"
+      className="w-full max-w-full px-3 sm:px-6 relative z-40"
       style={{
         height: 56, minHeight: 56, borderBottom: '1px solid #E2E6E4',
         background: 'linear-gradient(90deg, #FFFFFF 0%, #FAFCFB 60%, rgba(15, 110, 106, 0.03) 85%, rgba(181, 117, 10, 0.02) 100%)',
@@ -184,7 +184,7 @@ export function Topbar({ onToggleMobileSidebar }: TopbarProps) {
           {notifOpen && (
             <div className="omni-fade-in -right-10 sm:right-0 w-[300px] sm:w-[340px] max-w-[calc(100vw-24px)]" style={{
               position: 'absolute', top: 44, background: '#FFFFFF', border: '1px solid #E2E6E4',
-              borderRadius: 10, boxShadow: '0 12px 30px rgba(15,23,42,0.12)', overflow: 'hidden', zIndex: 50,
+              borderRadius: 10, boxShadow: '0 12px 30px rgba(15,23,42,0.15)', overflow: 'hidden', zIndex: 100,
             }}>
               <div style={{
                 padding: '12px 14px', borderBottom: '1px solid #EDEFED', display: 'flex',
@@ -283,18 +283,22 @@ export function Topbar({ onToggleMobileSidebar }: TopbarProps) {
           </div>
 
           {menuOpen && (
-            <div style={{
-              position: 'absolute', right: 0, top: 44, background: '#fff', border: '1px solid #E2E6E4',
-              borderRadius: 8, boxShadow: '0 6px 20px rgba(20,30,40,0.10)', width: 172, overflow: 'hidden', zIndex: 50,
-            }}>
+            <div
+              className="omni-fade-in"
+              style={{
+                position: 'absolute', right: 0, top: 44, background: '#FFFFFF', border: '1px solid #E2E6E4',
+                borderRadius: 8, boxShadow: '0 10px 25px rgba(0,0,0,0.15)', width: 172, overflow: 'hidden', zIndex: 100,
+              }}
+            >
               <div
                 onClick={logout}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', fontSize: 13,
-                  color: '#B23A48', cursor: 'pointer',
+                  color: '#B23A48', cursor: 'pointer', fontWeight: 600,
                 }}
+                className="hover:bg-rose-50 transition-colors"
               >
-                <LogOut size={14} /> Sign out
+                <LogOut size={14} color="#B23A48" /> Sign out
               </div>
             </div>
           )}

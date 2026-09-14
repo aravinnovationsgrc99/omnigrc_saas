@@ -61,7 +61,7 @@ export class AuditLogsService {
     const where: any = { organizationId };
 
     if (query.entityType) {
-      where.entityType = query.entityType;
+      where.entityType = { contains: query.entityType, mode: 'insensitive' };
     }
 
     if (query.action) {

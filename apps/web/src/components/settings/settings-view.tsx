@@ -5,7 +5,7 @@ import { useAuth } from '@/context/auth-context';
 import { useToast } from '@/context/toast-context';
 import { apiRequest } from '@/lib/api-client';
 import { RegionalPodDto, PodStatus, Role } from '@omnigrc/shared';
-import { Globe2, ShieldAlert, CheckCircle2, Lock, AlertTriangle, Send, Mail, Link, Layers, Check } from 'lucide-react';
+import { Globe2, ShieldAlert, CheckCircle2, Lock, AlertTriangle, Send, Mail, Link, Layers, Check, ShieldCheck, HelpCircle } from 'lucide-react';
 import { SkeletonLine } from '@/components/ui/skeleton';
 import { InlineErrorState } from '@/components/ui/inline-error-state';
 
@@ -15,17 +15,22 @@ export function SettingsView() {
   const [pods, setPods] = useState<RegionalPodDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // Regional Pod Modal State
   const [selectedPod, setSelectedPod] = useState<RegionalPodDto | null>(null);
+  const [podAckChecked, setPodAckChecked] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
 
-  // Email Notification Preference
+  // Email Notification Preference State
   const [emailNotifs, setEmailNotifs] = useState(user?.emailNotifications ?? true);
+  const [showEmailModal, setShowEmailModal] = useState(false);
   const [savingEmailPref, setSavingEmailPref] = useState(false);
 
   // Slack Integration state
   const [slackWebhook, setSlackWebhook] = useState('');
   const [slackConfigured, setSlackConfigured] = useState(false);
+  const [showSlackModal, setShowSlackModal] = useState(false);
   const [savingSlack, setSavingSlack] = useState(false);
   const [testingSlack, setTestingSlack] = useState(false);
 
@@ -72,14 +77,16 @@ export function SettingsView() {
     AUSTRALIA: 'Australia (ap-southeast-2)',
   };
 
+  // 1. Regional Pod Extreme Caution Toggle Handler
   const handleToggleClick = (pod: RegionalPodDto) => {
     if (!isAdmin) return;
     setSelectedPod(pod);
+    setPodAckChecked(false);
     setModalError(null);
   };
 
   const handleConfirmToggle = async () => {
-    if (!selectedPod) return;
+    if (!selectedPod || !podAckChecked) return;
     const nextStatus = selectedPod.status === PodStatus.ACTIVE ? PodStatus.INACTIVE : PodStatus.ACTIVE;
     setUpdating(true);
     setModalError(null);
@@ -102,8 +109,14 @@ export function SettingsView() {
     }
   };
 
-  const handleToggleEmailPref = async () => {
+  // 2. Email Preference Caution Modal Handler
+  const handleOpenEmailModal = () => {
+    setShowEmailModal(true);
+  };
+
+  const handleConfirmEmailPref = async () => {
     const nextVal = !emailNotifs;
+    setShowEmailModal(false);
     setEmailNotifs(nextVal);
     setSavingEmailPref(true);
     try {
@@ -120,8 +133,15 @@ export function SettingsView() {
     }
   };
 
-  const handleSaveSlackWebhook = async (e: React.FormEvent) => {
+  // 3. Slack Webhook Confirmation Handler
+  const handleOpenSlackModal = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isAdmin || !slackWebhook.trim()) return;
+    setShowSlackModal(true);
+  };
+
+  const handleConfirmSlackSave = async () => {
+    setShowSlackModal(false);
     if (!isAdmin) return;
     setSavingSlack(true);
     try {
@@ -184,7 +204,7 @@ export function SettingsView() {
             </div>
           </div>
           <button
-            onClick={handleToggleEmailPref}
+            onClick={handleOpenEmailModal}
             disabled={savingEmailPref}
             className={`omni-badge transition-all cursor-pointer ${
               emailNotifs ? 'omni-badge-teal' : 'bg-gray-100 text-gray-600 border-gray-300'
@@ -227,7 +247,7 @@ export function SettingsView() {
             </span>
           </div>
 
-          <form onSubmit={handleSaveSlackWebhook} className="flex gap-2 flex-wrap sm:flex-nowrap">
+          <form onSubmit={handleOpenSlackModal} className="flex gap-2 flex-wrap md:flex-nowrap">
             <input
               type="text"
               placeholder="https://hooks.slack.com/services/T00/B00/XXXX"
@@ -241,8 +261,8 @@ export function SettingsView() {
               <>
                 <button
                   type="submit"
-                  disabled={savingSlack}
-                  className="omni-btn-secondary text-xs h-8 px-3 whitespace-nowrap"
+                  disabled={savingSlack || !slackWebhook.trim()}
+                  className="omni-btn-ghost text-xs h-8 px-3 whitespace-nowrap omni-btn-primary"
                 >
                   {savingSlack ? 'Saving...' : 'Save Webhook'}
                 </button>
@@ -251,7 +271,7 @@ export function SettingsView() {
                     type="button"
                     onClick={handleTestSlack}
                     disabled={testingSlack}
-                    className="omni-btn-primary text-xs h-8 px-3 flex items-center gap-1 whitespace-nowrap"
+                    className="omni-btn-ghost text-xs h-8 px-3 flex items-center gap-1 whitespace-nowrap"
                     aria-label="Send test notification to Slack"
                   >
                     <Send size={12} />
@@ -369,54 +389,78 @@ export function SettingsView() {
         )}
       </div>
 
-      {/* Infrastructure & Billing Confirmation Modal */}
+      {/* MODAL 1: Regional Pod Extreme Caution Confirmation Modal */}
       {selectedPod && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="omni-fade-in bg-white rounded-xl w-full max-w-md p-6 shadow-xl border border-[#E2E6E4]">
-            <div className="flex items-center gap-2.5 mb-3.5">
-              <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
-                <AlertTriangle size={20} className="text-amber-600" />
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="omni-fade-in bg-white rounded-xl w-full max-w-lg p-6 shadow-2xl border-2 border-red-200">
+            <div className="flex items-start gap-3 mb-4 pb-3 border-b border-red-100">
+              <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center shrink-0">
+                <ShieldAlert size={22} className="text-red-700" />
               </div>
               <div>
-                <h3 className="text-sm font-semibold text-[#1B2430] m-0">
-                  Confirm Pod Status Toggle
+                <div className="inline-block px-2 py-0.5 rounded bg-red-700 text-white font-mono text-[10px] font-bold tracking-wider uppercase mb-1">
+                  EXTREME CAUTION REQUIRED
+                </div>
+                <h3 className="text-base font-bold text-slate-900 m-0">
+                  Toggle Data Hosting Pod Status
                 </h3>
-                <span className="text-xs text-[#5B6672]">
-                  {regionNameMap[selectedPod.region]} · <span className="omni-mono">{selectedPod.status}</span> → <span className="omni-mono">{selectedPod.status === PodStatus.ACTIVE ? PodStatus.INACTIVE : PodStatus.ACTIVE}</span>
-                </span>
+                <p className="text-xs text-slate-600 mt-1">
+                  {regionNameMap[selectedPod.region]} · <span className="font-mono font-bold text-slate-900">{selectedPod.status}</span> → <span className="font-mono font-bold text-red-600">{selectedPod.status === PodStatus.ACTIVE ? PodStatus.INACTIVE : PodStatus.ACTIVE}</span>
+                </p>
               </div>
             </div>
 
-            {/* Cost Projection & Manual Provisioning Notice (Cost Projection doc §6) */}
-            <div className="bg-[#FAFBFB] border border-[#E2E6E4] rounded-lg p-3 text-xs text-[#5B6672] leading-relaxed mb-4">
-              <strong className="text-[#1B2430] block mb-1">
-                Billing & Cloud Infrastructure Decision Notice:
-              </strong>
-              Activating or deactivating a regional hosting pod is a billing and cloud infrastructure decision requiring manual cloud provisioning. This action updates the platform status record in the database only and does not automatically provision or de-provision cloud resources.
+            {/* Impact Details Box */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-700 space-y-2 mb-4 leading-relaxed">
+              <div className="font-bold text-slate-900 flex items-center gap-1.5 text-xs text-red-700">
+                <AlertTriangle size={14} /> Data Residency & Compliance Consequences:
+              </div>
+              <ul className="list-disc pl-5 space-y-1 text-slate-600">
+                <li>Toggling hosting pod status impacts regional data residency compliance boundaries (GDPR / DPDP / HIPAA).</li>
+                <li>This updates the organization's tenant routing table record in the platform database.</li>
+                <li>At least one regional hosting pod must remain ACTIVE for tenant operation.</li>
+              </ul>
             </div>
 
-            {/* Modal Error State (e.g. Active Pod Guard violation) */}
+            {/* Admin Acknowledgment Checkbox */}
+            <label className="flex items-start gap-2.5 p-3 rounded-xl bg-red-50/70 border border-red-200 text-xs font-semibold text-red-950 cursor-pointer mb-5">
+              <input
+                type="checkbox"
+                checked={podAckChecked}
+                onChange={(e) => setPodAckChecked(e.target.checked)}
+                className="mt-0.5 accent-red-700 w-4 h-4 rounded shrink-0"
+              />
+              <span>
+                I confirm that I am an authorized Administrator and understand that changing regional hosting pod tenancy impacts data residency compliance.
+              </span>
+            </label>
+
+            {/* Modal Error State */}
             {modalError && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-xs mb-4 flex items-center gap-2">
-                <ShieldAlert size={16} className="flex-shrink-0" />
+                <ShieldAlert size={16} className="shrink-0" />
                 <span>{modalError}</span>
               </div>
             )}
 
             {/* Actions */}
-            <div className="flex justify-end gap-2.5">
+            <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
               <button
                 disabled={updating}
                 onClick={() => setSelectedPod(null)}
-                className="omni-btn-secondary text-xs"
+                className="omni-btn-ghost text-xs px-4 py-2"
               >
                 Cancel
               </button>
               <button
-                disabled={updating}
+                disabled={updating || !podAckChecked}
                 onClick={handleConfirmToggle}
-                className={`omni-btn-primary text-xs ${
-                  selectedPod.status === PodStatus.ACTIVE ? 'bg-red-700 hover:bg-red-800' : 'bg-teal-700 hover:bg-teal-800'
+                className={`omni-btn-primary text-xs px-4 py-2 font-bold ${
+                  !podAckChecked
+                    ? 'opacity-50 cursor-not-allowed bg-slate-300 text-slate-600 border-none'
+                    : selectedPod.status === PodStatus.ACTIVE
+                    ? 'bg-red-700 hover:bg-red-800 text-white'
+                    : 'bg-teal-700 hover:bg-teal-800 text-white'
                 }`}
               >
                 {updating ? 'Updating Status...' : selectedPod.status === PodStatus.ACTIVE ? 'Confirm Deactivation' : 'Confirm Activation'}
@@ -425,7 +469,90 @@ export function SettingsView() {
           </div>
         </div>
       )}
+
+      {/* MODAL 2: User Email Notifications Preference Caution Modal */}
+      {showEmailModal && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="omni-fade-in bg-white rounded-xl w-full max-w-md p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center shrink-0">
+                <Mail size={20} className="text-teal-700" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 m-0">
+                  Confirm Email Notification Preference
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Update alert settings for <span className="font-semibold">{user?.email}</span>
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 border border-slate-200 p-3.5 rounded-xl mb-5">
+              {emailNotifs
+                ? 'Disabling email notifications will stop automated alerts for compliance task assignments, 30/60/90 day rolling deadlines, and pod status changes. You can re-enable this preference at any time.'
+                : 'Enabling email notifications will send automated alerts for compliance task assignments, rolling deadlines, and regional pod status changes to your account email.'}
+            </p>
+
+            <div className="flex justify-end gap-2.5">
+              <button
+                onClick={() => setShowEmailModal(false)}
+                className="omni-btn-ghost text-xs px-4 py-2"
+              >
+                Keep Current
+              </button>
+              <button
+                onClick={handleConfirmEmailPref}
+                className="omni-btn-primary text-xs px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white font-bold"
+              >
+                Confirm Preference Update
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: Slack Integration Webhook Caution Modal */}
+      {showSlackModal && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="omni-fade-in bg-white rounded-xl w-full max-w-md p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center shrink-0">
+                <AlertTriangle size={20} className="text-amber-600" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 m-0">
+                  Confirm Slack Webhook Integration
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Organization-level alert routing
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 border border-slate-200 p-3.5 rounded-xl mb-5">
+              Connecting or updating this Slack Incoming Webhook will route all high-severity platform alerts (such as <code className="omni-mono text-slate-800">MAPPING_OVERRIDDEN</code> and <code className="omni-mono text-slate-800">POD_STATUS_CHANGED</code>) directly to your designated Slack channel.
+            </p>
+
+            <div className="flex justify-end gap-2.5">
+              <button
+                onClick={() => setShowSlackModal(false)}
+                className="omni-btn-ghost text-xs px-4 py-2"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmSlackSave}
+                className="omni-btn-primary text-xs px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white font-bold"
+              >
+                Confirm & Connect Webhook
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
 

@@ -145,12 +145,14 @@ export function AuditLogView() {
             aria-label="Filter by entity type"
           >
             <option value="">All Entities</option>
-            <option value="ASSET">Asset</option>
-            <option value="RISK">Risk</option>
-            <option value="CONTROL">Control</option>
-            <option value="COMPLIANCE_TASK">Compliance Task</option>
+            <option value="Asset">Asset</option>
+            <option value="Risk">Risk</option>
+            <option value="Control">Control</option>
+            <option value="ComplianceTask">Compliance Task</option>
+            <option value="Organization">Organization</option>
+            <option value="User">User</option>
             <option value="REGIONAL_POD">Regional Pod</option>
-            <option value="MAPPING">Mapping</option>
+            <option value="MAPPING">Mapping / Overrides</option>
           </select>
         </div>
       </div>
