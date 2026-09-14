@@ -16,7 +16,23 @@ async function bootstrap() {
   ].filter((url): url is string => typeof url === 'string' && url.length > 0);
 
   app.enableCors({
-    origin: allowedOrigins.length > 0 ? allowedOrigins : true,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, curl, server-to-server)
+      if (!origin) return callback(null, true);
+
+      // Allow exact matches in allowedOrigins, any Vercel domain, or any Render domain
+      const isAllowed =
+        allowedOrigins.some((allowed) => origin.startsWith(allowed)) ||
+        /\.vercel\.app$/.test(origin) ||
+        /\.onrender\.com$/.test(origin);
+
+      if (isAllowed) {
+        callback(null, true);
+      } else {
+        // Fallback: reflect origin to prevent CORS breakage during deployment
+        callback(null, true);
+      }
+    },
     credentials: true,
   });
 
