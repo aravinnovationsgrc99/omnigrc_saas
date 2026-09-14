@@ -19,7 +19,7 @@ module.exports = {
         canvas: '#F6F7F6',
         panel: '#FFFFFF',
         ink: '#1B2430',
-        slate: '#5B6672',
+        omniSlate: '#5B6672',
         slateSoft: '#8B95A1',
         line: '#E2E6E4',
         lineSoft: '#EDEFED',
