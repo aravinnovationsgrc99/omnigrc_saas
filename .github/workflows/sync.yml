@@ -27,13 +27,17 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
           if [ -n "$COMPANY_REPO_PAT" ] && [ -n "$COMPANY_REPO_URL" ]; then
-            # Strip scheme if present and format with x-access-token
             CLEAN_URL=$(echo "$COMPANY_REPO_URL" | sed -E 's#^https?://##')
             AUTH_URL="https://x-access-token:${COMPANY_REPO_PAT}@${CLEAN_URL}"
             
+            # Create temporary sync branch excluding .github/ to avoid requiring PAT 'workflow' scope
+            git checkout -b temp-sync-branch
+            git rm -rf .github/workflows/ || true
+            git commit -m "sync: deploy application code to company repository" || true
+
             git remote add company "$AUTH_URL"
-            git push company main --force
-            echo "Successfully synced main branch to target company repository."
+            git push company temp-sync-branch:main --force
+            echo "Successfully synced application code to target company repository."
           else
             echo "::error::Secrets COMPANY_REPO_URL or COMPANY_REPO_PAT are missing in repository settings."
             exit 1
