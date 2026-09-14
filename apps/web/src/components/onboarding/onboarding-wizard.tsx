@@ -189,26 +189,36 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/80 backdrop-blur-md p-0 sm:p-4 overflow-hidden">
-      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl border border-slate-200/80 w-full max-w-3xl overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-200 flex flex-col h-[94vh] sm:h-auto max-h-[94vh] sm:max-h-[90vh]">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl border border-slate-200/80 w-full max-w-3xl overflow-hidden flex flex-col h-[94vh] sm:h-auto max-h-[94vh] sm:max-h-[90vh]">
         
         {/* Header Bar */}
-        <div className="bg-slate-900 text-white px-4 py-3 sm:px-6 sm:py-4 flex items-center justify-between border-b border-slate-800 shrink-0">
+        <div 
+          style={{ backgroundColor: '#0F1A2E', color: '#ffffff' }}
+          className="px-4 py-3.5 sm:px-6 sm:py-4 flex items-center justify-between border-b border-slate-800 shrink-0 text-white"
+        >
           <div className="flex items-center space-x-2.5 sm:space-x-3">
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-teal-500 to-emerald-400 flex items-center justify-center shadow-lg shadow-teal-500/20 shrink-0">
-              <ShieldCheck className="w-4 h-4 sm:w-5 sm:h-5 text-slate-950" />
+            <div 
+              style={{ backgroundColor: '#0F6E6A', color: '#ffffff' }}
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center shadow-lg shrink-0"
+            >
+              <ShieldCheck className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
             </div>
             <div>
               <div className="flex items-center space-x-1.5">
-                <span className="inline-block px-2 py-0.5 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider bg-emerald-400/20 text-emerald-300 rounded-full border border-emerald-400/30">
-                  POC Quick-Start
+                <span 
+                  style={{ backgroundColor: 'rgba(15, 110, 106, 0.3)', color: '#2DD4BF', borderColor: 'rgba(45, 212, 191, 0.4)' }}
+                  className="inline-block px-2 py-0.5 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider rounded-full border"
+                >
+                  POC QUICK-START
                 </span>
               </div>
-              <h2 className="text-base sm:text-lg font-bold text-white tracking-tight leading-tight">OMNiGRC Workspace Setup</h2>
+              <h2 className="text-base sm:text-lg font-bold text-white tracking-tight leading-tight mt-0.5">OMNiGRC Workspace Setup</h2>
             </div>
           </div>
           <button
             onClick={handleSkip}
-            className="text-xs font-medium text-slate-400 hover:text-white hover:underline transition px-1 py-1"
+            style={{ color: '#94A3B8' }}
+            className="text-xs font-semibold hover:text-white hover:underline transition px-2 py-1"
           >
             <span>Skip</span>
           </button>
@@ -219,7 +229,10 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
           {/* Mobile Current Step Sub-Header */}
           <div className="flex items-center justify-between sm:hidden mb-2">
             <span className="text-xs font-bold text-slate-900 flex items-center space-x-1.5">
-              <span className="w-5 h-5 rounded-full bg-teal-700 text-white text-[11px] flex items-center justify-center">
+              <span 
+                style={{ backgroundColor: '#0F6E6A', color: '#ffffff' }}
+                className="w-5 h-5 rounded-full text-[11px] font-bold flex items-center justify-center"
+              >
                 {step}
               </span>
               <span>{currentStepObj?.label}</span>
@@ -236,22 +249,24 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                   key={s.num}
                   onClick={() => s.num < step && setStep(s.num)}
                   disabled={s.num > step}
-                  className={`flex items-center justify-center space-x-1 py-1.5 px-1 sm:px-2 rounded-lg font-medium transition ${
+                  style={
                     isActive
-                      ? 'bg-teal-700 text-white shadow-sm font-semibold'
+                      ? { backgroundColor: '#0F6E6A', color: '#ffffff', fontWeight: 'bold' }
                       : isCompleted
-                      ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100/80 cursor-pointer'
-                      : 'text-slate-400 bg-slate-100/50'
-                  }`}
+                      ? { backgroundColor: '#E6F4F1', color: '#0C5A56', fontWeight: '600' }
+                      : { backgroundColor: '#F1F5F9', color: '#64748B' }
+                  }
+                  className="flex items-center justify-center space-x-1 py-2 px-1 sm:px-2 rounded-lg font-medium transition cursor-pointer"
                 >
                   <span
-                    className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
+                    style={
                       isActive
-                        ? 'bg-white text-teal-800'
+                        ? { backgroundColor: '#ffffff', color: '#0F6E6A' }
                         : isCompleted
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-slate-300 text-slate-600'
-                    }`}
+                        ? { backgroundColor: '#0F6E6A', color: '#ffffff' }
+                        : { backgroundColor: '#CBD5E1', color: '#475569' }
+                    }
+                    className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
                   >
                     {isCompleted ? <Check className="w-2.5 h-2.5 stroke-[3]" /> : s.num}
                   </span>
@@ -263,16 +278,16 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
           </div>
 
           {/* Progress Bar */}
-          <div className="w-full bg-slate-200 h-1 rounded-full mt-2.5 sm:mt-3 overflow-hidden">
+          <div className="w-full bg-slate-200 h-1.5 rounded-full mt-2.5 sm:mt-3 overflow-hidden">
             <div
-              className="bg-gradient-to-r from-teal-500 to-emerald-500 h-full transition-all duration-300 ease-out"
-              style={{ width: `${(step / 4) * 100}%` }}
+              style={{ width: `${(step / 4) * 100}%`, backgroundColor: '#0F6E6A' }}
+              className="h-full transition-all duration-300 ease-out"
             />
           </div>
         </div>
 
         {/* Modal Body (Scrollable container) */}
-        <div className="p-4 sm:p-6 space-y-5 sm:space-y-6 flex-1 overflow-y-auto">
+        <div className="p-4 sm:p-6 space-y-5 sm:space-y-6 flex-1 overflow-y-auto bg-white">
           {/* STEP 1: Select Frameworks (Max 2) */}
           {step === 1 && (
             <div className="space-y-4 sm:space-y-5">
@@ -286,14 +301,20 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                   </p>
                 </div>
                 <div className="flex items-center space-x-2 self-start sm:self-auto mt-1 sm:mt-0">
-                  <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-slate-100 text-slate-700 border border-slate-200">
-                    Selected: <strong className="text-teal-700 font-bold">{selectedFrameworks.length} / 2</strong>
+                  <span 
+                    style={{ backgroundColor: '#F1F5F9', color: '#0F6E6A', borderColor: '#CBD5E1' }}
+                    className="px-2.5 py-1 text-xs font-semibold rounded-full border"
+                  >
+                    Selected: <strong style={{ color: '#0F6E6A' }} className="font-bold">{selectedFrameworks.length} / 2</strong>
                   </span>
                 </div>
               </div>
 
               {limitWarning && (
-                <div className="bg-amber-50 border border-amber-200 text-amber-800 px-3.5 py-2.5 rounded-xl text-xs flex items-center space-x-2 animate-in fade-in duration-200">
+                <div 
+                  style={{ backgroundColor: '#FFFBEB', borderColor: '#FDE68A', color: '#92400E' }}
+                  className="border px-3.5 py-2.5 rounded-xl text-xs flex items-center space-x-2"
+                >
                   <Info className="w-4 h-4 text-amber-600 shrink-0" />
                   <span>
                     You can select <strong>up to 2 frameworks</strong> in quick start. Uncheck one to pick another, or access all frameworks anytime in dashboard settings.
@@ -310,17 +331,21 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                     <div
                       key={fw.code}
                       onClick={() => toggleFramework(fw.code)}
-                      className={`relative cursor-pointer p-3.5 sm:p-4 rounded-xl border transition-all duration-200 flex flex-col justify-between active:scale-[0.98] sm:active:scale-100 ${
+                      style={
                         isSelected
-                          ? 'border-teal-600 bg-teal-50/50 shadow-md ring-2 ring-teal-500/20'
+                          ? { backgroundColor: '#F0FDF4', borderColor: '#0F6E6A', boxShadow: '0 2px 8px rgba(15, 110, 106, 0.15)' }
                           : isMaxReached
-                          ? 'border-slate-200 bg-slate-50/50 opacity-60'
-                          : 'border-slate-200 hover:border-teal-300 hover:bg-slate-50/60 bg-white'
-                      }`}
+                          ? { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0', opacity: 0.6 }
+                          : { backgroundColor: '#FFFFFF', borderColor: '#E2E8F0' }
+                      }
+                      className="relative cursor-pointer p-3.5 sm:p-4 rounded-xl border-2 transition-all duration-200 flex flex-col justify-between"
                     >
                       <div className="flex items-start justify-between space-x-3">
                         <div className="space-y-1">
-                          <span className="inline-block px-2 py-0.5 text-[10px] font-semibold text-slate-600 bg-slate-100 rounded">
+                          <span 
+                            style={{ backgroundColor: '#F1F5F9', color: '#475569' }}
+                            className="inline-block px-2 py-0.5 text-[10px] font-semibold rounded"
+                          >
                             {fw.tag}
                           </span>
                           <div className="font-bold text-sm text-slate-900 leading-snug">{fw.name}</div>
@@ -328,13 +353,14 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
 
                         {/* Checkbox Icon */}
                         <div
-                          className={`w-5 h-5 rounded-md flex items-center justify-center border shrink-0 transition ${
+                          style={
                             isSelected
-                              ? 'bg-teal-600 border-teal-600 text-white shadow-sm'
-                              : 'border-slate-300 bg-white'
-                          }`}
+                              ? { backgroundColor: '#0F6E6A', borderColor: '#0F6E6A', color: '#ffffff' }
+                              : { backgroundColor: '#ffffff', borderColor: '#CBD5E1' }
+                          }
+                          className="w-5 h-5 rounded-md flex items-center justify-center border shrink-0 transition"
                         >
-                          {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                          {isSelected && <Check className="w-3.5 h-3.5 stroke-[3] text-white" />}
                         </div>
                       </div>
 
@@ -344,8 +370,11 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                 })}
               </div>
 
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-600 flex items-start space-x-2">
-                <Sparkles className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
+              <div 
+                style={{ backgroundColor: '#F8FAFC', borderColor: '#E2E8F0', color: '#334155' }}
+                className="border rounded-xl p-3 text-xs flex items-start space-x-2"
+              >
+                <Sparkles style={{ color: '#0F6E6A' }} className="w-4 h-4 shrink-0 mt-0.5" />
                 <div>
                   <strong>All frameworks remain active in your workspace.</strong> Selecting your 1–2 key frameworks helps us populate your initial audit checklist and dashboard widgets.
                 </div>
@@ -364,9 +393,12 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
               </div>
 
               {/* Quick Add Asset Form */}
-              <div className="bg-slate-50 p-3.5 sm:p-4 rounded-xl border border-slate-200/80 space-y-3">
+              <div 
+                style={{ backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' }}
+                className="p-3.5 sm:p-4 rounded-xl border space-y-3"
+              >
                 <div className="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
-                  <Server className="w-3.5 h-3.5 text-teal-600" />
+                  <Server style={{ color: '#0F6E6A' }} className="w-3.5 h-3.5" />
                   <span>Quick Add Single Asset</span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
@@ -396,10 +428,11 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                   <button
                     onClick={handleAddAsset}
                     type="button"
-                    className="text-xs bg-slate-900 text-white rounded-lg font-medium py-2.5 sm:py-2 px-3 hover:bg-slate-800 transition flex items-center justify-center space-x-1 shadow-sm w-full sm:w-auto"
+                    style={{ backgroundColor: '#0F1A2E', color: '#ffffff' }}
+                    className="text-xs rounded-lg font-bold py-2.5 sm:py-2 px-3 hover:opacity-90 transition flex items-center justify-center space-x-1 shadow-sm w-full sm:w-auto text-white cursor-pointer"
                   >
-                    <Plus className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
-                    <span>Add Asset</span>
+                    <Plus className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-white" />
+                    <span className="text-white">Add Asset</span>
                   </button>
                 </div>
               </div>
@@ -409,14 +442,18 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                 <button
                   type="button"
                   onClick={() => setShowCsvBox(!showCsvBox)}
-                  className="text-xs font-semibold text-teal-700 hover:text-teal-900 flex items-center space-x-1.5 transition py-1"
+                  style={{ color: '#0F6E6A' }}
+                  className="text-xs font-bold hover:underline flex items-center space-x-1.5 transition py-1 cursor-pointer"
                 >
                   <FileSpreadsheet className="w-3.5 h-3.5" />
                   <span>{showCsvBox ? 'Hide CSV Importer' : '+ Bulk Import via CSV / Text'}</span>
                 </button>
 
                 {showCsvBox && (
-                  <div className="mt-2.5 bg-teal-50/40 p-3.5 rounded-xl border border-teal-200/80 space-y-2 animate-in fade-in duration-200">
+                  <div 
+                    style={{ backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }}
+                    className="mt-2.5 p-3.5 rounded-xl border space-y-2"
+                  >
                     <div className="text-xs font-semibold text-slate-700">
                       Paste CSV lines (Format: Name, Type, Owner, Criticality)
                     </div>
@@ -431,7 +468,8 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                       <button
                         onClick={handleParseCsv}
                         type="button"
-                        className="text-xs bg-teal-700 text-white rounded-lg px-4 py-2 font-medium hover:bg-teal-800 transition shadow-sm w-full sm:w-auto"
+                        style={{ backgroundColor: '#0F6E6A', color: '#ffffff' }}
+                        className="text-xs rounded-lg px-4 py-2 font-bold hover:opacity-90 transition shadow-sm w-full sm:w-auto text-white cursor-pointer"
                       >
                         Parse & Add CSV
                       </button>
@@ -442,7 +480,10 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
 
               {/* Assets Preview List */}
               <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-                <div className="bg-slate-100/80 px-3.5 py-2.5 text-xs font-bold text-slate-700 flex justify-between items-center border-b border-slate-200">
+                <div 
+                  style={{ backgroundColor: '#F1F5F9', color: '#334155' }}
+                  className="px-3.5 py-2.5 text-xs font-bold flex justify-between items-center border-b border-slate-200"
+                >
                   <span>Queued Assets ({assets.length})</span>
                   <span className="text-[11px] font-normal text-slate-500">Ready for initial mapping</span>
                 </div>
@@ -451,7 +492,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                 ) : (
                   <div className="divide-y divide-slate-100 max-h-40 overflow-y-auto bg-white">
                     {assets.map((ast, idx) => (
-                      <div key={idx} className="px-3.5 py-2.5 text-xs flex justify-between items-center hover:bg-slate-50/80 transition">
+                      <div key={idx} className="px-3.5 py-2.5 text-xs flex justify-between items-center hover:bg-slate-50 transition">
                         <div className="pr-2 truncate">
                           <span className="font-semibold text-slate-900 block sm:inline">{ast.name}</span>
                           <span className="text-slate-400 sm:ml-2 font-mono text-[11px]">[{ast.type}]</span>
@@ -462,7 +503,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                           </span>
                           <button
                             onClick={() => handleRemoveAsset(idx)}
-                            className="text-slate-400 hover:text-red-600 transition p-1"
+                            className="text-slate-400 hover:text-red-600 transition p-1 cursor-pointer"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -485,9 +526,12 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                 </p>
               </div>
 
-              <div className="bg-slate-50 p-3.5 sm:p-4 rounded-xl border border-slate-200/80 space-y-3">
+              <div 
+                style={{ backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' }}
+                className="p-3.5 sm:p-4 rounded-xl border space-y-3"
+              >
                 <div className="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
-                  <Users className="w-3.5 h-3.5 text-teal-600" />
+                  <Users style={{ color: '#0F6E6A' }} className="w-3.5 h-3.5" />
                   <span>Send Invitation</span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -509,16 +553,20 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                   <button
                     onClick={handleAddInvite}
                     type="button"
-                    className="text-xs bg-slate-900 text-white rounded-lg font-medium py-2.5 sm:py-2 px-3 hover:bg-slate-800 transition flex items-center justify-center space-x-1 shadow-sm w-full sm:w-auto"
+                    style={{ backgroundColor: '#0F1A2E', color: '#ffffff' }}
+                    className="text-xs rounded-lg font-bold py-2.5 sm:py-2 px-3 hover:opacity-90 transition flex items-center justify-center space-x-1 shadow-sm w-full sm:w-auto text-white cursor-pointer"
                   >
-                    <Plus className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
-                    <span>Add Invite</span>
+                    <Plus className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-white" />
+                    <span className="text-white">Add Invite</span>
                   </button>
                 </div>
               </div>
 
               <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-                <div className="bg-slate-100/80 px-3.5 py-2.5 text-xs font-bold text-slate-700 border-b border-slate-200">
+                <div 
+                  style={{ backgroundColor: '#F1F5F9', color: '#334155' }}
+                  className="px-3.5 py-2.5 text-xs font-bold border-b border-slate-200"
+                >
                   Pending Invitations ({invites.length})
                 </div>
                 {invites.length === 0 ? (
@@ -536,7 +584,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                           </span>
                           <button
                             onClick={() => handleRemoveInvite(idx)}
-                            className="text-slate-400 hover:text-red-600 transition p-1"
+                            className="text-slate-400 hover:text-red-600 transition p-1 cursor-pointer"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -559,7 +607,10 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                 </p>
               </div>
 
-              <div className="bg-slate-50 p-4 sm:p-5 rounded-xl border border-slate-200/80 space-y-4 shadow-sm">
+              <div 
+                style={{ backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' }}
+                className="p-4 sm:p-5 rounded-xl border space-y-4 shadow-sm"
+              >
                 <div>
                   <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">
                     Primary Frameworks ({selectedFrameworks.length})
@@ -570,9 +621,10 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                       return (
                         <div
                           key={code}
-                          className="px-3 py-1.5 rounded-lg bg-teal-50 border border-teal-200 text-teal-900 font-bold text-xs flex items-center space-x-1.5 shadow-sm"
+                          style={{ backgroundColor: '#E6F4F1', borderColor: '#B8DFDB', color: '#0C5A56' }}
+                          className="px-3 py-1.5 rounded-lg border font-bold text-xs flex items-center space-x-1.5 shadow-sm"
                         >
-                          <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                          <CheckCircle2 style={{ color: '#0F6E6A' }} className="w-3.5 h-3.5 shrink-0" />
                           <span>{fwObj?.name || code}</span>
                         </div>
                       );
@@ -580,7 +632,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                   </div>
                 </div>
 
-                <div className="pt-3 border-t border-slate-200/80 grid grid-cols-2 gap-4 text-xs">
+                <div className="pt-3 border-t border-slate-200 grid grid-cols-2 gap-4 text-xs">
                   <div>
                     <span className="text-slate-500 block mb-1">Initial Assets Queued</span>
                     <span className="font-bold text-slate-900 text-sm">{assets.length} items</span>
@@ -595,14 +647,18 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
           )}
         </div>
 
-        {/* Footer Actions (Sticky Footer for Mobile & Desktop) */}
-        <div className="bg-white sm:bg-slate-50 px-4 py-3 sm:px-6 sm:py-4 border-t border-slate-200/80 flex items-center justify-between shrink-0 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] sm:shadow-none">
+        {/* Footer Actions (High-Contrast Guaranteed Visible Action Buttons) */}
+        <div 
+          style={{ backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' }}
+          className="px-4 py-3.5 sm:px-6 sm:py-4 border-t flex items-center justify-between shrink-0 shadow-md"
+        >
           <div>
             {step > 1 ? (
               <button
                 onClick={() => setStep((s) => s - 1)}
                 disabled={loading}
-                className="text-xs font-medium text-slate-700 hover:text-slate-900 px-3 py-2 border border-slate-300 rounded-lg bg-white shadow-sm hover:bg-slate-50 transition flex items-center space-x-1"
+                style={{ backgroundColor: '#FFFFFF', color: '#1E293B', borderColor: '#CBD5E1' }}
+                className="text-xs font-bold px-4 py-2 border rounded-lg shadow-sm hover:bg-slate-50 transition flex items-center space-x-1 cursor-pointer"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
                 <span>Back</span>
@@ -611,7 +667,8 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
               <button
                 onClick={handleSkip}
                 disabled={loading}
-                className="text-xs font-medium text-slate-500 hover:text-slate-800 transition px-2 py-1"
+                style={{ color: '#64748B' }}
+                className="text-xs font-bold hover:text-slate-900 transition px-2 py-1 cursor-pointer"
               >
                 Skip Setup
               </button>
@@ -623,29 +680,41 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
               <button
                 onClick={() => setStep((s) => s + 1)}
                 disabled={selectedFrameworks.length === 0}
-                className="text-xs sm:text-xs bg-slate-900 text-white rounded-lg font-bold px-4 sm:px-5 py-2.5 sm:py-2.5 hover:bg-slate-800 transition shadow-md flex items-center space-x-1.5 disabled:opacity-50"
+                style={{
+                  backgroundColor: '#0F6E6A',
+                  color: '#FFFFFF',
+                  borderColor: '#0C5A56',
+                  opacity: selectedFrameworks.length === 0 ? 0.5 : 1,
+                }}
+                className="text-xs sm:text-sm font-bold px-5 py-2.5 rounded-xl shadow-lg hover:brightness-110 active:scale-95 transition flex items-center space-x-2 border text-white cursor-pointer shrink-0"
               >
-                <span className="truncate">
+                <span className="text-white font-bold">
                   {step === 1
-                    ? 'Continue'
+                    ? 'Continue to Asset Import'
                     : step === 2
-                    ? 'Continue'
-                    : 'Final Review'}
+                    ? 'Continue to Team Invite'
+                    : 'Proceed to Final Review'}
                 </span>
-                <ArrowRight className="w-4 h-4 shrink-0" />
+                <ArrowRight className="w-4 h-4 text-white shrink-0" />
               </button>
             ) : (
               <button
                 onClick={handleFinish}
                 disabled={loading}
-                className="text-xs bg-gradient-to-r from-teal-700 to-emerald-600 text-white rounded-lg font-bold px-4 sm:px-6 py-2.5 hover:from-teal-800 hover:to-emerald-700 transition shadow-md flex items-center space-x-1.5 disabled:opacity-50"
+                style={{
+                  backgroundColor: '#0F6E6A',
+                  color: '#FFFFFF',
+                  borderColor: '#0C5A56',
+                  opacity: loading ? 0.6 : 1,
+                }}
+                className="text-xs sm:text-sm font-bold px-6 py-2.5 rounded-xl shadow-lg hover:brightness-110 active:scale-95 transition flex items-center space-x-2 border text-white cursor-pointer shrink-0"
               >
                 {loading ? (
-                  <span>Finalizing...</span>
+                  <span className="text-white font-bold">Finalizing Setup...</span>
                 ) : (
                   <>
-                    <Sparkles className="w-4 h-4 text-emerald-200 shrink-0" />
-                    <span>Complete & Launch</span>
+                    <Sparkles className="w-4 h-4 text-white shrink-0" />
+                    <span className="text-white font-bold">Complete & Launch Platform</span>
                   </>
                 )}
               </button>
