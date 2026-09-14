@@ -11,6 +11,7 @@ out/
 build/
 coverage/
 .turbo/
+*.tsbuildinfo
 
 # Environment Files (Ignore secrets, keep examples)
 .env
