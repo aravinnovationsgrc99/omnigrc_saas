@@ -1,0 +1,38 @@
+name: Sync to Company Repository
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  sync:
+    name: Sync Main Branch to Company Repository
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push to Company Repository
+        env:
+          COMPANY_REPO_PAT: ${{ secrets.COMPANY_REPO_PAT }}
+          COMPANY_REPO_URL: ${{ secrets.COMPANY_REPO_URL }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Use secret URL or construct authenticated token URL
+          if [ -n "$COMPANY_REPO_PAT" ] && [ -n "$COMPANY_REPO_URL" ]; then
+            # Replace https:// with token auth
+            AUTH_URL=$(echo "$COMPANY_REPO_URL" | sed "s#https://#https://${COMPANY_REPO_PAT}@#")
+            git remote add target "$AUTH_URL"
+            git push target main --force
+            echo "Successfully synced main branch to target company repository."
+          else
+            echo "::error::Secrets COMPANY_REPO_URL or COMPANY_REPO_PAT are missing in repository settings."
+            exit 1
+          fi
