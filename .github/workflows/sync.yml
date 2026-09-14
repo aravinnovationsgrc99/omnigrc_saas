@@ -16,21 +16,23 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Push to Company Repository
         env:
           COMPANY_REPO_PAT: ${{ secrets.COMPANY_REPO_PAT }}
           COMPANY_REPO_URL: ${{ secrets.COMPANY_REPO_URL }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
-          # Use secret URL or construct authenticated token URL
           if [ -n "$COMPANY_REPO_PAT" ] && [ -n "$COMPANY_REPO_URL" ]; then
-            # Replace https:// with token auth
-            AUTH_URL=$(echo "$COMPANY_REPO_URL" | sed "s#https://#https://${COMPANY_REPO_PAT}@#")
-            git remote add target "$AUTH_URL"
-            git push target main --force
+            # Strip scheme if present and format with x-access-token
+            CLEAN_URL=$(echo "$COMPANY_REPO_URL" | sed -E 's#^https?://##')
+            AUTH_URL="https://x-access-token:${COMPANY_REPO_PAT}@${CLEAN_URL}"
+            
+            git remote add company "$AUTH_URL"
+            git push company main --force
             echo "Successfully synced main branch to target company repository."
           else
             echo "::error::Secrets COMPANY_REPO_URL or COMPANY_REPO_PAT are missing in repository settings."
