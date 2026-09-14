@@ -1,27 +1,56 @@
-# dependencies
-node_modules
-.pnpm-store
+# Dependencies
+node_modules/
+.pnpm-store/
+.npm/
+.yarn/
 
-# builds
-dist
-.next
-out
-build
+# Build and Output Directories
+dist/
+.next/
+out/
+build/
+coverage/
+.turbo/
 
-# environment
+# Environment Files (Ignore secrets, keep examples)
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
+!.env.example
+!.env.*.example
+*.env
 
-# database / prisma
-prisma/migrations/*_local
+# Logs and Debugging
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Database & Storage
 *.db
 *.db-journal
+*.sqlite
+*.sqlite-journal
+prisma/migrations/*_local
 
-# IDE / OS
+# OS & System Files
 .DS_Store
+.DS_Store?
+._*
 Thumbs.db
-.vscode
-.idea
+ehthumbs.db
+Desktop.ini
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# Temporary Files
+*.tmp
+*.temp
+.gemini/

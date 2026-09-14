@@ -59,4 +59,4 @@ ALTER TABLE "controls" ADD CONSTRAINT "controls_organizationId_fkey" FOREIGN KEY
 ALTER TABLE "control_framework_mappings" ADD CONSTRAINT "control_framework_mappings_controlId_fkey" FOREIGN KEY ("controlId") REFERENCES "controls"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "control_framework_mappings" ADD CONSTRAINT "control_framework_mappings_frameworkClauseId_fkey" FOREIGN KEY ("frameworkClauseId") REFERENCES "FrameworkClause"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "control_framework_mappings" ADD CONSTRAINT "control_framework_mappings_frameworkClauseId_fkey" FOREIGN KEY ("frameworkClauseId") REFERENCES "framework_clauses"("id") ON DELETE CASCADE ON UPDATE CASCADE;
