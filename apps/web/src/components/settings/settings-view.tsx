@@ -9,6 +9,8 @@ import { Globe2, ShieldAlert, CheckCircle2, Lock, AlertTriangle, Send, Mail, Lin
 import { SkeletonLine } from '@/components/ui/skeleton';
 import { InlineErrorState } from '@/components/ui/inline-error-state';
 
+import { TeamInvitationsView } from './team-invitations-view';
+
 export function SettingsView() {
   const { user, organization } = useAuth();
   const { addToast } = useToast();
@@ -191,6 +193,10 @@ export function SettingsView() {
           </span>
         </div>
       </div>
+
+      {/* Team & Invitations Management Card */}
+      <TeamInvitationsView />
+
 
       {/* User Preferences Card */}
       <div className="bg-white border border-[#E2E6E4] rounded-lg p-5 mb-5 shadow-sm">

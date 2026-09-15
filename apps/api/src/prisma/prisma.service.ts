@@ -10,7 +10,17 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     // Attach middleware for row-level tenant scoping at application layer
     this.$use(async (params, next) => {
       const orgId = TenantContext.getOrganizationId();
-      const tenantModels = ['User', 'RegionalPod', 'AuditLogEntry'];
+      const tenantModels = [
+        'User',
+        'RegionalPod',
+        'AuditLogEntry',
+        'Asset',
+        'Risk',
+        'Control',
+        'ComplianceTask',
+        'Notification',
+        'Invitation',
+      ];
 
       if (orgId && params.model && tenantModels.includes(params.model)) {
         if (['findUnique', 'findFirst', 'findMany', 'count', 'update', 'updateMany', 'delete', 'deleteMany'].includes(params.action)) {

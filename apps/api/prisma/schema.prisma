@@ -83,6 +83,13 @@ enum NotificationType {
   RISK_ESCALATION
 }
 
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
 model Organization {
   id                  String   @id @default(uuid())
   name                String
@@ -100,6 +107,7 @@ model Organization {
   controls        Control[]
   complianceTasks ComplianceTask[]
   notifications   Notification[]
+  invitations     Invitation[]
 
   @@map("organizations")
 }
@@ -163,12 +171,14 @@ model User {
   name               String
   email              String   @unique
   passwordHash       String
-  role               Role     @default(ANALYST)
-  emailNotifications Boolean  @default(true)
-  createdAt          DateTime @default(now())
+  role                  Role         @default(ANALYST)
+  emailNotifications    Boolean      @default(true)
+  passwordSetupRequired Boolean      @default(false)
+  createdAt             DateTime     @default(now())
 
-  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  notifications Notification[]
+  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  notifications   Notification[]
+  invitationsSent Invitation[]   @relation("InvitedUsers")
 
   @@index([organizationId])
   @@map("users")
@@ -193,6 +203,30 @@ model Notification {
   @@index([userId])
   @@index([read])
   @@map("notifications")
+}
+
+model Invitation {
+  id             String           @id @default(uuid())
+  organizationId String
+  email          String
+  role           Role             @default(ANALYST)
+  tokenHash      String           @unique
+  status         InvitationStatus @default(PENDING)
+  invitedById    String
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy    User         @relation("InvitedUsers", fields: [invitedById], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([email])
+  @@index([status])
+  @@index([tokenHash])
+  @@map("invitations")
 }
 
 model RegionalPod {

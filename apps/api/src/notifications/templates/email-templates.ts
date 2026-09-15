@@ -1,5 +1,5 @@
 export enum PriorityLevel {
-  P0 = 'P0', // Critical Transactional (Security, Auth, Task Assignment, Pod Status)
+  P0 = 'P0', // Critical Transactional (Security, Auth, Task Assignment, Pod Status, Team Invitation)
   P1 = 'P1', // High-Risk Escalations
   P2 = 'P2', // Due-Date Reminders
   P3 = 'P3', // Executive Weekly Digest
@@ -29,6 +29,14 @@ export interface RiskEscalationTemplateParams {
   score: number;
   owner: string;
   treatmentPlan?: string | null;
+}
+
+export interface InvitationEmailTemplateParams {
+  inviterName: string;
+  orgName: string;
+  role: string;
+  inviteUrl: string;
+  expiresAt: Date;
 }
 
 export function renderAlertEmailHtml(params: AlertEmailTemplateParams): string {
@@ -92,6 +100,23 @@ export function renderRiskEscalationHtml(params: RiskEscalationTemplateParams): 
         <div><strong>Treatment Plan:</strong> ${escapeHtml(treatmentPlan || 'None specified')}</div>
       </div>
       <p style="font-size: 12px; color: #8B95A1; margin-bottom: 0;">Risk escalations are triggered daily for risks with a canonical score &ge; 15.</p>
+    </div>
+  `;
+}
+
+export function renderInvitationEmailHtml(params: InvitationEmailTemplateParams): string {
+  const { inviterName, orgName, role, inviteUrl, expiresAt } = params;
+  return `
+    <div style="font-family: sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; border: 1px solid #0F6E6A; border-radius: 8px; background-color: #ffffff;">
+      <h2 style="color: #0F6E6A; font-size: 18px; margin-top: 0;">You've been invited to join ${escapeHtml(orgName)} on OMNiGRC</h2>
+      <p style="font-size: 14px; color: #1B2430;">Hello,</p>
+      <p style="font-size: 14px; color: #5B6672; line-height: 1.5;">
+        <strong>${escapeHtml(inviterName)}</strong> has invited you to join <strong>${escapeHtml(orgName)}</strong> as a <strong>${escapeHtml(role)}</strong>.
+      </p>
+      <div style="text-align: center; margin: 28px 0;">
+        <a href="${inviteUrl}" style="background-color: #0F6E6A; color: #ffffff; padding: 12px 28px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 14px; display: inline-block;">Accept Invitation</a>
+      </div>
+      <p style="font-size: 12px; color: #8B95A1; margin-bottom: 0;">This invitation link will expire on ${expiresAt.toUTCString()}.</p>
     </div>
   `;
 }

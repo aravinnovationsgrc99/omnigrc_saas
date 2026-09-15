@@ -1,10 +1,28 @@
-import { Controller, Post, Get, Patch, Body, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Patch,
+  Body,
+  Param,
+  Query,
+  HttpCode,
+  HttpStatus,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { Roles } from './decorators/roles.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
-import { Role, OnboardingCompleteDto, InviteTeamMemberDto } from '@omnigrc/shared';
+import {
+  Role,
+  OnboardingCompleteDto,
+  InviteTeamMemberDto,
+  CreateInvitationDto,
+  AcceptInvitationDto,
+  SetupPasswordDto,
+} from '@omnigrc/shared';
 
 @Controller('auth')
 export class AuthController {
@@ -67,5 +85,79 @@ export class AuthController {
     @Body() dto: InviteTeamMemberDto,
   ) {
     return this.authService.inviteTeamMember(userId, dto);
+  }
+
+  // --- Secure Invitation System Endpoints ---
+
+  @Post('invitations')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @HttpCode(HttpStatus.CREATED)
+  async createInvitation(
+    @CurrentUser('userId') userId: string,
+    @Body() dto: CreateInvitationDto,
+  ) {
+    return this.authService.createInvitation(userId, dto);
+  }
+
+  @Get('invitations')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  async listInvitations(@CurrentUser('userId') userId: string) {
+    return this.authService.listInvitations(userId);
+  }
+
+  @Get('invitations/validate')
+  async validateInvitation(@Query('token') token: string) {
+    return this.authService.validateInvitation(token);
+  }
+
+  @Post('invitations/accept')
+  @HttpCode(HttpStatus.OK)
+  async acceptInvitation(@Body() dto: AcceptInvitationDto) {
+    return this.authService.acceptInvitation(dto);
+  }
+
+  @Post('invitations/:id/revoke')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async revokeInvitation(
+    @CurrentUser('userId') userId: string,
+    @Param('id') invitationId: string,
+  ) {
+    return this.authService.revokeInvitation(userId, invitationId);
+  }
+
+  @Post('invitations/:id/resend')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async resendInvitation(
+    @CurrentUser('userId') userId: string,
+    @Param('id') invitationId: string,
+  ) {
+    return this.authService.resendInvitation(userId, invitationId);
+  }
+
+  @Post('invitations/:id/copy-link')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async copyInviteLink(
+    @CurrentUser('userId') userId: string,
+    @Param('id') invitationId: string,
+  ) {
+    return this.authService.copyInviteLink(userId, invitationId);
+  }
+
+  @Post('setup-password')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async setupPassword(
+    @CurrentUser('userId') userId: string,
+    @Body() dto: SetupPasswordDto,
+  ) {
+    return this.authService.setupPassword(userId, dto);
   }
 }

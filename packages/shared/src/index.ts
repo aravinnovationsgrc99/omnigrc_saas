@@ -77,6 +77,7 @@ export interface UserDto {
   email: string;
   role: Role;
   emailNotifications: boolean;
+  passwordSetupRequired?: boolean;
   createdAt: string;
 }
 
@@ -499,4 +500,53 @@ export interface InviteTeamMemberDto {
   role: Role;
   name?: string;
 }
+
+export enum InvitationStatus {
+  PENDING = "PENDING",
+  ACCEPTED = "ACCEPTED",
+  EXPIRED = "EXPIRED",
+  REVOKED = "REVOKED",
+}
+
+export interface InvitationDto {
+  id: string;
+  organizationId: string;
+  email: string;
+  role: Role;
+  status: InvitationStatus;
+  invitedById: string;
+  invitedByName?: string;
+  expiresAt: string;
+  acceptedAt?: string | null;
+  revokedAt?: string | null;
+  createdAt: string;
+  inviteUrl?: string;
+}
+
+export interface CreateInvitationDto {
+  email: string;
+  role: Role;
+  name?: string;
+}
+
+export interface AcceptInvitationDto {
+  token: string;
+  name?: string;
+  password?: string;
+}
+
+export interface SetupPasswordDto {
+  newPassword: string;
+}
+
+export interface ValidateInvitationResponseDto {
+  valid: boolean;
+  email?: string;
+  organizationName?: string;
+  role?: Role;
+  expiresAt?: string;
+  reason?: string;
+}
+
+
 
