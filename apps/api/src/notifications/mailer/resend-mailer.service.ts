@@ -37,7 +37,7 @@ export class ResendMailerService {
     this.fromAddress =
       process.env.RESEND_FROM ||
       process.env.SMTP_FROM ||
-      'OMNiGRC Notifications <notifications@omnigrc.com>';
+      'OMNiGRC Notifications <notifications@omnigrc.co>';
 
     if (!this.apiKey) {
       this.logger.warn(

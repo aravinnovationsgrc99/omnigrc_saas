@@ -349,7 +349,7 @@ export class AuthService {
     });
 
     // Construct raw token URL ONLY for immediate response to authorized admin and email dispatch
-    const baseUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://app.omnigrc.com';
+    const baseUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://app.omnigrc.co';
     const inviteUrl = `${baseUrl}/invite/accept?token=${rawToken}`;
 
     // Dispatch Resend email (errors caught gracefully so manual link remains copyable & usable)
@@ -700,7 +700,7 @@ export class AuthService {
       },
     });
 
-    const baseUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://app.omnigrc.com';
+    const baseUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://app.omnigrc.co';
     const inviteUrl = `${baseUrl}/invite/accept?token=${rawToken}`;
 
     let emailSent = false;
@@ -798,7 +798,7 @@ export class AuthService {
       },
     });
 
-    const baseUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://app.omnigrc.com';
+    const baseUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://app.omnigrc.co';
     const inviteUrl = `${baseUrl}/invite/accept?token=${rawToken}`;
 
     await this.auditLogsService.log({

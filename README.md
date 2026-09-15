@@ -180,7 +180,7 @@ Configure your Resend API Key in `apps/api/.env`:
 RESEND_API_KEY="re_123456789_your_resend_api_key"
 
 # Optional Sender Address
-RESEND_FROM="OMNiGRC Notifications <notifications@omnigrc.com>"
+RESEND_FROM="OMNiGRC Notifications <notifications@omnigrc.co>"
 ```
 
 - **Obtaining a Key**: Sign up at [resend.com](https://resend.com), verify your domain, and generate an API key.
