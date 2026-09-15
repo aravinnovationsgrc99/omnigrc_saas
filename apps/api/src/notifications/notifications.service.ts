@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ResendMailerService } from './mailer/resend-mailer.service';
 import { SlackNotifierService } from './slack/slack-notifier.service';
 import { NotificationType, NotificationDto } from '@omnigrc/shared';
+import { renderAlertEmailHtml, PriorityLevel } from './templates/email-templates';
 
 export interface NotifyParams {
   organizationId: string;
@@ -55,37 +56,67 @@ export class NotificationsService {
     }
 
     // 2. Create in-app Notification database records
-    await this.prisma.notification.createMany({
-      data: targetUsers.map((u) => ({
-        organizationId,
-        userId: u.id,
-        type,
-        message,
-        entityType,
-        entityId,
-        read: false,
-      })),
-    });
+    const notificationRecords = await Promise.all(
+      targetUsers.map((u) =>
+        this.prisma.notification.create({
+          data: {
+            organizationId,
+            userId: u.id,
+            type,
+            message,
+            entityType,
+            entityId,
+            read: false,
+          },
+        }),
+      ),
+    );
+
+    // Map notification types to PriorityLevel
+    const priorityMap: Record<string, PriorityLevel> = {
+      [NotificationType.TASK_ASSIGNED]: PriorityLevel.P0,
+      [NotificationType.POD_STATUS_CHANGED]: PriorityLevel.P0,
+      [NotificationType.MAPPING_OVERRIDDEN]: PriorityLevel.P0,
+      [NotificationType.DUE_DATE_REMINDER]: PriorityLevel.P2,
+      [NotificationType.WEEKLY_DIGEST]: PriorityLevel.P3,
+      [NotificationType.RISK_ESCALATION]: PriorityLevel.P1,
+    };
+    const priority = priorityMap[type] || PriorityLevel.P0;
 
     // 3. Fan-out to Resend Email for users with emailNotifications enabled
     const emailRecipients = targetUsers.filter((u) => u.emailNotifications);
     for (const u of emailRecipients) {
-      await this.resendMailerService.sendEmail({
-        to: u.email,
-        subject: `[OMNiGRC Alert] ${type.replace(/_/g, ' ')}`,
-        html: `
-          <div style="font-family: sans-serif; max-width: 560px; margin: 0 auto; padding: 20px; border: 1px solid #e2e6e4; border-radius: 8px;">
-            <h2 style="color: #0F6E6A; font-size: 18px; margin-top: 0;">OMNiGRC Platform Alert</h2>
-            <p style="font-size: 14px; color: #1B2430;">Hello <strong>${u.name}</strong>,</p>
-            <p style="font-size: 14px; color: #5B6672; line-height: 1.5;">${message}</p>
-            <div style="background: #FAFBFB; border: 1px solid #EDEFED; border-radius: 6px; padding: 12px; font-size: 12px; color: #6E7A8A; margin: 16px 0;">
-              <div><strong>Event Type:</strong> ${type}</div>
-              <div><strong>Entity:</strong> ${entityType} (${entityId})</div>
-            </div>
-            <p style="font-size: 12px; color: #8B95A1; margin-bottom: 0;">You received this because email notifications are enabled in your OMNiGRC profile settings.</p>
-          </div>
-        `,
+      const notifRecord = notificationRecords.find((n) => n.userId === u.id);
+      if (notifRecord?.emailSentAt) {
+        // Skip if already marked sent
+        continue;
+      }
+
+      const html = renderAlertEmailHtml({
+        userName: u.name,
+        title: `OMNiGRC Alert: ${type.replace(/_/g, ' ')}`,
+        message,
+        type,
+        entityType,
+        entityId,
       });
+
+      const sentSuccess = await this.resendMailerService.sendEmail(
+        {
+          to: u.email,
+          subject: `[OMNiGRC Alert] ${type.replace(/_/g, ' ')}`,
+          html,
+        },
+        priority,
+      );
+
+      // On verified delivery success, durably persist emailSentAt timestamp in DB
+      if (sentSuccess && notifRecord) {
+        await this.prisma.notification.update({
+          where: { id: notifRecord.id },
+          data: { emailSentAt: new Date() },
+        });
+      }
     }
 
     // 4. Fan-out to Slack if Org Webhook exists & notification type is org-relevant

@@ -79,6 +79,8 @@ enum NotificationType {
   MAPPING_OVERRIDDEN
   TASK_ASSIGNED
   POD_STATUS_CHANGED
+  WEEKLY_DIGEST
+  RISK_ESCALATION
 }
 
 model Organization {
@@ -181,6 +183,7 @@ model Notification {
   entityType     String
   entityId       String
   read           Boolean          @default(false)
+  emailSentAt    DateTime?
   createdAt      DateTime         @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)

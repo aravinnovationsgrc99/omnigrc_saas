@@ -4,6 +4,8 @@ import { NotificationsController } from './notifications.controller';
 import { ResendMailerService } from './mailer/resend-mailer.service';
 import { SlackNotifierService } from './slack/slack-notifier.service';
 import { DueDateReminderCron } from './cron/due-date-reminder.cron';
+import { WeeklyDigestCron } from './cron/weekly-digest.cron';
+import { RiskEscalationCron } from './cron/risk-escalation.cron';
 
 @Global()
 @Module({
@@ -13,6 +15,8 @@ import { DueDateReminderCron } from './cron/due-date-reminder.cron';
     ResendMailerService,
     SlackNotifierService,
     DueDateReminderCron,
+    WeeklyDigestCron,
+    RiskEscalationCron,
   ],
   exports: [NotificationsService, ResendMailerService, SlackNotifierService],
 })

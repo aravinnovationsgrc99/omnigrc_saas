@@ -24,6 +24,8 @@ export class SlackNotifierService {
       [NotificationType.POD_STATUS_CHANGED]: '🌐',
       [NotificationType.TASK_ASSIGNED]: '📋',
       [NotificationType.DUE_DATE_REMINDER]: '⏰',
+      [NotificationType.WEEKLY_DIGEST]: '📊',
+      [NotificationType.RISK_ESCALATION]: '🚨',
     };
 
     const emoji = typeEmojiMap[params.type] || '🔔';
