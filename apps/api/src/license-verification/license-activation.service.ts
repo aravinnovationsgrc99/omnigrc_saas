@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { LicenseVerificationService } from './license-verification.service';
-import { SignedLicenseArtifactResponseDto, DeploymentCheckInResponseDto } from '@omnigrc/shared';
+import { SignedLicenseArtifactResponseDto, DeploymentCheckInResponseDto, OMNIGRC_VERSION } from '@omnigrc/shared';
 
 @Injectable()
 export class LicenseActivationClientService {
@@ -43,7 +43,12 @@ export class LicenseActivationClientService {
   /**
    * Perform check-in handshake with Control Plane and process updated license artifacts.
    */
-  async checkInDeployment(controlPlaneUrl: string, deploymentId: string, registrationSecret: string, version?: string): Promise<DeploymentCheckInResponseDto> {
+  async checkInDeployment(
+    controlPlaneUrl: string,
+    deploymentId: string,
+    registrationSecret: string,
+    version: string = process.env.OMNIGRC_VERSION || OMNIGRC_VERSION,
+  ): Promise<DeploymentCheckInResponseDto> {
     const url = `${controlPlaneUrl.replace(/\/$/, '')}/v1/deployments/${deploymentId}/check-in`;
 
     const res = await fetch(url, {

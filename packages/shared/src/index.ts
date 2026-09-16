@@ -527,9 +527,13 @@ export interface UpdateEmailPreferenceDto {
   emailNotifications: boolean;
 }
 
+export const OMNIGRC_VERSION = '1.0.0';
+
 export interface HealthCheckDto {
   status: "ok" | "degraded" | "error";
   timestamp: string;
+  version?: string;
+  gitSha?: string;
   services: {
     database: { status: "up" | "down"; latencyMs?: number };
     redis: { status: "up" | "down" | "mocked"; latencyMs?: number };

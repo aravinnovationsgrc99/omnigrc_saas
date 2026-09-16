@@ -1,13 +1,12 @@
 import { Controller, Get } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { HealthCheckDto } from '@omnigrc/shared';
+import { HealthCheckDto, OMNIGRC_VERSION } from '@omnigrc/shared';
 import { BypassLicenseCheck } from '../common/decorators/requires-active-license.decorator';
 
 @Controller('health')
 @BypassLicenseCheck()
 export class HealthController {
   constructor(private readonly prisma: PrismaService) {}
-
 
   @Get()
   async getHealth(): Promise<HealthCheckDto> {
@@ -59,6 +58,8 @@ export class HealthController {
     return {
       status: overallStatus,
       timestamp: new Date().toISOString(),
+      version: process.env.OMNIGRC_VERSION || OMNIGRC_VERSION,
+      gitSha: process.env.GIT_SHA || process.env.VERCEL_GIT_COMMIT_SHA,
       services: {
         database: { status: dbStatus, latencyMs: dbLatencyMs },
         redis: { status: redisStatus, latencyMs: redisLatencyMs },

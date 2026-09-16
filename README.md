@@ -237,4 +237,61 @@ Phase 8 elevates OMNiGRC to production-credible status with end-to-end testing, 
   4. Instant platform launch.
 - The wizard is skippable at every step to ensure immediate platform access.
 
+---
+
+## Self-Hosted Distribution Versioning, Upgrade & Rollback (Phase 9)
+
+### 1. Release Identification
+- **OMNiGRC Release Version**: Configured via `OMNIGRC_VERSION` environment variable (defaults to `1.0.0` defined in `@omnigrc/shared`). The API and Web applications share this exact version.
+- **Git SHA**: Configured via `GIT_SHA` environment variable for immutable build provenance metadata.
+- **Exposure**: API `/health` endpoint returns `{ "status": "ok", "version": "1.0.0", "gitSha": "..." }`, Web UI displays `v1.0.0` in sidebar navigation footer, and 6-hour license check-in sends version to Control Plane `Deployment.version`.
+
+### 2. Upgrade Procedure
+> **V1 Upgrade Policy**: Always perform a database backup before upgrading. Database migrations via `prisma migrate deploy` are forward-only. Rollback requires restoring a compatible database backup before deploying the previous application image versions. Automatic database rollback is not supported.
+
+1. **Backup Database**:
+   ```bash
+   docker exec -t omnigrc-postgres pg_dump -U ${POSTGRES_USER:-postgres} ${POSTGRES_DB:-omnigrc} > pre_upgrade_backup.sql
+   ```
+2. **Pull / Load New API & Web Images**:
+   ```bash
+   docker compose -f docker-compose.self-hosted.yml pull
+   ```
+3. **Stop & Recreate Application Containers**:
+   ```bash
+   docker compose -f docker-compose.self-hosted.yml up -d --remove-orphans
+   ```
+4. **Apply Database Migrations**:
+   ```bash
+   docker exec -i omnigrc-api npx prisma migrate deploy --schema=apps/api/prisma/schema.prisma
+   ```
+5. **Health Verification**:
+   ```bash
+   curl -f http://localhost/health
+   ```
+6. **License / Check-In Verification**:
+   Verify that the 6-hour check-in successfully posts the new version string to the Control Plane and updates `Deployment.version` and `Deployment.lastCheckInAt`.
+
+### 3. Rollback Procedure
+If an upgrade encounters critical runtime issues, follow this manual rollback procedure:
+
+1. **Stop Application Containers**:
+   ```bash
+   docker compose -f docker-compose.self-hosted.yml stop api web
+   ```
+2. **Restore Pre-Upgrade Database Backup**:
+   ```bash
+   docker exec -i omnigrc-postgres psql -U ${POSTGRES_USER:-postgres} ${POSTGRES_DB:-omnigrc} < pre_upgrade_backup.sql
+   ```
+3. **Re-deploy Previous Compatible API/Web Image Tags**:
+   Update image tags in `docker-compose.self-hosted.yml` to point to the previous working version, then restart:
+   ```bash
+   docker compose -f docker-compose.self-hosted.yml up -d
+   ```
+4. **Verify Health & License Status**:
+   ```bash
+   curl -f http://localhost/health
+   ```
+
+
 

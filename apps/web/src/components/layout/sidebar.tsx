@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { useAuth } from '@/context/auth-context';
-import { Role, hasRole } from '@omnigrc/shared';
+import { Role, hasRole, OMNIGRC_VERSION } from '@omnigrc/shared';
 import {
   LayoutDashboard, ShieldAlert, Boxes, GitMerge, KanbanSquare,
   Settings, Globe2, FileText, Lock, type LucideIcon
@@ -190,9 +190,12 @@ export function Sidebar({ view, setView, mobileOpen = false, onCloseMobile }: Si
             padding: '12px 8px 0',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Globe2 size={12} />
-            <span>India pod · active</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Globe2 size={12} />
+              <span>India pod · active</span>
+            </div>
+            <span style={{ fontSize: 10, opacity: 0.7 }} className="omni-mono">v{OMNIGRC_VERSION}</span>
           </div>
         </div>
       </div>
