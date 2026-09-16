@@ -6,10 +6,12 @@ import {
   Body,
   Param,
   Query,
+  UseGuards,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
 import { DeploymentsService } from './deployments.service';
+import { ControlPlaneAdminGuard } from '../auth/control-plane-admin.guard';
 import {
   CreateDeploymentDto,
   UpdateDeploymentStateDto,
@@ -23,12 +25,14 @@ export class DeploymentsController {
   constructor(private readonly deploymentsService: DeploymentsService) {}
 
   @Post()
+  @UseGuards(ControlPlaneAdminGuard)
   @HttpCode(HttpStatus.CREATED)
   async createDeployment(@Body() dto: CreateDeploymentDto) {
     return this.deploymentsService.createDeployment(dto);
   }
 
   @Get()
+  @UseGuards(ControlPlaneAdminGuard)
   async findAll(
     @Query('organizationId') organizationId?: string,
     @Query('deploymentModel') deploymentModel?: DeploymentModel,
@@ -42,10 +46,12 @@ export class DeploymentsController {
   }
 
   @Get(':id')
+  @UseGuards(ControlPlaneAdminGuard)
   async findOne(@Param('id') id: string) {
     return this.deploymentsService.findOne(id);
   }
 
+  // Narrow Check-In API uses registration secret authentication inside service
   @Post(':id/check-in')
   @HttpCode(HttpStatus.OK)
   async checkIn(
@@ -56,6 +62,7 @@ export class DeploymentsController {
   }
 
   @Patch(':id/state')
+  @UseGuards(ControlPlaneAdminGuard)
   @HttpCode(HttpStatus.OK)
   async updateState(
     @Param('id') id: string,

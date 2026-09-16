@@ -17,6 +17,8 @@ describe('Phase 3 — Control Plane Foundation & Deployment Registry E2E Test Su
   let app: INestApplication;
   let prisma: ControlPlanePrismaService;
 
+  const adminKeyHeader = { 'x-control-plane-admin-key': 'arav-cp-admin-dev-key' };
+
   let sharedDeploymentId: string;
   let sharedSecret: string;
   let selfHostedDeploymentId: string;
@@ -48,6 +50,7 @@ describe('Phase 3 — Control Plane Foundation & Deployment Registry E2E Test Su
   it('1. Create MSSP_SHARED Deployment: verifies ARAV infrastructure ownership', async () => {
     const res = await request(app.getHttpServer())
       .post('/v1/deployments')
+      .set(adminKeyHeader)
       .send({
         organizationId: targetOrgId,
         deploymentModel: DeploymentModel.MSSP_SHARED,
@@ -70,6 +73,7 @@ describe('Phase 3 — Control Plane Foundation & Deployment Registry E2E Test Su
   it('2. Create SELF_HOSTED Deployment: verifies CUSTOMER infrastructure ownership', async () => {
     const res = await request(app.getHttpServer())
       .post('/v1/deployments')
+      .set(adminKeyHeader)
       .send({
         organizationId: targetOrgId,
         deploymentModel: DeploymentModel.SELF_HOSTED,
@@ -126,6 +130,7 @@ describe('Phase 3 — Control Plane Foundation & Deployment Registry E2E Test Su
   it('6. Activation State Updates: supports state transitions without license enforcement', async () => {
     const res = await request(app.getHttpServer())
       .patch(`/v1/deployments/${sharedDeploymentId}/state`)
+      .set(adminKeyHeader)
       .send({ activationState: ActivationState.ACTIVE })
       .expect(200);
 
@@ -135,6 +140,7 @@ describe('Phase 3 — Control Plane Foundation & Deployment Registry E2E Test Su
   it('7. Query Deployments by Organization ID', async () => {
     const res = await request(app.getHttpServer())
       .get('/v1/deployments')
+      .set(adminKeyHeader)
       .query({ organizationId: targetOrgId })
       .expect(200);
 

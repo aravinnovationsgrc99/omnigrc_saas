@@ -652,6 +652,74 @@ export interface DeploymentCheckInResponseDto {
   activationState: ActivationState;
 }
 
+export enum LicenseProduct {
+  OMNIGRC = "OMNIGRC",
+}
+
+export enum LicenseStatus {
+  TRIAL = "TRIAL",
+  ACTIVE = "ACTIVE",
+  EXPIRED = "EXPIRED",
+}
+
+export interface EntitlementDto {
+  id: string;
+  licenseId: string;
+  code: string;
+  name: string;
+  value?: any;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateEntitlementDto {
+  licenseId: string;
+  code: string;
+  name: string;
+  value?: any;
+  enabled?: boolean;
+}
+
+export interface LicenseDto {
+  id: string;
+  commercialAgreementId: string;
+  product: LicenseProduct;
+  status: LicenseStatus;
+  issuedAt: string;
+  startsAt: string;
+  expiresAt: string;
+  maxDeployments: number;
+  createdAt: string;
+  updatedAt: string;
+  entitlements?: EntitlementDto[];
+  deployments?: DeploymentDto[];
+  deploymentsCount?: number;
+}
+
+export interface CreateLicenseDto {
+  commercialAgreementId: string;
+  product?: LicenseProduct;
+  status?: LicenseStatus;
+  startsAt: string;
+  expiresAt: string;
+  maxDeployments?: number;
+}
+
+export interface AssociateLicenseDeploymentDto {
+  deploymentId: string;
+  licenseId: string;
+}
+
+export interface CreateCustomerDto {
+  name: string;
+}
+
+export interface CreateCommercialAgreementDto {
+  customerId: string;
+}
+
+
 
 
 

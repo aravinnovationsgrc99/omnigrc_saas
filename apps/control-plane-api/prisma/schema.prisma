@@ -1,6 +1,7 @@
 datasource db {
-  provider = "postgresql"
-  url      = env("CONTROL_PLANE_DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("CONTROL_PLANE_DATABASE_URL")
+  directUrl = env("CONTROL_PLANE_DIRECT_URL")
 }
 
 generator client {
@@ -33,6 +34,16 @@ enum InfrastructureOwner {
   CUSTOMER
 }
 
+enum LicenseProduct {
+  OMNIGRC
+}
+
+enum LicenseStatus {
+  TRIAL
+  ACTIVE
+  EXPIRED
+}
+
 model Customer {
   id        String   @id @default(uuid())
   name      String
@@ -52,10 +63,49 @@ model CommercialAgreement {
   updatedAt  DateTime @updatedAt
 
   customer    Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  licenses    License[]
   deployments Deployment[]
 
   @@index([customerId])
   @@map("control_plane_commercial_agreements")
+}
+
+model License {
+  id                    String         @id @default(uuid())
+  commercialAgreementId String
+  product               LicenseProduct @default(OMNIGRC)
+  status                LicenseStatus  @default(TRIAL)
+  issuedAt              DateTime       @default(now())
+  startsAt              DateTime
+  expiresAt             DateTime
+  maxDeployments        Int            @default(1)
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  commercialAgreement CommercialAgreement @relation(fields: [commercialAgreementId], references: [id], onDelete: Cascade)
+  entitlements        Entitlement[]
+  deployments         Deployment[]
+
+  @@index([commercialAgreementId])
+  @@index([status])
+  @@map("licenses")
+}
+
+model Entitlement {
+  id        String   @id @default(uuid())
+  licenseId String
+  code      String
+  name      String
+  value     Json?
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  license License @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+
+  @@index([licenseId])
+  @@index([code])
+  @@map("entitlements")
 }
 
 model Deployment {
@@ -63,12 +113,12 @@ model Deployment {
   organizationId         String
   customerId             String?
   commercialAgreementId  String?
+  licenseId              String?
   deploymentModel        DeploymentModel
   environment            DeploymentEnvironment @default(PRODUCTION)
   version                String                @default("1.0.0")
   activationState        ActivationState       @default(PENDING)
   infrastructureOwner    InfrastructureOwner
-  licenseId              String?
   registrationSecretHash String
   lastCheckInAt          DateTime?
   createdAt              DateTime              @default(now())
@@ -76,9 +126,23 @@ model Deployment {
 
   customer            Customer?            @relation(fields: [customerId], references: [id], onDelete: SetNull)
   commercialAgreement CommercialAgreement? @relation(fields: [commercialAgreementId], references: [id], onDelete: SetNull)
+  license             License?             @relation(fields: [licenseId], references: [id], onDelete: SetNull)
 
   @@index([organizationId])
   @@index([deploymentModel])
   @@index([activationState])
+  @@index([licenseId])
   @@map("deployments")
 }
+
+model ControlPlaneAuditLog {
+  id         String   @id @default(uuid())
+  action     String
+  entityType String
+  entityId   String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@map("control_plane_audit_logs")
+}
+
