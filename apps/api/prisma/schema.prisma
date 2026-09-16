@@ -90,14 +90,25 @@ enum InvitationStatus {
   REVOKED
 }
 
+enum OrgType {
+  STANDALONE
+  MSSP_PROVIDER
+  CLIENT_TENANT
+}
+
 model Organization {
   id                  String   @id @default(uuid())
   name                String
+  type                OrgType  @default(STANDALONE)
+  parentOrganizationId String?
   primaryRegion       String   @default("India")
   slackWebhookUrl     String?
   primaryFramework    String?
   onboardingCompleted Boolean  @default(false)
   createdAt           DateTime @default(now())
+
+  parentOrganization  Organization?  @relation("OrgHierarchy", fields: [parentOrganizationId], references: [id], onDelete: SetNull)
+  subOrganizations    Organization[] @relation("OrgHierarchy")
 
   users           User[]
   regionalPods    RegionalPod[]
@@ -109,6 +120,7 @@ model Organization {
   notifications   Notification[]
   invitations     Invitation[]
 
+  @@index([parentOrganizationId])
   @@map("organizations")
 }
 

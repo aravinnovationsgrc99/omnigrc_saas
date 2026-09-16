@@ -1,3 +1,9 @@
+export enum OrgType {
+  STANDALONE = "STANDALONE",
+  MSSP_PROVIDER = "MSSP_PROVIDER",
+  CLIENT_TENANT = "CLIENT_TENANT",
+}
+
 export enum Role {
   ADMIN = "ADMIN",
   ANALYST = "ANALYST",
@@ -84,6 +90,8 @@ export interface UserDto {
 export interface OrganizationDto {
   id: string;
   name: string;
+  type?: OrgType;
+  parentOrganizationId?: string | null;
   primaryRegion: string;
   primaryFramework?: string | null;
   onboardingCompleted?: boolean;
