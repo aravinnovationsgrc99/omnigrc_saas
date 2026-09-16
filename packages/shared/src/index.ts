@@ -7,6 +7,8 @@ export enum OrgType {
 export enum Role {
   ADMIN = "ADMIN",
   ANALYST = "ANALYST",
+  MSSP_ADMIN = "MSSP_ADMIN",
+  MSSP_ANALYST = "MSSP_ANALYST",
 }
 
 export enum PodRegion {

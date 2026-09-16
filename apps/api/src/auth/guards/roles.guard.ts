@@ -22,6 +22,19 @@ export class RolesGuard implements CanActivate {
       return false;
     }
 
-    return requiredRoles.includes(user.role as Role);
+    const userRole = user.role as Role;
+    if (requiredRoles.includes(userRole)) {
+      return true;
+    }
+
+    if (userRole === Role.MSSP_ADMIN && requiredRoles.includes(Role.ADMIN)) {
+      return true;
+    }
+
+    if (userRole === Role.MSSP_ANALYST && requiredRoles.includes(Role.ANALYST)) {
+      return true;
+    }
+
+    return false;
   }
 }

@@ -8,11 +8,13 @@ import { AuditLogsService } from '../src/audit-logs/audit-logs.service';
 import { ResendMailerService } from '../src/notifications/mailer/resend-mailer.service';
 import { SlackNotifierService } from '../src/notifications/slack/slack-notifier.service';
 
+import { Role } from '@omnigrc/shared';
+
 interface RbacRouteConfig {
   method: 'get' | 'post' | 'patch';
   path: string;
   payload?: any;
-  allowedRoles: ('ADMIN' | 'ANALYST')[];
+  allowedRoles: (Role | 'ADMIN' | 'ANALYST' | 'MSSP_ADMIN' | 'MSSP_ANALYST' | string)[];
 }
 
 describe('RBAC & Unauthenticated Access Regression Test Suite', () => {

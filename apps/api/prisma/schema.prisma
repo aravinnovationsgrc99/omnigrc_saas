@@ -11,6 +11,8 @@ generator client {
 enum Role {
   ADMIN
   ANALYST
+  MSSP_ADMIN
+  MSSP_ANALYST
 }
 
 enum PodRegion {
