@@ -4,6 +4,7 @@ import {
   UnauthorizedException,
   BadRequestException,
   NotFoundException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -17,6 +18,7 @@ import {
   RegisterDto,
   LoginDto,
   Role,
+  OrgType,
   PodRegion,
   PodStatus,
   AuthResponseDto,
@@ -30,6 +32,8 @@ import {
   AcceptInvitationDto,
   ValidateInvitationResponseDto,
   SetupPasswordDto,
+  SwitchContextDto,
+  SwitchContextResponseDto,
 } from '@omnigrc/shared';
 
 @Injectable()
@@ -874,6 +878,148 @@ export class AuthService {
       role: inv.role,
       message: 'Invitation dispatched successfully',
       inviteUrl: inv.inviteUrl,
+    };
+  }
+
+  async switchContext(
+    userId: string,
+    homeOrgId: string,
+    userRole: Role,
+    dto: SwitchContextDto,
+  ): Promise<SwitchContextResponseDto> {
+    // 1. Verify requesting user has an approved MSSP role
+    if (userRole !== Role.MSSP_ADMIN && userRole !== Role.MSSP_ANALYST) {
+      await this.auditLogsService.log({
+        organizationId: homeOrgId,
+        actorId: userId,
+        action: 'MSSP_CONTEXT_SWITCH_FAILED',
+        entityType: 'Organization',
+        entityId: dto?.targetOrganizationId || 'UNKNOWN',
+        metadata: { reason: 'User does not possess an MSSP role', userRole },
+      });
+      throw new ForbiddenException('Only MSSP roles (MSSP_ADMIN, MSSP_ANALYST) can perform context switching.');
+    }
+
+    // 2. Load user's home organization from DB and confirm it is an MSSP_PROVIDER
+    const homeOrg = await this.prisma.organization.findUnique({
+      where: { id: homeOrgId },
+    });
+
+    if (!homeOrg || homeOrg.type !== OrgType.MSSP_PROVIDER) {
+      await this.auditLogsService.log({
+        organizationId: homeOrgId,
+        actorId: userId,
+        action: 'MSSP_CONTEXT_SWITCH_FAILED',
+        entityType: 'Organization',
+        entityId: dto?.targetOrganizationId || 'UNKNOWN',
+        metadata: { reason: 'Home organization is not an MSSP Provider', orgType: homeOrg?.type },
+      });
+      throw new ForbiddenException('Context switching is only permitted for MSSP Provider organizations.');
+    }
+
+    // 3. Load target organization
+    if (!dto || !dto.targetOrganizationId) {
+      throw new BadRequestException('targetOrganizationId is required');
+    }
+
+    const targetOrg = await this.prisma.organization.findUnique({
+      where: { id: dto.targetOrganizationId },
+    });
+
+    if (!targetOrg) {
+      await this.auditLogsService.log({
+        organizationId: homeOrgId,
+        actorId: userId,
+        action: 'MSSP_CONTEXT_SWITCH_FAILED',
+        entityType: 'Organization',
+        entityId: dto.targetOrganizationId,
+        metadata: { reason: 'Target organization does not exist' },
+      });
+      throw new NotFoundException('Target organization not found.');
+    }
+
+    // 4. Confirm target organization is directly managed by user's MSSP organization
+    if (targetOrg.parentOrganizationId !== homeOrgId) {
+      await this.auditLogsService.log({
+        organizationId: homeOrgId,
+        actorId: userId,
+        action: 'MSSP_CONTEXT_SWITCH_FAILED',
+        entityType: 'Organization',
+        entityId: targetOrg.id,
+        metadata: {
+          reason: 'Target organization is not managed by this MSSP',
+          targetParentOrganizationId: targetOrg.parentOrganizationId,
+          homeOrganizationId: homeOrgId,
+        },
+      });
+      throw new ForbiddenException('Target organization is not managed by your MSSP provider.');
+    }
+
+    // 5. Reject if target organization is an MSSP Provider itself
+    if (targetOrg.type === OrgType.MSSP_PROVIDER) {
+      await this.auditLogsService.log({
+        organizationId: homeOrgId,
+        actorId: userId,
+        action: 'MSSP_CONTEXT_SWITCH_FAILED',
+        entityType: 'Organization',
+        entityId: targetOrg.id,
+        metadata: { reason: 'Target organization cannot be an MSSP Provider' },
+      });
+      throw new ForbiddenException('Cannot switch context to another MSSP Provider organization.');
+    }
+
+    // 6. Fetch user details
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('User not found.');
+    }
+
+    // 7. Issue short-lived context token (15 minutes) with actingViaMsspId claim derived from homeOrgId
+    const payload = {
+      sub: user.id,
+      email: user.email,
+      organizationId: targetOrg.id,
+      role: user.role as Role,
+      actingViaMsspId: homeOrgId,
+    };
+
+    const accessToken = this.jwtService.sign(payload, {
+      secret: process.env.JWT_SECRET || 'omnigrc-dev-secret-key-change-in-prod',
+      expiresIn: '15m',
+    });
+
+    // 8. Log successful audit event with source/home MSSP org and target org
+    await this.auditLogsService.log({
+      organizationId: homeOrgId,
+      actorId: userId,
+      action: 'MSSP_CONTEXT_SWITCHED',
+      entityType: 'Organization',
+      entityId: targetOrg.id,
+      metadata: {
+        sourceOrganizationId: homeOrgId,
+        targetOrganizationId: targetOrg.id,
+        targetOrganizationName: targetOrg.name,
+        actorRole: user.role,
+      },
+    });
+
+    return {
+      accessToken,
+      expiresIn: '15m',
+      targetOrganization: {
+        id: targetOrg.id,
+        name: targetOrg.name,
+        type: targetOrg.type as any,
+        parentOrganizationId: targetOrg.parentOrganizationId,
+        primaryRegion: targetOrg.primaryRegion,
+        primaryFramework: targetOrg.primaryFramework,
+        onboardingCompleted: targetOrg.onboardingCompleted,
+        createdAt: targetOrg.createdAt.toISOString(),
+      },
+      actingViaMsspId: homeOrgId,
     };
   }
 

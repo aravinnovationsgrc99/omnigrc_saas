@@ -22,11 +22,25 @@ import {
   CreateInvitationDto,
   AcceptInvitationDto,
   SetupPasswordDto,
+  SwitchContextDto,
 } from '@omnigrc/shared';
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  @Post('switch-context')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  @HttpCode(HttpStatus.OK)
+  async switchContext(
+    @CurrentUser('userId') userId: string,
+    @CurrentUser('organizationId') homeOrgId: string,
+    @CurrentUser('role') userRole: Role,
+    @Body() dto: SwitchContextDto,
+  ) {
+    return this.authService.switchContext(userId, homeOrgId, userRole, dto);
+  }
 
   @Post('register')
   async register(@Body() body: any) {

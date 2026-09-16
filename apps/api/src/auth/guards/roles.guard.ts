@@ -22,16 +22,18 @@ export class RolesGuard implements CanActivate {
       return false;
     }
 
-    const userRole = user.role as Role;
-    if (requiredRoles.includes(userRole)) {
+    const userRoleStr = String(user.role);
+    const requiredRolesStr = requiredRoles.map((r) => String(r));
+
+    if (requiredRolesStr.includes(userRoleStr)) {
       return true;
     }
 
-    if (userRole === Role.MSSP_ADMIN && requiredRoles.includes(Role.ADMIN)) {
+    if (userRoleStr === 'MSSP_ADMIN' && requiredRolesStr.includes('ADMIN')) {
       return true;
     }
 
-    if (userRole === Role.MSSP_ANALYST && requiredRoles.includes(Role.ANALYST)) {
+    if (userRoleStr === 'MSSP_ANALYST' && requiredRolesStr.includes('ANALYST')) {
       return true;
     }
 

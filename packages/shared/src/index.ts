@@ -274,6 +274,18 @@ export interface JwtPayload {
   email: string;
   organizationId: string;
   role: Role;
+  actingViaMsspId?: string;
+}
+
+export interface SwitchContextDto {
+  targetOrganizationId: string;
+}
+
+export interface SwitchContextResponseDto {
+  accessToken: string;
+  expiresIn: string;
+  targetOrganization: OrganizationDto;
+  actingViaMsspId: string;
 }
 
 export interface FrameworkClauseDto {
