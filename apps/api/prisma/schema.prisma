@@ -364,3 +364,14 @@ model AuditLogEntry {
   @@index([actorId])
   @@map("audit_log_entries")
 }
+
+model SystemLicenseState {
+  id                 String   @id @default("current")
+  deploymentId       String
+  organizationId     String
+  signedArtifactJson Json
+  verifiedAt         DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("system_license_state")
+}

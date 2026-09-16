@@ -5,6 +5,8 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { ControlPlanePrismaService } from '../prisma/prisma.service';
+import { LicenseSigningService } from '../licenses/license-signing.service';
+import { ControlPlaneAuditLogsService } from '../audit/audit-logs.service';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import {
@@ -17,11 +19,19 @@ import {
   DeploymentCheckInDto,
   DeploymentCheckInResponseDto,
   DeploymentDto,
+  ActivateDeploymentDto,
+  SignedLicenseArtifactResponseDto,
+  SignedLicenseArtifact,
+  LicenseStatus,
 } from '@omnigrc/shared';
 
 @Injectable()
 export class DeploymentsService {
-  constructor(private readonly prisma: ControlPlanePrismaService) {}
+  constructor(
+    private readonly prisma: ControlPlanePrismaService,
+    private readonly licenseSigningService: LicenseSigningService,
+    private readonly audit: ControlPlaneAuditLogsService,
+  ) {}
 
   /**
    * Derive infrastructure owner from deployment model:
@@ -150,11 +160,182 @@ export class DeploymentsService {
   }
 
   /**
-   * Narrow Check-In API: Record heartbeat check-in & version update with secret verification.
+   * Activate a deployment: Validates deployment identity, secret, and associated license (TRIAL or ACTIVE),
+   * signs the deployment-bound license artifact FIRST, and commits activationState = ACTIVE in a DB transaction.
+   */
+  async activate(
+    id: string,
+    dto: ActivateDeploymentDto,
+  ): Promise<SignedLicenseArtifactResponseDto> {
+    const deployment = await this.prisma.deployment.findUnique({
+      where: { id },
+      include: {
+        license: {
+          include: { entitlements: true },
+        },
+      },
+    });
+
+    if (!deployment) {
+      throw new NotFoundException(`Deployment with ID "${id}" not found.`);
+    }
+
+    if (deployment.activationState === (ActivationState.DECOMMISSIONED as any)) {
+      throw new BadRequestException('Cannot activate a decommissioned deployment.');
+    }
+
+    if (!dto.registrationSecret) {
+      throw new BadRequestException('registrationSecret is required for activation');
+    }
+
+    const isValidSecret = await bcrypt.compare(
+      dto.registrationSecret,
+      deployment.registrationSecretHash,
+    );
+
+    if (!isValidSecret) {
+      throw new UnauthorizedException('Invalid deployment registration secret');
+    }
+
+    if (!deployment.license) {
+      throw new BadRequestException(`Deployment "${id}" has no associated license.`);
+    }
+
+    const license = deployment.license;
+
+    // TRIAL and ACTIVE are both eligible for activation! EXPIRED is not.
+    if (
+      license.status !== (LicenseStatus.TRIAL as any) &&
+      license.status !== (LicenseStatus.ACTIVE as any)
+    ) {
+      throw new BadRequestException(`Associated license status is ${license.status}, expected TRIAL or ACTIVE.`);
+    }
+
+    const now = new Date();
+    if (now.getTime() < license.startsAt.getTime() || now.getTime() >= license.expiresAt.getTime()) {
+      throw new BadRequestException('Associated license is expired or not yet within valid date range.');
+    }
+
+    const nowActivationDate = deployment.lastActivatedAt || new Date();
+
+    // Step 5: Perform signing FIRST before committing DB state!
+    const artifact = this.licenseSigningService.signLicenseArtifact({
+      license: {
+        id: license.id,
+        product: license.product,
+        status: license.status,
+        customerId: deployment.customerId,
+        commercialAgreementId: license.commercialAgreementId,
+        startsAt: license.startsAt,
+        expiresAt: license.expiresAt,
+        maxDeployments: license.maxDeployments,
+      },
+      deployment: {
+        id: deployment.id,
+        organizationId: deployment.organizationId,
+        customerId: deployment.customerId,
+        lastActivatedAt: nowActivationDate,
+        createdAt: deployment.createdAt,
+      },
+      entitlements: license.entitlements,
+    });
+
+    // Step 6: Commit activation state change in DB transaction ONLY AFTER signing succeeded
+    await this.prisma.$transaction(async (tx) => {
+      await tx.deployment.update({
+        where: { id },
+        data: {
+          activationState: ActivationState.ACTIVE as any,
+          lastActivatedAt: nowActivationDate,
+        },
+      });
+
+      await tx.controlPlaneAuditLog.create({
+        data: {
+          action: 'DEPLOYMENT_ACTIVATED',
+          entityType: 'Deployment',
+          entityId: id,
+          metadata: {
+            licenseId: license.id,
+            status: license.status,
+            keyId: artifact.keyId,
+          },
+        },
+      });
+    });
+
+    return {
+      success: true,
+      deploymentId: deployment.id,
+      activationState: ActivationState.ACTIVE,
+      artifact,
+    };
+  }
+
+  /**
+   * Fetch the active signed license artifact for a deployment (Admin only).
+   */
+  async getLicenseArtifact(id: string): Promise<SignedLicenseArtifactResponseDto> {
+    const deployment = await this.prisma.deployment.findUnique({
+      where: { id },
+      include: {
+        license: {
+          include: { entitlements: true },
+        },
+      },
+    });
+
+    if (!deployment) {
+      throw new NotFoundException(`Deployment with ID "${id}" not found.`);
+    }
+
+    if (!deployment.license) {
+      throw new BadRequestException(`Deployment "${id}" has no associated license.`);
+    }
+
+    const license = deployment.license;
+
+    const artifact = this.licenseSigningService.signLicenseArtifact({
+      license: {
+        id: license.id,
+        product: license.product,
+        status: license.status,
+        customerId: deployment.customerId,
+        commercialAgreementId: license.commercialAgreementId,
+        startsAt: license.startsAt,
+        expiresAt: license.expiresAt,
+        maxDeployments: license.maxDeployments,
+      },
+      deployment: {
+        id: deployment.id,
+        organizationId: deployment.organizationId,
+        customerId: deployment.customerId,
+        lastActivatedAt: deployment.lastActivatedAt,
+        createdAt: deployment.createdAt,
+      },
+      entitlements: license.entitlements,
+    });
+
+    return {
+      success: true,
+      deploymentId: deployment.id,
+      activationState: deployment.activationState as ActivationState,
+      artifact,
+    };
+  }
+
+  /**
+   * Narrow Check-In API: Record heartbeat check-in & version update with secret verification,
+   * returning optional refreshed signed license artifact if deployment is ACTIVE.
    */
   async checkIn(id: string, dto: DeploymentCheckInDto): Promise<DeploymentCheckInResponseDto> {
     const deployment = await this.prisma.deployment.findUnique({
       where: { id },
+      include: {
+        license: {
+          include: { entitlements: true },
+        },
+      },
     });
 
     if (!deployment) {
@@ -182,12 +363,50 @@ export class DeploymentsService {
       },
     });
 
+    let artifact: SignedLicenseArtifact | undefined = undefined;
+
+    // Issue refreshed artifact during check-in if deployment is active and associated license is valid
+    if (
+      updated.activationState === (ActivationState.ACTIVE as any) &&
+      deployment.license &&
+      (deployment.license.status === (LicenseStatus.TRIAL as any) ||
+        deployment.license.status === (LicenseStatus.ACTIVE as any))
+    ) {
+      const now = new Date();
+      if (
+        now.getTime() >= deployment.license.startsAt.getTime() &&
+        now.getTime() < deployment.license.expiresAt.getTime()
+      ) {
+        artifact = this.licenseSigningService.signLicenseArtifact({
+          license: {
+            id: deployment.license.id,
+            product: deployment.license.product,
+            status: deployment.license.status,
+            customerId: deployment.customerId,
+            commercialAgreementId: deployment.license.commercialAgreementId,
+            startsAt: deployment.license.startsAt,
+            expiresAt: deployment.license.expiresAt,
+            maxDeployments: deployment.license.maxDeployments,
+          },
+          deployment: {
+            id: deployment.id,
+            organizationId: deployment.organizationId,
+            customerId: deployment.customerId,
+            lastActivatedAt: deployment.lastActivatedAt,
+            createdAt: deployment.createdAt,
+          },
+          entitlements: deployment.license.entitlements,
+        });
+      }
+    }
+
     return {
       success: true,
       deploymentId: updated.id,
       lastCheckInAt: updated.lastCheckInAt.toISOString(),
       version: updated.version,
       activationState: updated.activationState as ActivationState,
+      artifact,
     };
   }
 

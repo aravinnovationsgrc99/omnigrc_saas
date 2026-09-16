@@ -1,3 +1,36 @@
+/**
+ * Standard RFC 8785 JSON Canonicalization Scheme (JCS) serializer.
+ * Guarantees identical UTF-8 string output across all platforms for identical logical JSON values.
+ */
+export function jcsCanonicalize(object: any): string {
+  if (object === null || typeof object !== 'object') {
+    if (typeof object === 'function' || typeof object === 'symbol' || typeof object === 'undefined') {
+      throw new Error('JCS Canonicalization failed: object contains un-serializable values');
+    }
+    return JSON.stringify(object);
+  }
+
+  if (Array.isArray(object)) {
+    const elements = object.map((item) => jcsCanonicalize(item));
+    return `[${elements.join(',')}]`;
+  }
+
+  const keys = Object.keys(object).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+
+  const parts: string[] = [];
+  for (const key of keys) {
+    const val = object[key];
+    if (typeof val === 'function' || typeof val === 'symbol') {
+      throw new Error(`JCS Canonicalization failed: property "${key}" is un-serializable`);
+    }
+    if (val !== undefined) {
+      parts.push(`${JSON.stringify(key)}:${jcsCanonicalize(val)}`);
+    }
+  }
+
+  return `{${parts.join(',')}}`;
+}
+
 export enum OrgType {
   STANDALONE = "STANDALONE",
   MSSP_PROVIDER = "MSSP_PROVIDER",
@@ -650,6 +683,7 @@ export interface DeploymentCheckInResponseDto {
   lastCheckInAt: string;
   version: string;
   activationState: ActivationState;
+  artifact?: SignedLicenseArtifact;
 }
 
 export enum LicenseProduct {
@@ -718,6 +752,53 @@ export interface CreateCustomerDto {
 export interface CreateCommercialAgreementDto {
   customerId: string;
 }
+
+export interface SignedLicenseEntitlement {
+  code: string;
+  name: string;
+  enabled: boolean;
+  value?: any;
+}
+
+export interface SignedLicensePayload {
+  licenseId: string;
+  licenseFormatVersion: string;
+  product: LicenseProduct;
+  status: LicenseStatus;
+  customerId: string;
+  commercialAgreementId: string;
+  deploymentId: string;
+  organizationId: string;
+  startsAt: string;
+  expiresAt: string;
+  maxDeployments: number;
+  entitlements: SignedLicenseEntitlement[];
+  issuedAt: string;
+  keyId: string;
+}
+
+export interface SignedLicenseArtifact {
+  formatVersion: string;
+  keyId: string;
+  algorithm: 'Ed25519';
+  payload: SignedLicensePayload;
+  signature: string;
+}
+
+export interface ActivateDeploymentDto {
+  registrationSecret: string;
+}
+
+export interface SignedLicenseArtifactResponseDto {
+  success: boolean;
+  deploymentId: string;
+  activationState: ActivationState;
+  artifact: SignedLicenseArtifact;
+}
+
+export const DEV_LICENSE_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAKXvoa0IDQQhIu4RGDOdFE+VGX8i5mUnunoaoxB9i+cY=\n-----END PUBLIC KEY-----\n`;
+
+
 
 
 

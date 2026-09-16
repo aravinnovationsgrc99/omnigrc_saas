@@ -16,6 +16,7 @@ import {
   CreateDeploymentDto,
   UpdateDeploymentStateDto,
   DeploymentCheckInDto,
+  ActivateDeploymentDto,
   DeploymentModel,
   ActivationState,
 } from '@omnigrc/shared';
@@ -49,6 +50,21 @@ export class DeploymentsController {
   @UseGuards(ControlPlaneAdminGuard)
   async findOne(@Param('id') id: string) {
     return this.deploymentsService.findOne(id);
+  }
+
+  @Post(':id/activate')
+  @HttpCode(HttpStatus.OK)
+  async activate(
+    @Param('id') id: string,
+    @Body() dto: ActivateDeploymentDto,
+  ) {
+    return this.deploymentsService.activate(id, dto);
+  }
+
+  @Get(':id/license-artifact')
+  @UseGuards(ControlPlaneAdminGuard)
+  async getLicenseArtifact(@Param('id') id: string) {
+    return this.deploymentsService.getLicenseArtifact(id);
   }
 
   // Narrow Check-In API uses registration secret authentication inside service

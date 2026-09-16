@@ -13,6 +13,7 @@ import { ComplianceTasksModule } from './compliance-tasks/compliance-tasks.modul
 import { NotificationsModule } from './notifications/notifications.module';
 import { IntegrationsModule } from './integrations/integrations.module';
 import { HealthModule } from './health/health.module';
+import { LicenseVerificationModule } from './license-verification/license-verification.module';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
 import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
 
@@ -31,6 +32,7 @@ import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
     NotificationsModule,
     IntegrationsModule,
     HealthModule,
+    LicenseVerificationModule,
   ],
   providers: [
     {

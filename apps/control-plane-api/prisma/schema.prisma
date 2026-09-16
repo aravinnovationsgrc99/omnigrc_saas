@@ -121,6 +121,7 @@ model Deployment {
   infrastructureOwner    InfrastructureOwner
   registrationSecretHash String
   lastCheckInAt          DateTime?
+  lastActivatedAt        DateTime?
   createdAt              DateTime              @default(now())
   updatedAt              DateTime              @updatedAt
 

@@ -10,5 +10,8 @@
   },
   "devDependencies": {
     "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "canonicalize": "^5.0.0"
   }
 }
