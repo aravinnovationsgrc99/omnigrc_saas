@@ -570,5 +570,88 @@ export interface ValidateInvitationResponseDto {
   reason?: string;
 }
 
+export enum DeploymentModel {
+  MSSP_SHARED = "MSSP_SHARED",
+  PRIVATE_MSSP = "PRIVATE_MSSP",
+  SELF_HOSTED = "SELF_HOSTED",
+}
+
+export enum DeploymentEnvironment {
+  PRODUCTION = "PRODUCTION",
+  UAT = "UAT",
+  DR = "DR",
+  DEVELOPMENT = "DEVELOPMENT",
+}
+
+export enum ActivationState {
+  PENDING = "PENDING",
+  ACTIVE = "ACTIVE",
+  SUSPENDED = "SUSPENDED",
+  DECOMMISSIONED = "DECOMMISSIONED",
+}
+
+export enum InfrastructureOwner {
+  ARAV = "ARAV",
+  CUSTOMER = "CUSTOMER",
+}
+
+export interface CustomerDto {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CommercialAgreementDto {
+  id: string;
+  customerId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DeploymentDto {
+  id: string;
+  organizationId: string;
+  customerId?: string | null;
+  commercialAgreementId?: string | null;
+  deploymentModel: DeploymentModel;
+  environment: DeploymentEnvironment;
+  version: string;
+  activationState: ActivationState;
+  infrastructureOwner: InfrastructureOwner;
+  licenseId?: string | null;
+  lastCheckInAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  registrationSecret?: string;
+}
+
+export interface CreateDeploymentDto {
+  organizationId: string;
+  customerId?: string;
+  commercialAgreementId?: string;
+  deploymentModel: DeploymentModel;
+  environment?: DeploymentEnvironment;
+  version?: string;
+}
+
+export interface UpdateDeploymentStateDto {
+  activationState: ActivationState;
+}
+
+export interface DeploymentCheckInDto {
+  registrationSecret: string;
+  version?: string;
+}
+
+export interface DeploymentCheckInResponseDto {
+  success: boolean;
+  deploymentId: string;
+  lastCheckInAt: string;
+  version: string;
+  activationState: ActivationState;
+}
+
+
 
 

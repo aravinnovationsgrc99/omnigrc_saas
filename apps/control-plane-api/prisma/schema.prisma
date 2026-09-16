@@ -1,0 +1,84 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("CONTROL_PLANE_DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/@prisma/control-plane-client"
+}
+
+enum DeploymentModel {
+  MSSP_SHARED
+  PRIVATE_MSSP
+  SELF_HOSTED
+}
+
+enum DeploymentEnvironment {
+  PRODUCTION
+  UAT
+  DR
+  DEVELOPMENT
+}
+
+enum ActivationState {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  DECOMMISSIONED
+}
+
+enum InfrastructureOwner {
+  ARAV
+  CUSTOMER
+}
+
+model Customer {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  agreements  CommercialAgreement[]
+  deployments Deployment[]
+
+  @@map("control_plane_customers")
+}
+
+model CommercialAgreement {
+  id         String   @id @default(uuid())
+  customerId String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  customer    Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  deployments Deployment[]
+
+  @@index([customerId])
+  @@map("control_plane_commercial_agreements")
+}
+
+model Deployment {
+  id                     String                @id @default(uuid())
+  organizationId         String
+  customerId             String?
+  commercialAgreementId  String?
+  deploymentModel        DeploymentModel
+  environment            DeploymentEnvironment @default(PRODUCTION)
+  version                String                @default("1.0.0")
+  activationState        ActivationState       @default(PENDING)
+  infrastructureOwner    InfrastructureOwner
+  licenseId              String?
+  registrationSecretHash String
+  lastCheckInAt          DateTime?
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+
+  customer            Customer?            @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  commercialAgreement CommercialAgreement? @relation(fields: [commercialAgreementId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([deploymentModel])
+  @@index([activationState])
+  @@map("deployments")
+}
