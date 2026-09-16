@@ -1,10 +1,13 @@
 import { Controller, Get } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { HealthCheckDto } from '@omnigrc/shared';
+import { BypassLicenseCheck } from '../common/decorators/requires-active-license.decorator';
 
 @Controller('health')
+@BypassLicenseCheck()
 export class HealthController {
   constructor(private readonly prisma: PrismaService) {}
+
 
   @Get()
   async getHealth(): Promise<HealthCheckDto> {

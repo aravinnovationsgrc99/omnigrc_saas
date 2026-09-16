@@ -11,6 +11,8 @@ import {
   SignedLicenseArtifact,
   SignedLicensePayload,
   DEV_LICENSE_PUBLIC_KEY,
+  evaluateLicenseStatus,
+  EvaluatedLicenseState,
 } from '@omnigrc/shared';
 
 const DEFAULT_KEY_ID = 'arav-license-v1-2026';
@@ -19,9 +21,17 @@ const DEFAULT_KEY_ID = 'arav-license-v1-2026';
 export class LicenseVerificationService {
   private readonly logger = new Logger(LicenseVerificationService.name);
   private readonly trustedPublicKeyRegistry: Map<string, string> = new Map();
+  private cachedEvaluationState: {
+    result: EvaluatedLicenseState;
+    fetchedAt: number;
+  } | null = null;
 
   constructor(private readonly prisma: PrismaService) {
     this.initializeTrustedKeyRegistry();
+  }
+
+  public invalidateMemoizedState(): void {
+    this.cachedEvaluationState = null;
   }
 
   /**
@@ -109,6 +119,12 @@ export class LicenseVerificationService {
     return { valid: true, payload: artifact.payload };
   }
 
+  private onLicenseRenewedCallbacks: Array<() => void> = [];
+
+  public onLicenseRenewed(callback: () => void): void {
+    this.onLicenseRenewedCallbacks.push(callback);
+  }
+
   /**
    * Store verified artifact snapshot into Data Plane system license state cache.
    */
@@ -131,6 +147,19 @@ export class LicenseVerificationService {
         verifiedAt: new Date(),
       },
     });
+
+    this.invalidateMemoizedState();
+
+    const evaluated = await this.getEvaluatedState();
+    if (evaluated.state === 'VALID') {
+      for (const cb of this.onLicenseRenewedCallbacks) {
+        try {
+          cb();
+        } catch (err) {
+          this.logger.warn(`Error executing onLicenseRenewed callback: ${err}`);
+        }
+      }
+    }
   }
 
   /**
@@ -156,6 +185,67 @@ export class LicenseVerificationService {
   }
 
   /**
+   * Evaluate runtime license state (VALID, EXPIRED, INVALID_OR_UNAVAILABLE).
+   */
+  public async getEvaluatedState(now: Date = new Date()): Promise<EvaluatedLicenseState> {
+    const memoTTL = 5000; // 5 seconds
+    if (
+      this.cachedEvaluationState &&
+      now.getTime() - this.cachedEvaluationState.fetchedAt < memoTTL
+    ) {
+      if (this.cachedEvaluationState.result.payload) {
+        return evaluateLicenseStatus(this.cachedEvaluationState.result.payload, now);
+      }
+      return this.cachedEvaluationState.result;
+    }
+
+    try {
+      const artifact = await this.getCachedState();
+      if (!artifact || !artifact.payload) {
+        // In test or local development environments where no license has been activated,
+        // default unactivated state to VALID for seamless local DX and regression testing,
+        // unless ENFORCE_LICENSE_IN_TEST is explicitly enabled.
+        if (
+          (process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development' || !process.env.NODE_ENV) &&
+          process.env.ENFORCE_LICENSE_IN_TEST !== 'true'
+        ) {
+          const devState: EvaluatedLicenseState = {
+            state: 'VALID',
+            reason: 'Development/Test environment unactivated fallback',
+          };
+          return devState;
+        }
+
+        const state: EvaluatedLicenseState = {
+          state: 'INVALID_OR_UNAVAILABLE',
+          reason: 'No authentic SystemLicenseState snapshot found in Data Plane persistence',
+        };
+        this.cachedEvaluationState = { result: state, fetchedAt: now.getTime() };
+        return state;
+      }
+
+
+
+      const state = evaluateLicenseStatus(artifact.payload, now);
+      if (state.state === 'EXPIRED') {
+        this.logger.warn(
+          `SystemLicenseState evaluation: License is EXPIRED (expired at ${state.expiresAt})`,
+        );
+      }
+      this.cachedEvaluationState = { result: state, fetchedAt: now.getTime() };
+      return state;
+    } catch (err: any) {
+      this.logger.error(`License state evaluation error: ${err.message || 'Unknown error'}`);
+      const state: EvaluatedLicenseState = {
+        state: 'INVALID_OR_UNAVAILABLE',
+        reason: err.message || 'Verification system error',
+      };
+      this.cachedEvaluationState = { result: state, fetchedAt: now.getTime() };
+      return state;
+    }
+  }
+
+  /**
    * Query helper to check if a specific entitlement code is enabled in a verified artifact.
    */
   public hasEntitlement(artifact: SignedLicenseArtifact, entitlementCode: string): boolean {
@@ -170,3 +260,4 @@ export class LicenseVerificationService {
     return entitlement ? entitlement.enabled === true : false;
   }
 }
+

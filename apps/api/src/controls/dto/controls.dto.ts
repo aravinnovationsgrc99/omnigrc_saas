@@ -4,8 +4,16 @@ import { MappingStatus } from '@omnigrc/shared';
 
 export class CreateControlDto {
   @IsString()
-  @IsNotEmpty()
-  name: string;
+  @IsOptional()
+  name?: string;
+
+  @IsString()
+  @IsOptional()
+  title?: string;
+
+  @IsString()
+  @IsOptional()
+  code?: string;
 
   @IsString()
   @IsNotEmpty()
@@ -14,7 +22,12 @@ export class CreateControlDto {
   @IsString()
   @IsOptional()
   category?: string;
+
+  @IsString()
+  @IsOptional()
+  owner?: string;
 }
+
 
 export class UpdateControlDto {
   @IsString()

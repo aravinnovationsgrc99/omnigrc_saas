@@ -6,6 +6,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Role, JwtPayload } from '@omnigrc/shared';
+import { RequiresActiveLicense } from '../common/decorators/requires-active-license.decorator';
 
 @Controller('compliance-tasks')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -39,22 +40,31 @@ export class ComplianceTasksController {
   }
 
   @Post()
+  @RequiresActiveLicense()
   async create(@CurrentUser() user: JwtPayload, @Body() dto: CreateComplianceTaskDto) {
-    return this.complianceTasksService.create(user.organizationId, user.sub, dto);
+    const userId = (user as any).id || (user as any).userId || user.sub;
+    return this.complianceTasksService.create(user.organizationId, userId, dto);
   }
 
   @Patch(':id')
+  @RequiresActiveLicense()
   async update(@CurrentUser() user: JwtPayload, @Param('id') id: string, @Body() dto: UpdateComplianceTaskDto) {
-    return this.complianceTasksService.update(user.organizationId, user.sub, id, dto);
+    const userId = (user as any).id || (user as any).userId || user.sub;
+    return this.complianceTasksService.update(user.organizationId, userId, id, dto);
   }
 
   @Patch(':id/status')
+  @RequiresActiveLicense()
   async updateStatus(@CurrentUser() user: JwtPayload, @Param('id') id: string, @Body() dto: UpdateTaskStatusDto) {
-    return this.complianceTasksService.updateStatus(user.organizationId, user.sub, id, dto.status);
+    const userId = (user as any).id || (user as any).userId || user.sub;
+    return this.complianceTasksService.updateStatus(user.organizationId, userId, id, dto.status);
   }
 
   @Delete(':id')
+  @RequiresActiveLicense()
   async softDelete(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
-    return this.complianceTasksService.softDelete(user.organizationId, user.sub, id);
+    const userId = (user as any).id || (user as any).userId || user.sub;
+    return this.complianceTasksService.softDelete(user.organizationId, userId, id);
   }
 }
+

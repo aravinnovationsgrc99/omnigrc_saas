@@ -15,6 +15,7 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { Roles } from './decorators/roles.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
+import { BypassLicenseCheck } from '../common/decorators/requires-active-license.decorator';
 import {
   Role,
   OnboardingCompleteDto,
@@ -26,8 +27,10 @@ import {
 } from '@omnigrc/shared';
 
 @Controller('auth')
+@BypassLicenseCheck()
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
 
   @Post('switch-context')
   @UseGuards(JwtAuthGuard, RolesGuard)

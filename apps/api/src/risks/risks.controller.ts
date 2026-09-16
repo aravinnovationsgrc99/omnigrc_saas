@@ -6,6 +6,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Role } from '@omnigrc/shared';
+import { RequiresActiveLicense } from '../common/decorators/requires-active-license.decorator';
 
 @Controller('risks')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -48,6 +49,7 @@ export class RisksController {
   }
 
   @Post()
+  @RequiresActiveLicense()
   async create(
     @CurrentUser('organizationId') organizationId: string,
     @CurrentUser('userId') userId: string,
@@ -57,6 +59,7 @@ export class RisksController {
   }
 
   @Patch(':id')
+  @RequiresActiveLicense()
   async update(
     @CurrentUser('organizationId') organizationId: string,
     @CurrentUser('userId') userId: string,
@@ -67,6 +70,7 @@ export class RisksController {
   }
 
   @Delete(':id')
+  @RequiresActiveLicense()
   async softDelete(
     @CurrentUser('organizationId') organizationId: string,
     @CurrentUser('userId') userId: string,
@@ -75,3 +79,4 @@ export class RisksController {
     return this.risksService.softDelete(organizationId, userId, id);
   }
 }
+

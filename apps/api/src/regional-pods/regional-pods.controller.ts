@@ -5,11 +5,14 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Role, JwtPayload, PodStatus } from '@omnigrc/shared';
+import { BypassLicenseCheck } from '../common/decorators/requires-active-license.decorator';
 
 @Controller('regional-pods')
 @UseGuards(JwtAuthGuard, RolesGuard)
+@BypassLicenseCheck()
 export class RegionalPodsController {
   constructor(private readonly regionalPodsService: RegionalPodsService) {}
+
 
   @Get()
   @Roles(Role.ADMIN, Role.ANALYST)

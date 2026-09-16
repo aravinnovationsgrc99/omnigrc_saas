@@ -6,6 +6,8 @@ import { renderRiskEscalationHtml, PriorityLevel } from '../templates/email-temp
 import { ResendMailerService } from '../mailer/resend-mailer.service';
 import { NotificationType, Role, RiskStatus } from '@omnigrc/shared';
 
+import { LicenseVerificationService } from '../../license-verification/license-verification.service';
+
 @Injectable()
 export class RiskEscalationCron {
   private readonly logger = new Logger(RiskEscalationCron.name);
@@ -14,11 +16,19 @@ export class RiskEscalationCron {
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
     private readonly resendMailerService: ResendMailerService,
+    private readonly licenseVerificationService: LicenseVerificationService,
   ) {}
 
   @Cron('0 1 * * *', { timeZone: 'UTC' })
   async handleRiskEscalations() {
+    const licenseState = await this.licenseVerificationService.getEvaluatedState();
+    if (licenseState.state !== 'VALID') {
+      this.logger.debug(`Skipping daily High-Risk SLA Escalation cron job: license state is ${licenseState.state}.`);
+      return;
+    }
+
     this.logger.log('Running daily High-Risk SLA Escalation cron job (UTC canonical timezone)...');
+
 
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());

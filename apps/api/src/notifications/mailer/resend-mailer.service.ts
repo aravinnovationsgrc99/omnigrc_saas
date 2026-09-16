@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PriorityLevel } from '../templates/email-templates';
+import { LicenseVerificationService } from '../../license-verification/license-verification.service';
 
 export interface SendEmailParams {
   to: string;
@@ -32,7 +33,9 @@ export class ResendMailerService {
   private monthlySentCount = 0;
   private currentMonthKey = this.getMonthlyKey();
 
-  constructor() {
+  constructor(
+    @Optional() private readonly licenseVerificationService?: LicenseVerificationService,
+  ) {
     this.apiKey = process.env.RESEND_API_KEY;
     this.fromAddress =
       process.env.RESEND_FROM ||
@@ -79,9 +82,24 @@ export class ResendMailerService {
   async sendEmail(params: SendEmailParams, priority: PriorityLevel = PriorityLevel.P0): Promise<boolean> {
     const { to, subject, html, text } = params;
 
+    if (priority !== PriorityLevel.P0 && this.licenseVerificationService) {
+      try {
+        const state = await this.licenseVerificationService.getEvaluatedState();
+        if (state.state !== 'VALID') {
+          this.logger.debug(
+            `Suppressing non-P0 email dispatch to "${to}" (Subject: "${subject}"): license state is ${state.state}.`,
+          );
+          return false;
+        }
+      } catch (err) {
+        // Fallback to quota check if license check fails
+      }
+    }
+
     if (!this.checkQuotaAllowance(priority)) {
       return false;
     }
+
 
     if (!this.apiKey) {
       this.logger.log(`[MOCK EMAIL SENT] To: ${to} | Subject: "${subject}" | Priority: ${priority}`);

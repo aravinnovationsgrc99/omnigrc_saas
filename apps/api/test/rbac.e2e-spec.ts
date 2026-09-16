@@ -111,6 +111,13 @@ describe('RBAC & Unauthenticated Access Regression Test Suite', () => {
         findMany: jest.fn().mockResolvedValue([]),
         count: jest.fn().mockResolvedValue(0),
       },
+      systemLicenseState: {
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
+      invitation: {
+        create: jest.fn().mockResolvedValue({ id: 'inv-1', email: 'test_invite@omnigrc-test.com', token: 'token-123', expiresAt: new Date() }),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
       regionalPod: {
         findFirst: jest.fn().mockResolvedValue({ id: 'pod-1', status: 'INACTIVE', organizationId: 'org-test-1' }),
         count: jest.fn().mockResolvedValue(2),
@@ -122,7 +129,27 @@ describe('RBAC & Unauthenticated Access Regression Test Suite', () => {
       },
       user: {
         findMany: jest.fn().mockResolvedValue([]),
-        findFirst: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockImplementation(({ where }) => {
+          if (where.id === 'user-admin-1') {
+            return Promise.resolve({
+              id: 'user-admin-1',
+              email: 'admin@omnigrc-test.com',
+              organizationId: 'org-test-1',
+              role: 'ADMIN',
+              name: 'RBAC Admin',
+            });
+          }
+          if (where.id === 'user-analyst-1') {
+            return Promise.resolve({
+              id: 'user-analyst-1',
+              email: 'analyst@omnigrc-test.com',
+              organizationId: 'org-test-1',
+              role: 'ANALYST',
+              name: 'RBAC Analyst',
+            });
+          }
+          return Promise.resolve(null);
+        }),
         findUnique: jest.fn().mockImplementation(({ where }) => {
           if (where.id === 'user-admin-1') {
             return Promise.resolve({
@@ -144,9 +171,11 @@ describe('RBAC & Unauthenticated Access Regression Test Suite', () => {
           }
           return Promise.resolve(null);
         }),
+
         create: jest.fn().mockResolvedValue({ id: 'user-new', email: 'test_invite@omnigrc-test.com', role: 'ANALYST' }),
       },
       notification: {
+        create: jest.fn().mockResolvedValue({ id: 'notif-1' }),
         createMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
     };

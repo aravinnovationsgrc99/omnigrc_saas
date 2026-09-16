@@ -4,6 +4,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications.service';
 import { NotificationType, TaskStatus } from '@omnigrc/shared';
 
+import { LicenseVerificationService } from '../../license-verification/license-verification.service';
+
 @Injectable()
 export class DueDateReminderCron {
   private readonly logger = new Logger(DueDateReminderCron.name);
@@ -11,11 +13,19 @@ export class DueDateReminderCron {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
+    private readonly licenseVerificationService: LicenseVerificationService,
   ) {}
 
   @Cron('0 0 * * *', { timeZone: 'UTC' })
   async handleDueDateReminders() {
+    const licenseState = await this.licenseVerificationService.getEvaluatedState();
+    if (licenseState.state !== 'VALID') {
+      this.logger.debug(`Skipping daily due date reminder cron job: license state is ${licenseState.state}.`);
+      return;
+    }
+
     this.logger.log('Running daily due date reminder cron job (UTC canonical timezone)...');
+
 
     const now = new Date();
     const inThreeDays = new Date();

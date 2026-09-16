@@ -6,6 +6,7 @@ import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { Role, JwtPayload, NotificationType } from '@omnigrc/shared';
+import { RequiresActiveLicense } from '../../common/decorators/requires-active-license.decorator';
 
 @Controller('integrations/slack')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -36,6 +37,7 @@ export class SlackIntegrationController {
    */
   @Post('webhook-url')
   @Roles(Role.ADMIN)
+  @RequiresActiveLicense()
   async updateWebhookUrl(
     @CurrentUser() user: JwtPayload,
     @Body('webhookUrl') webhookUrl: string,
@@ -58,6 +60,7 @@ export class SlackIntegrationController {
    */
   @Post('test')
   @Roles(Role.ADMIN)
+  @RequiresActiveLicense()
   async testIntegration(@CurrentUser() user: JwtPayload) {
     const org = await this.prisma.organization.findUnique({
       where: { id: user.organizationId },
@@ -86,3 +89,4 @@ export class SlackIntegrationController {
     };
   }
 }
+

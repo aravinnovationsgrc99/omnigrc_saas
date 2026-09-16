@@ -7,6 +7,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Role, JwtPayload, MappingJobStatusDto } from '@omnigrc/shared';
+import { RequiresActiveLicense } from '../common/decorators/requires-active-license.decorator';
 
 @Controller('controls')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -48,24 +49,31 @@ export class ControlsController {
   }
 
   @Post()
+  @RequiresActiveLicense()
   async create(@CurrentUser() user: JwtPayload, @Body() dto: CreateControlDto) {
-    return this.controlsService.create(user.organizationId, user.sub, dto);
+    const userId = (user as any).id || (user as any).userId || user.sub;
+    return this.controlsService.create(user.organizationId, userId, dto);
   }
 
   @Patch(':id')
+  @RequiresActiveLicense()
   async update(@CurrentUser() user: JwtPayload, @Param('id') id: string, @Body() dto: UpdateControlDto) {
-    return this.controlsService.update(user.organizationId, user.sub, id, dto);
+    const userId = (user as any).id || (user as any).userId || user.sub;
+    return this.controlsService.update(user.organizationId, userId, id, dto);
   }
 
   @Delete(':id')
+  @RequiresActiveLicense()
   async softDelete(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
-    return this.controlsService.softDelete(user.organizationId, user.sub, id);
+    const userId = (user as any).id || (user as any).userId || user.sub;
+    return this.controlsService.softDelete(user.organizationId, userId, id);
   }
 
   /**
    * Stage 1: Enqueue async AI job, return jobId immediately
    */
   @Post(':id/suggest-mappings')
+  @RequiresActiveLicense()
   async suggestMappings(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     // Verify control exists first
     await this.controlsService.findOne(user.organizationId, id);
@@ -120,6 +128,7 @@ export class ControlsController {
    * Stage 4: Human sign-off: APPROVE or OVERRIDE
    */
   @Patch(':id/mappings/:mappingId')
+  @RequiresActiveLicense()
   async signOffMapping(
     @CurrentUser() user: JwtPayload,
     @Param('id') controlId: string,
@@ -129,3 +138,4 @@ export class ControlsController {
     return this.controlsService.signOffMapping(user.organizationId, user.sub, controlId, mappingId, dto);
   }
 }
+

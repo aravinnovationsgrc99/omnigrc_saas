@@ -349,6 +349,7 @@ export interface ControlDto {
   id: string;
   organizationId: string;
   name: string;
+  code?: string;
   description: string;
   category?: string | null;
   createdAt: string;
@@ -796,7 +797,83 @@ export interface SignedLicenseArtifactResponseDto {
   artifact: SignedLicenseArtifact;
 }
 
+export type RuntimeLicenseState = 'VALID' | 'EXPIRED' | 'INVALID_OR_UNAVAILABLE';
+
+export interface EvaluatedLicenseState {
+  state: RuntimeLicenseState;
+  reason?: string;
+  expiresAt?: string;
+  startsAt?: string;
+  payload?: SignedLicensePayload;
+}
+
+export interface LicenseExpiredErrorResponseDto {
+  statusCode: number;
+  error: string;
+  message: string;
+  code: 'LICENSE_EXPIRED';
+  expiresAt?: string;
+}
+
+export interface LicenseUnavailableErrorResponseDto {
+  statusCode: number;
+  error: string;
+  message: string;
+  code: 'LICENSE_UNAVAILABLE';
+}
+
+export function evaluateLicenseStatus(
+  payload: SignedLicensePayload | null | undefined,
+  now: Date = new Date(),
+): EvaluatedLicenseState {
+  if (!payload || !payload.expiresAt || !payload.startsAt) {
+    return {
+      state: 'INVALID_OR_UNAVAILABLE',
+      reason: 'Missing or malformed license payload',
+    };
+  }
+
+  const startsAtDate = new Date(payload.startsAt);
+  const expiresAtDate = new Date(payload.expiresAt);
+
+  if (isNaN(startsAtDate.getTime()) || isNaN(expiresAtDate.getTime())) {
+    return {
+      state: 'INVALID_OR_UNAVAILABLE',
+      reason: 'Invalid timestamp format in license payload',
+    };
+  }
+
+  // 5-minute clock drift allowance for startsAt
+  if (now.getTime() < startsAtDate.getTime() - 5 * 60 * 1000) {
+    return {
+      state: 'INVALID_OR_UNAVAILABLE',
+      reason: 'License startsAt is in the future',
+      startsAt: payload.startsAt,
+      expiresAt: payload.expiresAt,
+      payload,
+    };
+  }
+
+  if (payload.status === LicenseStatus.EXPIRED || now.getTime() > expiresAtDate.getTime()) {
+    return {
+      state: 'EXPIRED',
+      reason: 'License validity period has expired',
+      startsAt: payload.startsAt,
+      expiresAt: payload.expiresAt,
+      payload,
+    };
+  }
+
+  return {
+    state: 'VALID',
+    startsAt: payload.startsAt,
+    expiresAt: payload.expiresAt,
+    payload,
+  };
+}
+
 export const DEV_LICENSE_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAKXvoa0IDQQhIu4RGDOdFE+VGX8i5mUnunoaoxB9i+cY=\n-----END PUBLIC KEY-----\n`;
+
 
 
 

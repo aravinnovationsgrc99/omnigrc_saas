@@ -21,6 +21,17 @@ export class LicensesService {
   ) {}
 
   /**
+   * Calculate effective runtime status without mutating stored DB state.
+   */
+  public getEffectiveStatus(l: { status: any; expiresAt: Date }, now = new Date()): LicenseStatus {
+    if (l.status === LicenseStatus.EXPIRED || now.getTime() > l.expiresAt.getTime()) {
+      return LicenseStatus.EXPIRED;
+    }
+    return l.status as LicenseStatus;
+  }
+
+
+  /**
    * Create a new commercial/technical License authoritative in the Control Plane DB.
    */
   async createLicense(dto: CreateLicenseDto): Promise<LicenseDto> {
@@ -78,7 +89,7 @@ export class LicensesService {
       id: license.id,
       commercialAgreementId: license.commercialAgreementId,
       product: license.product as LicenseProduct,
-      status: license.status as LicenseStatus,
+      status: this.getEffectiveStatus(license),
       issuedAt: license.issuedAt.toISOString(),
       startsAt: license.startsAt.toISOString(),
       expiresAt: license.expiresAt.toISOString(),
@@ -123,7 +134,7 @@ export class LicensesService {
       id: l.id,
       commercialAgreementId: l.commercialAgreementId,
       product: l.product as LicenseProduct,
-      status: l.status as LicenseStatus,
+      status: this.getEffectiveStatus(l),
       issuedAt: l.issuedAt.toISOString(),
       startsAt: l.startsAt.toISOString(),
       expiresAt: l.expiresAt.toISOString(),
@@ -164,7 +175,7 @@ export class LicensesService {
       id: l.id,
       commercialAgreementId: l.commercialAgreementId,
       product: l.product as LicenseProduct,
-      status: l.status as LicenseStatus,
+      status: this.getEffectiveStatus(l),
       issuedAt: l.issuedAt.toISOString(),
       startsAt: l.startsAt.toISOString(),
       expiresAt: l.expiresAt.toISOString(),
@@ -199,6 +210,7 @@ export class LicensesService {
       deploymentsCount: l.deployments.length,
     };
   }
+
 
   /**
    * Associate a Deployment with a valid License in the Control Plane registry.

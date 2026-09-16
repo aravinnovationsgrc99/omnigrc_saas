@@ -137,14 +137,16 @@ export class ControlsService {
   }
 
   async create(organizationId: string, userId: string, dto: CreateControlDto): Promise<ControlDto> {
+    const name = dto.name || dto.title || dto.code || 'Untitled Control';
     const control = await this.prisma.control.create({
       data: {
         organizationId,
-        name: dto.name,
+        name,
         description: dto.description,
         category: dto.category || null,
         createdById: userId,
       },
+
       include: {
         mappings: {
           include: {
@@ -168,7 +170,11 @@ export class ControlsService {
       },
     });
 
-    return this.mapToDto(control);
+    const result = this.mapToDto(control);
+    if (dto.code) {
+      result.code = dto.code;
+    }
+    return result;
   }
 
   async update(organizationId: string, userId: string, id: string, dto: UpdateControlDto): Promise<ControlDto> {

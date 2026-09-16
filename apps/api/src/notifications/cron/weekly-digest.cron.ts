@@ -5,6 +5,8 @@ import { ResendMailerService } from '../mailer/resend-mailer.service';
 import { renderWeeklyDigestHtml, PriorityLevel } from '../templates/email-templates';
 import { NotificationType, Role, TaskStatus, RiskStatus } from '@omnigrc/shared';
 
+import { LicenseVerificationService } from '../../license-verification/license-verification.service';
+
 @Injectable()
 export class WeeklyDigestCron {
   private readonly logger = new Logger(WeeklyDigestCron.name);
@@ -12,11 +14,19 @@ export class WeeklyDigestCron {
   constructor(
     private readonly prisma: PrismaService,
     private readonly resendMailerService: ResendMailerService,
+    private readonly licenseVerificationService: LicenseVerificationService,
   ) {}
 
   @Cron('0 8 * * 1', { timeZone: 'UTC' })
   async handleWeeklyDigest() {
+    const licenseState = await this.licenseVerificationService.getEvaluatedState();
+    if (licenseState.state !== 'VALID') {
+      this.logger.debug(`Skipping Monday Weekly Executive Digest cron job: license state is ${licenseState.state}.`);
+      return;
+    }
+
     this.logger.log('Running Monday Weekly Executive Digest cron job (UTC canonical timezone)...');
+
 
     const now = new Date();
     const sevenDaysAgo = new Date();

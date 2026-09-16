@@ -18,6 +18,8 @@ export interface JobState {
   createdAt: Date;
 }
 
+import { LicenseVerificationService } from '../../license-verification/license-verification.service';
+
 @Injectable()
 export class MappingQueueService implements OnModuleInit {
   private readonly logger = new Logger(MappingQueueService.name);
@@ -29,7 +31,9 @@ export class MappingQueueService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
     private readonly aiRouterService: AiRouterService,
+    private readonly licenseVerificationService: LicenseVerificationService,
   ) {}
+
 
   async onModuleInit() {
     const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
@@ -41,8 +45,22 @@ export class MappingQueueService implements OnModuleInit {
       });
 
       redisClient.on('connect', () => {
-        this.isRedisConnected = true;
-        this.logger.log(`Connected to Redis at ${redisUrl} for BullMQ job queue.`);
+        if (!this.isRedisConnected) {
+          this.isRedisConnected = true;
+          this.logger.log(`Connected to Redis at ${redisUrl} for BullMQ job queue.`);
+          try {
+            this.bullQueue = new Queue('control-mapping-queue', { connection: redisClient });
+            new Worker(
+              'control-mapping-queue',
+              async (job) => {
+                await this.processJob(job.data);
+              },
+              { connection: redisClient },
+            );
+          } catch (err: any) {
+            this.logger.warn(`BullMQ init failed: ${err.message}`);
+          }
+        }
       });
 
       redisClient.on('error', (err) => {
@@ -51,20 +69,15 @@ export class MappingQueueService implements OnModuleInit {
         }
         this.isRedisConnected = false;
       });
-
-      this.bullQueue = new Queue('control-mapping-queue', { connection: redisClient });
-
-      new Worker(
-        'control-mapping-queue',
-        async (job) => {
-          await this.processJob(job.data);
-        },
-        { connection: redisClient }
-      );
     } catch (err: any) {
-      this.logger.warn(`Could not initialize Redis BullMQ client (${err.message}). Using in-memory async job runner.`);
+      this.logger.warn(`Could not initialize Redis client (${err.message}). Using in-memory async job runner.`);
       this.isRedisConnected = false;
     }
+
+    this.licenseVerificationService.onLicenseRenewed(() => {
+      this.logger.log('MappingQueueService: Received license renewal notification. Resuming BullMQ queue.');
+      this.resumeQueue();
+    });
   }
 
   async enqueueMappingJob(organizationId: string, userId: string, controlId: string): Promise<string> {
@@ -109,13 +122,52 @@ export class MappingQueueService implements OnModuleInit {
     });
   }
 
+  public async pauseQueue() {
+    if (this.bullQueue) {
+      try {
+        await this.bullQueue.pause();
+        this.logger.log('MappingQueueService: BullMQ queue paused due to non-valid license state.');
+      } catch (err: any) {
+        this.logger.warn(`Failed to pause BullMQ queue: ${err.message}`);
+      }
+    }
+  }
+
+  public async resumeQueue() {
+    if (this.bullQueue) {
+      try {
+        await this.bullQueue.resume();
+        this.logger.log('MappingQueueService: BullMQ queue resumed following valid license confirmation.');
+      } catch (err: any) {
+        this.logger.warn(`Failed to resume BullMQ queue: ${err.message}`);
+      }
+    }
+  }
+
   private async processJob(data: { jobId: string; organizationId: string; userId: string; controlId: string }) {
     const { jobId, organizationId, userId, controlId } = data;
     const state = this.jobStore.get(jobId);
+
+    const licenseState = await this.licenseVerificationService.getEvaluatedState();
+    if (licenseState.state !== 'VALID') {
+      this.logger.warn(
+        `MappingQueueService: License state is "${licenseState.state}". Pausing queue and skipping AI processing for job "${jobId}" to protect external API usage.`,
+      );
+      await this.pauseQueue();
+      if (state) {
+        state.status = 'queued';
+        state.error = `Job deferred: license state is ${licenseState.state}`;
+      }
+      return;
+    } else {
+      await this.resumeQueue();
+    }
+
     if (state) {
       state.status = 'processing';
       state.progress = 20;
     }
+
 
     try {
       // 1. Fetch Control (Verify tenant scoping)

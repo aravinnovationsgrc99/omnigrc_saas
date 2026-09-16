@@ -6,6 +6,8 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Role } from '@omnigrc/shared';
+import { RequiresActiveLicense } from '../common/decorators/requires-active-license.decorator';
+
 
 @Controller('assets')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -43,6 +45,7 @@ export class AssetsController {
   }
 
   @Post()
+  @RequiresActiveLicense()
   async create(
     @CurrentUser('organizationId') organizationId: string,
     @CurrentUser('userId') userId: string,
@@ -52,6 +55,7 @@ export class AssetsController {
   }
 
   @Patch(':id')
+  @RequiresActiveLicense()
   async update(
     @CurrentUser('organizationId') organizationId: string,
     @CurrentUser('userId') userId: string,
@@ -62,6 +66,7 @@ export class AssetsController {
   }
 
   @Delete(':id')
+  @RequiresActiveLicense()
   async softDelete(
     @CurrentUser('organizationId') organizationId: string,
     @CurrentUser('userId') userId: string,
@@ -70,3 +75,4 @@ export class AssetsController {
     return this.assetsService.softDelete(organizationId, userId, id);
   }
 }
+
