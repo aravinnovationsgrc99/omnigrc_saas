@@ -19,8 +19,15 @@ import { VendorRiskWidget } from './widgets/vendor-risk-widget';
 import { AssetInventoryWidget } from './widgets/asset-inventory-widget';
 import { LayoutCustomizerModal } from './layout-customizer-modal';
 import { SlidersHorizontal, RefreshCw, AlertCircle, Sparkles } from 'lucide-react';
+import { ExecutivePostureBanner } from './widgets/executive-posture-banner';
+import { ExecutiveKpiStrip } from './widgets/executive-kpi-strip';
+import { AttentionRequiredWidget } from './widgets/attention-required-widget';
 
-export function DashboardView() {
+interface DashboardViewProps {
+  onNavigateToView?: (view: string) => void;
+}
+
+export function DashboardView({ onNavigateToView }: DashboardViewProps) {
   const { user } = useAuth();
   const firstName = user?.name?.split(' ')[0] || 'User';
 
@@ -96,7 +103,7 @@ export function DashboardView() {
   if (loading) {
     return (
       <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-12 text-center omni-fade-in">
-        <div className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 rounded-full text-xs font-semibold text-slate-600 animate-pulse">
+        <div className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 border border-slate-200 rounded-full text-xs font-semibold text-slate-700 animate-pulse">
           <RefreshCw size={14} className="animate-spin text-teal-700" /> Loading Executive Metrics...
         </div>
       </div>
@@ -110,11 +117,11 @@ export function DashboardView() {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Executive Dashboard</h1>
-            <span className="px-2.5 py-0.5 bg-teal-50 text-teal-700 border border-teal-100 text-[11px] font-semibold rounded-full uppercase tracking-wider">
+            <span className="px-2.5 py-0.5 bg-teal-50 text-teal-800 border border-teal-200 text-[11px] font-bold rounded-full uppercase tracking-wider">
               Authoritative
             </span>
           </div>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">
+          <p className="text-xs sm:text-sm text-slate-600 mt-1">
             Welcome back, {firstName}. Real-time posture synthesized across all GRC domains.
           </p>
         </div>
@@ -123,16 +130,16 @@ export function DashboardView() {
           <button
             onClick={() => fetchDashboardData(true)}
             disabled={refreshing}
-            className="px-3.5 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-1.5 shadow-2xs"
+            className="px-3.5 py-2 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 hover:bg-slate-100 transition-colors flex items-center gap-1.5 shadow-2xs"
             title="Refresh metrics"
           >
-            <RefreshCw size={14} className={refreshing ? 'animate-spin text-teal-700' : 'text-slate-500'} />
+            <RefreshCw size={14} className={refreshing ? 'animate-spin text-teal-700' : 'text-slate-600'} />
             {refreshing ? 'Refreshing...' : 'Refresh'}
           </button>
 
           <button
             onClick={() => setIsCustomizerOpen(true)}
-            className="px-3.5 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-2xs"
+            className="px-3.5 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-2xs"
           >
             <SlidersHorizontal size={14} /> Customize Widgets
           </button>
@@ -154,7 +161,18 @@ export function DashboardView() {
         </div>
       )}
 
-      {/* Widget Grid */}
+      {/* 1. Executive Posture Hero Banner */}
+      {metrics && <ExecutivePostureBanner metrics={metrics} onNavigateToView={onNavigateToView} />}
+
+      {/* 2. Executive KPI Overview Strip */}
+      {metrics && <ExecutiveKpiStrip metrics={metrics} />}
+
+      {/* 3. Bounded Attention Required / Critical Exceptions Section */}
+      {metrics && metrics.attentionRequired && metrics.attentionRequired.length > 0 && (
+        <AttentionRequiredWidget items={metrics.attentionRequired} onNavigateToView={onNavigateToView} />
+      )}
+
+      {/* 4. Domain Widget Grid */}
       {metrics && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 items-start">
           {visibleWidgets.map((w) => (
@@ -169,13 +187,13 @@ export function DashboardView() {
       {visibleWidgets.length === 0 && (
         <div className="bg-slate-50 border border-dashed border-slate-300 rounded-xl p-8 text-center max-w-md mx-auto my-12">
           <Sparkles size={24} className="text-slate-400 mx-auto mb-2" />
-          <h3 className="text-sm font-semibold text-slate-800">All Widgets Hidden</h3>
+          <h3 className="text-sm font-semibold text-slate-800">All Domain Widgets Hidden</h3>
           <p className="text-xs text-slate-500 mt-1 mb-4">
-            You have hidden all dashboard widgets. Open customizer to re-enable them.
+            You have hidden all domain widgets. Open customizer to re-enable them.
           </p>
           <button
             onClick={() => setIsCustomizerOpen(true)}
-            className="px-4 py-2 bg-teal-700 text-white text-xs font-semibold rounded-lg hover:bg-teal-800 transition-colors"
+            className="px-4 py-2 bg-teal-600 text-white text-xs font-semibold rounded-lg hover:bg-teal-700 transition-colors"
           >
             Customize Widgets
           </button>

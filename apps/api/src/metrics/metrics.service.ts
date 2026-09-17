@@ -14,6 +14,7 @@ import {
   VulnerabilityStatus,
   PolicyStatus,
   VendorStatus,
+  VendorAssessmentStatus,
   AuditPlanStatus,
   FindingStatus,
   CapaStatus,
@@ -89,6 +90,14 @@ export class MetricsService {
       riskMediumBand,
       riskLowBand,
       riskByStatus,
+
+      // Attention Bounded Queries (2 per domain max across 6 domains = max 12 items)
+      overdueVulnList,
+      overdueTaskList,
+      overdueFindingList,
+      overdueCapaList,
+      overduePolicyList,
+      overdueVendorAssessmentList,
     ] = await Promise.all([
       // Assets
       this.prisma.asset.count({ where: { organizationId, deletedAt: null } }),
@@ -124,10 +133,7 @@ export class MetricsService {
           organizationId,
           deletedAt: null,
           status: PolicyStatus.PUBLISHED,
-          OR: [
-            { reviewDate: { lt: now } },
-            { reviewDate: null, createdAt: { lt: new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000) } },
-          ],
+          reviewDate: { lt: now },
         },
       }),
 
@@ -140,19 +146,13 @@ export class MetricsService {
           organizationId,
           deletedAt: null,
           status: VendorStatus.ACTIVE,
-          OR: [
-            { nextReviewDate: { lt: now } },
-            { nextReviewDate: null, lastReviewedAt: { lt: new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000) } },
-          ],
+          nextReviewDate: { lt: now },
         },
       }),
       this.prisma.vendorAssessment.count({
         where: {
           organizationId,
-          OR: [
-            { status: 'OVERDUE' },
-            { status: { not: 'COMPLETED' }, createdAt: { lt: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000) } },
-          ],
+          status: VendorAssessmentStatus.OVERDUE,
         },
       }),
 
@@ -208,6 +208,52 @@ export class MetricsService {
         where: { organizationId, deletedAt: null, status: { in: ['OPEN', 'IN_TREATMENT'] }, score: { lt: 8 } },
       }),
       this.prisma.risk.groupBy({ by: ['status'], where: { organizationId, deletedAt: null }, _count: true }),
+
+      // Attention Bounded Queries (2 per domain max)
+      this.prisma.vulnerability.findMany({
+        where: { organizationId, deletedAt: null, status: { in: [VulnerabilityStatus.OPEN, VulnerabilityStatus.IN_REMEDIATION] }, dueDate: { lt: now } },
+        select: { id: true, title: true, severity: true, dueDate: true },
+        take: 2,
+        orderBy: { dueDate: 'asc' },
+      }),
+      this.prisma.complianceTask.findMany({
+        where: { ...obligationWhere, status: { not: TaskStatus.COMPLETE }, dueDate: { lt: now } },
+        select: { id: true, title: true, dueDate: true },
+        take: 2,
+        orderBy: { dueDate: 'asc' },
+      }),
+      this.prisma.auditFinding.findMany({
+        where: { organizationId, status: { in: [FindingStatus.OPEN, FindingStatus.IN_REMEDIATION] }, dueDate: { lt: now } },
+        select: { id: true, title: true, severity: true, dueDate: true },
+        take: 2,
+        orderBy: { dueDate: 'asc' },
+      }),
+      this.prisma.auditCapa.findMany({
+        where: { organizationId, status: { in: [CapaStatus.OPEN, CapaStatus.IN_PROGRESS] }, dueDate: { lt: now } },
+        select: { id: true, title: true, dueDate: true },
+        take: 2,
+        orderBy: { dueDate: 'asc' },
+      }),
+      this.prisma.policy.findMany({
+        where: {
+          organizationId,
+          deletedAt: null,
+          status: PolicyStatus.PUBLISHED,
+          reviewDate: { lt: now },
+        },
+        select: { id: true, title: true, reviewDate: true },
+        take: 2,
+        orderBy: { reviewDate: 'asc' },
+      }),
+      this.prisma.vendorAssessment.findMany({
+        where: {
+          organizationId,
+          status: VendorAssessmentStatus.OVERDUE,
+        },
+        select: { id: true, title: true, status: true, createdAt: true },
+        take: 2,
+        orderBy: { createdAt: 'asc' },
+      }),
     ]);
 
     // Format groupBy results into dictionaries
@@ -300,6 +346,56 @@ export class MetricsService {
         },
         byStatus: riskByStatusMap,
       },
+      attentionRequired: [
+        ...overdueVulnList.map((v) => ({
+          id: v.id,
+          domain: 'VULNERABILITY' as const,
+          title: v.title,
+          severityOrPriority: v.severity,
+          dueDate: v.dueDate ? v.dueDate.toISOString() : null,
+          targetView: 'vulnerabilities',
+        })),
+        ...overdueTaskList.map((t) => ({
+          id: t.id,
+          domain: 'OBLIGATION' as const,
+          title: t.title,
+          severityOrPriority: 'OVERDUE',
+          dueDate: t.dueDate ? t.dueDate.toISOString() : null,
+          targetView: 'board',
+        })),
+        ...overdueFindingList.map((f) => ({
+          id: f.id,
+          domain: 'AUDIT_FINDING' as const,
+          title: f.title,
+          severityOrPriority: f.severity,
+          dueDate: f.dueDate ? f.dueDate.toISOString() : null,
+          targetView: 'audits',
+        })),
+        ...overdueCapaList.map((c) => ({
+          id: c.id,
+          domain: 'CAPA' as const,
+          title: c.title,
+          severityOrPriority: 'OVERDUE',
+          dueDate: c.dueDate ? c.dueDate.toISOString() : null,
+          targetView: 'audits',
+        })),
+        ...overduePolicyList.map((p) => ({
+          id: p.id,
+          domain: 'POLICY' as const,
+          title: p.title,
+          severityOrPriority: 'REVIEW OVERDUE',
+          dueDate: p.reviewDate ? p.reviewDate.toISOString() : null,
+          targetView: 'policies',
+        })),
+        ...overdueVendorAssessmentList.map((v) => ({
+          id: v.id,
+          domain: 'VENDOR' as const,
+          title: `Vendor Assessment (${v.status})`,
+          severityOrPriority: 'ASSESSMENT OVERDUE',
+          dueDate: v.createdAt ? v.createdAt.toISOString() : null,
+          targetView: 'vendors',
+        })),
+      ],
     };
   }
 }

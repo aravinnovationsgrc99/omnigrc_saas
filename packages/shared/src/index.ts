@@ -1335,6 +1335,15 @@ export interface RiskMetricsDto {
   byStatus: Record<string, number>;
 }
 
+export interface AttentionItemDto {
+  id: string;
+  domain: 'VULNERABILITY' | 'OBLIGATION' | 'AUDIT_FINDING' | 'CAPA' | 'POLICY' | 'VENDOR';
+  title: string;
+  severityOrPriority: string;
+  dueDate?: string | null;
+  targetView: string;
+}
+
 export interface OverviewMetricsDto {
   timestamp: string;
   organizationId: string;
@@ -1345,6 +1354,7 @@ export interface OverviewMetricsDto {
   obligations: ObligationMetricsDto;
   audits: AuditMetricsDto;
   risks: RiskMetricsDto;
+  attentionRequired?: AttentionItemDto[];
 }
 
 // Phase 14: Executive Dashboard & Configurable Widget System DTOs
