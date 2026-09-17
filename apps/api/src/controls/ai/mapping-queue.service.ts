@@ -82,7 +82,8 @@ export class MappingQueueService implements OnModuleInit {
     const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
     try {
       const redisClient = new Redis(redisUrl, {
-        maxRetriesPerRequest: 1,
+        maxRetriesPerRequest: null,
+        enableReadyCheck: false,
         connectTimeout: 2000,
         retryStrategy: () => null, // Do not retry continuously if Redis is offline
       });

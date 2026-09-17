@@ -97,4 +97,8 @@ describe('MappingQueueService Bounded Memory Cleanup', () => {
     // Newest job kept
     expect(queueService.getJobState(jobIds[14])).toBeDefined();
   });
+
+  it('should initialize onModuleInit cleanly without throwing maxRetriesPerRequest BullMQ error', async () => {
+    await expect(queueService.onModuleInit()).resolves.not.toThrow();
+  });
 });
