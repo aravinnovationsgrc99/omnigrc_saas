@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateComplianceTaskDto, UpdateComplianceTaskDto, ComplianceTaskQueryDto } from './dto/compliance-tasks.dto';
-import { ComplianceTaskDto, PaginatedComplianceTasksDto, TaskStatus, ComplianceTaskSummaryDto, NotificationType } from '@omnigrc/shared';
+import { ComplianceTaskDto, PaginatedComplianceTasksDto, TaskStatus, ComplianceTaskSummaryDto, NotificationType, ObligationCadence } from '@omnigrc/shared';
 
 @Injectable()
 export class ComplianceTasksService {
@@ -144,6 +144,9 @@ export class ComplianceTasksService {
         owner: dto.owner,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
         controlId: dto.controlId || null,
+        cadence: dto.cadence || ObligationCadence.ONE_OFF,
+        category: dto.category || null,
+        obligationReference: dto.obligationReference || null,
         createdById: userId,
       },
       include: { control: { select: { name: true } } },
@@ -160,6 +163,7 @@ export class ComplianceTasksService {
         status: task.status,
         owner: task.owner,
         dueDate: task.dueDate ? task.dueDate.toISOString() : null,
+        cadence: task.cadence,
       },
     });
 
@@ -191,6 +195,22 @@ export class ComplianceTasksService {
     if (dto.owner !== undefined && dto.owner !== existing.owner) changedFields.push('owner');
     if (dto.dueDate !== undefined && dto.dueDate !== (existing.dueDate ? existing.dueDate.toISOString() : null)) changedFields.push('dueDate');
     if (dto.controlId !== undefined && dto.controlId !== existing.controlId) changedFields.push('controlId');
+    if (dto.cadence !== undefined && dto.cadence !== existing.cadence) changedFields.push('cadence');
+
+    // Deterministic recurring due-date math: calculate nextDueDate from previous scheduled dueDate
+    let lastCompletedAt = existing.lastCompletedAt;
+    let nextDueDate = existing.nextDueDate;
+
+    const newStatus = dto.status !== undefined ? dto.status : existing.status;
+    const effectiveCadence = dto.cadence !== undefined ? dto.cadence : existing.cadence;
+    const baseDueDate = dto.dueDate !== undefined ? (dto.dueDate ? new Date(dto.dueDate) : null) : existing.dueDate;
+
+    if (newStatus === TaskStatus.COMPLETE && existing.status !== TaskStatus.COMPLETE) {
+      lastCompletedAt = new Date();
+      if (effectiveCadence !== ObligationCadence.ONE_OFF && baseDueDate) {
+        nextDueDate = this.calculateNextDueDate(baseDueDate, effectiveCadence);
+      }
+    }
 
     const updated = await this.prisma.complianceTask.update({
       where: { id },
@@ -201,6 +221,11 @@ export class ComplianceTasksService {
         ...(dto.owner !== undefined && { owner: dto.owner }),
         ...(dto.dueDate !== undefined && { dueDate: dto.dueDate ? new Date(dto.dueDate) : null }),
         ...(dto.controlId !== undefined && { controlId: dto.controlId || null }),
+        ...(dto.cadence !== undefined && { cadence: dto.cadence }),
+        ...(dto.category !== undefined && { category: dto.category }),
+        ...(dto.obligationReference !== undefined && { obligationReference: dto.obligationReference }),
+        lastCompletedAt,
+        nextDueDate,
       },
       include: { control: { select: { name: true } } },
     });
@@ -309,6 +334,18 @@ export class ComplianceTasksService {
     });
   }
 
+  private calculateNextDueDate(baseDate: Date, cadence: string): Date {
+    const next = new Date(baseDate);
+    if (cadence === ObligationCadence.MONTHLY) {
+      next.setMonth(next.getMonth() + 1);
+    } else if (cadence === ObligationCadence.QUARTERLY) {
+      next.setMonth(next.getMonth() + 3);
+    } else if (cadence === ObligationCadence.ANNUAL) {
+      next.setFullYear(next.getFullYear() + 1);
+    }
+    return next;
+  }
+
   private mapToDto(task: any): ComplianceTaskDto {
     return {
       id: task.id,
@@ -320,10 +357,15 @@ export class ComplianceTasksService {
       dueDate: task.dueDate ? task.dueDate.toISOString() : null,
       controlId: task.controlId,
       controlName: task.control?.name || null,
+      cadence: task.cadence || ObligationCadence.ONE_OFF,
+      category: task.category || null,
+      obligationReference: task.obligationReference || null,
+      lastCompletedAt: task.lastCompletedAt ? task.lastCompletedAt.toISOString() : null,
+      nextDueDate: task.nextDueDate ? task.nextDueDate.toISOString() : null,
       createdAt: task.createdAt.toISOString(),
       updatedAt: task.updatedAt.toISOString(),
       createdById: task.createdById,
       deletedAt: task.deletedAt ? task.deletedAt.toISOString() : null,
-    };
+    } as any;
   }
 }

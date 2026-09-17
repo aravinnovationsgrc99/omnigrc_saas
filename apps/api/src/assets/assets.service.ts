@@ -114,6 +114,12 @@ export class AssetsService {
         criticality: dto.criticality,
         vendorName: dto.vendorName || null,
         dataResidencyRegion: dto.dataResidencyRegion || null,
+        department: dto.department || null,
+        environment: dto.environment || 'PRODUCTION',
+        isManaged: dto.isManaged !== undefined ? dto.isManaged : true,
+        lastScannedAt: dto.lastScannedAt ? new Date(dto.lastScannedAt) : null,
+        maintenanceDueDate: dto.maintenanceDueDate ? new Date(dto.maintenanceDueDate) : null,
+        vendorId: dto.vendorId || null,
         createdById: userId,
       },
     });
@@ -129,6 +135,7 @@ export class AssetsService {
         type: asset.type,
         criticality: asset.criticality,
         owner: asset.owner,
+        environment: asset.environment,
       },
     });
 
@@ -153,6 +160,10 @@ export class AssetsService {
     if (dto.criticality !== undefined && dto.criticality !== existing.criticality) changedFields.push('criticality');
     if (dto.vendorName !== undefined && dto.vendorName !== existing.vendorName) changedFields.push('vendorName');
     if (dto.dataResidencyRegion !== undefined && dto.dataResidencyRegion !== existing.dataResidencyRegion) changedFields.push('dataResidencyRegion');
+    if (dto.department !== undefined && dto.department !== existing.department) changedFields.push('department');
+    if (dto.environment !== undefined && dto.environment !== existing.environment) changedFields.push('environment');
+    if (dto.isManaged !== undefined && dto.isManaged !== existing.isManaged) changedFields.push('isManaged');
+    if (dto.vendorId !== undefined && dto.vendorId !== existing.vendorId) changedFields.push('vendorId');
 
     const updated = await this.prisma.asset.update({
       where: { id },
@@ -164,6 +175,12 @@ export class AssetsService {
         ...(dto.criticality !== undefined && { criticality: dto.criticality }),
         ...(dto.vendorName !== undefined && { vendorName: dto.vendorName }),
         ...(dto.dataResidencyRegion !== undefined && { dataResidencyRegion: dto.dataResidencyRegion }),
+        ...(dto.department !== undefined && { department: dto.department }),
+        ...(dto.environment !== undefined && { environment: dto.environment }),
+        ...(dto.isManaged !== undefined && { isManaged: dto.isManaged }),
+        ...(dto.lastScannedAt !== undefined && { lastScannedAt: dto.lastScannedAt ? new Date(dto.lastScannedAt) : null }),
+        ...(dto.maintenanceDueDate !== undefined && { maintenanceDueDate: dto.maintenanceDueDate ? new Date(dto.maintenanceDueDate) : null }),
+        ...(dto.vendorId !== undefined && { vendorId: dto.vendorId }),
       },
     });
 
@@ -223,10 +240,16 @@ export class AssetsService {
       criticality: asset.criticality as AssetCriticality,
       vendorName: asset.vendorName,
       dataResidencyRegion: asset.dataResidencyRegion,
+      department: asset.department || null,
+      environment: asset.environment || 'PRODUCTION',
+      isManaged: asset.isManaged !== undefined ? asset.isManaged : true,
+      lastScannedAt: asset.lastScannedAt ? asset.lastScannedAt.toISOString() : null,
+      maintenanceDueDate: asset.maintenanceDueDate ? asset.maintenanceDueDate.toISOString() : null,
+      vendorId: asset.vendorId || null,
       createdAt: asset.createdAt.toISOString(),
       updatedAt: asset.updatedAt.toISOString(),
       createdById: asset.createdById,
       deletedAt: asset.deletedAt ? asset.deletedAt.toISOString() : null,
-    };
+    } as any;
   }
 }

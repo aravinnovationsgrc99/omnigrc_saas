@@ -1,6 +1,6 @@
-import { IsString, IsNotEmpty, IsEnum, IsOptional, IsInt, Min, Max } from 'class-validator';
+import { IsString, IsNotEmpty, IsEnum, IsOptional, IsInt, Min, Max, IsBoolean, IsDateString } from 'class-validator';
 import { Type } from 'class-transformer';
-import { AssetType, AssetCriticality } from '@omnigrc/shared';
+import { AssetType, AssetCriticality, AssetEnvironment } from '@omnigrc/shared';
 
 export class CreateAssetDto {
   @IsString()
@@ -28,6 +28,30 @@ export class CreateAssetDto {
   @IsString()
   @IsOptional()
   dataResidencyRegion?: string;
+
+  @IsString()
+  @IsOptional()
+  department?: string;
+
+  @IsEnum(AssetEnvironment)
+  @IsOptional()
+  environment?: AssetEnvironment;
+
+  @IsBoolean()
+  @IsOptional()
+  isManaged?: boolean;
+
+  @IsDateString()
+  @IsOptional()
+  lastScannedAt?: string;
+
+  @IsDateString()
+  @IsOptional()
+  maintenanceDueDate?: string;
+
+  @IsString()
+  @IsOptional()
+  vendorId?: string;
 }
 
 export class UpdateAssetDto {
@@ -58,6 +82,30 @@ export class UpdateAssetDto {
   @IsString()
   @IsOptional()
   dataResidencyRegion?: string;
+
+  @IsString()
+  @IsOptional()
+  department?: string;
+
+  @IsEnum(AssetEnvironment)
+  @IsOptional()
+  environment?: AssetEnvironment;
+
+  @IsBoolean()
+  @IsOptional()
+  isManaged?: boolean;
+
+  @IsDateString()
+  @IsOptional()
+  lastScannedAt?: string;
+
+  @IsDateString()
+  @IsOptional()
+  maintenanceDueDate?: string;
+
+  @IsString()
+  @IsOptional()
+  vendorId?: string;
 }
 
 export class AssetQueryDto {

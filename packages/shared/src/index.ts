@@ -111,6 +111,69 @@ export enum TaskStatus {
   COMPLETE = "COMPLETE",
 }
 
+export enum AssetEnvironment {
+  PRODUCTION = "PRODUCTION",
+  STAGING = "STAGING",
+  DEVELOPMENT = "DEVELOPMENT",
+  OTHER = "OTHER",
+}
+
+export enum VulnerabilitySeverity {
+  CRITICAL = "CRITICAL",
+  HIGH = "HIGH",
+  MEDIUM = "MEDIUM",
+  LOW = "LOW",
+}
+
+export enum VulnerabilityStatus {
+  OPEN = "OPEN",
+  IN_REMEDIATION = "IN_REMEDIATION",
+  RESOLVED = "RESOLVED",
+  RISK_ACCEPTED = "RISK_ACCEPTED",
+}
+
+export enum PolicyStatus {
+  DRAFT = "DRAFT",
+  UNDER_REVIEW = "UNDER_REVIEW",
+  APPROVED = "APPROVED",
+  PUBLISHED = "PUBLISHED",
+  RETIRED = "RETIRED",
+}
+
+export enum PolicyExceptionStatus {
+  PENDING = "PENDING",
+  APPROVED = "APPROVED",
+  REJECTED = "REJECTED",
+  EXPIRED = "EXPIRED",
+}
+
+export enum VendorCriticality {
+  CRITICAL = "CRITICAL",
+  HIGH = "HIGH",
+  MEDIUM = "MEDIUM",
+  LOW = "LOW",
+}
+
+export enum VendorStatus {
+  ACTIVE = "ACTIVE",
+  UNDER_REVIEW = "UNDER_REVIEW",
+  INACTIVE = "INACTIVE",
+}
+
+export enum VendorAssessmentStatus {
+  SCHEDULED = "SCHEDULED",
+  IN_PROGRESS = "IN_PROGRESS",
+  COMPLETED = "COMPLETED",
+  OVERDUE = "OVERDUE",
+}
+
+export enum ObligationCadence {
+  ONE_OFF = "ONE_OFF",
+  MONTHLY = "MONTHLY",
+  QUARTERLY = "QUARTERLY",
+  ANNUAL = "ANNUAL",
+}
+
 export interface UserDto {
   id: string;
   organizationId: string;
@@ -877,6 +940,143 @@ export function evaluateLicenseStatus(
 }
 
 export const DEV_LICENSE_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAKXvoa0IDQQhIu4RGDOdFE+VGX8i5mUnunoaoxB9i+cY=\n-----END PUBLIC KEY-----\n`;
+
+export interface VulnerabilityAssetDto {
+  id: string;
+  assetId: string;
+  assetName?: string;
+}
+
+export interface VulnerabilityDto {
+  id: string;
+  organizationId: string;
+  cveId?: string | null;
+  title: string;
+  description?: string | null;
+  severity: VulnerabilitySeverity;
+  status: VulnerabilityStatus;
+  discoveredAt: Date | string;
+  lastSeenAt: Date | string;
+  remediationOwner: string;
+  dueDate?: Date | string | null;
+  remediationNotes?: string | null;
+  createdById: string;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+  affectedAssets?: VulnerabilityAssetDto[];
+}
+
+export interface PaginatedVulnerabilitiesDto {
+  items: VulnerabilityDto[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface PolicyVersionDto {
+  id: string;
+  policyId: string;
+  versionNumber: string;
+  content: string;
+  changeLog?: string | null;
+  createdById: string;
+  createdAt: Date | string;
+}
+
+export interface PolicyAttestationDto {
+  id: string;
+  organizationId: string;
+  policyVersionId: string;
+  userId: string;
+  attestedAt: Date | string;
+  ipAddress?: string | null;
+}
+
+export interface PolicyExceptionDto {
+  id: string;
+  organizationId: string;
+  policyId: string;
+  title: string;
+  reason: string;
+  requestedById: string;
+  approvedById?: string | null;
+  status: PolicyExceptionStatus;
+  expiresAt?: Date | string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
+export interface PolicyDto {
+  id: string;
+  organizationId: string;
+  code: string;
+  title: string;
+  description?: string | null;
+  category: string;
+  status: PolicyStatus;
+  ownerId: string;
+  businessUnit?: string | null;
+  publishedVersionId?: string | null;
+  publishedVersion?: PolicyVersionDto | null;
+  versions?: PolicyVersionDto[];
+  effectiveDate?: Date | string | null;
+  reviewDate?: Date | string | null;
+  reviewCadenceDays: number;
+  createdById: string;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
+export interface PaginatedPoliciesDto {
+  items: PolicyDto[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface VendorAssessmentDto {
+  id: string;
+  organizationId: string;
+  vendorId: string;
+  title: string;
+  score?: number | null;
+  status: VendorAssessmentStatus;
+  evaluatorId: string;
+  riskId?: string | null;
+  complianceTaskId?: string | null;
+  completedAt?: Date | string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
+export interface VendorDto {
+  id: string;
+  organizationId: string;
+  name: string;
+  description?: string | null;
+  category?: string | null;
+  criticality: VendorCriticality;
+  status: VendorStatus;
+  owner: string;
+  department?: string | null;
+  reviewCadenceDays: number;
+  lastReviewedAt?: Date | string | null;
+  nextReviewDate?: Date | string | null;
+  websiteUrl?: string | null;
+  createdById: string;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+  assessments?: VendorAssessmentDto[];
+  assetCount?: number;
+}
+
+export interface PaginatedVendorsDto {
+  items: VendorDto[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 
 
 

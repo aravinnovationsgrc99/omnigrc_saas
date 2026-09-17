@@ -19,6 +19,10 @@ import { RequestContextMiddleware } from './common/middleware/request-context.mi
 import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
 import { LicenseWriteGuard } from './common/guards/license-write.guard';
 
+import { VendorsModule } from './vendors/vendors.module';
+import { VulnerabilitiesModule } from './vulnerabilities/vulnerabilities.module';
+import { PoliciesModule } from './policies/policies.module';
+
 @Module({
   imports: [
     ScheduleModule.forRoot(),
@@ -49,6 +53,9 @@ import { LicenseWriteGuard } from './common/guards/license-write.guard';
     IntegrationsModule,
     HealthModule,
     LicenseVerificationModule,
+    VendorsModule,
+    VulnerabilitiesModule,
+    PoliciesModule,
   ],
   providers: [
     {

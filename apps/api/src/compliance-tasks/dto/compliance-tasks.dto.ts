@@ -1,6 +1,6 @@
 import { IsString, IsNotEmpty, IsOptional, IsEnum, IsNumber, Min, IsDateString } from 'class-validator';
 import { Type } from 'class-transformer';
-import { TaskStatus } from '@omnigrc/shared';
+import { TaskStatus, ObligationCadence } from '@omnigrc/shared';
 
 export class CreateComplianceTaskDto {
   @IsString()
@@ -26,6 +26,18 @@ export class CreateComplianceTaskDto {
   @IsString()
   @IsOptional()
   controlId?: string;
+
+  @IsEnum(ObligationCadence)
+  @IsOptional()
+  cadence?: ObligationCadence = ObligationCadence.ONE_OFF;
+
+  @IsString()
+  @IsOptional()
+  category?: string;
+
+  @IsString()
+  @IsOptional()
+  obligationReference?: string;
 }
 
 export class UpdateComplianceTaskDto {
@@ -52,6 +64,18 @@ export class UpdateComplianceTaskDto {
   @IsString()
   @IsOptional()
   controlId?: string | null;
+
+  @IsEnum(ObligationCadence)
+  @IsOptional()
+  cadence?: ObligationCadence;
+
+  @IsString()
+  @IsOptional()
+  category?: string;
+
+  @IsString()
+  @IsOptional()
+  obligationReference?: string;
 }
 
 export class UpdateTaskStatusDto {
