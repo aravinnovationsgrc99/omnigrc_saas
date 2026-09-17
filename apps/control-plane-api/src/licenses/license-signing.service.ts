@@ -1,4 +1,4 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import * as crypto from 'crypto';
 import {
   jcsCanonicalize,
@@ -12,19 +12,53 @@ import {
 export { DEV_LICENSE_PUBLIC_KEY };
 export const DEFAULT_KEY_ID = 'arav-license-v1-2026';
 
-// Control-Plane-Only dev private key for local development/testing when env var is not set
+// Phase 10 Security Note:
+// CONTROL_PLANE_DEV_LICENSE_PRIVATE_KEY is an Ed25519 development-only key whose
+// paired public key (DEV_LICENSE_PUBLIC_KEY) is exported from @omnigrc/shared.
+// It is ONLY used by the Control Plane binary (never shipped to Data Plane or shared packages).
+// In production, this key MUST be overridden by CONTROL_PLANE_LICENSE_SIGNING_PRIVATE_KEY.
+// Failure to set the env var in production is flagged as a SECURITY CRITICAL error at startup.
 export const CONTROL_PLANE_DEV_LICENSE_PRIVATE_KEY = `-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIOT7ZcthPtpVCfcgezPFd1++YceF8D/g2pvle7fhmQ5M\n-----END PRIVATE KEY-----\n`;
 
 @Injectable()
 export class LicenseSigningService {
+  private readonly logger = new Logger(LicenseSigningService.name);
+  private _warnedAboutDevKey = false;
+
   /**
    * Return the active private key string (PEM format).
+   * Phase 10 Security: Emits SECURITY CRITICAL error in production/staging when
+   * CONTROL_PLANE_LICENSE_SIGNING_PRIVATE_KEY is not configured, preventing
+   * the dev fallback from silently becoming the production signing key.
    */
   private getPrivateKeyPem(): string {
     const key = process.env.CONTROL_PLANE_LICENSE_SIGNING_PRIVATE_KEY;
     if (key && key.trim().length > 0) {
       return key.replace(/\\n/g, '\n');
     }
+
+    const isProduction =
+      process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
+
+    if (isProduction) {
+      this.logger.error(
+        'SECURITY CRITICAL: CONTROL_PLANE_LICENSE_SIGNING_PRIVATE_KEY is not set. ' +
+          'Refusing to sign license artifacts in a production/staging environment without explicit signing key.',
+      );
+      throw new InternalServerErrorException(
+        'CONTROL_PLANE_LICENSE_SIGNING_PRIVATE_KEY is not configured for production/staging signing.',
+      );
+    }
+
+    if (!this._warnedAboutDevKey) {
+      this._warnedAboutDevKey = true;
+      this.logger.warn(
+        'SECURITY WARNING: CONTROL_PLANE_LICENSE_SIGNING_PRIVATE_KEY is not set. ' +
+          'Using development Ed25519 key fallback. ' +
+          'DO NOT use this configuration in production.',
+      );
+    }
+
     return CONTROL_PLANE_DEV_LICENSE_PRIVATE_KEY;
   }
 

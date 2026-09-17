@@ -10,6 +10,7 @@ import {
   HttpStatus,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
@@ -46,17 +47,23 @@ export class AuthController {
   }
 
   @Post('register')
+  // Phase 10 Security: Tighter rate limit on registration to prevent bulk account creation.
+  @Throttle({ auth: { limit: 10, ttl: 60000 } })
   async register(@Body() body: any) {
     return this.authService.register(body);
   }
 
   @Post('login')
+  // Phase 10 Security: Tighter rate limit on login to prevent credential brute-forcing.
+  @Throttle({ auth: { limit: 10, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   async login(@Body() body: any) {
     return this.authService.login(body);
   }
 
   @Post('refresh')
+  // Phase 10 Security: Tighter rate limit on token refresh.
+  @Throttle({ auth: { limit: 10, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   async refresh(@Body('refreshToken') refreshToken: string) {
     return this.authService.refreshToken(refreshToken);
@@ -130,6 +137,8 @@ export class AuthController {
   }
 
   @Post('invitations/accept')
+  // Phase 10 Security: Tighter rate limit on invitation acceptance to prevent token enumeration.
+  @Throttle({ auth: { limit: 10, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   async acceptInvitation(@Body() dto: AcceptInvitationDto) {
     return this.authService.acceptInvitation(dto);

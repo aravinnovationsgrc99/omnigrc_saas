@@ -6,13 +6,14 @@ import { ResendMailerService } from '../notifications/mailer/resend-mailer.servi
 import { JwtService } from '@nestjs/jwt';
 import {
   ConflictException,
+  ForbiddenException,
   UnauthorizedException,
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
-import { Role, InvitationStatus } from '@omnigrc/shared';
+import { Role, InvitationStatus, OrgType } from '@omnigrc/shared';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -32,6 +33,7 @@ describe('AuthService', () => {
       organization: {
         create: jest.fn(),
         update: jest.fn(),
+        findUnique: jest.fn(),
       },
       invitation: {
         findUnique: jest.fn(),
@@ -410,6 +412,221 @@ describe('AuthService', () => {
           organizationId: 'org-A',
         }),
       );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Phase 10 Security: MSSP Context Switching Security Tests
+  // ---------------------------------------------------------------------------
+  describe('MSSP Context Switching Security (Phase 10)', () => {
+    const msspUserId = 'mssp-user-1';
+    const msspHomeOrgId = 'mssp-org-1';
+    const clientOrgId = 'client-org-1';
+
+    it('should reject switchContext for a non-MSSP user role', async () => {
+      // Regular ADMIN trying to switch context
+      await expect(
+        service.switchContext(msspUserId, msspHomeOrgId, Role.ADMIN, {
+          targetOrganizationId: clientOrgId,
+        }),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(auditLogsService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'MSSP_CONTEXT_SWITCH_FAILED',
+          metadata: expect.objectContaining({ reason: expect.stringContaining('MSSP role') }),
+        }),
+      );
+    });
+
+    it('should reject switchContext when home organization is not MSSP_PROVIDER type', async () => {
+      prisma.organization.findUnique.mockResolvedValue({
+        id: msspHomeOrgId,
+        type: OrgType.STANDALONE, // Not an MSSP provider
+      });
+
+      await expect(
+        service.switchContext(msspUserId, msspHomeOrgId, Role.MSSP_ADMIN, {
+          targetOrganizationId: clientOrgId,
+        }),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(auditLogsService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'MSSP_CONTEXT_SWITCH_FAILED',
+          metadata: expect.objectContaining({ reason: expect.stringContaining('not an MSSP Provider') }),
+        }),
+      );
+    });
+
+    it('should reject switchContext when target organization belongs to a different MSSP', async () => {
+      prisma.organization.findUnique
+        .mockResolvedValueOnce({
+          id: msspHomeOrgId,
+          type: OrgType.MSSP_PROVIDER,
+        })
+        .mockResolvedValueOnce({
+          id: clientOrgId,
+          type: OrgType.CLIENT_TENANT,
+          parentOrganizationId: 'different-mssp-org', // Belongs to a DIFFERENT MSSP
+        });
+
+      await expect(
+        service.switchContext(msspUserId, msspHomeOrgId, Role.MSSP_ADMIN, {
+          targetOrganizationId: clientOrgId,
+        }),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(auditLogsService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'MSSP_CONTEXT_SWITCH_FAILED',
+          metadata: expect.objectContaining({
+            reason: expect.stringContaining('not managed by this MSSP'),
+          }),
+        }),
+      );
+    });
+
+    it('should reject switchContext when target organization is itself an MSSP_PROVIDER (privilege escalation)', async () => {
+      prisma.organization.findUnique
+        .mockResolvedValueOnce({
+          id: msspHomeOrgId,
+          type: OrgType.MSSP_PROVIDER,
+        })
+        .mockResolvedValueOnce({
+          id: clientOrgId,
+          type: OrgType.MSSP_PROVIDER, // Another MSSP — must be rejected
+          parentOrganizationId: msspHomeOrgId,
+        });
+
+      await expect(
+        service.switchContext(msspUserId, msspHomeOrgId, Role.MSSP_ADMIN, {
+          targetOrganizationId: clientOrgId,
+        }),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(auditLogsService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'MSSP_CONTEXT_SWITCH_FAILED',
+          metadata: expect.objectContaining({ reason: expect.stringContaining('cannot be an MSSP Provider') }),
+        }),
+      );
+    });
+
+    it('should reject switchContext for a non-existent target organization', async () => {
+      prisma.organization.findUnique
+        .mockResolvedValueOnce({
+          id: msspHomeOrgId,
+          type: OrgType.MSSP_PROVIDER,
+        })
+        .mockResolvedValueOnce(null); // Target org does not exist
+
+      await expect(
+        service.switchContext(msspUserId, msspHomeOrgId, Role.MSSP_ADMIN, {
+          targetOrganizationId: 'nonexistent-org-id',
+        }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should succeed and issue a short-lived context token for valid MSSP context switch', async () => {
+      prisma.organization.findUnique
+        .mockResolvedValueOnce({
+          id: msspHomeOrgId,
+          type: OrgType.MSSP_PROVIDER,
+        })
+        .mockResolvedValueOnce({
+          id: clientOrgId,
+          type: OrgType.CLIENT_TENANT,
+          parentOrganizationId: msspHomeOrgId,
+          name: 'Client Org',
+          primaryRegion: 'India',
+          primaryFramework: null,
+          onboardingCompleted: true,
+          createdAt: new Date(),
+        });
+
+      prisma.user.findUnique.mockResolvedValue({
+        id: msspUserId,
+        organizationId: msspHomeOrgId,
+        email: 'mssp@arav.co',
+        role: Role.MSSP_ADMIN,
+        name: 'MSSP Admin',
+      });
+
+      const jwtSignSpy = jest.spyOn(
+        (service as any).jwtService,
+        'sign',
+      );
+
+      const result = await service.switchContext(msspUserId, msspHomeOrgId, Role.MSSP_ADMIN, {
+        targetOrganizationId: clientOrgId,
+      });
+
+      expect(result.accessToken).toBe('mocked-jwt-token');
+      expect(result.expiresIn).toBe('15m');
+      expect(result.actingViaMsspId).toBe(msspHomeOrgId);
+      expect(result.targetOrganization.id).toBe(clientOrgId);
+
+      // Verify the JWT payload includes actingViaMsspId claim
+      const signPayload = jwtSignSpy.mock.calls[0][0] as any;
+      expect(signPayload.actingViaMsspId).toBe(msspHomeOrgId);
+      expect(signPayload.organizationId).toBe(clientOrgId);
+      expect(signPayload.sub).toBe(msspUserId);
+
+      // Verify audit log records the switch
+      expect(auditLogsService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'MSSP_CONTEXT_SWITCHED',
+          organizationId: msspHomeOrgId,
+          entityId: clientOrgId,
+        }),
+      );
+    });
+
+    it('refreshToken should return normal token WITHOUT actingViaMsspId (context token cannot be refreshed)', async () => {
+      // Simulate the jwtService.verify returning a context token payload
+      const jwtVerifyMock = jest.fn().mockReturnValue({
+        sub: msspUserId,
+        email: 'mssp@arav.co',
+        organizationId: clientOrgId,
+        actingViaMsspId: msspHomeOrgId, // This is a context token
+        role: Role.MSSP_ADMIN,
+      });
+
+      const jwtSignMock = jest.fn().mockReturnValue('refreshed-normal-token');
+
+      // Rebuild service with controlled jwt mock
+      const module: TestingModule = await Test.createTestingModule({
+        providers: [
+          AuthService,
+          { provide: PrismaService, useValue: prisma },
+          { provide: AuditLogsService, useValue: auditLogsService },
+          { provide: ResendMailerService, useValue: resendMailerService },
+          {
+            provide: JwtService,
+            useValue: { sign: jwtSignMock, verify: jwtVerifyMock },
+          },
+        ],
+      }).compile();
+
+      const testService = module.get<AuthService>(AuthService);
+
+      prisma.user.findUnique.mockResolvedValue({
+        id: msspUserId,
+        organizationId: msspHomeOrgId, // Home org from DB
+        email: 'mssp@arav.co',
+        role: Role.MSSP_ADMIN,
+        name: 'MSSP Admin',
+      });
+
+      // The refresh endpoint takes a refreshToken string and returns new tokens
+      const result = await testService.refreshToken('any-refresh-token-string');
+
+      // The issued tokens should use the home organizationId from DB, NOT actingViaMsspId
+      const signPayload = jwtSignMock.mock.calls[0][0] as any;
+      expect(signPayload.organizationId).toBe(msspHomeOrgId); // Home org, not target org
+      expect(signPayload.actingViaMsspId).toBeUndefined();   // Context claim is NOT carried forward
+      expect(result.accessToken).toBeDefined();
     });
   });
 });

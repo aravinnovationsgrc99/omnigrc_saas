@@ -1,10 +1,12 @@
 import { Controller, Get } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { PrismaService } from '../prisma/prisma.service';
 import { HealthCheckDto, OMNIGRC_VERSION } from '@omnigrc/shared';
 import { BypassLicenseCheck } from '../common/decorators/requires-active-license.decorator';
 
 @Controller('health')
 @BypassLicenseCheck()
+@SkipThrottle() // Health probes must never be rate-limited
 export class HealthController {
   constructor(private readonly prisma: PrismaService) {}
 

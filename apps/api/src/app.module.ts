@@ -1,6 +1,7 @@
 import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { APP_INTERCEPTOR, APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
 import { TenantModule } from './tenant/tenant.module';
 import { AuthModule } from './auth/auth.module';
@@ -21,6 +22,20 @@ import { LicenseWriteGuard } from './common/guards/license-write.guard';
 @Module({
   imports: [
     ScheduleModule.forRoot(),
+    // Phase 10 Security: Global rate limiting to prevent brute force attacks.
+    // Auth-specific routes apply tighter limits via @Throttle() decorators.
+    ThrottlerModule.forRoot([
+      {
+        name: 'global',
+        ttl: 60000, // 60 seconds window
+        limit: 100,  // 100 requests per 60s per IP (generous for legitimate use)
+      },
+      {
+        name: 'auth',
+        ttl: 60000,  // 60 seconds window
+        limit: 10,   // 10 requests per 60s per IP for auth endpoints
+      },
+    ]),
     PrismaModule,
     TenantModule,
     AuthModule,
@@ -39,6 +54,11 @@ import { LicenseWriteGuard } from './common/guards/license-write.guard';
     {
       provide: APP_INTERCEPTOR,
       useClass: SentryInterceptor,
+    },
+    // Phase 10 Security: Apply global rate limiting guard before other guards.
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
     },
     {
       provide: APP_GUARD,

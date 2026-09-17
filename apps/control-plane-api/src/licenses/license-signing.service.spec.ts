@@ -4,12 +4,20 @@ import {
 } from './license-signing.service';
 import * as crypto from 'crypto';
 import { jcsCanonicalize } from '@omnigrc/shared';
+import { InternalServerErrorException } from '@nestjs/common';
 
 describe('LicenseSigningService', () => {
   let service: LicenseSigningService;
+  const originalEnv = process.env;
 
   beforeEach(() => {
+    process.env = { ...originalEnv };
+    delete process.env.CONTROL_PLANE_LICENSE_SIGNING_PRIVATE_KEY;
     service = new LicenseSigningService();
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
   });
 
   it('should generate a valid Ed25519 signature over canonical payload', () => {
@@ -90,5 +98,64 @@ describe('LicenseSigningService', () => {
     );
 
     expect(isValid).toBe(false);
+  });
+
+  describe('Phase 10 Security: Fail-Closed Signing Key in Production/Staging', () => {
+    const sampleInput = {
+      license: {
+        id: 'lic_123',
+        product: 'OMNIGRC',
+        status: 'ACTIVE',
+        commercialAgreementId: 'ca_123',
+        startsAt: new Date(),
+        expiresAt: new Date(),
+        maxDeployments: 1,
+      },
+      deployment: {
+        id: 'dep_123',
+        organizationId: 'org_123',
+        createdAt: new Date(),
+      },
+      entitlements: [],
+    };
+
+    it('should FAIL-CLOSED (throw InternalServerErrorException) in production when signing key is missing', () => {
+      process.env.NODE_ENV = 'production';
+      delete process.env.CONTROL_PLANE_LICENSE_SIGNING_PRIVATE_KEY;
+
+      expect(() => service.signLicenseArtifact(sampleInput)).toThrow(
+        InternalServerErrorException,
+      );
+    });
+
+    it('should FAIL-CLOSED (throw InternalServerErrorException) in staging when signing key is missing', () => {
+      process.env.NODE_ENV = 'staging';
+      delete process.env.CONTROL_PLANE_LICENSE_SIGNING_PRIVATE_KEY;
+
+      expect(() => service.signLicenseArtifact(sampleInput)).toThrow(
+        InternalServerErrorException,
+      );
+    });
+
+    it('should succeed in production when a valid private key is explicitly configured', () => {
+      process.env.NODE_ENV = 'production';
+      // Generate a fresh Ed25519 keypair for test
+      const { privateKey, publicKey } = crypto.generateKeyPairSync('ed25519');
+      process.env.CONTROL_PLANE_LICENSE_SIGNING_PRIVATE_KEY = privateKey
+        .export({ type: 'pkcs8', format: 'pem' })
+        .toString();
+
+      const artifact = service.signLicenseArtifact(sampleInput);
+      expect(artifact.signature).toBeDefined();
+
+      const canonicalJson = jcsCanonicalize(artifact.payload);
+      const isValid = crypto.verify(
+        null,
+        Buffer.from(canonicalJson, 'utf-8'),
+        publicKey,
+        Buffer.from(artifact.signature, 'base64'),
+      );
+      expect(isValid).toBe(true);
+    });
   });
 });
