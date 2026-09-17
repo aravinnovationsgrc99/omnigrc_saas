@@ -20,6 +20,21 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
         'ComplianceTask',
         'Notification',
         'Invitation',
+        'Vendor',
+        'VendorAssessment',
+        'Vulnerability',
+        'VulnerabilityAsset',
+        'Policy',
+        'PolicyVersion',
+        'PolicyAttestation',
+        'PolicyException',
+        'AuditPlan',
+        'AuditSchedule',
+        'AuditAssessment',
+        'AuditCheckItem',
+        'AuditEvidence',
+        'AuditFinding',
+        'AuditCapa',
       ];
 
       if (orgId && params.model && tenantModels.includes(params.model)) {

@@ -1270,6 +1270,84 @@ export function calculateAuditScore(items: { result: AuditCheckResult }[]): numb
   return Number(((compliantCount / applicableItems.length) * 100).toFixed(2));
 }
 
+// Phase 13: Authoritative Metrics DTO Interfaces
+
+export interface AssetMetricsDto {
+  total: number;
+  criticalityHighCount: number;
+  managedCount: number;
+  unmanagedCount: number;
+  byEnvironment: Record<string, number>;
+  byType: Record<string, number>;
+}
+
+export interface VulnerabilityMetricsDto {
+  total: number;
+  openCount: number;
+  overdueCount: number;
+  resolvedCount: number;
+  riskAcceptedCount: number;
+  bySeverity: Record<string, number>;
+}
+
+export interface PolicyMetricsDto {
+  total: number;
+  publishedCount: number;
+  overdueReviewCount: number;
+  byStatus: Record<string, number>;
+}
+
+export interface VendorMetricsDto {
+  total: number;
+  requiringReviewCount: number;
+  assessmentsOverdueCount: number;
+  byCriticality: Record<string, number>;
+  byStatus: Record<string, number>;
+}
+
+export interface ObligationMetricsDto {
+  total: number;
+  upcomingCount: number;
+  overdueCount: number;
+  completedCount: number;
+  completionRate: number;
+}
+
+export interface AuditMetricsDto {
+  totalPlans: number;
+  assessmentCount: number;
+  overallAuditScore: number;
+  findingsTotal: number;
+  findingsOpenCount: number;
+  findingsOverdueCount: number;
+  capaOpenCount: number;
+  byPlanStatus: Record<string, number>;
+  findingsBySeverity: Record<string, number>;
+}
+
+export interface RiskMetricsDto {
+  totalOpen: number;
+  byScoreBand: {
+    HIGH: number;
+    MEDIUM: number;
+    LOW: number;
+  };
+  byStatus: Record<string, number>;
+}
+
+export interface OverviewMetricsDto {
+  timestamp: string;
+  organizationId: string;
+  assets: AssetMetricsDto;
+  vulnerabilities: VulnerabilityMetricsDto;
+  policies: PolicyMetricsDto;
+  vendors: VendorMetricsDto;
+  obligations: ObligationMetricsDto;
+  audits: AuditMetricsDto;
+  risks: RiskMetricsDto;
+}
+
+
 
 
 

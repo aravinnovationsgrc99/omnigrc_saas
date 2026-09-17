@@ -23,6 +23,7 @@ import { VendorsModule } from './vendors/vendors.module';
 import { VulnerabilitiesModule } from './vulnerabilities/vulnerabilities.module';
 import { PoliciesModule } from './policies/policies.module';
 import { BusinessAuditsModule } from './business-audits/business-audits.module';
+import { MetricsModule } from './metrics/metrics.module';
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { BusinessAuditsModule } from './business-audits/business-audits.module';
     VulnerabilitiesModule,
     PoliciesModule,
     BusinessAuditsModule,
+    MetricsModule,
   ],
   providers: [
     {
