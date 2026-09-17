@@ -1347,6 +1347,41 @@ export interface OverviewMetricsDto {
   risks: RiskMetricsDto;
 }
 
+// Phase 14: Executive Dashboard & Configurable Widget System DTOs
+
+export interface WidgetLayoutItem {
+  id: string;
+  visible: boolean;
+  position: number;
+}
+
+export interface UserDashboardPreferenceDto {
+  id: string;
+  userId: string;
+  organizationId: string;
+  configJson: {
+    version: number;
+    layout: WidgetLayoutItem[];
+  };
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
+export interface UpdateDashboardPreferenceDto {
+  layout: WidgetLayoutItem[];
+}
+
+export const DEFAULT_WIDGET_LAYOUT: WidgetLayoutItem[] = [
+  { id: 'risk_overview', visible: true, position: 0 },
+  { id: 'compliance_obligations', visible: true, position: 1 },
+  { id: 'audit_readiness', visible: true, position: 2 },
+  { id: 'vulnerability_posture', visible: true, position: 3 },
+  { id: 'policy_governance', visible: true, position: 4 },
+  { id: 'vendor_risk', visible: true, position: 5 },
+  { id: 'asset_inventory', visible: true, position: 6 },
+];
+
+
 
 
 

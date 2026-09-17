@@ -24,6 +24,7 @@ import { VulnerabilitiesModule } from './vulnerabilities/vulnerabilities.module'
 import { PoliciesModule } from './policies/policies.module';
 import { BusinessAuditsModule } from './business-audits/business-audits.module';
 import { MetricsModule } from './metrics/metrics.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { MetricsModule } from './metrics/metrics.module';
     PoliciesModule,
     BusinessAuditsModule,
     MetricsModule,
+    DashboardModule,
   ],
   providers: [
     {

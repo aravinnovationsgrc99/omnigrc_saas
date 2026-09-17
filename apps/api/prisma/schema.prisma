@@ -188,6 +188,7 @@ model Organization {
   vulnerabilities Vulnerability[]
   policies        Policy[]
   auditPlans      AuditPlan[]
+  dashboardPreferences UserDashboardPreference[]
 
   @@index([parentOrganizationId])
   @@map("organizations")
@@ -271,6 +272,7 @@ model User {
   organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   notifications   Notification[]
   invitationsSent Invitation[]   @relation("InvitedUsers")
+  dashboardPreferences UserDashboardPreference[]
 
   @@index([organizationId])
   @@map("users")
@@ -865,4 +867,24 @@ model AuditCapa {
   @@index([status])
   @@map("audit_capas")
 }
+
+// Phase 14 Model: UserDashboardPreference
+
+model UserDashboardPreference {
+  id             String   @id @default(uuid())
+  userId         String
+  organizationId String
+  configJson     Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+  @@index([userId])
+  @@map("user_dashboard_preferences")
+}
+
 

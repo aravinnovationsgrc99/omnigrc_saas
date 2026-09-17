@@ -1,150 +1,194 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Sparkles, ArrowRight, CheckCircle2, Circle } from 'lucide-react';
 import { useAuth } from '@/context/auth-context';
 import { apiRequest } from '@/lib/api-client';
-import { AnimatedCountUp } from '@/components/ui/animated-count-up';
-
-export const BUILD_PHASES = [
-  { id: 1, name: 'Foundation', desc: 'Shell, navigation, auth, design system', done: true },
-  { id: 2, name: 'Asset & Inventory', desc: 'Assets and vendors that risks & controls reference', done: true },
-  { id: 3, name: 'Risk Register', desc: 'Risk log, likelihood × impact heatmap, treatment plans', done: true },
-  { id: 4, name: 'Control Mapping', desc: 'AI-assisted mapping, framework citations, sign-off', done: true },
-  { id: 5, name: 'Compliance Board', desc: 'Kanban, due-dates, 30/60/90 dashboard', done: true },
-  { id: 6, name: 'Cross-cutting', desc: 'Audit log, RBAC, regional settings, live metrics', done: false },
-  { id: 7, name: 'Polish', desc: 'Search, notifications, empty/error states, mobile', done: false },
-];
-
-function StatStripItem({ label, value, last }: { label: string; value: string | number; last?: boolean }) {
-  return (
-    <div style={{
-      flex: 1, padding: '16px 22px', borderRight: last ? 'none' : '1px solid #E2E6E4',
-      transition: 'background .15s ease-in-out',
-    }} className="hover:bg-slate-50/50">
-      <div className="omni-mono" style={{ fontSize: 24, fontWeight: 600, color: '#16233F' }}>
-        <AnimatedCountUp value={value} />
-      </div>
-      <div style={{ fontSize: 12, color: '#5B6672', marginTop: 3 }}>{label}</div>
-    </div>
-  );
-}
-
-function RoadmapRow({ phase, isCurrent }: { phase: (typeof BUILD_PHASES)[0]; isCurrent: boolean }) {
-  return (
-    <div style={{
-      display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 0',
-      borderBottom: '1px solid #EDEFED',
-    }}>
-      {phase.done ? (
-        <CheckCircle2 size={17} color="#0F6E6A" style={{ marginTop: 1, flexShrink: 0 }} />
-      ) : (
-        <Circle size={17} color={isCurrent ? '#B5750A' : '#8B95A1'} style={{ marginTop: 1, flexShrink: 0 }} />
-      )}
-      <div style={{ flex: 1 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 13.5, fontWeight: 600, color: phase.done ? '#1B2430' : '#5B6672' }}>
-            Phase {phase.id} — {phase.name}
-          </span>
-          {isCurrent && (
-            <span style={{
-              fontSize: 10, fontWeight: 700, color: '#B5750A', background: '#FCEFD9',
-              padding: '2px 7px', borderRadius: 999, textTransform: 'uppercase', letterSpacing: 0.4,
-            }}>
-              Next
-            </span>
-          )}
-        </div>
-        <div style={{ fontSize: 12.5, color: '#8B95A1', marginTop: 2 }}>{phase.desc}</div>
-      </div>
-    </div>
-  );
-}
+import {
+  OverviewMetricsDto,
+  UserDashboardPreferenceDto,
+  WidgetLayoutItem,
+  DEFAULT_WIDGET_LAYOUT,
+} from '@omnigrc/shared';
+import { reconcileLayout } from './widget-registry';
+import { RiskOverviewWidget } from './widgets/risk-overview-widget';
+import { ComplianceObligationsWidget } from './widgets/compliance-obligations-widget';
+import { AuditReadinessWidget } from './widgets/audit-readiness-widget';
+import { VulnerabilityPostureWidget } from './widgets/vulnerability-posture-widget';
+import { PolicyGovernanceWidget } from './widgets/policy-governance-widget';
+import { VendorRiskWidget } from './widgets/vendor-risk-widget';
+import { AssetInventoryWidget } from './widgets/asset-inventory-widget';
+import { LayoutCustomizerModal } from './layout-customizer-modal';
+import { SlidersHorizontal, RefreshCw, AlertCircle, Sparkles } from 'lucide-react';
 
 export function DashboardView() {
   const { user } = useAuth();
   const firstName = user?.name?.split(' ')[0] || 'User';
-  const [assetCount, setAssetCount] = useState<number | string>(0);
-  const [openRiskCount, setOpenRiskCount] = useState<number | string>(0);
-  const [mappedControlCount, setMappedControlCount] = useState<number | string>(0);
-  const [dueThisWeekCount, setDueThisWeekCount] = useState<number | string>(0);
-  const nextPhase = BUILD_PHASES.find((p) => !p.done);
+
+  const [metrics, setMetrics] = useState<OverviewMetricsDto | null>(null);
+  const [layout, setLayout] = useState<WidgetLayoutItem[]>(DEFAULT_WIDGET_LAYOUT);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isCustomizerOpen, setIsCustomizerOpen] = useState(false);
+
+  const fetchDashboardData = async (isManualRefresh = false) => {
+    try {
+      if (isManualRefresh) setRefreshing(true);
+      else setLoading(true);
+      setError(null);
+
+      const [metricsData, prefData] = await Promise.all([
+        apiRequest<OverviewMetricsDto>('/metrics/overview'),
+        apiRequest<UserDashboardPreferenceDto>('/dashboard/preferences').catch(() => null),
+      ]);
+
+      setMetrics(metricsData);
+
+      const rawLayout = prefData?.configJson?.layout || DEFAULT_WIDGET_LAYOUT;
+      const reconciled = reconcileLayout(rawLayout);
+      setLayout(reconciled);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to load executive metrics');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
   useEffect(() => {
-    async function fetchCounts() {
-      try {
-        const [assetRes, riskRes, controlRes, dueRes] = await Promise.all([
-          apiRequest<{ count: number }>('/assets/count').catch(() => ({ count: 0 })),
-          apiRequest<{ count: number }>('/risks/open-count').catch(() => ({ count: 0 })),
-          apiRequest<{ count: number }>('/controls/approved-count').catch(() => ({ count: 0 })),
-          apiRequest<{ count: number }>('/compliance-tasks/due-this-week-count').catch(() => ({ count: 0 })),
-        ]);
-        setAssetCount(assetRes.count);
-        setOpenRiskCount(riskRes.count);
-        setMappedControlCount(controlRes.count);
-        setDueThisWeekCount(dueRes.count);
-      } catch {
-        setAssetCount(0);
-        setOpenRiskCount(0);
-        setMappedControlCount(0);
-        setDueThisWeekCount(0);
-      }
-    }
-    fetchCounts();
+    fetchDashboardData();
   }, []);
 
+  const handleSaveLayout = async (newLayout: WidgetLayoutItem[]) => {
+    await apiRequest<UserDashboardPreferenceDto>('/dashboard/preferences', {
+      method: 'PUT',
+      body: JSON.stringify({ layout: newLayout }),
+    });
+    setLayout(newLayout);
+  };
+
+  const visibleWidgets = layout
+    .filter((item) => item.visible)
+    .sort((a, b) => a.position - b.position);
+
+  const renderWidget = (id: string) => {
+    if (!metrics) return null;
+    switch (id) {
+      case 'risk_overview':
+        return <RiskOverviewWidget key={id} metrics={metrics.risks} />;
+      case 'compliance_obligations':
+        return <ComplianceObligationsWidget key={id} metrics={metrics.obligations} />;
+      case 'audit_readiness':
+        return <AuditReadinessWidget key={id} metrics={metrics.audits} />;
+      case 'vulnerability_posture':
+        return <VulnerabilityPostureWidget key={id} metrics={metrics.vulnerabilities} />;
+      case 'policy_governance':
+        return <PolicyGovernanceWidget key={id} metrics={metrics.policies} />;
+      case 'vendor_risk':
+        return <VendorRiskWidget key={id} metrics={metrics.vendors} />;
+      case 'asset_inventory':
+        return <AssetInventoryWidget key={id} metrics={metrics.assets} />;
+      default:
+        return null;
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-12 text-center omni-fade-in">
+        <div className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 rounded-full text-xs font-semibold text-slate-600 animate-pulse">
+          <RefreshCw size={14} className="animate-spin text-teal-700" /> Loading Executive Metrics...
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="omni-fade-in w-full max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-8 overflow-x-hidden">
-      <div className="mb-5">
-        <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Welcome, {firstName}</h1>
-        <p className="text-xs sm:text-sm text-slate-500 mt-1">
-          This is the foundation build — the workspaces below come online as each phase ships.
-        </p>
-      </div>
-
-      {/* stat strip */}
-      <div className="grid grid-cols-2 md:grid-cols-4 bg-white border border-slate-200 rounded-xl mb-6 overflow-hidden shadow-sm divide-y md:divide-y-0 md:divide-x divide-slate-100">
-        <StatStripItem label="Open risks" value={openRiskCount} />
-        <StatStripItem label="Assets tracked" value={assetCount} />
-        <StatStripItem label="Controls mapped" value={mappedControlCount} />
-        <StatStripItem label="Tasks due this week" value={dueThisWeekCount} last />
-      </div>
-
-      <div className="flex flex-col lg:flex-row gap-5 items-stretch">
-        {/* build roadmap */}
-        <div className="flex-1 bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-sm">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <Sparkles size={15} color="#0F6E6A" />
-            <h2 style={{ fontSize: 14.5, fontWeight: 600 }}>Build roadmap</h2>
+    <div className="omni-fade-in w-full max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-8 overflow-x-hidden space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-5">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Executive Dashboard</h1>
+            <span className="px-2.5 py-0.5 bg-teal-50 text-teal-700 border border-teal-100 text-[11px] font-semibold rounded-full uppercase tracking-wider">
+              Authoritative
+            </span>
           </div>
-          <p style={{ fontSize: 12.5, color: '#8B95A1', marginBottom: 6 }}>
-            Live status of this foundation build, phase by phase.
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">
+            Welcome back, {firstName}. Real-time posture synthesized across all GRC domains.
           </p>
-          <div>
-            {BUILD_PHASES.map((p) => (
-              <RoadmapRow key={p.id} phase={p} isCurrent={Boolean(nextPhase && p.id === nextPhase.id)} />
-            ))}
-          </div>
         </div>
 
-        {/* getting started / what's next */}
-        <div style={{
-          flex: 1, background: '#16233F', borderRadius: 10, padding: '20px 22px', color: '#fff',
-        }}>
-          <h2 style={{ fontSize: 14.5, fontWeight: 600, marginBottom: 6 }}>What's next</h2>
-          <p style={{ fontSize: 12.5, color: '#B9C2CE', lineHeight: 1.6, marginBottom: 16 }}>
-            {nextPhase
-              ? `Phase ${nextPhase.id} adds ${nextPhase.name} — ${nextPhase.desc.toLowerCase()}.`
-              : 'All phases shipped.'}
-          </p>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 600,
-            color: '#0F6E6A', cursor: 'default',
-          }}>
-            Ask to continue building <ArrowRight size={13} />
-          </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => fetchDashboardData(true)}
+            disabled={refreshing}
+            className="px-3.5 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-1.5 shadow-2xs"
+            title="Refresh metrics"
+          >
+            <RefreshCw size={14} className={refreshing ? 'animate-spin text-teal-700' : 'text-slate-500'} />
+            {refreshing ? 'Refreshing...' : 'Refresh'}
+          </button>
+
+          <button
+            onClick={() => setIsCustomizerOpen(true)}
+            className="px-3.5 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-2xs"
+          >
+            <SlidersHorizontal size={14} /> Customize Widgets
+          </button>
         </div>
       </div>
+
+      {error && (
+        <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-xs font-medium text-rose-800 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertCircle size={16} className="text-rose-600" />
+            <span>{error}</span>
+          </div>
+          <button
+            onClick={() => fetchDashboardData()}
+            className="underline font-semibold hover:text-rose-900"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* Widget Grid */}
+      {metrics && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 items-start">
+          {visibleWidgets.map((w) => (
+            <div key={w.id} className="w-full">
+              {renderWidget(w.id)}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Empty State when all widgets are hidden */}
+      {visibleWidgets.length === 0 && (
+        <div className="bg-slate-50 border border-dashed border-slate-300 rounded-xl p-8 text-center max-w-md mx-auto my-12">
+          <Sparkles size={24} className="text-slate-400 mx-auto mb-2" />
+          <h3 className="text-sm font-semibold text-slate-800">All Widgets Hidden</h3>
+          <p className="text-xs text-slate-500 mt-1 mb-4">
+            You have hidden all dashboard widgets. Open customizer to re-enable them.
+          </p>
+          <button
+            onClick={() => setIsCustomizerOpen(true)}
+            className="px-4 py-2 bg-teal-700 text-white text-xs font-semibold rounded-lg hover:bg-teal-800 transition-colors"
+          >
+            Customize Widgets
+          </button>
+        </div>
+      )}
+
+      {/* Customizer Modal */}
+      <LayoutCustomizerModal
+        isOpen={isCustomizerOpen}
+        onClose={() => setIsCustomizerOpen(false)}
+        currentLayout={layout}
+        onSave={handleSaveLayout}
+      />
     </div>
   );
 }
