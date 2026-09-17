@@ -1381,6 +1381,73 @@ export const DEFAULT_WIDGET_LAYOUT: WidgetLayoutItem[] = [
   { id: 'asset_inventory', visible: true, position: 6 },
 ];
 
+// Phase 15: Reporting & Exports Enums & DTOs
+
+export enum ReportType {
+  EXECUTIVE_GRC_POSTURE = "executive_grc_posture",
+  VULNERABILITY_REPORT = "vulnerability_report",
+  ASSET_INVENTORY_REPORT = "asset_inventory_report",
+  POLICY_GOVERNANCE_REPORT = "policy_governance_report",
+  VENDOR_RISK_REPORT = "vendor_risk_report",
+  COMPLIANCE_OBLIGATION_REPORT = "compliance_obligation_report",
+  BUSINESS_AUDIT_REPORT = "business_audit_report",
+  RISK_REGISTER_REPORT = "risk_register_report",
+}
+
+export type ExportFormat = "csv" | "xlsx";
+
+export interface ReportColumnDto {
+  key: string;
+  header: string;
+  dataType?: "string" | "number" | "date" | "boolean" | "badge";
+}
+
+export interface ReportMetaDto {
+  id: ReportType;
+  title: string;
+  category: string;
+  description: string;
+  supportedFilters: string[];
+  allowlistedSortFields: string[];
+  defaultSortBy?: string;
+  defaultSortDirection?: "asc" | "desc";
+  exportFormats: ExportFormat[];
+  columns: ReportColumnDto[];
+}
+
+export interface ReportQueryDto {
+  page?: number;
+  limit?: number;
+  search?: string;
+  sortBy?: string;
+  sortDirection?: "asc" | "desc";
+  status?: string;
+  severity?: VulnerabilitySeverity | string;
+  criticality?: AssetCriticality | VendorCriticality | string;
+  environment?: AssetEnvironment | string;
+  type?: AssetType | string;
+  cadence?: ObligationCadence | string;
+  scoreBand?: RiskScoreBand | string;
+  overdue?: boolean;
+  upcoming?: boolean;
+  overdueReview?: boolean;
+  requiringReview?: boolean;
+  assetId?: string;
+  format?: ExportFormat;
+}
+
+export interface ReportResponseDto<T = any> {
+  reportType: ReportType;
+  generatedAt: string;
+  organizationId: string;
+  appliedFilters: Record<string, any>;
+  total: number;
+  page: number;
+  limit: number;
+  data: T[];
+}
+
+
 
 
 

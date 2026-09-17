@@ -25,6 +25,7 @@ import { PoliciesModule } from './policies/policies.module';
 import { BusinessAuditsModule } from './business-audits/business-audits.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
     BusinessAuditsModule,
     MetricsModule,
     DashboardModule,
+    ReportsModule,
   ],
   providers: [
     {

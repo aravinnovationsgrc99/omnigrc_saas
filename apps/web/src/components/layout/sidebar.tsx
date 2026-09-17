@@ -5,7 +5,7 @@ import { useAuth } from '@/context/auth-context';
 import { Role, hasRole, OMNIGRC_VERSION } from '@omnigrc/shared';
 import {
   LayoutDashboard, ShieldAlert, Boxes, GitMerge, KanbanSquare,
-  Settings, Globe2, FileText, Lock, FileCheck, Building2, Bug, ClipboardList, type LucideIcon
+  Settings, Globe2, FileText, Lock, FileCheck, Building2, Bug, ClipboardList, FileSpreadsheet, type LucideIcon
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -33,7 +33,10 @@ export interface NavSection {
 export const NAV_SECTIONS: NavSection[] = [
   {
     label: 'Overview',
-    items: [{ key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, enabled: true }],
+    items: [
+      { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, enabled: true },
+      { key: 'reports', label: 'Reports & Exports', icon: FileSpreadsheet, enabled: true },
+    ],
   },
   {
     label: 'Workspaces',
