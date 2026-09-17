@@ -268,7 +268,7 @@ export function TeamInvitationsView() {
                             </button>
                           </div>
                         ) : (
-                          <span className="text-[11px] text-gray-400 italic">No actions</span>
+                          <span className="text-[11px] text-slate-500 font-medium italic">No actions</span>
                         )}
                       </td>
                     )}

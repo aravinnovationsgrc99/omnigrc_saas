@@ -192,7 +192,7 @@ export function ReportsView() {
   };
 
   const renderCellContent = (colKey: string, dataType: string | undefined, value: any) => {
-    if (value === null || value === undefined || value === '') return <span className="text-slate-400">N/A</span>;
+    if (value === null || value === undefined || value === '') return <span className="text-slate-500 font-medium">N/A</span>;
 
     if (dataType === 'badge') {
       return renderBadge(value);

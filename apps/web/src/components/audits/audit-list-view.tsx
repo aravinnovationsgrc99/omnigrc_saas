@@ -302,7 +302,7 @@ export function AuditListView() {
           <div className="bg-white rounded-xl max-w-4xl w-full p-6 shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b pb-3 mb-4">
               <div>
-                <span className="text-xs font-bold text-slate-400 omni-mono">{selectedPlan.frameworkCode}</span>
+                <span className="text-xs font-mono font-bold text-teal-800 bg-teal-100 px-2 py-0.5 rounded border border-teal-200">{selectedPlan.frameworkCode}</span>
                 <h2 className="text-lg font-bold text-slate-900">{selectedPlan.title}</h2>
               </div>
               <button
@@ -320,7 +320,7 @@ export function AuditListView() {
                     <div className="flex items-center justify-between mb-3">
                       <div>
                         <div className="text-xs font-bold text-slate-700">Audit Assessment Run</div>
-                        <div className="text-[10px] text-slate-400 omni-mono">Auditor: {a.auditorId}</div>
+                        <div className="text-[10px] text-slate-600 omni-mono">Auditor: {a.auditorId}</div>
                       </div>
                       <div className="flex items-center gap-3">
                         <div className="text-right">

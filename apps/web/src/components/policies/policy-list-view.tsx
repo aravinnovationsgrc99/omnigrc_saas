@@ -276,7 +276,7 @@ export function PolicyListView() {
           <div className="bg-white rounded-xl max-w-2xl w-full p-6 shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b pb-3 mb-4">
               <div>
-                <span className="text-xs font-bold text-slate-400 omni-mono">{selectedPolicy.code}</span>
+                <span className="text-xs font-mono font-bold text-teal-800 bg-teal-100 px-2 py-0.5 rounded border border-teal-200">{selectedPolicy.code}</span>
                 <h2 className="text-lg font-bold text-slate-900">{selectedPolicy.title}</h2>
               </div>
               <button
