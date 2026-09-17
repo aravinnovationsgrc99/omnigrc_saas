@@ -22,6 +22,7 @@ import { LicenseWriteGuard } from './common/guards/license-write.guard';
 import { VendorsModule } from './vendors/vendors.module';
 import { VulnerabilitiesModule } from './vulnerabilities/vulnerabilities.module';
 import { PoliciesModule } from './policies/policies.module';
+import { BusinessAuditsModule } from './business-audits/business-audits.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { PoliciesModule } from './policies/policies.module';
     VendorsModule,
     VulnerabilitiesModule,
     PoliciesModule,
+    BusinessAuditsModule,
   ],
   providers: [
     {

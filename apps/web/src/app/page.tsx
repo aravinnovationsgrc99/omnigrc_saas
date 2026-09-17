@@ -15,6 +15,7 @@ import { AuditLogView } from '@/components/audit-logs/audit-log-view';
 import { PolicyListView } from '@/components/policies/policy-list-view';
 import { VendorListView } from '@/components/vendors/vendor-list-view';
 import { VulnerabilityListView } from '@/components/vulnerabilities/vulnerability-list-view';
+import { AuditListView } from '@/components/audits/audit-list-view';
 import { ComingSoon } from '@/components/dashboard/coming-soon';
 import { OnboardingWizard } from '@/components/onboarding/onboarding-wizard';
 
@@ -66,6 +67,7 @@ export default function MainPage() {
             {view === 'dashboard' && <DashboardView />}
             {view === 'risk' && <RiskListView />}
             {view === 'assets' && <AssetListView />}
+            {view === 'audits' && <AuditListView />}
             {view === 'vulnerabilities' && <VulnerabilityListView />}
             {view === 'policies' && <PolicyListView />}
             {view === 'vendors' && <VendorListView />}

@@ -1077,6 +1077,200 @@ export interface PaginatedVendorsDto {
   limit: number;
 }
 
+// Phase 12: Business Audit Management Enums & DTOs
+
+export enum AuditPlanStatus {
+  DRAFT = "DRAFT",
+  PLANNED = "PLANNED",
+  IN_PROGRESS = "IN_PROGRESS",
+  COMPLETED = "COMPLETED",
+  ARCHIVED = "ARCHIVED",
+}
+
+export enum AuditScheduleStatus {
+  SCHEDULED = "SCHEDULED",
+  IN_PROGRESS = "IN_PROGRESS",
+  COMPLETED = "COMPLETED",
+  CANCELLED = "CANCELLED",
+}
+
+export enum AuditAssessmentStatus {
+  IN_PROGRESS = "IN_PROGRESS",
+  UNDER_REVIEW = "UNDER_REVIEW",
+  COMPLETED = "COMPLETED",
+}
+
+export enum AuditCheckResult {
+  NOT_EVALUATED = "NOT_EVALUATED",
+  COMPLIANT = "COMPLIANT",
+  PARTIALLY_COMPLIANT = "PARTIALLY_COMPLIANT",
+  NON_COMPLIANT = "NON_COMPLIANT",
+  NOT_APPLICABLE = "NOT_APPLICABLE",
+}
+
+export enum FindingStatus {
+  OPEN = "OPEN",
+  IN_REMEDIATION = "IN_REMEDIATION",
+  READY_FOR_VERIFICATION = "READY_FOR_VERIFICATION",
+  VERIFIED = "VERIFIED",
+  CLOSED = "CLOSED",
+}
+
+export enum CapaStatus {
+  OPEN = "OPEN",
+  IN_PROGRESS = "IN_PROGRESS",
+  COMPLETED = "COMPLETED",
+  VERIFIED = "VERIFIED",
+  CLOSED = "CLOSED",
+}
+
+export interface AuditEvidenceDto {
+  id: string;
+  organizationId: string;
+  checkItemId?: string | null;
+  findingId?: string | null;
+  fileName: string;
+  fileUrl: string;
+  fileSize?: number | null;
+  mimeType?: string | null;
+  uploadedById: string;
+  createdAt: Date | string;
+}
+
+export interface AuditCheckItemDto {
+  id: string;
+  organizationId: string;
+  assessmentId: string;
+  controlId?: string | null;
+  controlName?: string | null;
+  title: string;
+  description?: string | null;
+  result: AuditCheckResult;
+  notes?: string | null;
+  evidence?: AuditEvidenceDto[];
+  createdById: string;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
+export interface AuditCapaDto {
+  id: string;
+  organizationId: string;
+  findingId: string;
+  title: string;
+  correctiveAction: string;
+  preventiveAction?: string | null;
+  ownerId: string;
+  dueDate?: Date | string | null;
+  status: CapaStatus;
+  completedAt?: Date | string | null;
+  verifiedById?: string | null;
+  verifiedAt?: Date | string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
+export interface AuditFindingDto {
+  id: string;
+  organizationId: string;
+  assessmentId: string;
+  checkItemId?: string | null;
+  title: string;
+  description?: string | null;
+  severity: VulnerabilitySeverity;
+  status: FindingStatus;
+  ownerId: string;
+  dueDate?: Date | string | null;
+  riskId?: string | null;
+  remediationPlan?: string | null;
+  verificationNotes?: string | null;
+  verifiedById?: string | null;
+  verifiedAt?: Date | string | null;
+  createdById: string;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+  capas?: AuditCapaDto[];
+  evidence?: AuditEvidenceDto[];
+}
+
+export interface AuditAssessmentDto {
+  id: string;
+  organizationId: string;
+  auditPlanId: string;
+  scheduleId?: string | null;
+  auditorId: string;
+  status: AuditAssessmentStatus;
+  score: number;
+  summary?: string | null;
+  startedAt: Date | string;
+  completedAt?: Date | string | null;
+  createdById: string;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+  checkItems?: AuditCheckItemDto[];
+  findings?: AuditFindingDto[];
+}
+
+export interface AuditScheduleDto {
+  id: string;
+  organizationId: string;
+  auditPlanId: string;
+  scheduledStartDate: Date | string;
+  scheduledEndDate: Date | string;
+  leadAuditorId: string;
+  status: AuditScheduleStatus;
+  recurrence?: ObligationCadence | null;
+  nextAuditDate?: Date | string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
+export interface AuditPlanDto {
+  id: string;
+  organizationId: string;
+  title: string;
+  objective?: string | null;
+  scope?: string | null;
+  frameworkCode?: FrameworkCode | string | null;
+  ownerId: string;
+  plannedStartDate?: Date | string | null;
+  plannedEndDate?: Date | string | null;
+  status: AuditPlanStatus;
+  createdById: string;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+  schedules?: AuditScheduleDto[];
+  assessments?: AuditAssessmentDto[];
+}
+
+export interface PaginatedAuditPlansDto {
+  items: AuditPlanDto[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface PaginatedAuditFindingsDto {
+  items: AuditFindingDto[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+/**
+ * Authoritative Audit Score Definition:
+ * COMPLIANT / (TOTAL_CHECK_ITEMS - NOT_APPLICABLE_CHECK_ITEMS) * 100
+ * Explicitly handles the zero-applicable-items case (returns 0).
+ */
+export function calculateAuditScore(items: { result: AuditCheckResult }[]): number {
+  if (!items || items.length === 0) return 0;
+  const applicableItems = items.filter((i) => i.result !== AuditCheckResult.NOT_APPLICABLE);
+  if (applicableItems.length === 0) return 0;
+  const compliantCount = items.filter((i) => i.result === AuditCheckResult.COMPLIANT).length;
+  return Number(((compliantCount / applicableItems.length) * 100).toFixed(2));
+}
+
+
 
 
 

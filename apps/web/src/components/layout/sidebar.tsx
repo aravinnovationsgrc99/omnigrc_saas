@@ -5,7 +5,7 @@ import { useAuth } from '@/context/auth-context';
 import { Role, hasRole, OMNIGRC_VERSION } from '@omnigrc/shared';
 import {
   LayoutDashboard, ShieldAlert, Boxes, GitMerge, KanbanSquare,
-  Settings, Globe2, FileText, Lock, FileCheck, Building2, Bug, type LucideIcon
+  Settings, Globe2, FileText, Lock, FileCheck, Building2, Bug, ClipboardList, type LucideIcon
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -40,6 +40,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { key: 'risk', label: 'Risk Register', icon: ShieldAlert, enabled: true },
       { key: 'assets', label: 'Asset & Inventory', icon: Boxes, enabled: true },
+      { key: 'audits', label: 'Business Audits', icon: ClipboardList, enabled: true },
       { key: 'vulnerabilities', label: 'Vulnerability Mgmt', icon: Bug, enabled: true },
       { key: 'policies', label: 'Policy Mgmt', icon: FileCheck, enabled: true },
       { key: 'vendors', label: 'Vendor Risk', icon: Building2, enabled: true },

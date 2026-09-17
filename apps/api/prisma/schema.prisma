@@ -187,6 +187,7 @@ model Organization {
   vendors         Vendor[]
   vulnerabilities Vulnerability[]
   policies        Policy[]
+  auditPlans      AuditPlan[]
 
   @@index([parentOrganizationId])
   @@map("organizations")
@@ -246,6 +247,7 @@ model Risk {
   organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   asset             Asset?             @relation(fields: [assetId], references: [id], onDelete: SetNull)
   vendorAssessments VendorAssessment[]
+  auditFindings     AuditFinding[]
 
   @@index([organizationId])
   @@index([deletedAt])
@@ -372,6 +374,7 @@ model Control {
   organization    Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   mappings        ControlFrameworkMapping[]
   complianceTasks ComplianceTask[]
+  auditCheckItems AuditCheckItem[]
 
   @@index([organizationId])
   @@index([deletedAt])
@@ -639,3 +642,227 @@ model PolicyException {
   @@index([policyId])
   @@map("policy_exceptions")
 }
+
+// Phase 12 Models: AuditPlan, AuditSchedule, AuditAssessment, AuditCheckItem, AuditEvidence, AuditFinding, AuditCapa
+
+enum AuditPlanStatus {
+  DRAFT
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  ARCHIVED
+}
+
+enum AuditScheduleStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum AuditAssessmentStatus {
+  IN_PROGRESS
+  UNDER_REVIEW
+  COMPLETED
+}
+
+enum AuditCheckResult {
+  NOT_EVALUATED
+  COMPLIANT
+  PARTIALLY_COMPLIANT
+  NON_COMPLIANT
+  NOT_APPLICABLE
+}
+
+enum FindingStatus {
+  OPEN
+  IN_REMEDIATION
+  READY_FOR_VERIFICATION
+  VERIFIED
+  CLOSED
+}
+
+enum CapaStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  VERIFIED
+  CLOSED
+}
+
+model AuditPlan {
+  id               String          @id @default(uuid())
+  organizationId   String
+  title            String
+  objective        String?
+  scope            String?
+  frameworkCode    String?
+  ownerId          String
+  plannedStartDate DateTime?
+  plannedEndDate   DateTime?
+  status           AuditPlanStatus @default(DRAFT)
+  createdById      String
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  schedules    AuditSchedule[]
+  assessments  AuditAssessment[]
+
+  @@index([organizationId])
+  @@index([status])
+  @@map("audit_plans")
+}
+
+model AuditSchedule {
+  id                 String              @id @default(uuid())
+  organizationId     String
+  auditPlanId        String
+  scheduledStartDate DateTime
+  scheduledEndDate   DateTime
+  leadAuditorId      String
+  status             AuditScheduleStatus @default(SCHEDULED)
+  recurrence         ObligationCadence?
+  nextAuditDate      DateTime?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  auditPlan   AuditPlan         @relation(fields: [auditPlanId], references: [id], onDelete: Cascade)
+  assessments AuditAssessment[]
+
+  @@index([organizationId])
+  @@index([auditPlanId])
+  @@index([status])
+  @@map("audit_schedules")
+}
+
+model AuditAssessment {
+  id             String                @id @default(uuid())
+  organizationId String
+  auditPlanId    String
+  scheduleId     String?
+  auditorId      String
+  status         AuditAssessmentStatus @default(IN_PROGRESS)
+  score          Float                 @default(0)
+  summary        String?
+  startedAt      DateTime              @default(now())
+  completedAt    DateTime?
+  createdById    String
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  auditPlan  AuditPlan        @relation(fields: [auditPlanId], references: [id], onDelete: Cascade)
+  schedule   AuditSchedule?   @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  checkItems AuditCheckItem[]
+  findings   AuditFinding[]
+
+  @@index([organizationId])
+  @@index([auditPlanId])
+  @@index([status])
+  @@map("audit_assessments")
+}
+
+model AuditCheckItem {
+  id             String           @id @default(uuid())
+  organizationId String
+  assessmentId   String
+  controlId      String?
+  title          String
+  description    String?
+  result         AuditCheckResult @default(NOT_EVALUATED)
+  notes          String?
+  createdById    String
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  assessment AuditAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  control    Control?         @relation(fields: [controlId], references: [id], onDelete: SetNull)
+  evidence   AuditEvidence[]
+  findings   AuditFinding[]
+
+  @@index([organizationId])
+  @@index([assessmentId])
+  @@index([controlId])
+  @@index([result])
+  @@map("audit_check_items")
+}
+
+model AuditEvidence {
+  id             String   @id @default(uuid())
+  organizationId String
+  checkItemId    String?
+  findingId      String?
+  fileName       String
+  fileUrl        String
+  fileSize       Int?
+  mimeType       String?
+  uploadedById   String
+  createdAt      DateTime @default(now())
+
+  checkItem AuditCheckItem? @relation(fields: [checkItemId], references: [id], onDelete: Cascade)
+  finding   AuditFinding?   @relation(fields: [findingId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([checkItemId])
+  @@index([findingId])
+  @@map("audit_evidences")
+}
+
+model AuditFinding {
+  id                String                @id @default(uuid())
+  organizationId    String
+  assessmentId      String
+  checkItemId       String?
+  title             String
+  description       String?
+  severity          VulnerabilitySeverity @default(MEDIUM)
+  status            FindingStatus         @default(OPEN)
+  ownerId           String
+  dueDate           DateTime?
+  riskId            String?
+  remediationPlan   String?
+  verificationNotes String?
+  verifiedById      String?
+  verifiedAt        DateTime?
+  createdById       String
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  assessment AuditAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  checkItem  AuditCheckItem? @relation(fields: [checkItemId], references: [id], onDelete: SetNull)
+  risk       Risk?           @relation(fields: [riskId], references: [id], onDelete: SetNull)
+  capas      AuditCapa[]
+  evidence   AuditEvidence[]
+
+  @@index([organizationId])
+  @@index([assessmentId])
+  @@index([status])
+  @@index([severity])
+  @@index([ownerId])
+  @@map("audit_findings")
+}
+
+model AuditCapa {
+  id               String     @id @default(uuid())
+  organizationId   String
+  findingId        String
+  title            String
+  correctiveAction String
+  preventiveAction String?
+  ownerId          String
+  dueDate          DateTime?
+  status           CapaStatus @default(OPEN)
+  completedAt      DateTime?
+  verifiedById     String?
+  verifiedAt       DateTime?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  finding AuditFinding @relation(fields: [findingId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([findingId])
+  @@index([status])
+  @@map("audit_capas")
+}
+
