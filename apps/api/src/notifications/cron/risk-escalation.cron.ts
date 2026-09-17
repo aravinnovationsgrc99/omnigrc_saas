@@ -44,20 +44,36 @@ export class RiskEscalationCron {
 
     this.logger.log(`Found ${highRisks.length} unmitigated high-severity risks (score >= 15).`);
 
-    for (const risk of highRisks) {
-      // Two-phase Idempotency Check: check if risk escalation email was already dispatched today for this risk
-      const existingEscalationToday = await this.prisma.notification.findFirst({
-        where: {
-          organizationId: risk.organizationId,
-          entityType: 'RISK',
-          entityId: risk.id,
-          type: NotificationType.RISK_ESCALATION,
-          createdAt: { gte: startOfToday },
-          emailSentAt: { not: null },
-        },
-      });
+    if (highRisks.length === 0) {
+      this.logger.log('Completed daily High-Risk SLA Escalation cron execution.');
+      return;
+    }
 
-      if (existingEscalationToday) {
+    const riskIds = highRisks.map((risk) => risk.id);
+
+    // Batched Idempotency query: replace per-record findFirst() with a single batched findMany()
+    const existingEscalationsToday = await this.prisma.notification.findMany({
+      where: {
+        entityType: 'RISK',
+        entityId: { in: riskIds },
+        type: NotificationType.RISK_ESCALATION,
+        createdAt: { gte: startOfToday },
+        emailSentAt: { not: null },
+      },
+      select: {
+        entityId: true,
+      },
+    });
+
+    const sentRiskIds = new Set(
+      existingEscalationsToday
+        .map((n) => n.entityId)
+        .filter((id): id is string => Boolean(id)),
+    );
+
+    for (const risk of highRisks) {
+      // Idempotency Guard: check if risk escalation was already dispatched today for this risk using batched Set
+      if (sentRiskIds.has(risk.id)) {
         this.logger.debug(`Idempotency Guard: Risk escalation already dispatched today for risk ${risk.id}. Skipping.`);
         continue;
       }

@@ -46,20 +46,36 @@ export class DueDateReminderCron {
 
     this.logger.log(`Found ${pendingTasks.length} compliance tasks approaching due date / overdue.`);
 
-    for (const task of pendingTasks) {
-      // Two-phase Idempotency check: verify whether a due date reminder email was already dispatched today for this task
-      const existingNotificationToday = await this.prisma.notification.findFirst({
-        where: {
-          organizationId: task.organizationId,
-          entityType: 'COMPLIANCE_TASK',
-          entityId: task.id,
-          type: NotificationType.DUE_DATE_REMINDER,
-          createdAt: { gte: startOfToday },
-          emailSentAt: { not: null },
-        },
-      });
+    if (pendingTasks.length === 0) {
+      this.logger.log('Completed daily due date reminder cron execution.');
+      return;
+    }
 
-      if (existingNotificationToday) {
+    const taskIds = pendingTasks.map((task) => task.id);
+
+    // Batched Idempotency query: replace per-record findFirst() with a single batched findMany()
+    const existingNotificationsToday = await this.prisma.notification.findMany({
+      where: {
+        entityType: 'COMPLIANCE_TASK',
+        entityId: { in: taskIds },
+        type: NotificationType.DUE_DATE_REMINDER,
+        createdAt: { gte: startOfToday },
+        emailSentAt: { not: null },
+      },
+      select: {
+        entityId: true,
+      },
+    });
+
+    const sentTaskIds = new Set(
+      existingNotificationsToday
+        .map((n) => n.entityId)
+        .filter((id): id is string => Boolean(id)),
+    );
+
+    for (const task of pendingTasks) {
+      // Idempotency Guard: check if due date reminder was already sent today for this task using batched Set
+      if (sentTaskIds.has(task.id)) {
         this.logger.debug(`Idempotency Guard: Due date reminder already sent today for task ${task.id}. Skipping.`);
         continue;
       }

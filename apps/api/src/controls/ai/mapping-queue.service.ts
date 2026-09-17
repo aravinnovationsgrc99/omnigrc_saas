@@ -27,6 +27,9 @@ export class MappingQueueService implements OnModuleInit {
   private bullQueue: Queue | null = null;
   private isRedisConnected = false;
 
+  private readonly DEFAULT_JOB_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+  private readonly MAX_TERMINAL_JOBS = 1000;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
@@ -34,6 +37,46 @@ export class MappingQueueService implements OnModuleInit {
     private readonly licenseVerificationService: LicenseVerificationService,
   ) {}
 
+  /**
+   * Bounded Cleanup Strategy:
+   * 1. Removes terminal jobs ('done' | 'failed') older than ttlMs (default 24h).
+   * 2. If terminal job count still exceeds maxTerminalJobs, prunes oldest terminal jobs.
+   * 3. Never deletes active jobs ('queued' | 'processing').
+   */
+  public cleanupExpiredJobs(
+    ttlMs: number = this.DEFAULT_JOB_TTL_MS,
+    maxTerminalJobs: number = this.MAX_TERMINAL_JOBS,
+  ): number {
+    const now = Date.now();
+    let removedCount = 0;
+    const terminalJobs: { jobId: string; createdAt: Date }[] = [];
+
+    for (const [jobId, job] of this.jobStore.entries()) {
+      if (job.status === 'done' || job.status === 'failed') {
+        if (now - job.createdAt.getTime() > ttlMs) {
+          this.jobStore.delete(jobId);
+          removedCount++;
+        } else {
+          terminalJobs.push({ jobId, createdAt: job.createdAt });
+        }
+      }
+    }
+
+    if (terminalJobs.length > maxTerminalJobs) {
+      terminalJobs.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+      const toRemove = terminalJobs.slice(0, terminalJobs.length - maxTerminalJobs);
+      for (const item of toRemove) {
+        this.jobStore.delete(item.jobId);
+        removedCount++;
+      }
+    }
+
+    if (removedCount > 0) {
+      this.logger.debug(`MappingQueueService cleanup pruned ${removedCount} expired/excess terminal job states.`);
+    }
+
+    return removedCount;
+  }
 
   async onModuleInit() {
     const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
@@ -263,6 +306,8 @@ export class MappingQueueService implements OnModuleInit {
         state.status = 'failed';
         state.error = err.message || 'Job processing failed';
       }
+    } finally {
+      this.cleanupExpiredJobs();
     }
   }
 }
