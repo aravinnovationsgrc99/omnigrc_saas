@@ -1457,15 +1457,198 @@ export interface ReportResponseDto<T = any> {
   data: T[];
 }
 
+// Phase 17: GRC Workspace Expansion DTOs
 
+export enum IncidentSeverity {
+  CRITICAL = "CRITICAL",
+  HIGH = "HIGH",
+  MEDIUM = "MEDIUM",
+  LOW = "LOW",
+}
 
+export enum IncidentStatus {
+  OPEN = "OPEN",
+  IN_INVESTIGATION = "IN_INVESTIGATION",
+  CONTAINED = "CONTAINED",
+  RESOLVED = "RESOLVED",
+  CLOSED = "CLOSED",
+}
 
+export interface IncidentDto {
+  id: string;
+  organizationId: string;
+  title: string;
+  description?: string | null;
+  severity: IncidentSeverity;
+  status: IncidentStatus;
+  owner?: string | null;
+  detectedAt: Date | string;
+  containedAt?: Date | string | null;
+  resolvedAt?: Date | string | null;
+  dueDate?: Date | string | null;
+  rootCause?: string | null;
+  affectedAssetId?: string | null;
+  affectedAssetName?: string | null;
+  createdById: string;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
 
+export interface CreateIncidentDto {
+  title: string;
+  description?: string;
+  severity?: IncidentSeverity;
+  status?: IncidentStatus;
+  owner?: string;
+  detectedAt?: Date | string;
+  containedAt?: Date | string;
+  resolvedAt?: Date | string;
+  dueDate?: Date | string;
+  rootCause?: string;
+  affectedAssetId?: string;
+}
 
+export interface UpdateIncidentDto {
+  title?: string;
+  description?: string;
+  severity?: IncidentSeverity;
+  status?: IncidentStatus;
+  owner?: string;
+  detectedAt?: Date | string;
+  containedAt?: Date | string | null;
+  resolvedAt?: Date | string | null;
+  dueDate?: Date | string | null;
+  rootCause?: string;
+  affectedAssetId?: string | null;
+}
 
+export interface IncidentQueryDto {
+  page?: number;
+  limit?: number;
+  search?: string;
+  severity?: IncidentSeverity;
+  status?: IncidentStatus;
+}
 
+export interface PaginatedIncidentsDto {
+  items: IncidentDto[];
+  total: number;
+  page: number;
+  limit: number;
+}
 
+export interface RemediationActionDto {
+  id: string;
+  sourceType: 'AUDIT_CAPA' | 'VULNERABILITY' | 'RISK_TREATMENT';
+  sourceId: string;
+  title: string;
+  description?: string | null;
+  organizationId: string;
+  owner?: string | null;
+  status: string;
+  priorityOrSeverity: string;
+  dueDate?: Date | string | null;
+  isOverdue: boolean;
+  originatingDomain: 'Audit' | 'Vulnerability' | 'Risk';
+  sourceReferenceUrl: string;
+}
 
+export interface RemediationQueryDto {
+  page?: number;
+  limit?: number;
+  search?: string;
+  status?: string;
+  owner?: string;
+  overdueOnly?: boolean;
+  sourceType?: 'AUDIT_CAPA' | 'VULNERABILITY' | 'RISK_TREATMENT';
+}
 
+export interface PaginatedRemediationActionsDto {
+  items: RemediationActionDto[];
+  total: number;
+  page: number;
+  limit: number;
+}
 
+export interface EvidenceVaultItemDto {
+  id: string;
+  title: string;
+  description?: string | null;
+  sourceDomain: 'AUDIT' | 'CONTROL' | 'POLICY' | 'TASK' | 'INCIDENT';
+  sourceEntityId?: string | null;
+  evidenceUrl: string;
+  fileSize?: number | null;
+  mimeType?: string | null;
+  uploadedById?: string | null;
+  createdAt: Date | string;
+  associatedReference?: string | null;
+}
 
+export interface EvidenceVaultQueryDto {
+  page?: number;
+  limit?: number;
+  search?: string;
+  domain?: 'AUDIT' | 'CONTROL' | 'POLICY' | 'TASK' | 'INCIDENT';
+}
+
+export interface PaginatedEvidenceVaultDto {
+  items: EvidenceVaultItemDto[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface FrameworkClauseItemDto {
+  id: string;
+  frameworkId: string;
+  code: string;
+  title: string;
+  description?: string | null;
+}
+
+export interface FrameworkItemDto {
+  id: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  version?: string | null;
+  isSystem: boolean;
+  organizationId?: string | null;
+  clausesCount: number;
+  clauses?: FrameworkClauseItemDto[];
+  createdAt: Date | string;
+}
+
+export interface CustomFrameworkImportDto {
+  code: string;
+  name: string;
+  description?: string;
+  version?: string;
+  clauses: Array<{
+    code: string;
+    title: string;
+    description?: string;
+  }>;
+}
+
+export interface IntegrationConnectorDto {
+  id: string;
+  name: string;
+  category: 'EMAIL' | 'COLLABORATION' | 'AI_LLM' | 'SIEM_LOGS';
+  status: 'CONFIGURED' | 'AVAILABLE' | 'NOT_CONFIGURED';
+  description: string;
+  details?: Record<string, any>;
+}
+
+export interface MsspClientSummaryDto {
+  id: string;
+  name: string;
+  type: OrgType;
+  primaryRegion: string;
+  primaryFramework?: string | null;
+  createdAt: string;
+  userCount: number;
+  openRiskCount: number;
+  openIncidentCount: number;
+  complianceCompletionRate: number;
+}

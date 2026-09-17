@@ -6,12 +6,13 @@ import { AiRouterService } from './ai/ai-router.service';
 import { GeminiProvider } from './ai/gemini.provider';
 import { ClaudeProvider } from './ai/claude.provider';
 import { MockAiProvider } from './ai/mock-ai.provider';
+import { GrcIntelligenceController } from './ai/intelligence.controller';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
   imports: [PrismaModule, AuditLogsModule],
-  controllers: [ControlsController],
+  controllers: [ControlsController, GrcIntelligenceController],
   providers: [
     ControlsService,
     MappingQueueService,
@@ -20,6 +21,6 @@ import { PrismaModule } from '../prisma/prisma.module';
     ClaudeProvider,
     MockAiProvider,
   ],
-  exports: [ControlsService],
+  exports: [ControlsService, AiRouterService],
 })
 export class ControlsModule {}

@@ -16,9 +16,18 @@ import { PolicyListView } from '@/components/policies/policy-list-view';
 import { VendorListView } from '@/components/vendors/vendor-list-view';
 import { VulnerabilityListView } from '@/components/vulnerabilities/vulnerability-list-view';
 import { AuditListView } from '@/components/audits/audit-list-view';
+import { ReportsView } from '@/components/reports/reports-view';
+
+import { RemediationView } from '@/components/remediation/remediation-view';
+import { EvidenceVaultView } from '@/components/evidence/evidence-vault-view';
+import { IncidentListView } from '@/components/incidents/incident-list-view';
+import { FrameworkLibraryView } from '@/components/frameworks/framework-library-view';
+import { IntegrationsView } from '@/components/integrations/integrations-view';
+import { GrcIntelligenceView } from '@/components/intelligence/grc-intelligence-view';
+import { MsspPartnerPortalView } from '@/components/mssp/mssp-partner-portal-view';
+
 import { ComingSoon } from '@/components/dashboard/coming-soon';
 import { OnboardingWizard } from '@/components/onboarding/onboarding-wizard';
-
 import { ToastProvider } from '@/context/toast-context';
 
 export default function MainPage() {
@@ -63,16 +72,24 @@ export default function MainPage() {
         />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
           <Topbar onToggleMobileSidebar={() => setMobileSidebarOpen((v) => !v)} />
-          <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }} className="omni-scroll w-full max-w-full">
+          <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }} className="omni-scroll w-full max-w-full p-6">
             {view === 'dashboard' && <DashboardView onNavigateToView={(v) => setView(v)} />}
+            {view === 'reports' && <ReportsView />}
             {view === 'risk' && <RiskListView />}
             {view === 'assets' && <AssetListView />}
-            {view === 'audits' && <AuditListView />}
             {view === 'vulnerabilities' && <VulnerabilityListView />}
-            {view === 'policies' && <PolicyListView />}
-            {view === 'vendors' && <VendorListView />}
+            {view === 'incidents' && <IncidentListView />}
+            {view === 'remediation' && <RemediationView />}
             {view === 'controls' && <ControlMappingView />}
+            {view === 'frameworks' && <FrameworkLibraryView />}
+            {view === 'policies' && <PolicyListView />}
+            {view === 'audits' && <AuditListView />}
+            {view === 'vendors' && <VendorListView />}
+            {view === 'evidence' && <EvidenceVaultView />}
             {view === 'board' && <ComplianceBoardView />}
+            {view === 'intelligence' && <GrcIntelligenceView />}
+            {view === 'integrations' && <IntegrationsView />}
+            {view === 'mssp' && <MsspPartnerPortalView />}
             {view === 'settings' && <SettingsView />}
             {view === 'audit' && <AuditLogView />}
             {activeItem && !activeItem.enabled && (
@@ -88,4 +105,3 @@ export default function MainPage() {
     </ToastProvider>
   );
 }
-

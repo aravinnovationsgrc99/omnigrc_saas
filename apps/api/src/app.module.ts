@@ -27,6 +27,12 @@ import { MetricsModule } from './metrics/metrics.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { ReportsModule } from './reports/reports.module';
 
+import { RemediationModule } from './remediation/remediation.module';
+import { EvidenceVaultModule } from './evidence/evidence-vault.module';
+import { IncidentsModule } from './incidents/incidents.module';
+import { FrameworksModule } from './frameworks/frameworks.module';
+import { MsspAdminModule } from './mssp-admin/mssp-admin.module';
+
 @Module({
   imports: [
     ScheduleModule.forRoot(),
@@ -64,6 +70,11 @@ import { ReportsModule } from './reports/reports.module';
     MetricsModule,
     DashboardModule,
     ReportsModule,
+    RemediationModule,
+    EvidenceVaultModule,
+    IncidentsModule,
+    FrameworksModule,
+    MsspAdminModule,
   ],
   providers: [
     {
@@ -82,7 +93,6 @@ import { ReportsModule } from './reports/reports.module';
   ],
 })
 export class AppModule implements NestModule {
-
   configure(consumer: MiddlewareConsumer) {
     consumer.apply(RequestContextMiddleware).forRoutes('*');
   }

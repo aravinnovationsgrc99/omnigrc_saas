@@ -188,6 +188,7 @@ model Organization {
   vulnerabilities Vulnerability[]
   policies        Policy[]
   auditPlans      AuditPlan[]
+  incidents       Incident[]
   dashboardPreferences UserDashboardPreference[]
 
   @@index([parentOrganizationId])
@@ -219,6 +220,7 @@ model Asset {
   vendor              Vendor?              @relation(fields: [vendorId], references: [id], onDelete: SetNull)
   risks               Risk[]
   vulnerabilityAssets VulnerabilityAsset[]
+  incidents           Incident[]
 
   @@index([organizationId])
   @@index([deletedAt])
@@ -885,6 +887,52 @@ model UserDashboardPreference {
   @@index([organizationId])
   @@index([userId])
   @@map("user_dashboard_preferences")
+}
+
+// Phase 17 Model: Incident Management
+
+enum IncidentSeverity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum IncidentStatus {
+  OPEN
+  IN_PROGRESS
+  CONTAINED
+  RESOLVED
+  CLOSED
+}
+
+model Incident {
+  id              String           @id @default(uuid())
+  organizationId  String
+  title           String
+  description     String?
+  severity        IncidentSeverity @default(MEDIUM)
+  status          IncidentStatus   @default(OPEN)
+  owner           String
+  detectedAt      DateTime         @default(now())
+  containedAt     DateTime?
+  resolvedAt      DateTime?
+  dueDate         DateTime?
+  rootCause       String?
+  affectedAssetId String?
+  createdById     String
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  deletedAt       DateTime?
+
+  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  affectedAsset Asset?       @relation(fields: [affectedAssetId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([severity])
+  @@index([deletedAt])
+  @@map("incidents")
 }
 
 
