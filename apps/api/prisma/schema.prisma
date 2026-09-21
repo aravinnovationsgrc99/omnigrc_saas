@@ -11,8 +11,15 @@ generator client {
 enum Role {
   ADMIN
   ANALYST
+  EXTERNAL_AUDITOR
   MSSP_ADMIN
   MSSP_ANALYST
+}
+
+enum ProductAccessStatus {
+  ACTIVE
+  SUSPENDED
+  REVOKED
 }
 
 enum PodRegion {
@@ -206,6 +213,9 @@ model Organization {
   subOrganizations    Organization[] @relation("OrgHierarchy")
 
   users           User[]
+  memberships     OrganizationMembership[]
+  departments     Department[]
+  projects        Project[]
   regionalPods    RegionalPod[]
   auditLogs       AuditLogEntry[]
   assets          Asset[]
@@ -302,9 +312,11 @@ model User {
   passwordSetupRequired Boolean      @default(false)
   createdAt             DateTime     @default(now())
 
-  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  notifications   Notification[]
-  invitationsSent Invitation[]   @relation("InvitedUsers")
+  organization        Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  memberships         OrganizationMembership[] @relation("UserMemberships")
+  revokedMemberships  OrganizationMembership[] @relation("RevokedMemberships")
+  notifications       Notification[]
+  invitationsSent     Invitation[]             @relation("InvitedUsers")
   dashboardPreferences UserDashboardPreference[]
 
   @@index([organizationId])
@@ -1044,6 +1056,100 @@ model Incident {
   @@index([severity])
   @@index([deletedAt])
   @@map("incidents")
+}
+
+model OrganizationMembership {
+  id             String              @id @default(uuid())
+  organizationId String
+  userId         String
+  role           Role                @default(ANALYST)
+  status         ProductAccessStatus @default(ACTIVE)
+  grantedAt      DateTime            @default(now())
+  revokedAt      DateTime?
+  revokedById    String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User             @relation("UserMemberships", fields: [userId], references: [id], onDelete: Cascade)
+  revokedBy    User?            @relation("RevokedMemberships", fields: [revokedById], references: [id], onDelete: SetNull)
+  departments  UserDepartment[]
+  projects     UserProject[]
+
+  @@unique([organizationId, userId])
+  @@index([organizationId])
+  @@index([userId])
+  @@index([status])
+  @@map("organization_memberships")
+}
+
+model Department {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  code           String?
+  description    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projects     Project[]
+  memberships  UserDepartment[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("departments")
+}
+
+model Project {
+  id             String   @id @default(uuid())
+  organizationId String
+  departmentId   String
+  name           String
+  code           String?
+  description    String?
+  status         String   @default("ACTIVE")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  department   Department    @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  memberships  UserProject[]
+
+  @@unique([departmentId, name])
+  @@index([organizationId])
+  @@index([departmentId])
+  @@map("projects")
+}
+
+model UserDepartment {
+  id           String   @id @default(uuid())
+  membershipId String
+  departmentId String
+  assignedAt   DateTime @default(now())
+
+  membership OrganizationMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  department Department             @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  @@unique([membershipId, departmentId])
+  @@index([membershipId])
+  @@index([departmentId])
+  @@map("user_departments")
+}
+
+model UserProject {
+  id           String   @id @default(uuid())
+  membershipId String
+  projectId    String
+  assignedAt   DateTime @default(now())
+
+  membership OrganizationMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  project    Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([membershipId, projectId])
+  @@index([membershipId])
+  @@index([projectId])
+  @@map("user_projects")
 }
 
 

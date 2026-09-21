@@ -6,6 +6,8 @@ import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { SamlStrategyStub } from './sso/saml.strategy';
 import { RolesGuard } from './guards/roles.guard';
+import { ResourceAuthorizationService } from './resource-authorization.service';
+import { ResourceAuthorizationGuard } from './guards/resource-authorization.guard';
 
 @Module({
   imports: [
@@ -16,7 +18,7 @@ import { RolesGuard } from './guards/roles.guard';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, SamlStrategyStub, RolesGuard],
-  exports: [AuthService, JwtStrategy, RolesGuard],
+  providers: [AuthService, JwtStrategy, SamlStrategyStub, RolesGuard, ResourceAuthorizationService, ResourceAuthorizationGuard],
+  exports: [AuthService, JwtStrategy, RolesGuard, ResourceAuthorizationService, ResourceAuthorizationGuard],
 })
 export class AuthModule {}

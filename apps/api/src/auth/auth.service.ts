@@ -18,6 +18,7 @@ import {
   RegisterDto,
   LoginDto,
   Role,
+  ProductAccessStatus,
   OrgType,
   PodRegion,
   PodStatus,
@@ -138,6 +139,28 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
+    // Phase 2: Selective Product Access Check
+    const membership = await this.prisma.organizationMembership.findUnique({
+      where: {
+        organizationId_userId: {
+          organizationId: user.organizationId,
+          userId: user.id,
+        },
+      },
+    });
+
+    if (membership && membership.status !== ProductAccessStatus.ACTIVE) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: 'Forbidden',
+        message: 'Product access for this organization has been suspended or revoked by an Organization Administrator.',
+        code: 'PRODUCT_ACCESS_REVOKED',
+        productAccessStatus: membership.status,
+      });
+    }
+
+    const effectiveRole = membership ? (membership.role as Role) : (user.role as Role);
+
     await this.auditLogsService.log({
       organizationId: user.organizationId,
       actorId: user.id,
@@ -147,7 +170,7 @@ export class AuthService {
       metadata: { email: user.email },
     });
 
-    const tokens = this.generateTokens(user.id, user.email, user.organizationId, user.role);
+    const tokens = this.generateTokens(user.id, user.email, user.organizationId, effectiveRole);
 
     return {
       user: {

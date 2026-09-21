@@ -32,6 +32,9 @@ import { EvidenceVaultModule } from './evidence/evidence-vault.module';
 import { IncidentsModule } from './incidents/incidents.module';
 import { FrameworksModule } from './frameworks/frameworks.module';
 import { MsspAdminModule } from './mssp-admin/mssp-admin.module';
+import { DepartmentsModule } from './departments/departments.module';
+import { ProjectsModule } from './projects/projects.module';
+import { OrganizationMembersModule } from './organization-members/organization-members.module';
 
 @Module({
   imports: [
@@ -75,6 +78,9 @@ import { MsspAdminModule } from './mssp-admin/mssp-admin.module';
     IncidentsModule,
     FrameworksModule,
     MsspAdminModule,
+    DepartmentsModule,
+    ProjectsModule,
+    OrganizationMembersModule,
   ],
   providers: [
     {

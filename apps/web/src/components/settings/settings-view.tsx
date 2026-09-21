@@ -10,6 +10,7 @@ import { SkeletonLine } from '@/components/ui/skeleton';
 import { InlineErrorState } from '@/components/ui/inline-error-state';
 
 import { TeamInvitationsView } from './team-invitations-view';
+import { OrganizationHierarchyView } from '@/components/organization/organization-hierarchy-view';
 
 export function SettingsView() {
   const { user, organization } = useAuth();

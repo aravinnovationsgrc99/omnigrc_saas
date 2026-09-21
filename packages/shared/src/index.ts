@@ -40,8 +40,21 @@ export enum OrgType {
 export enum Role {
   ADMIN = "ADMIN",
   ANALYST = "ANALYST",
+  EXTERNAL_AUDITOR = "EXTERNAL_AUDITOR",
   MSSP_ADMIN = "MSSP_ADMIN",
   MSSP_ANALYST = "MSSP_ANALYST",
+}
+
+export enum ProductAccessStatus {
+  ACTIVE = "ACTIVE",
+  SUSPENDED = "SUSPENDED",
+  REVOKED = "REVOKED",
+}
+
+export enum ResourceScopeType {
+  ORGANIZATION = "ORGANIZATION",
+  DEPARTMENT = "DEPARTMENT",
+  PROJECT = "PROJECT",
 }
 
 export enum PodRegion {
@@ -1748,4 +1761,87 @@ export interface MsspClientSummaryDto {
   openRiskCount: number;
   openIncidentCount: number;
   complianceCompletionRate: number;
+}
+
+// Phase 2: Organization Hierarchy & Selective Access DTOs
+export interface DepartmentDto {
+  id: string;
+  organizationId: string;
+  name: string;
+  code?: string | null;
+  description?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  projectsCount?: number;
+  membersCount?: number;
+}
+
+export interface CreateDepartmentDto {
+  name: string;
+  code?: string;
+  description?: string;
+}
+
+export interface UpdateDepartmentDto {
+  name?: string;
+  code?: string;
+  description?: string;
+}
+
+export interface ProjectDto {
+  id: string;
+  organizationId: string;
+  departmentId: string;
+  departmentName?: string;
+  name: string;
+  code?: string | null;
+  description?: string | null;
+  status: 'ACTIVE' | 'ARCHIVED' | 'COMPLETED';
+  createdAt: string;
+  updatedAt: string;
+  assignedUsersCount?: number;
+}
+
+export interface CreateProjectDto {
+  departmentId: string;
+  name: string;
+  code?: string;
+  description?: string;
+  status?: 'ACTIVE' | 'ARCHIVED' | 'COMPLETED';
+}
+
+export interface UpdateProjectDto {
+  name?: string;
+  code?: string;
+  description?: string;
+  status?: 'ACTIVE' | 'ARCHIVED' | 'COMPLETED';
+}
+
+export interface OrganizationMemberDto {
+  id: string;
+  userId: string;
+  organizationId: string;
+  name?: string;
+  email?: string;
+  role: Role;
+  productAccessStatus: ProductAccessStatus;
+  status: ProductAccessStatus;
+  grantedAt: string;
+  revokedAt?: string | null;
+  revokedById?: string | null;
+  user: {
+    id: string;
+    email: string;
+    firstName?: string | null;
+    lastName?: string | null;
+  };
+  departments: Array<{ id: string; name: string }>;
+  projects: Array<{ id: string; name: string }>;
+}
+
+export interface UpdateMemberAccessDto {
+  role?: Role;
+  productAccessStatus?: ProductAccessStatus;
+  departmentIds?: string[];
+  projectIds?: string[];
 }
