@@ -25,6 +25,7 @@ import { FrameworkLibraryView } from '@/components/frameworks/framework-library-
 import { IntegrationsView } from '@/components/integrations/integrations-view';
 import { GrcIntelligenceView } from '@/components/intelligence/grc-intelligence-view';
 import { MsspPartnerPortalView } from '@/components/mssp/mssp-partner-portal-view';
+import { ApprovalCenterView } from '@/components/approval/approval-center-view';
 
 import { ComingSoon } from '@/components/dashboard/coming-soon';
 import { OnboardingWizard } from '@/components/onboarding/onboarding-wizard';
@@ -83,6 +84,7 @@ export default function MainPage() {
             {view === 'controls' && <ControlMappingView />}
             {view === 'frameworks' && <FrameworkLibraryView />}
             {view === 'policies' && <PolicyListView />}
+            {view === 'approvals' && <ApprovalCenterView />}
             {view === 'audits' && <AuditListView />}
             {view === 'vendors' && <VendorListView />}
             {view === 'evidence' && <EvidenceVaultView />}

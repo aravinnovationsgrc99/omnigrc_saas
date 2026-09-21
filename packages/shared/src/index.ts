@@ -1932,3 +1932,169 @@ export interface PaginatedEvidenceDto {
   limit: number;
 }
 
+// --------------------------------------------------
+// PHASE 4 — UNIVERSAL APPROVAL & DECISION ENGINE TYPES
+// --------------------------------------------------
+
+export enum ApprovalWorkflowStatus {
+  ACTIVE = "ACTIVE",
+  INACTIVE = "INACTIVE",
+}
+
+export enum ApprovalInstanceStatus {
+  DRAFT = "DRAFT",
+  PENDING = "PENDING",
+  IN_REVIEW = "IN_REVIEW",
+  APPROVED = "APPROVED",
+  REJECTED = "REJECTED",
+  CHANGES_REQUESTED = "CHANGES_REQUESTED",
+  CANCELLED = "CANCELLED",
+}
+
+export enum ApprovalStepStatus {
+  PENDING = "PENDING",
+  ACTIVE = "ACTIVE",
+  APPROVED = "APPROVED",
+  REJECTED = "REJECTED",
+  CHANGES_REQUESTED = "CHANGES_REQUESTED",
+  SKIPPED = "SKIPPED",
+}
+
+export enum ApproverType {
+  ROLE = "ROLE",
+  DEPARTMENT = "DEPARTMENT",
+  PROJECT = "PROJECT",
+  SPECIFIC_USER = "SPECIFIC_USER",
+  ORGANIZATION_AUTHORITY = "ORGANIZATION_AUTHORITY",
+}
+
+export enum DecisionAction {
+  APPROVE = "APPROVE",
+  REJECT = "REJECT",
+  REQUEST_CHANGES = "REQUEST_CHANGES",
+}
+
+export interface ApprovalWorkflowStepDto {
+  id?: string;
+  stepNumber: number;
+  name: string;
+  approverType: ApproverType;
+  targetRole?: Role | null;
+  targetDepartmentId?: string | null;
+  targetProjectId?: string | null;
+  specificUserId?: string | null;
+  dueDays?: number | null;
+}
+
+export interface ApprovalWorkflowDto {
+  id: string;
+  organizationId: string;
+  name: string;
+  description?: string | null;
+  applicableResourceType: string;
+  status: ApprovalWorkflowStatus;
+  allowSelfApproval: boolean;
+  steps: ApprovalWorkflowStepDto[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateApprovalWorkflowDto {
+  name: string;
+  description?: string;
+  applicableResourceType: string;
+  allowSelfApproval?: boolean;
+  steps: Array<{
+    stepNumber: number;
+    name: string;
+    approverType: ApproverType;
+    targetRole?: Role;
+    targetDepartmentId?: string;
+    targetProjectId?: string;
+    specificUserId?: string;
+    dueDays?: number;
+  }>;
+}
+
+export interface ApprovalInstanceStepDto {
+  id: string;
+  stepNumber: number;
+  name: string;
+  approverType: ApproverType;
+  targetRole?: Role | null;
+  targetDepartmentId?: string | null;
+  targetProjectId?: string | null;
+  specificUserId?: string | null;
+  status: ApprovalStepStatus;
+  activatedAt?: string | null;
+  completedAt?: string | null;
+}
+
+export interface ApprovalDecisionDto {
+  id: string;
+  organizationId: string;
+  approvalInstanceId: string;
+  stepId?: string | null;
+  actorId: string;
+  actorName?: string;
+  action: DecisionAction;
+  comment?: string | null;
+  createdAt: string;
+}
+
+export interface ApprovalInstanceDto {
+  id: string;
+  organizationId: string;
+  workflowId?: string | null;
+  title: string;
+  description?: string | null;
+  resourceType: string;
+  resourceId: string;
+  resourceTitle?: string;
+  requesterId: string;
+  requesterName?: string;
+  status: ApprovalInstanceStatus;
+  currentStepNumber: number;
+  dueAt?: string | null;
+  frameworkReferenceId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string | null;
+  canUserApprove?: boolean;
+  steps: ApprovalInstanceStepDto[];
+  decisions: ApprovalDecisionDto[];
+}
+
+export interface CreateApprovalInstanceDto {
+  workflowId?: string;
+  title: string;
+  description?: string;
+  resourceType: 'CONTROL' | 'RISK' | 'POLICY' | 'AUDIT_FINDING' | 'AUDIT_ASSESSMENT' | 'EVIDENCE' | 'VENDOR_ASSESSMENT' | 'VULNERABILITY' | 'INCIDENT' | 'POLICY_EXCEPTION' | 'CONTROL_MAPPING';
+  resourceId: string;
+  frameworkReferenceId?: string;
+  dueDays?: number;
+}
+
+export interface MakeApprovalDecisionDto {
+  action: DecisionAction;
+  comment?: string;
+}
+
+export interface ApprovalQueryDto {
+  page?: number;
+  limit?: number;
+  search?: string;
+  status?: ApprovalInstanceStatus;
+  resourceType?: string;
+  assignedToMe?: boolean;
+  submittedByMe?: boolean;
+}
+
+export interface PaginatedApprovalsDto {
+  items: ApprovalInstanceDto[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+

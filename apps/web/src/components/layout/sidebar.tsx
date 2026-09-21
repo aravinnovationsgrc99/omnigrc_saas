@@ -6,7 +6,7 @@ import { Role, hasRole, OMNIGRC_VERSION } from '@omnigrc/shared';
 import {
   LayoutDashboard, ShieldAlert, Boxes, GitMerge, KanbanSquare,
   Settings, Globe2, FileText, Lock, FileCheck, Building2, Bug, ClipboardList, FileSpreadsheet,
-  CheckSquare, FileArchive, ShieldCheck, Library, Layers, Sparkles, Building, type LucideIcon
+  CheckSquare, FileArchive, ShieldCheck, Library, Layers, Sparkles, Building, CheckCircle2, type LucideIcon
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -55,6 +55,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { key: 'controls', label: 'Control Mapping', icon: GitMerge, enabled: true },
       { key: 'frameworks', label: 'Framework Library', icon: Library, enabled: true },
       { key: 'policies', label: 'Policy Mgmt', icon: FileCheck, enabled: true },
+      { key: 'approvals', label: 'Approval Center', icon: CheckCircle2, enabled: true },
       { key: 'audits', label: 'Business Audits', icon: ClipboardList, enabled: true },
       { key: 'vendors', label: 'Vendor Risk', icon: Building2, enabled: true },
       { key: 'evidence', label: 'Evidence Vault', icon: FileArchive, enabled: true },

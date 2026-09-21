@@ -232,6 +232,8 @@ model Organization {
   dashboardPreferences UserDashboardPreference[]
   frameworkEntitlements OrganizationFrameworkEntitlement[]
   evidences           Evidence[]
+  approvalWorkflows   ApprovalWorkflow[]
+  approvalInstances   ApprovalInstance[]
 
   @@index([parentOrganizationId])
   @@map("organizations")
@@ -294,6 +296,7 @@ model Risk {
   vendorAssessments VendorAssessment[]
   auditFindings     AuditFinding[]
   evidenceAssociations RiskEvidence[]
+  approvalAssociations RiskApproval[]
 
   @@index([organizationId])
   @@index([deletedAt])
@@ -464,6 +467,7 @@ model FrameworkReference {
 
   mappings ControlFrameworkMapping[]
   evidenceAssociations EvidenceFrameworkReference[]
+  approvalInstances ApprovalInstance[]
 
   @@unique([frameworkVersionId, identifier])
   @@index([frameworkVersionId])
@@ -502,6 +506,7 @@ model Control {
   complianceTasks ComplianceTask[]
   auditCheckItems AuditCheckItem[]
   evidenceAssociations ControlEvidence[]
+  approvalAssociations ControlApproval[]
 
   @@index([organizationId])
   @@index([deletedAt])
@@ -641,6 +646,7 @@ model VendorAssessment {
   vendor         Vendor          @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   risk           Risk?           @relation(fields: [riskId], references: [id], onDelete: SetNull)
   complianceTask ComplianceTask? @relation(fields: [complianceTaskId], references: [id], onDelete: SetNull)
+  approvalAssociations VendorAssessmentApproval[]
 
   @@index([organizationId])
   @@index([vendorId])
@@ -668,6 +674,7 @@ model Vulnerability {
   organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   affectedAssets VulnerabilityAsset[]
   evidenceAssociations VulnerabilityEvidence[]
+  approvalAssociations VulnerabilityApproval[]
 
   @@index([organizationId])
   @@index([status])
@@ -717,6 +724,7 @@ model Policy {
   versions         PolicyVersion[]   @relation("PolicyVersions")
   exceptions       PolicyException[]
   evidenceAssociations PolicyEvidence[]
+  approvalAssociations PolicyApproval[]
 
   @@index([organizationId])
   @@index([status])
@@ -771,6 +779,7 @@ model PolicyException {
   updatedAt      DateTime              @updatedAt
 
   policy Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  approvalAssociations PolicyExceptionApproval[]
 
   @@index([organizationId])
   @@index([policyId])
@@ -969,6 +978,7 @@ model AuditFinding {
   capas      AuditCapa[]
   evidence   AuditEvidence[]
   evidenceAssociations AuditFindingEvidence[]
+  approvalAssociations AuditFindingApproval[]
 
   @@index([organizationId])
   @@index([assessmentId])
@@ -1060,6 +1070,7 @@ model Incident {
   organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   affectedAsset Asset?       @relation(fields: [affectedAssetId], references: [id], onDelete: SetNull)
   evidenceAssociations IncidentEvidence[]
+  approvalAssociations IncidentApproval[]
 
   @@index([organizationId])
   @@index([status])
@@ -1222,6 +1233,7 @@ model Evidence {
   vulnerabilityAssociations  VulnerabilityEvidence[]
   incidentAssociations       IncidentEvidence[]
   frameworkReferences        EvidenceFrameworkReference[]
+  approvalAssociations       EvidenceApproval[]
 
   @@index([organizationId])
   @@index([status])
@@ -1380,6 +1392,316 @@ model EvidenceFrameworkReference {
   @@index([frameworkReferenceId])
   @@map("evidence_framework_references")
 }
+
+// --------------------------------------------------
+// PHASE 4 — UNIVERSAL APPROVAL & DECISION ENGINE MODELS
+// --------------------------------------------------
+
+enum ApprovalWorkflowStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ApprovalInstanceStatus {
+  DRAFT
+  PENDING
+  IN_REVIEW
+  APPROVED
+  REJECTED
+  CHANGES_REQUESTED
+  CANCELLED
+}
+
+enum ApprovalStepStatus {
+  PENDING
+  ACTIVE
+  APPROVED
+  REJECTED
+  CHANGES_REQUESTED
+  SKIPPED
+}
+
+enum ApproverType {
+  ROLE
+  DEPARTMENT
+  PROJECT
+  SPECIFIC_USER
+  ORGANIZATION_AUTHORITY
+}
+
+enum DecisionAction {
+  APPROVE
+  REJECT
+  REQUEST_CHANGES
+}
+
+model ApprovalWorkflow {
+  id                     String                 @id @default(uuid())
+  organizationId         String
+  name                   String
+  description            String?
+  applicableResourceType String
+  status                 ApprovalWorkflowStatus @default(ACTIVE)
+  allowSelfApproval      Boolean                @default(false)
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+
+  organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  steps        ApprovalWorkflowStep[]
+  instances    ApprovalInstance[]
+
+  @@index([organizationId])
+  @@index([applicableResourceType])
+  @@index([status])
+  @@map("approval_workflows")
+}
+
+model ApprovalWorkflowStep {
+  id                 String       @id @default(uuid())
+  workflowId         String
+  stepNumber         Int
+  name               String
+  approverType       ApproverType @default(ROLE)
+  targetRole         Role?
+  targetDepartmentId String?
+  targetProjectId    String?
+  specificUserId     String?
+  dueDays            Int?
+
+  workflow ApprovalWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowId, stepNumber])
+  @@index([workflowId])
+  @@map("approval_workflow_steps")
+}
+
+model ApprovalInstance {
+  id                   String                 @id @default(uuid())
+  organizationId       String
+  workflowId           String?
+  title                String
+  description          String?
+  resourceType         String
+  resourceId           String
+  requesterId          String
+  status               ApprovalInstanceStatus @default(PENDING)
+  currentStepNumber    Int                    @default(1)
+  dueAt                DateTime?
+  frameworkReferenceId String?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  completedAt          DateTime?
+
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workflow           ApprovalWorkflow?   @relation(fields: [workflowId], references: [id], onDelete: SetNull)
+  frameworkReference FrameworkReference? @relation(fields: [frameworkReferenceId], references: [id], onDelete: SetNull)
+
+  steps                      ApprovalInstanceStep[]
+  decisions                  ApprovalDecision[]
+  controlAssociations        ControlApproval[]
+  riskAssociations           RiskApproval[]
+  policyAssociations         PolicyApproval[]
+  findingAssociations        AuditFindingApproval[]
+  vendorAssessmentAssociations VendorAssessmentApproval[]
+  vulnerabilityAssociations  VulnerabilityApproval[]
+  incidentAssociations       IncidentApproval[]
+  policyExceptionAssociations PolicyExceptionApproval[]
+  evidenceAssociations       EvidenceApproval[]
+
+  @@index([organizationId])
+  @@index([resourceType, resourceId])
+  @@index([requesterId])
+  @@index([status])
+  @@map("approval_instances")
+}
+
+model ApprovalInstanceStep {
+  id                 String             @id @default(uuid())
+  approvalInstanceId String
+  stepNumber         Int
+  name               String
+  approverType       ApproverType       @default(ROLE)
+  targetRole         Role?
+  targetDepartmentId String?
+  targetProjectId    String?
+  specificUserId     String?
+  status             ApprovalStepStatus @default(PENDING)
+  activatedAt        DateTime?
+  completedAt        DateTime?
+
+  approvalInstance ApprovalInstance @relation(fields: [approvalInstanceId], references: [id], onDelete: Cascade)
+
+  decisions ApprovalDecision[]
+
+  @@unique([approvalInstanceId, stepNumber])
+  @@index([approvalInstanceId])
+  @@index([status])
+  @@map("approval_instance_steps")
+}
+
+model ApprovalDecision {
+  id                 String         @id @default(uuid())
+  organizationId     String
+  approvalInstanceId String
+  stepId             String?
+  actorId            String
+  action             DecisionAction
+  comment            String?
+  createdAt          DateTime       @default(now())
+
+  approvalInstance ApprovalInstance      @relation(fields: [approvalInstanceId], references: [id], onDelete: Cascade)
+  step             ApprovalInstanceStep? @relation(fields: [stepId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([approvalInstanceId])
+  @@index([actorId])
+  @@map("approval_decisions")
+}
+
+model ControlApproval {
+  id                 String   @id @default(uuid())
+  organizationId     String
+  controlId          String
+  approvalInstanceId String
+  attachedAt         DateTime @default(now())
+
+  control          Control          @relation(fields: [controlId], references: [id], onDelete: Cascade)
+  approvalInstance ApprovalInstance @relation(fields: [approvalInstanceId], references: [id], onDelete: Cascade)
+
+  @@unique([controlId, approvalInstanceId])
+  @@index([organizationId])
+  @@index([controlId])
+  @@map("control_approvals")
+}
+
+model RiskApproval {
+  id                 String   @id @default(uuid())
+  organizationId     String
+  riskId             String
+  approvalInstanceId String
+  attachedAt         DateTime @default(now())
+
+  risk             Risk             @relation(fields: [riskId], references: [id], onDelete: Cascade)
+  approvalInstance ApprovalInstance @relation(fields: [approvalInstanceId], references: [id], onDelete: Cascade)
+
+  @@unique([riskId, approvalInstanceId])
+  @@index([organizationId])
+  @@index([riskId])
+  @@map("risk_approvals")
+}
+
+model PolicyApproval {
+  id                 String   @id @default(uuid())
+  organizationId     String
+  policyId           String
+  approvalInstanceId String
+  attachedAt         DateTime @default(now())
+
+  policy           Policy           @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  approvalInstance ApprovalInstance @relation(fields: [approvalInstanceId], references: [id], onDelete: Cascade)
+
+  @@unique([policyId, approvalInstanceId])
+  @@index([organizationId])
+  @@index([policyId])
+  @@map("policy_approvals")
+}
+
+model AuditFindingApproval {
+  id                 String   @id @default(uuid())
+  organizationId     String
+  findingId          String
+  approvalInstanceId String
+  attachedAt         DateTime @default(now())
+
+  finding          AuditFinding     @relation(fields: [findingId], references: [id], onDelete: Cascade)
+  approvalInstance ApprovalInstance @relation(fields: [approvalInstanceId], references: [id], onDelete: Cascade)
+
+  @@unique([findingId, approvalInstanceId])
+  @@index([organizationId])
+  @@index([findingId])
+  @@map("audit_finding_approvals")
+}
+
+model VendorAssessmentApproval {
+  id                 String   @id @default(uuid())
+  organizationId     String
+  vendorAssessmentId String
+  approvalInstanceId String
+  attachedAt         DateTime @default(now())
+
+  vendorAssessment VendorAssessment @relation(fields: [vendorAssessmentId], references: [id], onDelete: Cascade)
+  approvalInstance ApprovalInstance @relation(fields: [approvalInstanceId], references: [id], onDelete: Cascade)
+
+  @@unique([vendorAssessmentId, approvalInstanceId])
+  @@index([organizationId])
+  @@index([vendorAssessmentId])
+  @@map("vendor_assessment_approvals")
+}
+
+model VulnerabilityApproval {
+  id                 String   @id @default(uuid())
+  organizationId     String
+  vulnerabilityId    String
+  approvalInstanceId String
+  attachedAt         DateTime @default(now())
+
+  vulnerability    Vulnerability    @relation(fields: [vulnerabilityId], references: [id], onDelete: Cascade)
+  approvalInstance ApprovalInstance @relation(fields: [approvalInstanceId], references: [id], onDelete: Cascade)
+
+  @@unique([vulnerabilityId, approvalInstanceId])
+  @@index([organizationId])
+  @@index([vulnerabilityId])
+  @@map("vulnerability_approvals")
+}
+
+model IncidentApproval {
+  id                 String   @id @default(uuid())
+  organizationId     String
+  incidentId         String
+  approvalInstanceId String
+  attachedAt         DateTime @default(now())
+
+  incident         Incident         @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  approvalInstance ApprovalInstance @relation(fields: [approvalInstanceId], references: [id], onDelete: Cascade)
+
+  @@unique([incidentId, approvalInstanceId])
+  @@index([organizationId])
+  @@index([incidentId])
+  @@map("incident_approvals")
+}
+
+model PolicyExceptionApproval {
+  id                 String   @id @default(uuid())
+  organizationId     String
+  policyExceptionId  String
+  approvalInstanceId String
+  attachedAt         DateTime @default(now())
+
+  policyException  PolicyException  @relation(fields: [policyExceptionId], references: [id], onDelete: Cascade)
+  approvalInstance ApprovalInstance @relation(fields: [approvalInstanceId], references: [id], onDelete: Cascade)
+
+  @@unique([policyExceptionId, approvalInstanceId])
+  @@index([organizationId])
+  @@index([policyExceptionId])
+  @@map("policy_exception_approvals")
+}
+
+model EvidenceApproval {
+  id                 String   @id @default(uuid())
+  organizationId     String
+  evidenceId         String
+  approvalInstanceId String
+  attachedAt         DateTime @default(now())
+
+  evidence         Evidence         @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+  approvalInstance ApprovalInstance @relation(fields: [approvalInstanceId], references: [id], onDelete: Cascade)
+
+  @@unique([evidenceId, approvalInstanceId])
+  @@index([organizationId])
+  @@index([evidenceId])
+  @@map("evidence_approvals")
+}
+
 
 
 

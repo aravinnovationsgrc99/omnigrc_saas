@@ -35,6 +35,7 @@ import { MsspAdminModule } from './mssp-admin/mssp-admin.module';
 import { DepartmentsModule } from './departments/departments.module';
 import { ProjectsModule } from './projects/projects.module';
 import { OrganizationMembersModule } from './organization-members/organization-members.module';
+import { ApprovalEngineModule } from './approval/approval-engine.module';
 
 @Module({
   imports: [
@@ -81,6 +82,7 @@ import { OrganizationMembersModule } from './organization-members/organization-m
     DepartmentsModule,
     ProjectsModule,
     OrganizationMembersModule,
+    ApprovalEngineModule,
   ],
   providers: [
     {
