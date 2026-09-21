@@ -384,6 +384,58 @@ export interface SwitchContextResponseDto {
   actingViaMsspId: string;
 }
 
+export enum FrameworkVersionStatus {
+  DRAFT = "DRAFT",
+  ACTIVE = "ACTIVE",
+  SUPERSEDED = "SUPERSEDED",
+  RETIRED = "RETIRED",
+}
+
+export enum FrameworkReferenceType {
+  CLAUSE = "CLAUSE",
+  SUBCLAUSE = "SUBCLAUSE",
+  ARTICLE = "ARTICLE",
+  PARAGRAPH = "PARAGRAPH",
+  SECTION = "SECTION",
+  CRITERION = "CRITERION",
+  CONTROL = "CONTROL",
+  FOCUS_POINT = "FOCUS_POINT",
+  REQUIREMENT = "REQUIREMENT",
+  IMPLEMENTATION_SPECIFICATION = "IMPLEMENTATION_SPECIFICATION",
+  ANNEX = "ANNEX",
+  DOMAINS = "DOMAINS",
+}
+
+export interface FrameworkVersionDto {
+  id: string;
+  frameworkId: string;
+  version: string;
+  name: string;
+  status: FrameworkVersionStatus;
+  publisher?: string | null;
+  effectiveDate?: string | null;
+  provenance?: Record<string, any> | null;
+  createdAt: string;
+  updatedAt: string;
+  referencesCount?: number;
+}
+
+export interface FrameworkReferenceDto {
+  id: string;
+  frameworkVersionId: string;
+  parentRefId?: string | null;
+  type: FrameworkReferenceType;
+  identifier: string;
+  title: string;
+  description?: string | null;
+  normativeText?: string | null;
+  sortOrder: number;
+  provenance?: Record<string, any> | null;
+  createdAt: string;
+  updatedAt: string;
+  childRefs?: FrameworkReferenceDto[];
+}
+
 export interface FrameworkClauseDto {
   id: string;
   frameworkId: string;
@@ -396,9 +448,13 @@ export interface FrameworkClauseDto {
 export interface ControlFrameworkMappingDto {
   id: string;
   controlId: string;
-  frameworkClauseId: string;
+  frameworkClauseId?: string | null;
+  frameworkReferenceId?: string | null;
   clauseCode?: string;
   clauseTitle?: string;
+  referenceIdentifier?: string;
+  referenceTitle?: string;
+  referenceType?: FrameworkReferenceType;
   frameworkCode?: FrameworkCode;
   status: MappingStatus;
   confidenceScore?: number | null;

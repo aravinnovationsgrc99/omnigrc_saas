@@ -54,6 +54,9 @@ export class ControlsService {
               frameworkClause: {
                 include: { framework: { select: { code: true } } },
               },
+              frameworkReference: {
+                include: { frameworkVersion: { include: { framework: { select: { code: true } } } } },
+              },
             },
           },
         },
@@ -87,6 +90,9 @@ export class ControlsService {
           include: {
             frameworkClause: {
               include: { framework: { select: { code: true } } },
+            },
+            frameworkReference: {
+              include: { frameworkVersion: { include: { framework: { select: { code: true } } } } },
             },
           },
         },
@@ -153,6 +159,9 @@ export class ControlsService {
             frameworkClause: {
               include: { framework: { select: { code: true } } },
             },
+            frameworkReference: {
+              include: { frameworkVersion: { include: { framework: { select: { code: true } } } } },
+            },
           },
         },
       },
@@ -203,6 +212,9 @@ export class ControlsService {
           include: {
             frameworkClause: {
               include: { framework: { select: { code: true } } },
+            },
+            frameworkReference: {
+              include: { frameworkVersion: { include: { framework: { select: { code: true } } } } },
             },
           },
         },
@@ -279,6 +291,9 @@ export class ControlsService {
         frameworkClause: {
           include: { framework: { select: { code: true } } },
         },
+        frameworkReference: {
+          include: { frameworkVersion: { include: { framework: { select: { code: true } } } } },
+        },
       },
     });
 
@@ -298,6 +313,9 @@ export class ControlsService {
           frameworkClause: {
             include: { framework: { select: { code: true } } },
           },
+          frameworkReference: {
+            include: { frameworkVersion: { include: { framework: { select: { code: true } } } } },
+          },
         },
       });
 
@@ -311,8 +329,8 @@ export class ControlsService {
           controlId,
           mappingId,
           reviewedById: userId,
-          frameworkCode: updated.frameworkClause.framework.code,
-          clauseCode: updated.frameworkClause.code,
+          frameworkCode: updated.frameworkClause?.framework?.code || updated.frameworkReference?.frameworkVersion?.framework?.code,
+          clauseCode: updated.frameworkClause?.code || updated.frameworkReference?.identifier,
           confidenceScore: updated.confidenceScore,
           modelTier: updated.modelTier,
         },
@@ -415,13 +433,21 @@ export class ControlsService {
   }
 
   private mapMappingToDto(m: any): ControlFrameworkMappingDto {
+    const frameworkCode =
+      m.frameworkClause?.framework?.code ||
+      m.frameworkReference?.frameworkVersion?.framework?.code;
+
     return {
       id: m.id,
       controlId: m.controlId,
       frameworkClauseId: m.frameworkClauseId,
-      clauseCode: m.frameworkClause?.code,
-      clauseTitle: m.frameworkClause?.title,
-      frameworkCode: m.frameworkClause?.framework?.code as FrameworkCode,
+      frameworkReferenceId: m.frameworkReferenceId,
+      clauseCode: m.frameworkClause?.code || m.frameworkReference?.identifier,
+      clauseTitle: m.frameworkClause?.title || m.frameworkReference?.title,
+      referenceIdentifier: m.frameworkReference?.identifier,
+      referenceTitle: m.frameworkReference?.title,
+      referenceType: m.frameworkReference?.type,
+      frameworkCode: frameworkCode as FrameworkCode,
       status: m.status as MappingStatus,
       confidenceScore: m.confidenceScore,
       modelTier: m.modelTier,

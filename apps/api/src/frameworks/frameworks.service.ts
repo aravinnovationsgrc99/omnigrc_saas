@@ -62,6 +62,69 @@ export class FrameworksService {
     };
   }
 
+  async getVersions(frameworkIdOrCode: string) {
+    const fw = await this.prisma.framework.findFirst({
+      where: {
+        OR: [{ id: frameworkIdOrCode }, { code: frameworkIdOrCode as any }],
+      },
+    });
+    if (!fw) {
+      throw new NotFoundException(`Framework ${frameworkIdOrCode} not found.`);
+    }
+
+    const versions = await this.prisma.frameworkVersion.findMany({
+      where: { frameworkId: fw.id },
+      include: {
+        _count: { select: { references: true } },
+      },
+      orderBy: { version: 'desc' },
+    });
+
+    return versions.map((v) => ({
+      id: v.id,
+      frameworkId: v.frameworkId,
+      version: v.version,
+      name: v.name,
+      status: v.status,
+      publisher: v.publisher,
+      effectiveDate: v.effectiveDate ? v.effectiveDate.toISOString() : null,
+      provenance: v.provenance as any,
+      createdAt: v.createdAt.toISOString(),
+      updatedAt: v.updatedAt.toISOString(),
+      referencesCount: v._count.references,
+    }));
+  }
+
+  async getReferences(versionId: string) {
+    const version = await this.prisma.frameworkVersion.findUnique({
+      where: { id: versionId },
+    });
+
+    if (!version) {
+      throw new NotFoundException(`Framework Version with ID ${versionId} not found.`);
+    }
+
+    const refs = await this.prisma.frameworkReference.findMany({
+      where: { frameworkVersionId: versionId },
+      orderBy: [{ sortOrder: 'asc' }, { identifier: 'asc' }],
+    });
+
+    return refs.map((r) => ({
+      id: r.id,
+      frameworkVersionId: r.frameworkVersionId,
+      parentRefId: r.parentRefId,
+      type: r.type,
+      identifier: r.identifier,
+      title: r.title,
+      description: r.description,
+      normativeText: r.normativeText,
+      sortOrder: r.sortOrder,
+      provenance: r.provenance as any,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    }));
+  }
+
   async importCustomFramework(
     dto: CustomFrameworkImportDto,
   ): Promise<FrameworkItemDto> {
@@ -90,6 +153,8 @@ export class FrameworksService {
       codes.add(c.code);
     }
 
+    const versionStr = dto.version || '1.0';
+
     const created = await this.prisma.$transaction(async (tx) => {
       const fw = await tx.framework.create({
         data: {
@@ -100,6 +165,23 @@ export class FrameworksService {
               code: c.code,
               title: c.title,
             })),
+          },
+          versions: {
+            create: {
+              version: versionStr,
+              name: `${dto.name} v${versionStr}`,
+              status: 'ACTIVE',
+              publisher: 'Custom Import',
+              provenance: { source: 'Custom Import' },
+              references: {
+                create: dto.clauses.map((c) => ({
+                  type: 'CLAUSE',
+                  identifier: c.code,
+                  title: c.title,
+                  description: c.description || c.title,
+                })),
+              },
+            },
           },
         },
         include: {

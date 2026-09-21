@@ -27,6 +27,16 @@ export class FrameworksController {
     return this.frameworksService.findOne(idOrCode);
   }
 
+  @Get(':idOrCode/versions')
+  async getVersions(@Param('idOrCode') idOrCode: string) {
+    return this.frameworksService.getVersions(idOrCode);
+  }
+
+  @Get('versions/:versionId/references')
+  async getReferences(@Param('versionId') versionId: string) {
+    return this.frameworksService.getReferences(versionId);
+  }
+
   @Post('import')
   @Roles(Role.ADMIN, Role.MSSP_ADMIN)
   async importFramework(@Body() dto: CustomFrameworkImportDto): Promise<FrameworkItemDto> {
