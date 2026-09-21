@@ -8,6 +8,14 @@ describe('FrameworkEntitlementsService', () => {
   let service: FrameworkEntitlementsService;
   let prisma: any;
 
+  beforeAll(() => {
+    process.env.ENFORCE_LICENSE_IN_TEST = 'true';
+  });
+
+  afterAll(() => {
+    delete process.env.ENFORCE_LICENSE_IN_TEST;
+  });
+
   const mockPrismaService = {
     organizationFrameworkEntitlement: {
       findMany: jest.fn(),
@@ -57,18 +65,24 @@ describe('FrameworkEntitlementsService', () => {
   describe('assertEntitled', () => {
     it('should throw ForbiddenException if organization is not entitled to framework', async () => {
       prisma.framework.findFirst.mockResolvedValue({ id: 'fw-iso27001', code: 'ISO27001', name: 'ISO 27001' });
-      prisma.organizationFrameworkEntitlement.findMany.mockResolvedValue([
-        { frameworkId: 'fw-soc2', status: EntitlementStatus.ACTIVE, expiresAt: null },
-      ]);
+      prisma.organizationFrameworkEntitlement.findMany.mockImplementation(async (args) => {
+        if (args?.where?.frameworkId === 'fw-iso27001') {
+          return [];
+        }
+        return [{ frameworkId: 'fw-soc2', versionId: null, status: EntitlementStatus.ACTIVE, expiresAt: null }];
+      });
 
       await expect(service.assertEntitled('org-1', 'ISO27001')).rejects.toThrow(ForbiddenException);
     });
 
     it('should pass if organization has active entitlement for framework', async () => {
       prisma.framework.findFirst.mockResolvedValue({ id: 'fw-iso27001', code: 'ISO27001', name: 'ISO 27001' });
-      prisma.organizationFrameworkEntitlement.findMany.mockResolvedValue([
-        { frameworkId: 'fw-iso27001', status: EntitlementStatus.ACTIVE, expiresAt: null },
-      ]);
+      prisma.organizationFrameworkEntitlement.findMany.mockImplementation(async (args) => {
+        if (args?.where?.frameworkId === 'fw-iso27001') {
+          return [{ frameworkId: 'fw-iso27001', versionId: null, status: EntitlementStatus.ACTIVE, expiresAt: null }];
+        }
+        return [];
+      });
 
       await expect(service.assertEntitled('org-1', 'ISO27001')).resolves.not.toThrow();
     });

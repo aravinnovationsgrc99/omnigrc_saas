@@ -413,6 +413,7 @@ model OrganizationFrameworkEntitlement {
   status         EntitlementStatus @default(DRAFT)
   grantedAt      DateTime          @default(now())
   expiresAt      DateTime?
+  source         String            @default("ARAV_CONTROL_PLANE")
   provenance     Json?
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
@@ -421,7 +422,7 @@ model OrganizationFrameworkEntitlement {
   framework        Framework         @relation(fields: [frameworkId], references: [id], onDelete: Restrict)
   frameworkVersion FrameworkVersion? @relation(fields: [versionId], references: [id], onDelete: Restrict)
 
-  @@unique([organizationId, frameworkId])
+  @@unique([organizationId, frameworkId, versionId])
   @@index([organizationId])
   @@index([frameworkId])
   @@index([versionId])

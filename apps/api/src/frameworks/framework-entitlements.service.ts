@@ -5,13 +5,23 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { EntitlementStatus } from '@omnigrc/shared';
+import { EntitlementStatus, FrameworkCode } from '@prisma/client';
 
 @Injectable()
 export class FrameworkEntitlementsService {
   private readonly logger = new Logger(FrameworkEntitlementsService.name);
 
   constructor(private readonly prisma: PrismaService) {}
+
+  private async findFramework(frameworkIdOrCode: string) {
+    const isEnumCode = Object.values(FrameworkCode).includes(frameworkIdOrCode as FrameworkCode);
+    return this.prisma.framework.findFirst({
+      where: isEnumCode
+        ? { OR: [{ id: frameworkIdOrCode }, { code: frameworkIdOrCode as FrameworkCode }] }
+        : { id: frameworkIdOrCode },
+      select: { id: true, code: true, name: true },
+    });
+  }
 
   /**
    * Real-time Effective Entitlement Evaluation.
@@ -50,27 +60,42 @@ export class FrameworkEntitlementsService {
 
   /**
    * Fetch all framework IDs effectively entitled for a given organization.
+   * Deterministic Conflict Resolution:
+   * 1. If an explicit version-specific entitlement exists for a framework version, it overrides the framework-wide entitlement.
+   * 2. If no version-specific record exists, the framework-wide entitlement (versionId = null) governs access.
    */
   async getEntitledFrameworkIds(organizationId: string, now: Date = new Date()): Promise<string[]> {
     const entitlements = await this.prisma.organizationFrameworkEntitlement.findMany({
       where: { organizationId },
-      include: { framework: { select: { id: true, code: true } } },
     });
 
-    // If organization has explicit database entitlements, evaluate them
     if (entitlements.length > 0) {
-      const activeIds: string[] = [];
+      // Group entitlements by frameworkId
+      const fwGroups = new Map<string, typeof entitlements>();
       for (const e of entitlements) {
-        if (this.isEffectivelyActive(e, now)) {
-          activeIds.push(e.frameworkId);
+        const list = fwGroups.get(e.frameworkId) || [];
+        list.push(e);
+        fwGroups.set(e.frameworkId, list);
+      }
+
+      const activeIds: string[] = [];
+      for (const [frameworkId, group] of fwGroups.entries()) {
+        const frameworkWide = group.find((e) => e.versionId === null);
+        const versionSpecifics = group.filter((e) => e.versionId !== null);
+
+        // Check if any version-specific record is active
+        const hasActiveVersion = versionSpecifics.some((e) => this.isEffectivelyActive(e, now));
+        // Check if framework-wide is active
+        const isFwActive = frameworkWide ? this.isEffectivelyActive(frameworkWide, now) : false;
+
+        if (hasActiveVersion || isFwActive) {
+          activeIds.push(frameworkId);
         }
       }
       return activeIds;
     }
 
     // Unactivated / Local Development Mode Fallback
-    // If no explicit entitlements exist in DB and license enforcement is disabled in dev/test,
-    // grant default access to all frameworks so local DX & existing specs continue seamlessly.
     if (
       (process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development' || !process.env.NODE_ENV) &&
       process.env.ENFORCE_LICENSE_IN_TEST !== 'true'
@@ -83,24 +108,52 @@ export class FrameworkEntitlementsService {
   }
 
   /**
-   * Check if an organization is entitled to a specific framework (by ID or Code).
+   * Check if an organization is entitled to a specific framework & version.
+   * Precedence Rule:
+   * Explicit version-specific record overrides framework-wide setting.
    */
   async isEntitled(
     organizationId: string,
     frameworkIdOrCode: string,
+    versionId?: string | null,
     now: Date = new Date(),
   ): Promise<boolean> {
-    const fw = await this.prisma.framework.findFirst({
-      where: {
-        OR: [{ id: frameworkIdOrCode }, { code: frameworkIdOrCode as any }],
-      },
-      select: { id: true },
-    });
-
+    const fw = await this.findFramework(frameworkIdOrCode);
     if (!fw) return false;
 
-    const entitledIds = await this.getEntitledFrameworkIds(organizationId, now);
-    return entitledIds.includes(fw.id);
+    // Check database records for this organization & framework
+    const records = await this.prisma.organizationFrameworkEntitlement.findMany({
+      where: { organizationId, frameworkId: fw.id },
+    });
+
+    if (records.length === 0) {
+      // Local dev / test fallback
+      if (
+        (process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development' || !process.env.NODE_ENV) &&
+        process.env.ENFORCE_LICENSE_IN_TEST !== 'true'
+      ) {
+        return true;
+      }
+      return false;
+    }
+
+    // 1. If explicit versionId is specified:
+    if (versionId) {
+      const versionRecord = records.find((r) => r.versionId === versionId);
+      if (versionRecord) {
+        // Deterministic Rule 1: Explicit version record overrides framework-wide setting
+        return this.isEffectivelyActive(versionRecord, now);
+      }
+    }
+
+    // 2. Fall back to framework-wide entitlement (versionId = null)
+    const fwRecord = records.find((r) => r.versionId === null);
+    if (fwRecord) {
+      return this.isEffectivelyActive(fwRecord, now);
+    }
+
+    // 3. If versionId was not specified, check if ANY version record is active
+    return records.some((r) => this.isEffectivelyActive(r, now));
   }
 
   /**
@@ -109,23 +162,19 @@ export class FrameworkEntitlementsService {
   async assertEntitled(
     organizationId: string,
     frameworkIdOrCode: string,
+    versionId?: string | null,
     now: Date = new Date(),
   ): Promise<void> {
-    const fw = await this.prisma.framework.findFirst({
-      where: {
-        OR: [{ id: frameworkIdOrCode }, { code: frameworkIdOrCode as any }],
-      },
-      select: { id: true, code: true, name: true },
-    });
+    const fw = await this.findFramework(frameworkIdOrCode);
 
     if (!fw) {
       throw new NotFoundException(`Framework "${frameworkIdOrCode}" not found.`);
     }
 
-    const entitled = await this.isEntitled(organizationId, fw.id, now);
+    const entitled = await this.isEntitled(organizationId, fw.id, versionId, now);
     if (!entitled) {
       this.logger.warn(
-        `SECURITY: Organization "${organizationId}" denied access to non-entitled framework "${fw.code}" (${fw.name}).`,
+        `SECURITY: Organization "${organizationId}" denied access to framework "${fw.code}" (${fw.name}).`,
       );
       throw new ForbiddenException({
         statusCode: 403,
@@ -149,7 +198,6 @@ export class FrameworkEntitlementsService {
     const expiresAt = expiresAtIso ? new Date(expiresAtIso) : null;
 
     for (const fw of frameworks) {
-      // Look for entitlement codes: e.g. "framework:ISO27001", "FRAMEWORK_ISO27001", "ISO27001"
       const matched = signedEntitlements.find(
         (e) =>
           e.code === `framework:${fw.code}` ||
@@ -160,32 +208,34 @@ export class FrameworkEntitlementsService {
       const isEnabled = matched ? matched.enabled === true : false;
       const targetStatus = isEnabled ? EntitlementStatus.ACTIVE : EntitlementStatus.REVOKED;
 
-      await this.prisma.organizationFrameworkEntitlement.upsert({
+      const existing = await this.prisma.organizationFrameworkEntitlement.findFirst({
         where: {
-          organizationId_frameworkId: {
-            organizationId,
-            frameworkId: fw.id,
-          },
-        },
-        update: {
-          status: targetStatus,
-          expiresAt,
-          provenance: {
-            source: 'Control Plane Signed License Artifact Sync',
-            syncedAt: new Date().toISOString(),
-          },
-        },
-        create: {
           organizationId,
           frameworkId: fw.id,
-          status: targetStatus,
-          expiresAt,
-          provenance: {
-            source: 'Control Plane Signed License Artifact Sync',
-            syncedAt: new Date().toISOString(),
-          },
+          versionId: null,
         },
       });
+
+      if (existing) {
+        await this.prisma.organizationFrameworkEntitlement.update({
+          where: { id: existing.id },
+          data: {
+            status: targetStatus,
+            expiresAt,
+          },
+        });
+      } else {
+        await this.prisma.organizationFrameworkEntitlement.create({
+          data: {
+            organizationId,
+            frameworkId: fw.id,
+            versionId: null,
+            status: targetStatus,
+            expiresAt,
+            source: 'ARAV_CONTROL_PLANE',
+          },
+        });
+      }
     }
   }
 }
