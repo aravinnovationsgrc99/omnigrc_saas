@@ -1698,7 +1698,11 @@ export interface EvidenceVaultQueryDto {
   page?: number;
   limit?: number;
   search?: string;
-  domain?: 'AUDIT' | 'CONTROL' | 'POLICY' | 'TASK' | 'INCIDENT';
+  domain?: 'AUDIT' | 'CONTROL' | 'POLICY' | 'TASK' | 'INCIDENT' | 'VULNERABILITY' | 'VENDOR' | string;
+  evidenceType?: EvidenceType;
+  status?: EvidenceStatus;
+  resourceType?: string;
+  frameworkReferenceId?: string;
 }
 
 export interface PaginatedEvidenceVaultDto {
@@ -1845,3 +1849,86 @@ export interface UpdateMemberAccessDto {
   departmentIds?: string[];
   projectIds?: string[];
 }
+
+// --------------------------------------------------
+// PHASE 3 — UNIVERSAL EVIDENCE & PROOF VAULT TYPES
+// --------------------------------------------------
+
+export enum EvidenceType {
+  DOCUMENT = "DOCUMENT",
+  SPREADSHEET = "SPREADSHEET",
+  IMAGE = "IMAGE",
+  CONFIG_EXPORT = "CONFIG_EXPORT",
+  SYSTEM_LOG = "SYSTEM_LOG",
+  CERTIFICATE = "CERTIFICATE",
+  EXTERNAL_LINK = "EXTERNAL_LINK",
+  OTHER = "OTHER",
+}
+
+export enum EvidenceStatus {
+  PENDING = "PENDING",
+  ACTIVE = "ACTIVE",
+  QUARANTINED = "QUARANTINED",
+  ARCHIVED = "ARCHIVED",
+  DELETED = "DELETED",
+}
+
+export enum EvidenceScanStatus {
+  PENDING_SCAN = "PENDING_SCAN",
+  CLEAN = "CLEAN",
+  QUARANTINED = "QUARANTINED",
+  SCAN_FAILED = "SCAN_FAILED",
+}
+
+export interface ResourceAssociationDto {
+  resourceType: 'CONTROL' | 'RISK' | 'POLICY' | 'AUDIT_CHECK' | 'AUDIT_FINDING' | 'VENDOR' | 'VULNERABILITY' | 'INCIDENT';
+  resourceId: string;
+  resourceTitle?: string;
+}
+
+export interface EvidenceDto {
+  id: string;
+  organizationId: string;
+  title: string;
+  description?: string | null;
+  evidenceType: EvidenceType;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  storageKey: string;
+  checksum?: string | null;
+  status: EvidenceStatus;
+  scanStatus: EvidenceScanStatus;
+  uploadedById: string;
+  uploaderName?: string;
+  retentionUntil?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  associations: ResourceAssociationDto[];
+  frameworkReferences?: Array<{ id: string; identifier: string; title: string }>;
+}
+
+export interface CreateEvidenceUploadDto {
+  title: string;
+  description?: string;
+  evidenceType?: EvidenceType;
+  targetResourceType?: 'CONTROL' | 'RISK' | 'POLICY' | 'AUDIT_CHECK' | 'AUDIT_FINDING' | 'VENDOR' | 'VULNERABILITY' | 'INCIDENT';
+  targetResourceId?: string;
+  frameworkReferenceId?: string;
+  retentionDays?: number;
+}
+
+export interface AttachEvidenceDto {
+  evidenceId: string;
+  resourceType: 'CONTROL' | 'RISK' | 'POLICY' | 'AUDIT_CHECK' | 'AUDIT_FINDING' | 'VENDOR' | 'VULNERABILITY' | 'INCIDENT';
+  resourceId: string;
+}
+
+
+export interface PaginatedEvidenceDto {
+  items: EvidenceDto[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
