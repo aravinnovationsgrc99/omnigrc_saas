@@ -14,6 +14,7 @@ import {
   evaluateLicenseStatus,
   EvaluatedLicenseState,
 } from '@omnigrc/shared';
+import { FrameworkEntitlementsService } from '../frameworks/framework-entitlements.service';
 
 const DEFAULT_KEY_ID = 'arav-license-v1-2026';
 
@@ -26,7 +27,10 @@ export class LicenseVerificationService {
     fetchedAt: number;
   } | null = null;
 
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly frameworkEntitlementsService: FrameworkEntitlementsService,
+  ) {
     this.initializeTrustedKeyRegistry();
   }
 
@@ -126,7 +130,7 @@ export class LicenseVerificationService {
   }
 
   /**
-   * Store verified artifact snapshot into Data Plane system license state cache.
+   * Store verified artifact snapshot into Data Plane system license state cache and reconcile framework entitlements.
    */
   public async saveVerifiedState(artifact: SignedLicenseArtifact): Promise<void> {
     const { payload } = this.verifyArtifact(artifact);
@@ -147,6 +151,14 @@ export class LicenseVerificationService {
         verifiedAt: new Date(),
       },
     });
+
+    if (payload.organizationId && Array.isArray(payload.entitlements)) {
+      await this.frameworkEntitlementsService.reconcileSignedLicenseEntitlements(
+        payload.organizationId,
+        payload.entitlements,
+        payload.expiresAt,
+      );
+    }
 
     this.invalidateMemoizedState();
 

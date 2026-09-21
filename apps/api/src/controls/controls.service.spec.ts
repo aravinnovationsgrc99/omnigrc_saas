@@ -3,6 +3,7 @@ import { ControlsService } from './controls.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { FrameworkEntitlementsService } from '../frameworks/framework-entitlements.service';
 
 describe('ControlsService', () => {
   let service: ControlsService;
@@ -41,6 +42,13 @@ describe('ControlsService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: AuditLogsService, useValue: auditLogsService },
         { provide: NotificationsService, useValue: notificationsService },
+        {
+          provide: FrameworkEntitlementsService,
+          useValue: {
+            assertEntitled: jest.fn().mockResolvedValue(true),
+            getEntitledFrameworkIds: jest.fn().mockResolvedValue(null),
+          },
+        },
       ],
     }).compile();
 

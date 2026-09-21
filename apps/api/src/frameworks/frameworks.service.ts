@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { FrameworkEntitlementsService } from './framework-entitlements.service';
 import {
   FrameworkItemDto,
   FrameworkClauseItemDto,
@@ -8,9 +9,12 @@ import {
 
 @Injectable()
 export class FrameworksService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly frameworkEntitlementsService: FrameworkEntitlementsService,
+  ) {}
 
-  async findAll(): Promise<FrameworkItemDto[]> {
+  async findAll(organizationId?: string): Promise<FrameworkItemDto[]> {
     const frameworks = await this.prisma.framework.findMany({
       include: {
         _count: { select: { clauses: true } },
@@ -18,7 +22,16 @@ export class FrameworksService {
       orderBy: { code: 'asc' },
     });
 
-    return frameworks.map((fw) => ({
+    let entitledIds: string[] | null = null;
+    if (organizationId) {
+      entitledIds = await this.frameworkEntitlementsService.getEntitledFrameworkIds(organizationId);
+    }
+
+    const filtered = entitledIds !== null
+      ? frameworks.filter((fw) => entitledIds!.includes(fw.id))
+      : frameworks;
+
+    return filtered.map((fw) => ({
       id: fw.id,
       code: fw.code,
       name: fw.name,
@@ -29,7 +42,9 @@ export class FrameworksService {
     }));
   }
 
-  async findOne(idOrCode: string): Promise<FrameworkItemDto> {
+  async findOne(organizationId: string, idOrCode: string): Promise<FrameworkItemDto> {
+    await this.frameworkEntitlementsService.assertEntitled(organizationId, idOrCode);
+
     const framework = await this.prisma.framework.findFirst({
       where: {
         OR: [{ id: idOrCode }, { code: idOrCode as any }],
@@ -62,7 +77,9 @@ export class FrameworksService {
     };
   }
 
-  async getVersions(frameworkIdOrCode: string) {
+  async getVersions(organizationId: string, frameworkIdOrCode: string) {
+    await this.frameworkEntitlementsService.assertEntitled(organizationId, frameworkIdOrCode);
+
     const fw = await this.prisma.framework.findFirst({
       where: {
         OR: [{ id: frameworkIdOrCode }, { code: frameworkIdOrCode as any }],
@@ -95,7 +112,7 @@ export class FrameworksService {
     }));
   }
 
-  async getReferences(versionId: string) {
+  async getReferences(organizationId: string, versionId: string) {
     const version = await this.prisma.frameworkVersion.findUnique({
       where: { id: versionId },
     });
@@ -103,6 +120,8 @@ export class FrameworksService {
     if (!version) {
       throw new NotFoundException(`Framework Version with ID ${versionId} not found.`);
     }
+
+    await this.frameworkEntitlementsService.assertEntitled(organizationId, version.frameworkId);
 
     const refs = await this.prisma.frameworkReference.findMany({
       where: { frameworkVersionId: versionId },

@@ -29,13 +29,13 @@ export class ControlsController {
   }
 
   @Get('framework-clauses')
-  async getAllFrameworkClauses() {
-    return this.controlsService.getAllFrameworkClauses();
+  async getAllFrameworkClauses(@CurrentUser() user: JwtPayload) {
+    return this.controlsService.getAllFrameworkClauses(user.organizationId);
   }
 
   @Get('frameworks')
-  async getFrameworks() {
-    return this.controlsService.getFrameworks();
+  async getFrameworks(@CurrentUser() user: JwtPayload) {
+    return this.controlsService.getFrameworks(user.organizationId);
   }
 
   @Get(':id')

@@ -9,32 +9,48 @@ import {
 import { FrameworksService } from './frameworks.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { FrameworkEntitlementGuard } from './guards/framework-entitlement.guard';
+import { RequireFrameworkEntitlement } from './decorators/require-framework-entitlement.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { FrameworkItemDto, CustomFrameworkImportDto, Role } from '@omnigrc/shared';
 
 @Controller('frameworks')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, FrameworkEntitlementGuard)
 export class FrameworksController {
   constructor(private readonly frameworksService: FrameworksService) {}
 
   @Get()
-  async getFrameworks(): Promise<FrameworkItemDto[]> {
-    return this.frameworksService.findAll();
+  async getFrameworks(
+    @CurrentUser('organizationId') organizationId: string,
+  ): Promise<FrameworkItemDto[]> {
+    return this.frameworksService.findAll(organizationId);
   }
 
   @Get(':idOrCode')
-  async getFramework(@Param('idOrCode') idOrCode: string): Promise<FrameworkItemDto> {
-    return this.frameworksService.findOne(idOrCode);
+  @RequireFrameworkEntitlement('idOrCode')
+  async getFramework(
+    @CurrentUser('organizationId') organizationId: string,
+    @Param('idOrCode') idOrCode: string,
+  ): Promise<FrameworkItemDto> {
+    return this.frameworksService.findOne(organizationId, idOrCode);
   }
 
   @Get(':idOrCode/versions')
-  async getVersions(@Param('idOrCode') idOrCode: string) {
-    return this.frameworksService.getVersions(idOrCode);
+  @RequireFrameworkEntitlement('idOrCode')
+  async getVersions(
+    @CurrentUser('organizationId') organizationId: string,
+    @Param('idOrCode') idOrCode: string,
+  ) {
+    return this.frameworksService.getVersions(organizationId, idOrCode);
   }
 
   @Get('versions/:versionId/references')
-  async getReferences(@Param('versionId') versionId: string) {
-    return this.frameworksService.getReferences(versionId);
+  async getReferences(
+    @CurrentUser('organizationId') organizationId: string,
+    @Param('versionId') versionId: string,
+  ) {
+    return this.frameworksService.getReferences(organizationId, versionId);
   }
 
   @Post('import')

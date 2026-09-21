@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../../audit-logs/audit-logs.service';
 import { AiRouterService } from './ai-router.service';
 import { LicenseVerificationService } from '../../license-verification/license-verification.service';
+import { FrameworkEntitlementsService } from '../../frameworks/framework-entitlements.service';
 
 describe('MappingQueueService Bounded Memory Cleanup', () => {
   let queueService: MappingQueueService;
@@ -20,6 +21,12 @@ describe('MappingQueueService Bounded Memory Cleanup', () => {
           useValue: {
             getEvaluatedState: jest.fn().mockResolvedValue({ state: 'VALID' }),
             onLicenseRenewed: jest.fn(),
+          },
+        },
+        {
+          provide: FrameworkEntitlementsService,
+          useValue: {
+            getEntitledFrameworkIds: jest.fn().mockResolvedValue(null),
           },
         },
       ],

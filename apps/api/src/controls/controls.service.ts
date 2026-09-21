@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { FrameworkEntitlementsService } from '../frameworks/framework-entitlements.service';
 import { CreateControlDto, UpdateControlDto, ControlQueryDto, SignOffMappingDto } from './dto/controls.dto';
 import { ControlDto, PaginatedControlsDto, MappingStatus, ControlFrameworkMappingDto, FrameworkCode, NotificationType } from '@omnigrc/shared';
 
@@ -11,6 +12,7 @@ export class ControlsService {
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
     private readonly notificationsService: NotificationsService,
+    private readonly frameworkEntitlementsService: FrameworkEntitlementsService,
   ) {}
 
   async findAll(organizationId: string, query: ControlQueryDto): Promise<PaginatedControlsDto> {
@@ -106,8 +108,14 @@ export class ControlsService {
     return this.mapToDto(control);
   }
 
-  async getAllFrameworkClauses() {
+  async getAllFrameworkClauses(organizationId?: string) {
+    let entitledFrameworkIds: string[] | null = null;
+    if (organizationId) {
+      entitledFrameworkIds = await this.frameworkEntitlementsService.getEntitledFrameworkIds(organizationId);
+    }
+
     const clauses = await this.prisma.frameworkClause.findMany({
+      where: entitledFrameworkIds !== null ? { frameworkId: { in: entitledFrameworkIds } } : {},
       include: {
         framework: { select: { code: true, name: true } },
       },
@@ -125,8 +133,14 @@ export class ControlsService {
     }));
   }
 
-  async getFrameworks() {
+  async getFrameworks(organizationId?: string) {
+    let entitledFrameworkIds: string[] | null = null;
+    if (organizationId) {
+      entitledFrameworkIds = await this.frameworkEntitlementsService.getEntitledFrameworkIds(organizationId);
+    }
+
     const frameworks = await this.prisma.framework.findMany({
+      where: entitledFrameworkIds !== null ? { id: { in: entitledFrameworkIds } } : {},
       include: {
         _count: { select: { clauses: true } },
       },
@@ -344,12 +358,14 @@ export class ControlsService {
 
       const newClause = await this.prisma.frameworkClause.findUnique({
         where: { id: dto.overrideClauseId },
-        include: { framework: { select: { code: true } } },
+        include: { framework: { select: { id: true, code: true } } },
       });
 
       if (!newClause) {
         throw new NotFoundException(`Framework clause with ID "${dto.overrideClauseId}" not found`);
       }
+
+      await this.frameworkEntitlementsService.assertEntitled(organizationId, newClause.frameworkId);
 
       const updated = await this.prisma.controlFrameworkMapping.update({
         where: { id: mappingId },

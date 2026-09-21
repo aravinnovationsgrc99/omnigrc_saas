@@ -8,10 +8,11 @@ import { ClaudeProvider } from './ai/claude.provider';
 import { MockAiProvider } from './ai/mock-ai.provider';
 import { GrcIntelligenceController } from './ai/intelligence.controller';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+import { FrameworksModule } from '../frameworks/frameworks.module';
 import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
-  imports: [PrismaModule, AuditLogsModule],
+  imports: [PrismaModule, AuditLogsModule, FrameworksModule],
   controllers: [ControlsController, GrcIntelligenceController],
   providers: [
     ControlsService,

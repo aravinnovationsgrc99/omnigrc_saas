@@ -7,6 +7,8 @@ import { MappingStatus, ModelTier } from '@omnigrc/shared';
 import { Queue, Worker } from 'bullmq';
 import Redis from 'ioredis';
 
+import { FrameworkEntitlementsService } from '../../frameworks/framework-entitlements.service';
+
 export interface JobState {
   jobId: string;
   organizationId: string;
@@ -35,6 +37,7 @@ export class MappingQueueService implements OnModuleInit {
     private readonly auditLogsService: AuditLogsService,
     private readonly aiRouterService: AiRouterService,
     private readonly licenseVerificationService: LicenseVerificationService,
+    private readonly frameworkEntitlementsService: FrameworkEntitlementsService,
   ) {}
 
   /**
@@ -225,8 +228,11 @@ export class MappingQueueService implements OnModuleInit {
 
       if (state) state.progress = 40;
 
-      // 2. Fetch All Candidate Framework Clauses
+      // 2. Fetch Candidate Framework Clauses (Filtered to entitled frameworks)
+      const entitledFrameworkIds = await this.frameworkEntitlementsService.getEntitledFrameworkIds(organizationId);
+
       const clauses = await this.prisma.frameworkClause.findMany({
+        where: entitledFrameworkIds.length > 0 ? { frameworkId: { in: entitledFrameworkIds } } : {},
         include: { framework: { select: { code: true } } },
       });
 

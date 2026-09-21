@@ -384,6 +384,47 @@ export interface SwitchContextResponseDto {
   actingViaMsspId: string;
 }
 
+export enum EntitlementStatus {
+  DRAFT = "DRAFT",
+  ACTIVE = "ACTIVE",
+  SUSPENDED = "SUSPENDED",
+  EXPIRED = "EXPIRED",
+  REVOKED = "REVOKED",
+}
+
+export interface OrganizationFrameworkEntitlementDto {
+  id: string;
+  organizationId: string;
+  frameworkId: string;
+  versionId?: string | null;
+  frameworkCode?: FrameworkCode;
+  frameworkName?: string;
+  versionString?: string | null;
+  status: EntitlementStatus;
+  isEffectivelyActive: boolean;
+  grantedAt: string;
+  expiresAt?: string | null;
+  provenance?: Record<string, any> | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GrantFrameworkEntitlementDto {
+  organizationId: string;
+  frameworkId: string;
+  versionId?: string;
+  status?: EntitlementStatus;
+  expiresAt?: string;
+  provenance?: Record<string, any>;
+}
+
+export interface UpdateFrameworkEntitlementDto {
+  status?: EntitlementStatus;
+  versionId?: string | null;
+  expiresAt?: string | null;
+  provenance?: Record<string, any>;
+}
+
 export enum FrameworkVersionStatus {
   DRAFT = "DRAFT",
   ACTIVE = "ACTIVE",

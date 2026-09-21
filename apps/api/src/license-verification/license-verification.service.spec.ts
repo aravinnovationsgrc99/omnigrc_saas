@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { LicenseVerificationService } from './license-verification.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { FrameworkEntitlementsService } from '../frameworks/framework-entitlements.service';
 import { SignedLicenseArtifact, jcsCanonicalize } from '@omnigrc/shared';
 import * as crypto from 'crypto';
 
@@ -25,6 +26,12 @@ describe('LicenseVerificationService (Data Plane)', () => {
               upsert: jest.fn(),
               findUnique: jest.fn(),
             },
+          },
+        },
+        {
+          provide: FrameworkEntitlementsService,
+          useValue: {
+            reconcileEntitlementsFromLicense: jest.fn().mockResolvedValue(undefined),
           },
         },
       ],

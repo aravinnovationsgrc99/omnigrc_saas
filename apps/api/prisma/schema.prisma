@@ -36,6 +36,14 @@ enum FrameworkCode {
   HIPAA
 }
 
+enum EntitlementStatus {
+  DRAFT
+  ACTIVE
+  SUSPENDED
+  EXPIRED
+  REVOKED
+}
+
 enum FrameworkVersionStatus {
   DRAFT
   ACTIVE
@@ -212,6 +220,7 @@ model Organization {
   auditPlans      AuditPlan[]
   incidents       Incident[]
   dashboardPreferences UserDashboardPreference[]
+  frameworkEntitlements OrganizationFrameworkEntitlement[]
 
   @@index([parentOrganizationId])
   @@map("organizations")
@@ -367,8 +376,9 @@ model Framework {
   name      String
   createdAt DateTime      @default(now())
 
-  clauses  FrameworkClause[]
-  versions FrameworkVersion[]
+  clauses      FrameworkClause[]
+  versions     FrameworkVersion[]
+  entitlements OrganizationFrameworkEntitlement[]
 
   @@map("frameworks")
 }
@@ -385,13 +395,38 @@ model FrameworkVersion {
   createdAt     DateTime               @default(now())
   updatedAt     DateTime               @updatedAt
 
-  framework  Framework            @relation(fields: [frameworkId], references: [id], onDelete: Cascade)
-  references FrameworkReference[]
+  framework    Framework                          @relation(fields: [frameworkId], references: [id], onDelete: Cascade)
+  references   FrameworkReference[]
+  entitlements OrganizationFrameworkEntitlement[]
 
   @@unique([frameworkId, version])
   @@index([frameworkId])
   @@index([status])
   @@map("framework_versions")
+}
+
+model OrganizationFrameworkEntitlement {
+  id             String            @id @default(uuid())
+  organizationId String
+  frameworkId    String
+  versionId      String?
+  status         EntitlementStatus @default(DRAFT)
+  grantedAt      DateTime          @default(now())
+  expiresAt      DateTime?
+  provenance     Json?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  framework        Framework         @relation(fields: [frameworkId], references: [id], onDelete: Restrict)
+  frameworkVersion FrameworkVersion? @relation(fields: [versionId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, frameworkId])
+  @@index([organizationId])
+  @@index([frameworkId])
+  @@index([versionId])
+  @@index([status])
+  @@map("organization_framework_entitlements")
 }
 
 model FrameworkReference {
