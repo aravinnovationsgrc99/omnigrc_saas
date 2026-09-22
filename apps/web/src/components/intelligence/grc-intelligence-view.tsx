@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { Sparkles, Bot, AlertTriangle, Send, Cpu, CheckCircle2 } from 'lucide-react';
+import { apiRequest } from '@/lib/api-client';
 
 export function GrcIntelligenceView() {
   const [prompt, setPrompt] = useState('');
@@ -14,18 +15,10 @@ export function GrcIntelligenceView() {
 
     setLoading(true);
     try {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-      const res = await fetch('/api/intelligence/assist', {
+      const data = await apiRequest('/intelligence/assist', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: token ? `Bearer ${token}` : '',
-        },
         body: JSON.stringify({ prompt: prompt.trim() }),
       });
-
-      if (!res.ok) throw new Error('AI Intelligence request failed.');
-      const data = await res.json();
       setResponse(data);
     } catch (err: any) {
       alert(err.message || 'Error executing AI assistance query.');

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Sparkles, Bot, X, Minimize2, Send, RotateCcw, AlertTriangle, BookOpen, ShieldCheck, ChevronRight } from 'lucide-react';
+import { apiRequest } from '@/lib/api-client';
 
 export interface ChatMessage {
   id: string;
@@ -28,19 +29,13 @@ export function FloatingSupportChat() {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Fetch Predefined 20 Question Pills on Mount
+  // Fetch Predefined 20 Question Pills on Mount via apiRequest
   useEffect(() => {
     const fetchQuestions = async () => {
       try {
-        const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-        const res = await fetch('/api/intelligence/questions', {
-          headers: { Authorization: token ? `Bearer ${token}` : '' },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.questions && Array.isArray(data.questions)) {
-            setPills(data.questions);
-          }
+        const data = await apiRequest<{ questions: QuestionPill[] }>('/intelligence/questions');
+        if (data && data.questions && Array.isArray(data.questions)) {
+          setPills(data.questions);
         }
       } catch {
         // Fallback pills if endpoint unreachable
@@ -84,33 +79,20 @@ export function FloatingSupportChat() {
     setLoading(true);
 
     try {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-
       // Send last 6 conversation history items
       const historyPayload = newMessages.slice(-6).map((m) => ({
         role: m.role,
         content: m.content,
       }));
 
-      const res = await fetch('/api/intelligence/chat', {
+      const data = await apiRequest<{ answer: string; sourcesUsed?: string[]; disclaimer?: string }>('/intelligence/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: token ? `Bearer ${token}` : '',
-        },
         body: JSON.stringify({
           prompt: messageContent,
           history: historyPayload,
           questionPillKey: questionKey,
         }),
       });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.message || 'GRC Intelligence request failed.');
-      }
-
-      const data = await res.json();
 
       const assistantMessage: ChatMessage = {
         id: `msg-ai-${Date.now()}`,
