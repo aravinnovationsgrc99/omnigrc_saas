@@ -224,6 +224,169 @@ export class DocumentIntelligenceService {
   }
 
   /**
+   * Convert an Accepted/Edited AI Extracted Finding into an Authoritative GRC Record
+   */
+  async convertFindingToAction(
+    organizationId: string,
+    userId: string,
+    userRole: Role,
+    analysisId: string,
+    findingId: string,
+    dto: {
+      conversionType: string;
+      title?: string;
+      description?: string;
+      controlId?: string;
+      frameworkReferenceId?: string;
+      dueDate?: string;
+      owner?: string;
+      likelihood?: number;
+      impact?: number;
+    },
+  ): Promise<{ actionType: string; actionId: string; resultMessage: string }> {
+    if (userRole === Role.EXTERNAL_AUDITOR) {
+      throw new ForbiddenException('External Auditors are read-only and cannot convert AI findings into GRC records.');
+    }
+
+    const finding = await this.prisma.extractedFinding.findFirst({
+      where: { id: findingId, documentAnalysisId: analysisId, organizationId },
+      include: { documentAnalysis: true },
+    });
+
+    if (!finding) {
+      throw new NotFoundException(`Extracted finding "${findingId}" not found in organization context.`);
+    }
+
+    if (finding.reviewStatus !== FindingReviewStatus.ACCEPTED && finding.reviewStatus !== FindingReviewStatus.EDITED) {
+      throw new BadRequestException(`Finding "${findingId}" must be reviewed and ACCEPTED or EDITED before converting into an authoritative action.`);
+    }
+
+    if (finding.humanComment && finding.humanComment.includes('Converted to')) {
+      throw new BadRequestException(`Finding "${findingId}" has already been converted into an authoritative GRC record.`);
+    }
+
+    const existingTask = await this.prisma.complianceTask.findFirst({
+      where: { organizationId, obligationReference: `ai-finding:${finding.id}`, deletedAt: null },
+    });
+    if (existingTask) {
+      throw new BadRequestException(`Finding "${findingId}" has already been converted into ComplianceTask "${existingTask.id}".`);
+    }
+
+    const title = dto.title?.trim() || finding.editedTitle || finding.aiTitle;
+    const description = dto.description?.trim() || finding.editedDescription || finding.aiDescription;
+    const targetControlId = dto.controlId || finding.aiSuggestedControlId || null;
+    const targetRefId = dto.frameworkReferenceId || finding.aiSuggestedReferenceId || null;
+
+    let createdRecordId = '';
+    const conversionType = dto.conversionType;
+
+    if (conversionType === 'COMPLIANCE_TASK') {
+      if (targetControlId) {
+        const c = await this.prisma.control.findFirst({ where: { id: targetControlId, organizationId } });
+        if (!c) throw new NotFoundException(`Target control "${targetControlId}" not found.`);
+      }
+      const task = await this.prisma.complianceTask.create({
+        data: {
+          organizationId,
+          title,
+          description,
+          owner: dto.owner?.trim() || finding.aiResponsibleParty || 'Unassigned',
+          dueDate: dto.dueDate ? new Date(dto.dueDate) : finding.aiDueDate || null,
+          controlId: targetControlId,
+          createdById: userId,
+          obligationReference: `ai-finding:${finding.id}`,
+        },
+      });
+      createdRecordId = task.id;
+    } else if (conversionType === 'RISK') {
+      const likelihood = Math.min(5, Math.max(1, Number(dto.likelihood) || 3));
+      const impact = Math.min(5, Math.max(1, Number(dto.impact) || 3));
+      const score = likelihood * impact;
+      const risk = await this.prisma.risk.create({
+        data: {
+          organizationId,
+          title,
+          description,
+          likelihood,
+          impact,
+          score,
+          owner: dto.owner?.trim() || finding.aiResponsibleParty || 'Unassigned',
+          createdById: userId,
+        },
+      });
+      createdRecordId = risk.id;
+    } else if (conversionType === 'POLICY_EXCEPTION') {
+      const policy = await this.prisma.policy.findFirst({ where: { organizationId } });
+      if (!policy) {
+        throw new BadRequestException('At least one policy must exist in organization to request a policy exception.');
+      }
+      const pex = await this.prisma.policyException.create({
+        data: {
+          organizationId,
+          policyId: policy.id,
+          title,
+          reason: description,
+          requestedById: userId,
+          expiresAt: dto.dueDate ? new Date(dto.dueDate) : null,
+        },
+      });
+      createdRecordId = pex.id;
+    } else if (conversionType === 'CONTROL_MAPPING') {
+      if (!targetControlId || !targetRefId) {
+        throw new BadRequestException('Both target controlId and frameworkReferenceId are required for CONTROL_MAPPING conversion.');
+      }
+      const ref = await this.prisma.frameworkReference.findFirst({
+        where: { id: targetRefId },
+        include: { frameworkVersion: true },
+      });
+      if (!ref) throw new NotFoundException(`Framework reference "${targetRefId}" not found.`);
+
+      await this.frameworkEntitlementsService.assertEntitled(organizationId, ref.frameworkVersion.frameworkId, ref.frameworkVersionId);
+
+      const mapping = await this.prisma.controlFrameworkMapping.upsert({
+        where: { controlId_frameworkReferenceId: { controlId: targetControlId, frameworkReferenceId: targetRefId } },
+        create: {
+          controlId: targetControlId,
+          frameworkReferenceId: targetRefId,
+          status: 'SUGGESTED',
+          confidenceScore: 0.95,
+          reviewedById: userId,
+          reviewedAt: new Date(),
+        },
+        update: {
+          reviewedById: userId,
+          reviewedAt: new Date(),
+        },
+      });
+      createdRecordId = mapping.id;
+    } else {
+      throw new BadRequestException(`Unsupported conversion type "${conversionType}". Supported types: COMPLIANCE_TASK, RISK, POLICY_EXCEPTION, CONTROL_MAPPING.`);
+    }
+
+    await this.prisma.extractedFinding.update({
+      where: { id: finding.id },
+      data: {
+        humanComment: finding.humanComment ? `${finding.humanComment} | Converted to ${conversionType}:${createdRecordId}` : `Converted to ${conversionType}:${createdRecordId}`,
+      },
+    });
+
+    await this.auditLogsService.log({
+      organizationId,
+      actorId: userId,
+      action: 'AI_FINDING_CONVERTED_TO_ACTION',
+      entityType: 'ExtractedFinding',
+      entityId: finding.id,
+      metadata: { conversionType, createdRecordId, title },
+    });
+
+    return {
+      actionType: conversionType,
+      actionId: createdRecordId,
+      resultMessage: `Successfully converted AI Extracted Finding into ${conversionType} (${createdRecordId}).`,
+    };
+  }
+
+  /**
    * Retry a Failed or Cancelled Analysis
    */
   async retryAnalysis(organizationId: string, userId: string, analysisId: string): Promise<DocumentAnalysisDto> {

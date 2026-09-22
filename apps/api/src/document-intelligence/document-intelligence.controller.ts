@@ -62,6 +62,19 @@ export class DocumentIntelligenceController {
     return this.service.reviewFinding(orgId, userId, role, analysisId, findingId, dto);
   }
 
+  @Post('analyses/:id/findings/:findingId/convert')
+  async convertFinding(
+    @Req() req: any,
+    @Param('id') analysisId: string,
+    @Param('findingId') findingId: string,
+    @Body() dto: any,
+  ) {
+    const orgId = req.user.organizationId;
+    const userId = req.user.userId;
+    const role = req.user.role;
+    return this.service.convertFindingToAction(orgId, userId, role, analysisId, findingId, dto);
+  }
+
   @Post('analyses/:id/retry')
   async retryAnalysis(
     @Req() req: any,

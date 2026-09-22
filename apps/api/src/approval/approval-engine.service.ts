@@ -102,6 +102,18 @@ export class ApprovalEngineService {
     // 1. Verify resource ownership
     await this.verifyResourceBelongsToOrg(organizationId, dto.resourceType, dto.resourceId);
 
+    // 1b. Evidence Security Gate: If evidence is target resource, enforce ACTIVE + CLEAN
+    if (dto.resourceType === 'EVIDENCE') {
+      const ev = await this.prisma.evidence.findFirst({
+        where: { id: dto.resourceId, organizationId },
+      });
+      if (ev && (ev.status !== 'ACTIVE' || ev.scanStatus !== 'CLEAN')) {
+        throw new BadRequestException(
+          `Quarantined, unverified, or inactive evidence (status: ${ev.status}, scanStatus: ${ev.scanStatus}) cannot satisfy approval requirements.`,
+        );
+      }
+    }
+
     // 2. Fetch or resolve workflow
     let workflow = dto.workflowId
       ? await this.prisma.approvalWorkflow.findFirst({
@@ -155,6 +167,7 @@ export class ApprovalEngineService {
         resourceId: dto.resourceId,
         requesterId,
         status: ApprovalInstanceStatus.PENDING,
+        purpose: (dto.purpose as any) || null,
         currentStepNumber: 1,
         dueAt,
         frameworkReferenceId: dto.frameworkReferenceId || null,
@@ -327,7 +340,7 @@ export class ApprovalEngineService {
         // Final Step Approved!
         nextStatus = ApprovalInstanceStatus.APPROVED;
         completedAt = new Date();
-        await this.executeResourceApprovedCallback(organizationId, instance.resourceType, instance.resourceId);
+        await this.executeResourceStatusCallback(organizationId, instance, DecisionAction.APPROVE);
       }
     } else if (dto.action === DecisionAction.REJECT) {
       await this.prisma.approvalInstanceStep.update({
@@ -336,12 +349,14 @@ export class ApprovalEngineService {
       });
       nextStatus = ApprovalInstanceStatus.REJECTED;
       completedAt = new Date();
+      await this.executeResourceStatusCallback(organizationId, instance, DecisionAction.REJECT);
     } else if (dto.action === DecisionAction.REQUEST_CHANGES) {
       await this.prisma.approvalInstanceStep.update({
         where: { id: activeStep.id },
         data: { status: ApprovalStepStatus.CHANGES_REQUESTED },
       });
       nextStatus = ApprovalInstanceStatus.CHANGES_REQUESTED;
+      await this.executeResourceStatusCallback(organizationId, instance, DecisionAction.REQUEST_CHANGES);
     }
 
     await this.prisma.approvalInstance.update({
@@ -435,21 +450,101 @@ export class ApprovalEngineService {
     return false;
   }
 
-  private async executeResourceApprovedCallback(organizationId: string, resourceType: string, resourceId: string): Promise<void> {
+  private async executeResourceStatusCallback(
+    organizationId: string,
+    instance: { resourceType: string; resourceId: string; purpose?: string | null },
+    action: DecisionAction,
+  ): Promise<void> {
     try {
+      const { resourceType, resourceId, purpose } = instance;
+
       if (resourceType === 'POLICY') {
+        let targetStatus = 'APPROVED';
+        if (action === DecisionAction.REJECT) targetStatus = 'DRAFT';
+        else if (action === DecisionAction.REQUEST_CHANGES) targetStatus = 'UNDER_REVIEW';
         await this.prisma.policy.updateMany({
           where: { id: resourceId, organizationId },
-          data: { status: 'APPROVED' as any },
+          data: { status: targetStatus as any },
         });
       } else if (resourceType === 'POLICY_EXCEPTION') {
+        let targetStatus = 'APPROVED';
+        if (action === DecisionAction.REJECT) targetStatus = 'REJECTED';
+        else if (action === DecisionAction.REQUEST_CHANGES) targetStatus = 'PENDING';
         await this.prisma.policyException.updateMany({
           where: { id: resourceId, organizationId },
-          data: { status: 'APPROVED' as any },
+          data: { status: targetStatus as any },
+        });
+      } else if (resourceType === 'RISK') {
+        let targetStatus = 'IN_TREATMENT';
+        if (purpose === 'RISK_ACCEPTANCE') {
+          targetStatus = action === DecisionAction.APPROVE ? 'ACCEPTED' : 'OPEN';
+        } else {
+          targetStatus = action === DecisionAction.APPROVE ? 'IN_TREATMENT' : 'OPEN';
+        }
+        await this.prisma.risk.updateMany({
+          where: { id: resourceId, organizationId },
+          data: { status: targetStatus as any },
+        });
+      } else if (resourceType === 'CONTROL' || resourceType === 'CONTROL_MAPPING') {
+        let targetStatus = 'APPROVED';
+        if (action === DecisionAction.REJECT) targetStatus = 'REJECTED';
+        else if (action === DecisionAction.REQUEST_CHANGES) targetStatus = 'OVERRIDDEN';
+        await this.prisma.controlFrameworkMapping.updateMany({
+          where: { controlId: resourceId, control: { organizationId } },
+          data: { status: targetStatus as any },
+        });
+      } else if (resourceType === 'AUDIT_FINDING') {
+        let targetStatus = 'VERIFIED';
+        if (purpose === 'FINDING_CLOSURE') {
+          targetStatus = action === DecisionAction.APPROVE ? 'CLOSED' : 'IN_REMEDIATION';
+        } else {
+          targetStatus = action === DecisionAction.APPROVE ? 'VERIFIED' : 'IN_REMEDIATION';
+        }
+        await this.prisma.auditFinding.updateMany({
+          where: { id: resourceId, organizationId },
+          data: { status: targetStatus as any, ...(action === DecisionAction.APPROVE ? { verifiedAt: new Date() } : {}) },
+        });
+      } else if (resourceType === 'VENDOR_ASSESSMENT') {
+        let targetStatus = 'COMPLETED';
+        if (action === DecisionAction.REJECT || action === DecisionAction.REQUEST_CHANGES) {
+          targetStatus = 'IN_PROGRESS';
+        }
+        await this.prisma.vendorAssessment.updateMany({
+          where: { id: resourceId, organizationId },
+          data: { status: targetStatus as any, ...(action === DecisionAction.APPROVE ? { completedAt: new Date() } : {}) },
+        });
+      } else if (resourceType === 'VULNERABILITY') {
+        let targetStatus = 'RESOLVED';
+        if (purpose === 'VULNERABILITY_RISK_ACCEPTANCE') {
+          targetStatus = action === DecisionAction.APPROVE ? 'RISK_ACCEPTED' : 'OPEN';
+        } else {
+          targetStatus = action === DecisionAction.APPROVE ? 'RESOLVED' : 'IN_REMEDIATION';
+        }
+        await this.prisma.vulnerability.updateMany({
+          where: { id: resourceId, organizationId },
+          data: { status: targetStatus as any },
+        });
+      } else if (resourceType === 'INCIDENT') {
+        let targetStatus = 'RESOLVED';
+        if (purpose === 'INCIDENT_CLOSURE') {
+          targetStatus = action === DecisionAction.APPROVE ? 'CLOSED' : 'IN_PROGRESS';
+        } else {
+          targetStatus = action === DecisionAction.APPROVE ? 'RESOLVED' : 'IN_PROGRESS';
+        }
+        await this.prisma.incident.updateMany({
+          where: { id: resourceId, organizationId },
+          data: { status: targetStatus as any, ...(action === DecisionAction.APPROVE ? { resolvedAt: new Date() } : {}) },
+        });
+      } else if (resourceType === 'EVIDENCE') {
+        let targetStatus = 'ACTIVE';
+        if (action === DecisionAction.REJECT) targetStatus = 'QUARANTINED';
+        await this.prisma.evidence.updateMany({
+          where: { id: resourceId, organizationId },
+          data: { status: targetStatus as any },
         });
       }
     } catch {
-      // Non-fatal callback error logging
+      // Non-fatal callback execution
     }
   }
 
@@ -590,6 +685,7 @@ export class ApprovalEngineService {
       requesterId: ins.requesterId,
       requesterName: requester ? requester.name || requester.email : 'Unknown Requester',
       status: ins.status as ApprovalInstanceStatus,
+      purpose: ins.purpose as any,
       currentStepNumber: ins.currentStepNumber,
       dueAt: ins.dueAt ? ins.dueAt.toISOString() : null,
       frameworkReferenceId: ins.frameworkReferenceId,

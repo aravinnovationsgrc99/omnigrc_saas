@@ -1441,6 +1441,22 @@ enum DecisionAction {
   REQUEST_CHANGES
 }
 
+enum ApprovalPurpose {
+  POLICY_APPROVAL
+  POLICY_EXCEPTION
+  RISK_ACCEPTANCE
+  RISK_TREATMENT
+  CONTROL_SIGNOFF
+  FINDING_VERIFICATION
+  FINDING_CLOSURE
+  VENDOR_ASSESSMENT
+  VULNERABILITY_REMEDIATION
+  VULNERABILITY_RISK_ACCEPTANCE
+  INCIDENT_RESOLUTION
+  INCIDENT_CLOSURE
+  EVIDENCE_VERIFICATION
+}
+
 model ApprovalWorkflow {
   id                     String                 @id @default(uuid())
   organizationId         String
@@ -1491,6 +1507,7 @@ model ApprovalInstance {
   resourceId           String
   requesterId          String
   status               ApprovalInstanceStatus @default(PENDING)
+  purpose              ApprovalPurpose?
   currentStepNumber    Int                    @default(1)
   dueAt                DateTime?
   frameworkReferenceId String?

@@ -2042,6 +2042,22 @@ export interface ApprovalDecisionDto {
   createdAt: string;
 }
 
+export enum ApprovalPurpose {
+  POLICY_APPROVAL = "POLICY_APPROVAL",
+  POLICY_EXCEPTION = "POLICY_EXCEPTION",
+  RISK_ACCEPTANCE = "RISK_ACCEPTANCE",
+  RISK_TREATMENT = "RISK_TREATMENT",
+  CONTROL_SIGNOFF = "CONTROL_SIGNOFF",
+  FINDING_VERIFICATION = "FINDING_VERIFICATION",
+  FINDING_CLOSURE = "FINDING_CLOSURE",
+  VENDOR_ASSESSMENT = "VENDOR_ASSESSMENT",
+  VULNERABILITY_REMEDIATION = "VULNERABILITY_REMEDIATION",
+  VULNERABILITY_RISK_ACCEPTANCE = "VULNERABILITY_RISK_ACCEPTANCE",
+  INCIDENT_RESOLUTION = "INCIDENT_RESOLUTION",
+  INCIDENT_CLOSURE = "INCIDENT_CLOSURE",
+  EVIDENCE_VERIFICATION = "EVIDENCE_VERIFICATION",
+}
+
 export interface ApprovalInstanceDto {
   id: string;
   organizationId: string;
@@ -2054,6 +2070,7 @@ export interface ApprovalInstanceDto {
   requesterId: string;
   requesterName?: string;
   status: ApprovalInstanceStatus;
+  purpose?: ApprovalPurpose | null;
   currentStepNumber: number;
   dueAt?: string | null;
   frameworkReferenceId?: string | null;
@@ -2071,6 +2088,7 @@ export interface CreateApprovalInstanceDto {
   description?: string;
   resourceType: 'CONTROL' | 'RISK' | 'POLICY' | 'AUDIT_FINDING' | 'AUDIT_ASSESSMENT' | 'EVIDENCE' | 'VENDOR_ASSESSMENT' | 'VULNERABILITY' | 'INCIDENT' | 'POLICY_EXCEPTION' | 'CONTROL_MAPPING';
   resourceId: string;
+  purpose?: ApprovalPurpose;
   frameworkReferenceId?: string;
   dueDays?: number;
 }
@@ -2095,6 +2113,103 @@ export interface PaginatedApprovalsDto {
   total: number;
   page: number;
   limit: number;
+}
+
+// --------------------------------------------------
+// PHASE 6 — END-TO-END WORKFLOW UNIFICATION DTOs
+// --------------------------------------------------
+
+export enum FindingConversionType {
+  COMPLIANCE_TASK = "COMPLIANCE_TASK",
+  RISK = "RISK",
+  POLICY_EXCEPTION = "POLICY_EXCEPTION",
+  CONTROL_MAPPING = "CONTROL_MAPPING",
+}
+
+export interface ConvertFindingToActionDto {
+  conversionType: FindingConversionType;
+  title?: string;
+  description?: string;
+  controlId?: string;
+  frameworkReferenceId?: string;
+  dueDate?: string;
+  owner?: string;
+  likelihood?: number;
+  impact?: number;
+}
+
+export interface GrcLifecycleStageDto {
+  stage: 'REQUIREMENT' | 'CONTROL_RISK_POLICY' | 'EVIDENCE' | 'AI_ANALYSIS' | 'HUMAN_REVIEW' | 'APPROVAL' | 'REMEDIATION' | 'AUTHORITATIVE_STATE';
+  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'BLOCKED' | 'NOT_APPLICABLE' | 'WARNING';
+  label: string;
+  details?: string | null;
+  timestamp?: string | null;
+  blockerReason?: string | null;
+}
+
+export interface GrcLifecycleDto {
+  resourceType: string;
+  resourceId: string;
+  resourceTitle: string;
+  organizationId: string;
+  authoritativeStatus: string;
+  isBlocked: boolean;
+  blockedReason?: string | null;
+  frameworkReference?: {
+    id: string;
+    identifier: string;
+    title: string;
+    frameworkCode: string;
+  } | null;
+  stages: GrcLifecycleStageDto[];
+  evidences: Array<{
+    id: string;
+    title: string;
+    fileName: string;
+    scanStatus: string;
+    status: string;
+    isValidProof: boolean;
+  }>;
+  aiAnalyses: Array<{
+    id: string;
+    status: string;
+    findingsCount: number;
+    unreviewedCount: number;
+  }>;
+  approvals: Array<{
+    id: string;
+    title: string;
+    status: string;
+    purpose?: string | null;
+  }>;
+  remediations: Array<{
+    id: string;
+    title: string;
+    status: string;
+    owner?: string | null;
+    dueDate?: string | null;
+    isOverdue: boolean;
+  }>;
+}
+
+export interface WorkflowAttentionItemDto {
+  id: string;
+  category: 'PENDING_APPROVAL' | 'OVERDUE_REMEDIATION' | 'UNREVIEWED_AI_FINDING' | 'UNSCANNED_EVIDENCE' | 'DUE_SOON_TASK';
+  title: string;
+  description: string;
+  resourceType: string;
+  resourceId: string;
+  priority: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+  createdAt: string;
+  dueDate?: string | null;
+}
+
+export interface WorkflowAttentionSummaryDto {
+  items: WorkflowAttentionItemDto[];
+  total: number;
+  pendingApprovalsCount: number;
+  overdueRemediationsCount: number;
+  unreviewedAiFindingsCount: number;
 }
 
 // --------------------------------------------------
