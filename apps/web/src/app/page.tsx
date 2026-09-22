@@ -30,6 +30,7 @@ import { ApprovalCenterView } from '@/components/approval/approval-center-view';
 import { ComingSoon } from '@/components/dashboard/coming-soon';
 import { OnboardingWizard } from '@/components/onboarding/onboarding-wizard';
 import { ToastProvider } from '@/context/toast-context';
+import { FloatingSupportChat } from '@/components/intelligence/floating-support-chat';
 
 export default function MainPage() {
   const { user, organization, loading } = useAuth();
@@ -103,6 +104,8 @@ export default function MainPage() {
         {showWizard && (
           <OnboardingWizard onComplete={() => setShowWizard(false)} />
         )}
+
+        <FloatingSupportChat />
       </div>
     </ToastProvider>
   );

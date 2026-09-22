@@ -11,6 +11,10 @@ import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { FrameworksModule } from '../frameworks/frameworks.module';
 import { PrismaModule } from '../prisma/prisma.module';
 
+import { GrcContextResolver } from './ai/grc-context-resolver';
+import { GrcIntelligenceChatService } from './ai/grc-intelligence-chat.service';
+import { ResourceAuthorizationService } from '../auth/resource-authorization.service';
+
 @Module({
   imports: [PrismaModule, AuditLogsModule, FrameworksModule],
   controllers: [ControlsController, GrcIntelligenceController],
@@ -21,7 +25,10 @@ import { PrismaModule } from '../prisma/prisma.module';
     GeminiProvider,
     ClaudeProvider,
     MockAiProvider,
+    GrcContextResolver,
+    GrcIntelligenceChatService,
+    ResourceAuthorizationService,
   ],
-  exports: [ControlsService, AiRouterService],
+  exports: [ControlsService, AiRouterService, GrcIntelligenceChatService],
 })
 export class ControlsModule {}

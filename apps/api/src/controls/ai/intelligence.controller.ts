@@ -1,9 +1,11 @@
-import { Controller, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Body, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { AiRouterService } from './ai-router.service';
+import { GrcIntelligenceChatService, GrcChatRequestDto } from './grc-intelligence-chat.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { Role } from '@omnigrc/shared';
 
 export interface GrcIntelligenceAssistDto {
   prompt?: string;
@@ -16,8 +18,26 @@ export interface GrcIntelligenceAssistDto {
 export class GrcIntelligenceController {
   constructor(
     private readonly aiRouterService: AiRouterService,
+    private readonly chatService: GrcIntelligenceChatService,
     private readonly prisma: PrismaService,
   ) {}
+
+  @Get('questions')
+  getDiscoveryQuestions() {
+    return {
+      questions: this.chatService.getPredefinedQuestions(),
+    };
+  }
+
+  @Post('chat')
+  async handleChatRequest(
+    @CurrentUser('organizationId') organizationId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUser('role') role: Role,
+    @Body() dto: GrcChatRequestDto,
+  ) {
+    return this.chatService.processChat(organizationId, userId, role, dto);
+  }
 
   @Post('assist')
   async getAiAssistance(

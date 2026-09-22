@@ -34,6 +34,7 @@ lerna-debug.log*
 *.sqlite
 *.sqlite-journal
 prisma/migrations/*_local
+apps/api/uploads/
 
 # OS & System Files
 .DS_Store
