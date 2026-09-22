@@ -48,13 +48,39 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       actingViaMsspId = payload.actingViaMsspId;
     }
 
+    // Live OrganizationMembership validation to ensure revoked/suspended memberships lose operational access immediately
+    let effectiveRole = user.role;
+    const membership = await this.prisma.organizationMembership.findUnique({
+      where: {
+        organizationId_userId: {
+          organizationId: effectiveOrgId,
+          userId: user.id,
+        },
+      },
+      select: { status: true, role: true },
+    });
+
+    if (membership) {
+      if (membership.status !== 'ACTIVE') {
+        throw new UnauthorizedException({
+          statusCode: 401,
+          message: 'Organization membership has been suspended or revoked.',
+          code: 'PRODUCT_ACCESS_REVOKED',
+          status: membership.status,
+        });
+      }
+      if (membership.role) {
+        effectiveRole = membership.role as any;
+      }
+    }
+
     return {
       id: user.id,
       userId: user.id,
       email: user.email,
       organizationId: effectiveOrgId,
       actingViaMsspId,
-      role: user.role,
+      role: effectiveRole,
       name: user.name,
     };
   }

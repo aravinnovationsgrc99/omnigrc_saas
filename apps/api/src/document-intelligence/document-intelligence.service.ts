@@ -363,7 +363,7 @@ export class DocumentIntelligenceService {
       throw new BadRequestException(`Unsupported conversion type "${conversionType}". Supported types: COMPLIANCE_TASK, RISK, POLICY_EXCEPTION, CONTROL_MAPPING.`);
     }
 
-    await this.prisma.extractedFinding.update({
+    await this.prisma.extractedFinding.updateMany({
       where: { id: finding.id },
       data: {
         humanComment: finding.humanComment ? `${finding.humanComment} | Converted to ${conversionType}:${createdRecordId}` : `Converted to ${conversionType}:${createdRecordId}`,
