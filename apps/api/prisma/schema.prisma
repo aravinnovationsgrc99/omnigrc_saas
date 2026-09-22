@@ -234,6 +234,8 @@ model Organization {
   evidences           Evidence[]
   approvalWorkflows   ApprovalWorkflow[]
   approvalInstances   ApprovalInstance[]
+  documentAnalyses    DocumentAnalysis[]
+  extractedFindings   ExtractedFinding[]
 
   @@index([parentOrganizationId])
   @@map("organizations")
@@ -396,6 +398,7 @@ model Framework {
   clauses      FrameworkClause[]
   versions     FrameworkVersion[]
   entitlements OrganizationFrameworkEntitlement[]
+  documentAnalyses DocumentAnalysis[]
 
   @@map("frameworks")
 }
@@ -415,6 +418,7 @@ model FrameworkVersion {
   framework    Framework                          @relation(fields: [frameworkId], references: [id], onDelete: Cascade)
   references   FrameworkReference[]
   entitlements OrganizationFrameworkEntitlement[]
+  documentAnalyses DocumentAnalysis[]
 
   @@unique([frameworkId, version])
   @@index([frameworkId])
@@ -468,6 +472,7 @@ model FrameworkReference {
   mappings ControlFrameworkMapping[]
   evidenceAssociations EvidenceFrameworkReference[]
   approvalInstances ApprovalInstance[]
+  documentAnalyses DocumentAnalysis[]
 
   @@unique([frameworkVersionId, identifier])
   @@index([frameworkVersionId])
@@ -1234,6 +1239,7 @@ model Evidence {
   incidentAssociations       IncidentEvidence[]
   frameworkReferences        EvidenceFrameworkReference[]
   approvalAssociations       EvidenceApproval[]
+  documentAnalyses           DocumentAnalysis[]
 
   @@index([organizationId])
   @@index([status])
@@ -1701,6 +1707,189 @@ model EvidenceApproval {
   @@index([evidenceId])
   @@map("evidence_approvals")
 }
+
+// --------------------------------------------------
+// PHASE 5 — AI DOCUMENT INTELLIGENCE MODELS
+// --------------------------------------------------
+
+enum AnalysisStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+  PARTIAL
+}
+
+enum ExtractionStatus {
+  SUCCESS
+  PARTIAL_TRUNCATED
+  OCR_UNAVAILABLE
+  MALFORMED_DOCUMENT
+  UNSUPPORTED_FORMAT
+  EMPTY_DOCUMENT
+}
+
+enum AnalysisContextType {
+  GENERAL
+  FRAMEWORK
+  FRAMEWORK_REFERENCE
+}
+
+enum FindingType {
+  KEY_POINT
+  OBLIGATION
+  DEADLINE
+  REQUIREMENT
+  RISK
+  CONTROL_IMPLICATION
+  FRAMEWORK_REFERENCE
+  ACTION
+  ENTITY
+  CONTACT
+  AMOUNT
+  DATE
+}
+
+enum DateCategory {
+  DOCUMENT_DATE
+  EFFECTIVE_DATE
+  DEADLINE
+  REVIEW_DATE
+  EXPIRY_DATE
+  REFERENCE_DATE
+}
+
+enum FindingConfidence {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum FindingReviewStatus {
+  UNREVIEWED
+  ACCEPTED
+  REJECTED
+  EDITED
+  DISMISSED
+}
+
+model DocumentAnalysis {
+  id                    String              @id @default(uuid())
+  organizationId        String
+  evidenceId            String?
+  evidenceFileName      String?
+  evidenceChecksum      String?
+  fingerprint           String
+  analysisVersionNumber Int                 @default(1)
+  analysisContext       AnalysisContextType @default(GENERAL)
+  frameworkId           String?
+  frameworkVersionId    String?
+  frameworkReferenceId  String?
+  status                AnalysisStatus      @default(QUEUED)
+  extractionStatus      ExtractionStatus    @default(SUCCESS)
+  extractionMethod      String
+  isTruncated           Boolean             @default(false)
+  truncationReason      String?
+  errorMessage          String?
+  requestedById         String
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  evidence           Evidence?           @relation(fields: [evidenceId], references: [id], onDelete: SetNull)
+  framework          Framework?          @relation(fields: [frameworkId], references: [id], onDelete: SetNull)
+  frameworkVersion    FrameworkVersion?   @relation(fields: [frameworkVersionId], references: [id], onDelete: SetNull)
+  frameworkReference FrameworkReference? @relation(fields: [frameworkReferenceId], references: [id], onDelete: SetNull)
+
+  runs               AnalysisRun[]
+  findings           ExtractedFinding[]
+
+  @@index([organizationId])
+  @@index([evidenceId])
+  @@index([status])
+  @@index([fingerprint])
+  @@map("document_analyses")
+}
+
+model AnalysisRun {
+  id                 String         @id @default(uuid())
+  documentAnalysisId String
+  providerName       String
+  modelTier          ModelTier      @default(TIER_1)
+  promptVersion      String         @default("v1.0")
+  schemaVersion      String         @default("v1.0")
+  promptTokens       Int?
+  completionTokens   Int?
+  totalTokens        Int?
+  durationMs         Int?
+  status             AnalysisStatus @default(QUEUED)
+  errorMessage       String?
+  createdAt          DateTime       @default(now())
+
+  documentAnalysis DocumentAnalysis @relation(fields: [documentAnalysisId], references: [id], onDelete: Cascade)
+
+  @@index([documentAnalysisId])
+  @@map("analysis_runs")
+}
+
+model ExtractedFinding {
+  id                   String              @id @default(uuid())
+  documentAnalysisId   String
+  organizationId       String
+  findingType          FindingType
+  dateCategory         DateCategory?
+
+  // Immutable Original AI Output
+  aiTitle              String
+  aiDescription        String
+  aiConfidence         FindingConfidence   @default(MEDIUM)
+  aiRawScore           Float?
+  aiSourceSnippet      String?
+  aiSourcePage         Int?
+  aiSourceSection      String?
+  aiSourceSheet        String?
+  aiSourceCell         String?
+  aiSourceRow          Int?
+  aiSourceCol          Int?
+  aiCharOffsetStart    Int?
+  aiCharOffsetEnd      Int?
+  aiDueDate            DateTime?
+  aiRelativeExpression String?
+  aiResponsibleParty   String?
+  aiSuggestedFrameworkCode String?
+  aiSuggestedReferenceId   String?
+  aiSuggestedControlId     String?
+  aiSuggestedRiskId        String?
+  aiRationale              String?
+
+  // Server-Validated Suggestions
+  isValidatedControl   Boolean             @default(false)
+  isValidatedRisk      Boolean             @default(false)
+  isValidatedReference Boolean             @default(false)
+
+  // Mutable Human Review Layer
+  reviewStatus         FindingReviewStatus @default(UNREVIEWED)
+  reviewedById         String?
+  reviewedAt           DateTime?
+  editedTitle          String?
+  editedDescription    String?
+  editedCategory       FindingType?
+  humanComment         String?
+
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  documentAnalysis DocumentAnalysis @relation(fields: [documentAnalysisId], references: [id], onDelete: Cascade)
+  organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([documentAnalysisId])
+  @@index([organizationId])
+  @@index([findingType])
+  @@index([reviewStatus])
+  @@map("extracted_findings")
+}
+
 
 
 

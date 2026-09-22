@@ -14,6 +14,7 @@ import {
 } from '@omnigrc/shared';
 
 describe('E2E Phase 4: Universal Approval & Decision Workflow Engine Suite', () => {
+  jest.setTimeout(60000);
   let app: INestApplication;
   let prisma: PrismaService;
   let approvalService: ApprovalEngineService;

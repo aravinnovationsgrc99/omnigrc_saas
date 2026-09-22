@@ -2097,4 +2097,176 @@ export interface PaginatedApprovalsDto {
   limit: number;
 }
 
+// --------------------------------------------------
+// PHASE 5 — AI DOCUMENT INTELLIGENCE DTOs & ENUMS
+// --------------------------------------------------
+
+export enum AnalysisStatus {
+  QUEUED = "QUEUED",
+  PROCESSING = "PROCESSING",
+  COMPLETED = "COMPLETED",
+  FAILED = "FAILED",
+  CANCELLED = "CANCELLED",
+  PARTIAL = "PARTIAL",
+}
+
+export enum ExtractionStatus {
+  SUCCESS = "SUCCESS",
+  PARTIAL_TRUNCATED = "PARTIAL_TRUNCATED",
+  OCR_UNAVAILABLE = "OCR_UNAVAILABLE",
+  MALFORMED_DOCUMENT = "MALFORMED_DOCUMENT",
+  UNSUPPORTED_FORMAT = "UNSUPPORTED_FORMAT",
+  EMPTY_DOCUMENT = "EMPTY_DOCUMENT",
+}
+
+export enum AnalysisContextType {
+  GENERAL = "GENERAL",
+  FRAMEWORK = "FRAMEWORK",
+  FRAMEWORK_REFERENCE = "FRAMEWORK_REFERENCE",
+}
+
+export enum FindingType {
+  KEY_POINT = "KEY_POINT",
+  OBLIGATION = "OBLIGATION",
+  DEADLINE = "DEADLINE",
+  REQUIREMENT = "REQUIREMENT",
+  RISK = "RISK",
+  CONTROL_IMPLICATION = "CONTROL_IMPLICATION",
+  FRAMEWORK_REFERENCE = "FRAMEWORK_REFERENCE",
+  ACTION = "ACTION",
+  ENTITY = "ENTITY",
+  CONTACT = "CONTACT",
+  AMOUNT = "AMOUNT",
+  DATE = "DATE",
+}
+
+export enum DateCategory {
+  DOCUMENT_DATE = "DOCUMENT_DATE",
+  EFFECTIVE_DATE = "EFFECTIVE_DATE",
+  DEADLINE = "DEADLINE",
+  REVIEW_DATE = "REVIEW_DATE",
+  EXPIRY_DATE = "EXPIRY_DATE",
+  REFERENCE_DATE = "REFERENCE_DATE",
+}
+
+export enum FindingConfidence {
+  HIGH = "HIGH",
+  MEDIUM = "MEDIUM",
+  LOW = "LOW",
+}
+
+export enum FindingReviewStatus {
+  UNREVIEWED = "UNREVIEWED",
+  ACCEPTED = "ACCEPTED",
+  REJECTED = "REJECTED",
+  EDITED = "EDITED",
+  DISMISSED = "DISMISSED",
+}
+
+export interface ExtractedFindingDto {
+  id: string;
+  documentAnalysisId: string;
+  organizationId: string;
+  findingType: FindingType;
+  dateCategory?: DateCategory | null;
+
+  // Immutable Original AI Output
+  aiTitle: string;
+  aiDescription: string;
+  aiConfidence: FindingConfidence;
+  aiRawScore?: number | null;
+  aiSourceSnippet?: string | null;
+  aiSourcePage?: number | null;
+  aiSourceSection?: string | null;
+  aiSourceSheet?: string | null;
+  aiSourceCell?: string | null;
+  aiSourceRow?: number | null;
+  aiSourceCol?: number | null;
+  aiCharOffsetStart?: number | null;
+  aiCharOffsetEnd?: number | null;
+  aiDueDate?: string | null;
+  aiRelativeExpression?: string | null;
+  aiResponsibleParty?: string | null;
+  aiSuggestedFrameworkCode?: string | null;
+  aiSuggestedReferenceId?: string | null;
+  aiSuggestedControlId?: string | null;
+  aiSuggestedRiskId?: string | null;
+  aiRationale?: string | null;
+
+  // Server-Validated Flags
+  isValidatedControl?: boolean;
+  isValidatedRisk?: boolean;
+  isValidatedReference?: boolean;
+
+  // Mutable Human Review Layer
+  reviewStatus: FindingReviewStatus;
+  reviewedById?: string | null;
+  reviewedAt?: string | null;
+  editedTitle?: string | null;
+  editedDescription?: string | null;
+  editedCategory?: FindingType | null;
+  humanComment?: string | null;
+
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AnalysisRunDto {
+  id: string;
+  documentAnalysisId: string;
+  providerName: string;
+  modelTier: ModelTier;
+  promptVersion: string;
+  schemaVersion: string;
+  promptTokens?: number | null;
+  completionTokens?: number | null;
+  totalTokens?: number | null;
+  durationMs?: number | null;
+  status: AnalysisStatus;
+  errorMessage?: string | null;
+  createdAt: string;
+}
+
+export interface DocumentAnalysisDto {
+  id: string;
+  organizationId: string;
+  evidenceId?: string | null;
+  evidenceFileName?: string | null;
+  evidenceChecksum?: string | null;
+  fingerprint: string;
+  analysisVersionNumber: number;
+  analysisContext: AnalysisContextType;
+  frameworkId?: string | null;
+  frameworkVersionId?: string | null;
+  frameworkReferenceId?: string | null;
+  status: AnalysisStatus;
+  extractionStatus: ExtractionStatus;
+  extractionMethod: string;
+  isTruncated: boolean;
+  truncationReason?: string | null;
+  errorMessage?: string | null;
+  requestedById: string;
+  createdAt: string;
+  updatedAt: string;
+  runs?: AnalysisRunDto[];
+  findings?: ExtractedFindingDto[];
+}
+
+export interface CreateAnalysisDto {
+  analysisContext?: AnalysisContextType;
+  frameworkId?: string;
+  frameworkIds?: string[];
+  frameworkVersionId?: string;
+  frameworkReferenceId?: string;
+}
+
+export interface ReviewFindingDto {
+  reviewStatus: FindingReviewStatus;
+  editedTitle?: string;
+  editedDescription?: string;
+  editedCategory?: FindingType;
+  humanComment?: string;
+}
+
+
 

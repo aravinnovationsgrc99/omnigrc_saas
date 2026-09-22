@@ -36,6 +36,7 @@ import { DepartmentsModule } from './departments/departments.module';
 import { ProjectsModule } from './projects/projects.module';
 import { OrganizationMembersModule } from './organization-members/organization-members.module';
 import { ApprovalEngineModule } from './approval/approval-engine.module';
+import { DocumentIntelligenceModule } from './document-intelligence/document-intelligence.module';
 
 @Module({
   imports: [
@@ -83,6 +84,7 @@ import { ApprovalEngineModule } from './approval/approval-engine.module';
     ProjectsModule,
     OrganizationMembersModule,
     ApprovalEngineModule,
+    DocumentIntelligenceModule,
   ],
   providers: [
     {

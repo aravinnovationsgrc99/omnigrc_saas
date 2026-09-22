@@ -144,16 +144,21 @@ export class FrameworkEntitlementsService {
         // Deterministic Rule 1: Explicit version record overrides framework-wide setting
         return this.isEffectivelyActive(versionRecord, now);
       }
+      const fwRecord = records.find((r) => r.versionId === null);
+      if (fwRecord) {
+        return this.isEffectivelyActive(fwRecord, now);
+      }
+      return false;
     }
 
-    // 2. Fall back to framework-wide entitlement (versionId = null)
+    // 2. If no specific versionId requested, fall back to framework-wide entitlement (versionId = null)
     const fwRecord = records.find((r) => r.versionId === null);
     if (fwRecord) {
       return this.isEffectivelyActive(fwRecord, now);
     }
 
-    // 3. If versionId was not specified, check if ANY version record is active
-    return records.some((r) => this.isEffectivelyActive(r, now));
+    // 3. If versionId was not specified and no framework-wide record exists, check if ANY version record is active
+    return records.some((r) => r.versionId !== null && this.isEffectivelyActive(r, now));
   }
 
   /**
