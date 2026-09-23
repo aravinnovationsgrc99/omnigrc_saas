@@ -221,4 +221,40 @@ describe('GRC Intelligence Chat & Security Acceptance Suite', () => {
     expect(res.sourcesUsed.some((s) => s.includes('Authorized Organization Data: Risks'))).toBe(true);
     expect(res.sourcesUsed).toContain('AI-generated explanation');
   });
+
+  // 11. Predefined Highest Risks Question produces Grounded Risk Answer
+  it('11. predefined highest-risk question produces a real grounded risk answer and does NOT return generic assistant greeting', async () => {
+    const res = await chatService.processChat(orgA, userAdminA.id, Role.ADMIN, {
+      prompt: 'What are the highest-risk areas and top risk scores across our organization?',
+      questionPillKey: 'q1-highest-risks',
+    });
+
+    expect(res.answer).toBeDefined();
+    expect(res.answer).not.toBe('I am ready to assist with OMNiGRC compliance questions.');
+    expect(res.answer).toContain('Org A Confidential Risk 101');
+    expect(res.answer).toContain('Score: 16');
+    expect(res.sourcesUsed.some((s) => s.includes('Authorized Organization Data: Risks'))).toBe(true);
+  });
+
+  // 12. Predefined Questions Intent Resolution Matrix (At least 5 capabilities)
+  it('12. predefined capability questions map to grounded live organization data summaries', async () => {
+    const questionsToTest = [
+      { key: 'q1-highest-risks', prompt: 'What are the highest-risk areas and top risk scores across our organization?', expectedSource: 'Risks' },
+      { key: 'q3-open-vulnerabilities', prompt: 'What open vulnerabilities and CVE findings are currently tracked?', expectedSource: 'Vulnerabilities' },
+      { key: 'q5-overdue-audits', prompt: 'Are there any overdue audit plans or upcoming business audits scheduled?', expectedSource: 'Audit Plans' },
+      { key: 'q9-vendor-status', prompt: 'What is the vendor assessment status and third-party risk posture?', expectedSource: 'Vendors' },
+      { key: 'q11-open-incidents', prompt: 'What open security incidents and remediation workflows are currently active?', expectedSource: 'Incidents' },
+    ];
+
+    for (const q of questionsToTest) {
+      const res = await chatService.processChat(orgA, userAdminA.id, Role.ADMIN, {
+        prompt: q.prompt,
+        questionPillKey: q.key,
+      });
+
+      expect(res.answer).toBeDefined();
+      expect(res.answer).not.toBe('I am ready to assist with OMNiGRC compliance questions.');
+      expect(res.sourcesUsed.some((s) => s.includes(`Authorized Organization Data: ${q.expectedSource}`))).toBe(true);
+    }
+  });
 });

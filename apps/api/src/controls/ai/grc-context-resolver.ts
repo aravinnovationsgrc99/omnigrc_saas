@@ -46,29 +46,32 @@ export class GrcContextResolver {
     if (lower.includes('incident')) {
       return LiveDataIntent.OPEN_INCIDENTS;
     }
-    if (lower.includes('finding') || lower.includes('capa')) {
+    if (lower.includes('finding') || lower.includes('capa') || lower.includes('remediation')) {
       return LiveDataIntent.UNRESOLVED_AUDIT_FINDINGS;
     }
-    if (lower.includes('audit') && (lower.includes('overdue') || lower.includes('plan') || lower.includes('schedule'))) {
+    if (lower.includes('audit') && (lower.includes('overdue') || lower.includes('plan') || lower.includes('schedule') || lower.includes('business'))) {
       return LiveDataIntent.OVERDUE_AUDITS;
     }
-    if (lower.includes('risk') && (lower.includes('open') || lower.includes('my') || lower.includes('assigned') || lower.includes('overdue') || lower.includes('highest') || lower.includes('score'))) {
+    if (lower.includes('risk') && (lower.includes('open') || lower.includes('my') || lower.includes('assigned') || lower.includes('overdue') || lower.includes('highest') || lower.includes('score') || lower.includes('area') || lower.includes('attention') || lower.includes('mitigation'))) {
       return LiveDataIntent.MY_OPEN_RISKS;
     }
-    if (lower.includes('approval') && (lower.includes('pending') || lower.includes('signoff') || lower.includes('my') || lower.includes('need') || lower.includes('management') || lower.includes('attention'))) {
+    if (lower.includes('approval') && (lower.includes('pending') || lower.includes('signoff') || lower.includes('sign-off') || lower.includes('my') || lower.includes('need') || lower.includes('management') || lower.includes('attention'))) {
       return LiveDataIntent.MY_PENDING_APPROVALS;
     }
-    if (lower.includes('task') && (lower.includes('compliance') || lower.includes('my') || lower.includes('assigned') || lower.includes('due') || lower.includes('upcoming'))) {
+    if (lower.includes('task') && (lower.includes('compliance') || lower.includes('my') || lower.includes('assigned') || lower.includes('due') || lower.includes('upcoming') || lower.includes('overdue'))) {
       return LiveDataIntent.MY_COMPLIANCE_TASKS;
     }
     if (lower.includes('control') && (lower.includes('count') || lower.includes('summary') || lower.includes('mapped') || lower.includes('list') || lower.includes('missing') || lower.includes('mapping'))) {
       return LiveDataIntent.ORGANIZATION_CONTROLS_SUMMARY;
     }
-    if (lower.includes('framework') && (lower.includes('entitlement') || lower.includes('active') || lower.includes('licensed') || lower.includes('access') || lower.includes('posture'))) {
+    if ((lower.includes('framework') || lower.includes('compliance')) && (lower.includes('entitlement') || lower.includes('active') || lower.includes('licensed') || lower.includes('access') || lower.includes('posture'))) {
       return LiveDataIntent.ORGANIZATION_FRAMEWORK_ENTITLEMENTS;
     }
-    if (lower.includes('evidence') && (lower.includes('vault') || lower.includes('clean') || lower.includes('quarantined') || lower.includes('uploaded') || lower.includes('pending'))) {
+    if (lower.includes('evidence') && (lower.includes('vault') || lower.includes('clean') || lower.includes('quarantined') || lower.includes('uploaded') || lower.includes('pending') || lower.includes('verification'))) {
       return LiveDataIntent.ORGANIZATION_EVIDENCE_SUMMARY;
+    }
+    if (lower.includes('executive') || lower.includes('grc summary') || lower.includes('high-level')) {
+      return LiveDataIntent.ORGANIZATION_CONTROLS_SUMMARY;
     }
 
     return LiveDataIntent.NONE;

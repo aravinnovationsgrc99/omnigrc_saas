@@ -22,6 +22,18 @@ export class GeminiProvider implements AiProvider {
     return Boolean(this.genAI);
   }
 
+  async generateText(systemPrompt: string, userPrompt: string): Promise<string> {
+    if (!this.genAI) {
+      throw new Error('Gemini API client not initialized.');
+    }
+    const model = this.genAI.getGenerativeModel({
+      model: 'gemini-2.5-flash-lite',
+      systemInstruction: systemPrompt,
+    });
+    const result = await model.generateContent(userPrompt);
+    return result.response.text();
+  }
+
   async suggestMappings(params: {
     controlName: string;
     controlDescription: string;

@@ -301,10 +301,10 @@ export function GrcIntelligenceView() {
 
           {response.sourcesUsed && response.sourcesUsed.length > 0 && (
             <div className="space-y-2">
-              <div className="text-xs font-bold text-slate-600 uppercase tracking-wider">Attributed Sources</div>
+              <div className="text-xs font-bold text-slate-600 uppercase tracking-wider">Attributed Sources ({response.sourcesUsed.length})</div>
               <div className="flex flex-wrap gap-1.5">
                 {response.sourcesUsed.map((src: string, idx: number) => (
-                  <span key={idx} className="text-xs font-semibold bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg border border-slate-200">
+                  <span key={idx} className="text-xs font-semibold bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg border border-slate-200 break-words max-w-full">
                     {src}
                   </span>
                 ))}
