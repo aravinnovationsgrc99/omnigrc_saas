@@ -1,31 +1,166 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Sparkles, Bot, AlertTriangle, Send, Cpu, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Sparkles, Bot, AlertTriangle, Send, Cpu, CheckCircle2, BookOpen, HelpCircle, ArrowRight } from 'lucide-react';
 import { apiRequest } from '@/lib/api-client';
+
+export interface PredefinedQuestion {
+  key: string;
+  category: string;
+  label: string;
+  prompt: string;
+}
+
+export const PREDEFINED_GRC_QUESTIONS: PredefinedQuestion[] = [
+  {
+    key: 'q1-highest-risks',
+    category: 'Risks',
+    label: 'Highest Risk Areas',
+    prompt: 'What are the highest-risk areas and top risk scores across our organization?',
+  },
+  {
+    key: 'q2-risks-attention',
+    category: 'Risks',
+    label: 'Risks Requiring Attention',
+    prompt: 'Which open risks require immediate management attention or mitigation?',
+  },
+  {
+    key: 'q3-open-vulnerabilities',
+    category: 'Vulnerabilities',
+    label: 'Open Vulnerabilities',
+    prompt: 'What open vulnerabilities and CVE findings are currently tracked?',
+  },
+  {
+    key: 'q4-controls-missing-evidence',
+    category: 'Controls',
+    label: 'Controls Missing Evidence',
+    prompt: 'Which security controls are missing linked evidence in the Evidence Vault?',
+  },
+  {
+    key: 'q5-overdue-audits',
+    category: 'Audits',
+    label: 'Overdue Audits',
+    prompt: 'Are there any overdue audit plans or upcoming business audits scheduled?',
+  },
+  {
+    key: 'q6-unresolved-findings',
+    category: 'Audits',
+    label: 'Unresolved Audit Findings',
+    prompt: 'What unresolved audit findings or document extraction findings need sign-off?',
+  },
+  {
+    key: 'q7-overdue-remediation',
+    category: 'Remediation',
+    label: 'Overdue CAPAs & Remediation',
+    prompt: 'What overdue CAPAs and remediation tasks link to open findings?',
+  },
+  {
+    key: 'q8-compliance-tasks',
+    category: 'Tasks',
+    label: 'Compliance Tasks Status',
+    prompt: 'What upcoming or overdue compliance tasks require action?',
+  },
+  {
+    key: 'q9-vendor-status',
+    category: 'Vendors',
+    label: 'Vendor Assessment Status',
+    prompt: 'What is the vendor assessment status and third-party risk posture?',
+  },
+  {
+    key: 'q10-pending-evidence',
+    category: 'Evidence',
+    label: 'Pending Evidence Status',
+    prompt: 'What evidence documents are currently pending upload or security verification?',
+  },
+  {
+    key: 'q11-open-incidents',
+    category: 'Incidents',
+    label: 'Open Security Incidents',
+    prompt: 'What open security incidents and remediation workflows are currently active?',
+  },
+  {
+    key: 'q12-compliance-posture',
+    category: 'Compliance',
+    label: 'Current Compliance Posture',
+    prompt: 'What is our overall compliance posture across active frameworks?',
+  },
+  {
+    key: 'q13-framework-mapping',
+    category: 'Controls',
+    label: 'Framework Control Mapping',
+    prompt: 'How do security controls map to framework reference clauses?',
+  },
+  {
+    key: 'q14-management-attention',
+    category: 'Approvals',
+    label: 'Management Attention Items',
+    prompt: 'What pending approvals, sign-offs, and critical attention items exist?',
+  },
+  {
+    key: 'q15-executive-summary',
+    category: 'Executive Summary',
+    label: 'Organization GRC Summary',
+    prompt: 'Can you provide a high-level executive GRC summary for our organization?',
+  },
+];
 
 export function GrcIntelligenceView() {
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
+  const [questions, setQuestions] = useState<PredefinedQuestion[]>(PREDEFINED_GRC_QUESTIONS);
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [response, setResponse] = useState<any | null>(null);
 
-  const handleAssistSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!prompt.trim()) return;
+  useEffect(() => {
+    const fetchQuestions = async () => {
+      try {
+        const data = await apiRequest<{ questions: PredefinedQuestion[] }>('/intelligence/questions');
+        if (data && data.questions && Array.isArray(data.questions) && data.questions.length >= 10) {
+          setQuestions(data.questions.slice(0, 15));
+        }
+      } catch {
+        // Fallback to PREDEFINED_GRC_QUESTIONS static constant
+      }
+    };
+    fetchQuestions();
+  }, []);
+
+  const executeQuery = async (queryText: string, questionKey?: string) => {
+    if (!queryText.trim() || loading) return;
 
     setLoading(true);
+    setPrompt(queryText);
+
     try {
-      const data = await apiRequest('/intelligence/assist', {
+      const data = await apiRequest('/intelligence/chat', {
         method: 'POST',
-        body: JSON.stringify({ prompt: prompt.trim() }),
+        body: JSON.stringify({
+          prompt: queryText.trim(),
+          questionPillKey: questionKey,
+        }),
       });
-      setResponse(data);
+      setResponse({
+        tierUsed: 'Gemini 2.5 Flash / Knowledge Engine',
+        disclaimer: data.disclaimer || 'AI Assistance Disclaimer: Advisory suggestions generated by GRC Intelligence require human review.',
+        answer: data.answer,
+        sourcesUsed: data.sourcesUsed || [],
+      });
     } catch (err: any) {
-      alert(err.message || 'Error executing AI assistance query.');
+      alert(err.message || 'Error executing GRC Intelligence query.');
     } finally {
       setLoading(false);
     }
   };
+
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    executeQuery(prompt);
+  };
+
+  const categories = ['All', ...Array.from(new Set(questions.map((q) => q.category)))];
+  const filteredQuestions = selectedCategory === 'All'
+    ? questions
+    : questions.filter((q) => q.category === selectedCategory);
 
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 omni-fade-in space-y-6">
@@ -37,7 +172,7 @@ export function GrcIntelligenceView() {
             <h1 className="text-xl sm:text-2xl font-bold text-slate-900">GRC Intelligence Surface</h1>
           </div>
           <p className="text-xs sm:text-sm text-slate-600 mt-1">
-            LLM-powered compliance advisory, control mapping recommendations, and gap analysis assistance.
+            LLM-powered compliance advisory, bounded live context analysis, and control mapping recommendations.
           </p>
         </div>
       </div>
@@ -50,32 +185,94 @@ export function GrcIntelligenceView() {
         </div>
       </div>
 
-      {/* Query Form */}
+      {/* Query Input Card */}
       <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-4">
         <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
           <Bot className="w-5 h-5 text-teal-700" /> Ask GRC Intelligence
         </h3>
-        <form onSubmit={handleAssistSubmit} className="space-y-3">
+        <form onSubmit={handleFormSubmit} className="space-y-3">
           <textarea
-            rows={4}
-            placeholder="e.g., Recommend ISO 27001 and SOC 2 clauses for our data encryption at rest control, or request gap analysis..."
+            rows={3}
+            placeholder="Type any custom GRC query or select one of the 15 predefined capability questions below..."
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             className="w-full px-4 py-3 text-sm bg-white border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-teal-600 transition font-medium"
           />
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div className="text-xs text-slate-600 font-medium flex items-center gap-2">
-              <Cpu className="w-3.5 h-3.5 text-slate-500" /> Router: Tier 1 (Gemini) / Tier 2 (Claude 3.5)
+              <Cpu className="w-3.5 h-3.5 text-slate-500" /> Grounded Intent Engine &amp; Knowledge Base
             </div>
             <button
               type="submit"
               disabled={loading || !prompt.trim()}
-              className="inline-flex items-center gap-2 px-5 py-2 text-sm font-semibold rounded-xl bg-teal-700 hover:bg-teal-800 text-white shadow-sm disabled:opacity-50 transition"
+              className="inline-flex items-center gap-2 px-5 py-2 text-sm font-semibold rounded-xl bg-teal-700 hover:bg-teal-800 text-white shadow-sm disabled:opacity-50 transition w-full sm:w-auto justify-center"
             >
-              <Send className="w-4 h-4" /> {loading ? 'Analyzing...' : 'Generate Guidance'}
+              <Send className="w-4 h-4" /> {loading ? 'Analyzing Context...' : 'Execute Intelligence Query'}
             </button>
           </div>
         </form>
+      </div>
+
+      {/* Predefined 15 Questions Capability Section */}
+      <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2">
+            <BookOpen className="w-5 h-5 text-teal-700" />
+            <h3 className="text-base font-bold text-slate-900">Predefined Capability Questions ({questions.length})</h3>
+          </div>
+          <span className="text-xs font-semibold text-slate-500">
+            Click any question to analyze live organization context
+          </span>
+        </div>
+
+        {/* Category Tabs */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 omni-scroll">
+          {categories.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setSelectedCategory(cat)}
+              className={`text-xs font-semibold px-3 py-1.5 rounded-full whitespace-nowrap transition ${
+                selectedCategory === cat
+                  ? 'bg-teal-800 text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200'
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+
+        {/* 15 Question Cards Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
+          {filteredQuestions.map((q) => (
+            <button
+              key={q.key}
+              onClick={() => executeQuery(q.prompt, q.key)}
+              disabled={loading}
+              className="text-left p-4 rounded-xl bg-slate-50 hover:bg-teal-50/60 border border-slate-200 hover:border-teal-400 transition group flex flex-col justify-between space-y-2 shadow-xs disabled:opacity-50"
+            >
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono font-bold text-teal-800 bg-teal-100 px-2 py-0.5 rounded border border-teal-200 uppercase">
+                    {q.category}
+                  </span>
+                  <HelpCircle className="w-3.5 h-3.5 text-slate-400 group-hover:text-teal-600 transition" />
+                </div>
+                <h4 className="text-xs font-bold text-slate-900 group-hover:text-teal-900">
+                  {q.label}
+                </h4>
+                <p className="text-xs text-slate-600 font-medium leading-snug line-clamp-2">
+                  {q.prompt}
+                </p>
+              </div>
+
+              <div className="flex items-center text-[11px] font-semibold text-teal-700 group-hover:text-teal-900 pt-1">
+                <span>Run analysis</span>
+                <ArrowRight className="w-3 h-3 ml-1 group-hover:translate-x-0.5 transition-transform" />
+              </div>
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Response Display */}
@@ -84,10 +281,10 @@ export function GrcIntelligenceView() {
           <div className="flex items-center justify-between border-b border-slate-200 pb-3">
             <div className="flex items-center gap-2">
               <CheckCircle2 className="w-5 h-5 text-emerald-700" />
-              <h4 className="text-base font-bold text-slate-900">AI Advisory Suggestions</h4>
+              <h4 className="text-base font-bold text-slate-900">GRC Intelligence Advisory Response</h4>
             </div>
             <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded bg-slate-100 text-teal-800 border border-slate-200">
-              Tier: {response.tierUsed}
+              {response.tierUsed}
             </span>
           </div>
 
@@ -95,24 +292,24 @@ export function GrcIntelligenceView() {
             {response.disclaimer}
           </div>
 
-          {response.suggestions && response.suggestions.length > 0 ? (
-            <div className="space-y-3">
-              <h5 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Suggested Clause Mappings</h5>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {response.suggestions.map((s: any, idx: number) => (
-                  <div key={idx} className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
-                    <div className="flex justify-between items-center">
-                      <span className="font-mono text-xs font-bold text-teal-800 bg-teal-100 px-2 py-0.5 rounded border border-teal-200">{s.clauseCode}</span>
-                      <span className="text-xs font-semibold text-slate-600">Score: {(s.confidenceScore * 100).toFixed(0)}%</span>
-                    </div>
-                    <div className="text-xs font-bold text-slate-800 mt-1">{s.frameworkCode}</div>
-                    {s.reasoning && <div className="text-xs text-slate-600 mt-1 font-medium">{s.reasoning}</div>}
-                  </div>
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+            <div className="text-xs font-bold text-slate-700 uppercase tracking-wider">Analysis Result</div>
+            <div className="text-xs text-slate-800 font-normal leading-relaxed whitespace-pre-wrap">
+              {response.answer}
+            </div>
+          </div>
+
+          {response.sourcesUsed && response.sourcesUsed.length > 0 && (
+            <div className="space-y-2">
+              <div className="text-xs font-bold text-slate-600 uppercase tracking-wider">Attributed Sources</div>
+              <div className="flex flex-wrap gap-1.5">
+                {response.sourcesUsed.map((src: string, idx: number) => (
+                  <span key={idx} className="text-xs font-semibold bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg border border-slate-200">
+                    {src}
+                  </span>
                 ))}
               </div>
             </div>
-          ) : (
-            <div className="text-sm text-slate-600 font-medium">Analysis completed. No direct clause mappings were triggered for this prompt.</div>
           )}
         </div>
       )}

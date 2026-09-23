@@ -129,7 +129,7 @@ export function FloatingSupportChat() {
   const filteredPills = selectedCategory === 'All' ? pills : pills.filter((p) => p.category === selectedCategory);
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 omni-font-sans">
+    <div className="fixed bottom-4 sm:bottom-6 right-4 sm:right-6 z-50 omni-font-sans">
       {/* Floating Launcher Button */}
       {!isOpen && (
         <button
@@ -151,7 +151,7 @@ export function FloatingSupportChat() {
         <div
           role="dialog"
           aria-label="GRC Intelligence Support Panel"
-          className="w-[380px] sm:w-[440px] h-[600px] max-h-[85vh] bg-white border border-slate-200 rounded-2xl shadow-2xl flex flex-col overflow-hidden omni-fade-in"
+          className="fixed bottom-16 sm:bottom-20 right-3 sm:right-6 left-3 sm:left-auto w-auto sm:w-[440px] max-w-[calc(100vw-1.5rem)] h-[560px] max-h-[80vh] bg-white border border-slate-200 rounded-2xl shadow-2xl flex flex-col overflow-hidden omni-fade-in z-50"
         >
           {/* Header */}
           <div className="bg-slate-900 text-white px-4 py-3.5 flex items-center justify-between border-b border-slate-800">
@@ -267,7 +267,7 @@ export function FloatingSupportChat() {
                       : 'bg-white border border-slate-200 text-slate-800 rounded-bl-none'
                   }`}
                 >
-                  <div className="whitespace-pre-wrap leading-relaxed font-normal">{msg.content}</div>
+                  <div className="whitespace-pre-wrap leading-relaxed font-normal break-words overflow-hidden">{msg.content}</div>
 
                   {/* Source Indicators */}
                   {msg.sourcesUsed && msg.sourcesUsed.length > 0 && (

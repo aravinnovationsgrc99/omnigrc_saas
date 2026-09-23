@@ -8,6 +8,11 @@ export enum LiveDataIntent {
   ORGANIZATION_CONTROLS_SUMMARY = 'ORGANIZATION_CONTROLS_SUMMARY',
   ORGANIZATION_FRAMEWORK_ENTITLEMENTS = 'ORGANIZATION_FRAMEWORK_ENTITLEMENTS',
   ORGANIZATION_EVIDENCE_SUMMARY = 'ORGANIZATION_EVIDENCE_SUMMARY',
+  OPEN_VULNERABILITIES = 'OPEN_VULNERABILITIES',
+  OVERDUE_AUDITS = 'OVERDUE_AUDITS',
+  UNRESOLVED_AUDIT_FINDINGS = 'UNRESOLVED_AUDIT_FINDINGS',
+  VENDOR_ASSESSMENT_STATUS = 'VENDOR_ASSESSMENT_STATUS',
+  OPEN_INCIDENTS = 'OPEN_INCIDENTS',
   NONE = 'NONE',
 }
 
@@ -32,22 +37,37 @@ export class GrcContextResolver {
 
     const lower = query.toLowerCase();
 
-    if (lower.includes('risk') && (lower.includes('open') || lower.includes('my') || lower.includes('assigned') || lower.includes('overdue'))) {
+    if (lower.includes('vulnerab') || lower.includes('cve')) {
+      return LiveDataIntent.OPEN_VULNERABILITIES;
+    }
+    if (lower.includes('vendor') || lower.includes('third-party') || lower.includes('third party')) {
+      return LiveDataIntent.VENDOR_ASSESSMENT_STATUS;
+    }
+    if (lower.includes('incident')) {
+      return LiveDataIntent.OPEN_INCIDENTS;
+    }
+    if (lower.includes('finding') || lower.includes('capa')) {
+      return LiveDataIntent.UNRESOLVED_AUDIT_FINDINGS;
+    }
+    if (lower.includes('audit') && (lower.includes('overdue') || lower.includes('plan') || lower.includes('schedule'))) {
+      return LiveDataIntent.OVERDUE_AUDITS;
+    }
+    if (lower.includes('risk') && (lower.includes('open') || lower.includes('my') || lower.includes('assigned') || lower.includes('overdue') || lower.includes('highest') || lower.includes('score'))) {
       return LiveDataIntent.MY_OPEN_RISKS;
     }
-    if (lower.includes('approval') && (lower.includes('pending') || lower.includes('signoff') || lower.includes('my') || lower.includes('need'))) {
+    if (lower.includes('approval') && (lower.includes('pending') || lower.includes('signoff') || lower.includes('my') || lower.includes('need') || lower.includes('management') || lower.includes('attention'))) {
       return LiveDataIntent.MY_PENDING_APPROVALS;
     }
-    if (lower.includes('task') && (lower.includes('compliance') || lower.includes('my') || lower.includes('assigned') || lower.includes('due'))) {
+    if (lower.includes('task') && (lower.includes('compliance') || lower.includes('my') || lower.includes('assigned') || lower.includes('due') || lower.includes('upcoming'))) {
       return LiveDataIntent.MY_COMPLIANCE_TASKS;
     }
-    if (lower.includes('control') && (lower.includes('count') || lower.includes('summary') || lower.includes('mapped') || lower.includes('list'))) {
+    if (lower.includes('control') && (lower.includes('count') || lower.includes('summary') || lower.includes('mapped') || lower.includes('list') || lower.includes('missing') || lower.includes('mapping'))) {
       return LiveDataIntent.ORGANIZATION_CONTROLS_SUMMARY;
     }
-    if (lower.includes('framework') && (lower.includes('entitlement') || lower.includes('active') || lower.includes('licensed') || lower.includes('access'))) {
+    if (lower.includes('framework') && (lower.includes('entitlement') || lower.includes('active') || lower.includes('licensed') || lower.includes('access') || lower.includes('posture'))) {
       return LiveDataIntent.ORGANIZATION_FRAMEWORK_ENTITLEMENTS;
     }
-    if (lower.includes('evidence') && (lower.includes('vault') || lower.includes('clean') || lower.includes('quarantined') || lower.includes('uploaded'))) {
+    if (lower.includes('evidence') && (lower.includes('vault') || lower.includes('clean') || lower.includes('quarantined') || lower.includes('uploaded') || lower.includes('pending'))) {
       return LiveDataIntent.ORGANIZATION_EVIDENCE_SUMMARY;
     }
 
@@ -166,6 +186,111 @@ export class GrcContextResolver {
             intent,
             summaryText: `Organization has ${count} evidence document(s) stored in the Evidence Vault.`,
             sourceTag: 'Authorized Organization Data: Evidence Vault',
+          };
+        }
+
+        case LiveDataIntent.OPEN_VULNERABILITIES: {
+          const items = await this.prisma.vulnerability.findMany({
+            where: { organizationId, status: 'OPEN' },
+            take: 5,
+            select: { id: true, title: true, severity: true, cveId: true },
+          });
+          if (items.length === 0) {
+            return {
+              intent,
+              summaryText: 'Organization currently has 0 open vulnerabilities recorded.',
+              sourceTag: 'Authorized Organization Data: Vulnerabilities',
+            };
+          }
+          const summary = items.map((v) => `- [${v.cveId || v.id.slice(0, 8)}] "${v.title}" (Severity: ${v.severity})`).join('\n');
+          return {
+            intent,
+            summaryText: `Found ${items.length} open vulnerability record(s):\n${summary}`,
+            sourceTag: 'Authorized Organization Data: Vulnerabilities',
+          };
+        }
+
+        case LiveDataIntent.OVERDUE_AUDITS: {
+          const items = await this.prisma.auditPlan.findMany({
+            where: { organizationId },
+            take: 5,
+            select: { id: true, title: true, status: true },
+          });
+          if (items.length === 0) {
+            return {
+              intent,
+              summaryText: 'Organization currently has 0 audit plans registered.',
+              sourceTag: 'Authorized Organization Data: Audit Plans',
+            };
+          }
+          const summary = items.map((a) => `- [Audit ${a.id.slice(0, 8)}] "${a.title}" (Status: ${a.status})`).join('\n');
+          return {
+            intent,
+            summaryText: `Found ${items.length} audit plan(s):\n${summary}`,
+            sourceTag: 'Authorized Organization Data: Audit Plans',
+          };
+        }
+
+        case LiveDataIntent.UNRESOLVED_AUDIT_FINDINGS: {
+          const items = await this.prisma.auditFinding.findMany({
+            where: { organizationId },
+            take: 5,
+            select: { id: true, title: true, severity: true, status: true },
+          });
+          if (items.length === 0) {
+            return {
+              intent,
+              summaryText: 'Organization currently has 0 audit findings recorded.',
+              sourceTag: 'Authorized Organization Data: Audit Findings',
+            };
+          }
+          const summary = items.map((f) => `- [Finding ${f.id.slice(0, 8)}] "${f.title}" (Severity: ${f.severity}, Status: ${f.status})`).join('\n');
+          return {
+            intent,
+            summaryText: `Found ${items.length} audit finding(s):\n${summary}`,
+            sourceTag: 'Authorized Organization Data: Audit Findings',
+          };
+        }
+
+        case LiveDataIntent.VENDOR_ASSESSMENT_STATUS: {
+          const items = await this.prisma.vendor.findMany({
+            where: { organizationId },
+            take: 5,
+            select: { id: true, name: true, category: true, status: true },
+          });
+          if (items.length === 0) {
+            return {
+              intent,
+              summaryText: 'Organization currently has 0 third-party vendors registered.',
+              sourceTag: 'Authorized Organization Data: Vendors',
+            };
+          }
+          const summary = items.map((v) => `- [Vendor ${v.id.slice(0, 8)}] "${v.name}" (Category: ${v.category}, Status: ${v.status})`).join('\n');
+          return {
+            intent,
+            summaryText: `Found ${items.length} vendor record(s):\n${summary}`,
+            sourceTag: 'Authorized Organization Data: Vendors',
+          };
+        }
+
+        case LiveDataIntent.OPEN_INCIDENTS: {
+          const items = await this.prisma.incident.findMany({
+            where: { organizationId },
+            take: 5,
+            select: { id: true, title: true, severity: true, status: true },
+          });
+          if (items.length === 0) {
+            return {
+              intent,
+              summaryText: 'Organization currently has 0 open security incidents.',
+              sourceTag: 'Authorized Organization Data: Incidents',
+            };
+          }
+          const summary = items.map((i) => `- [Incident ${i.id.slice(0, 8)}] "${i.title}" (Severity: ${i.severity}, Status: ${i.status})`).join('\n');
+          return {
+            intent,
+            summaryText: `Found ${items.length} incident record(s):\n${summary}`,
+            sourceTag: 'Authorized Organization Data: Incidents',
           };
         }
 
