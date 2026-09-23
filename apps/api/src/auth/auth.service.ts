@@ -11,6 +11,7 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { ResendMailerService } from '../notifications/mailer/resend-mailer.service';
+import { LicenseVerificationService } from '../license-verification/license-verification.service';
 import { renderInvitationEmailHtml, PriorityLevel } from '../notifications/templates/email-templates';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
@@ -46,82 +47,16 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly auditLogsService: AuditLogsService,
     private readonly resendMailerService: ResendMailerService,
+    private readonly licenseVerificationService: LicenseVerificationService,
   ) {}
 
   async register(dto: RegisterDto): Promise<AuthResponseDto> {
-    const existingUser = await this.prisma.user.findUnique({
-      where: { email: dto.email.toLowerCase().trim() },
+    throw new ForbiddenException({
+      statusCode: 403,
+      error: 'Forbidden',
+      message: 'Organization creation is restricted. Organizations must be provisioned via an authorized subscription or Control Plane provisioning process.',
+      code: 'ORGANIZATION_CREATION_RESTRICTED',
     });
-
-    if (existingUser) {
-      throw new ConflictException('User with this email already exists');
-    }
-
-    const passwordHash = await bcrypt.hash(dto.password, 10);
-
-    // Create Organization + First ADMIN user + RegionalPods transactionally
-    const organization = await this.prisma.organization.create({
-      data: {
-        name: dto.organizationName,
-        primaryRegion: dto.primaryRegion || 'India',
-        users: {
-          create: {
-            name: dto.name,
-            email: dto.email.toLowerCase().trim(),
-            passwordHash,
-            role: Role.ADMIN,
-            passwordSetupRequired: false,
-          },
-        },
-        regionalPods: {
-          create: [
-            { region: PodRegion.INDIA, status: PodStatus.ACTIVE },
-            { region: PodRegion.UK, status: PodStatus.INACTIVE },
-            { region: PodRegion.EU, status: PodStatus.INACTIVE },
-            { region: PodRegion.AUSTRALIA, status: PodStatus.INACTIVE },
-          ],
-        },
-      },
-      include: {
-        users: true,
-      },
-    });
-
-    const user = organization.users[0];
-
-    // Audit log entry
-    await this.auditLogsService.log({
-      organizationId: organization.id,
-      actorId: user.id,
-      action: 'ORGANIZATION_REGISTERED',
-      entityType: 'Organization',
-      entityId: organization.id,
-      metadata: { organizationName: organization.name, adminEmail: user.email },
-    });
-
-    const tokens = this.generateTokens(user.id, user.email, organization.id, user.role);
-
-    return {
-      user: {
-        id: user.id,
-        organizationId: user.organizationId,
-        name: user.name,
-        email: user.email,
-        role: user.role as Role,
-        emailNotifications: user.emailNotifications ?? true,
-        passwordSetupRequired: user.passwordSetupRequired ?? false,
-        createdAt: user.createdAt.toISOString(),
-      },
-      organization: {
-        id: organization.id,
-        name: organization.name,
-        primaryRegion: organization.primaryRegion,
-        primaryFramework: organization.primaryFramework,
-        onboardingCompleted: organization.onboardingCompleted,
-        createdAt: organization.createdAt.toISOString(),
-      },
-      tokens,
-    };
   }
 
   async login(dto: LoginDto): Promise<AuthResponseDto> {
@@ -139,7 +74,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    // Phase 2: Selective Product Access Check
+    // Selective Product Access Check
     const membership = await this.prisma.organizationMembership.findUnique({
       where: {
         organizationId_userId: {
@@ -159,6 +94,28 @@ export class AuthService {
       });
     }
 
+    // Server-Side Organization License Gate Check
+    const evalLicense = await this.licenseVerificationService.getEvaluatedStateForOrganization(user.organizationId);
+
+    if (evalLicense.state === 'UNLICENSED' || evalLicense.state === 'INVALID_OR_UNAVAILABLE') {
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: 'Forbidden',
+        message: "Your organization is not currently licensed for OMNiGRC. Please contact your organization's administrator or Arav Innovations.",
+        code: 'ORGANIZATION_NOT_LICENSED',
+      });
+    }
+
+    if (evalLicense.state === 'SUSPENDED' || evalLicense.state === 'REVOKED') {
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: 'Forbidden',
+        message: 'Product access for this organization has been suspended or revoked.',
+        code: 'PRODUCT_ACCESS_REVOKED',
+      });
+    }
+
+    const isReadOnly = evalLicense.state === 'EXPIRED';
     const effectiveRole = membership ? (membership.role as Role) : (user.role as Role);
 
     await this.auditLogsService.log({
@@ -167,7 +124,7 @@ export class AuthService {
       action: 'USER_LOGIN',
       entityType: 'User',
       entityId: user.id,
-      metadata: { email: user.email },
+      metadata: { email: user.email, licenseState: evalLicense.state, isReadOnly },
     });
 
     const tokens = this.generateTokens(user.id, user.email, user.organizationId, effectiveRole);
@@ -190,7 +147,9 @@ export class AuthService {
         primaryFramework: user.organization.primaryFramework,
         onboardingCompleted: user.organization.onboardingCompleted,
         createdAt: user.organization.createdAt.toISOString(),
-      },
+        licenseState: evalLicense.state,
+        isReadOnly,
+      } as any,
       tokens,
     };
   }
@@ -225,6 +184,28 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
+    // Server-Side Organization License Gate Check for session bootstrap
+    const evalLicense = await this.licenseVerificationService.getEvaluatedStateForOrganization(user.organizationId);
+
+    if (evalLicense.state === 'UNLICENSED' || evalLicense.state === 'INVALID_OR_UNAVAILABLE') {
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: 'Forbidden',
+        message: "Your organization is not currently licensed for OMNiGRC. Please contact your organization's administrator or Arav Innovations.",
+        code: 'ORGANIZATION_NOT_LICENSED',
+      });
+    }
+
+    if (evalLicense.state === 'SUSPENDED' || evalLicense.state === 'REVOKED') {
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: 'Forbidden',
+        message: 'Product access for this organization has been suspended or revoked.',
+        code: 'PRODUCT_ACCESS_REVOKED',
+      });
+    }
+
+    const isReadOnly = evalLicense.state === 'EXPIRED';
     const tokens = this.generateTokens(user.id, user.email, user.organizationId, user.role);
 
     return {
@@ -245,7 +226,9 @@ export class AuthService {
         primaryFramework: user.organization.primaryFramework,
         onboardingCompleted: user.organization.onboardingCompleted,
         createdAt: user.organization.createdAt.toISOString(),
-      },
+        licenseState: evalLicense.state,
+        isReadOnly,
+      } as any,
       tokens,
     };
   }

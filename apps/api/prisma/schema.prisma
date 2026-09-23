@@ -236,6 +236,8 @@ model Organization {
   approvalInstances   ApprovalInstance[]
   documentAnalyses    DocumentAnalysis[]
   extractedFindings   ExtractedFinding[]
+  deployment          Deployment?
+  systemLicenseState  SystemLicenseState?
 
   @@index([parentOrganizationId])
   @@map("organizations")
@@ -591,14 +593,42 @@ model AuditLogEntry {
   @@map("audit_log_entries")
 }
 
+enum DeploymentModel {
+  SAAS_MULTI_TENANT
+  MSSP_SHARED
+  PRIVATE_MSSP
+  SELF_HOSTED
+}
+
+model Deployment {
+  id                       String          @id @default(uuid())
+  organizationId           String          @unique
+  controlPlaneDeploymentId String          @unique
+  modelType                DeploymentModel @default(SAAS_MULTI_TENANT)
+  externalRefId            String?         @unique
+  status                   String          @default("ACTIVE")
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime        @updatedAt
+
+  organization             Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([controlPlaneDeploymentId])
+  @@map("deployments")
+}
+
 model SystemLicenseState {
-  id                 String   @id @default("current")
+  id                 String   @id @default(uuid())
   deploymentId       String
-  organizationId     String
+  organizationId     String   @unique
   signedArtifactJson Json
   verifiedAt         DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([deploymentId])
   @@map("system_license_state")
 }
 

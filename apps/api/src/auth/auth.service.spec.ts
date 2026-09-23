@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { ResendMailerService } from '../notifications/mailer/resend-mailer.service';
 import { JwtService } from '@nestjs/jwt';
+import { LicenseVerificationService } from '../license-verification/license-verification.service';
 import {
   ConflictException,
   ForbiddenException,
@@ -62,6 +63,12 @@ describe('AuthService', () => {
         { provide: AuditLogsService, useValue: auditLogsService },
         { provide: ResendMailerService, useValue: resendMailerService },
         {
+          provide: LicenseVerificationService,
+          useValue: {
+            getEvaluatedStateForOrganization: jest.fn().mockResolvedValue({ state: 'VALID' }),
+          },
+        },
+        {
           provide: JwtService,
           useValue: {
             sign: jest.fn().mockReturnValue('mocked-jwt-token'),
@@ -79,55 +86,15 @@ describe('AuthService', () => {
   });
 
   describe('Registration & Onboarding', () => {
-    it('should register a new organization and user with audit logging', async () => {
-      prisma.user.findUnique.mockResolvedValue(null);
-      prisma.organization.create.mockResolvedValue({
-        id: 'org-1',
-        name: 'Acme Corp',
-        primaryRegion: 'India',
-        createdAt: new Date(),
-        users: [
-          {
-            id: 'user-1',
-            organizationId: 'org-1',
-            name: 'Admin User',
-            email: 'admin@acme.com',
-            role: 'ADMIN',
-            emailNotifications: true,
-            passwordSetupRequired: false,
-            createdAt: new Date(),
-          },
-        ],
-      });
-
-      const result = await service.register({
-        organizationName: 'Acme Corp',
-        name: 'Admin User',
-        email: 'admin@acme.com',
-        password: 'password123',
-      });
-
-      expect(result.user.email).toBe('admin@acme.com');
-      expect(result.organization.name).toBe('Acme Corp');
-      expect(auditLogsService.log).toHaveBeenCalledWith(
-        expect.objectContaining({
-          action: 'ORGANIZATION_REGISTERED',
-          organizationId: 'org-1',
-        }),
-      );
-    });
-
-    it('should throw ConflictException if user email exists during registration', async () => {
-      prisma.user.findUnique.mockResolvedValue({ id: 'user-existing' });
-
+    it('should reject arbitrary customer organization registration with ForbiddenException ORGANIZATION_CREATION_RESTRICTED', async () => {
       await expect(
         service.register({
-          organizationName: 'Acme',
-          name: 'Admin',
-          email: 'existing@acme.com',
-          password: 'pass',
+          organizationName: 'Acme Corp',
+          name: 'Admin User',
+          email: 'admin@acme.com',
+          password: 'password123',
         }),
-      ).rejects.toThrow(ConflictException);
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 
@@ -602,6 +569,12 @@ describe('AuthService', () => {
           { provide: PrismaService, useValue: prisma },
           { provide: AuditLogsService, useValue: auditLogsService },
           { provide: ResendMailerService, useValue: resendMailerService },
+          {
+            provide: LicenseVerificationService,
+            useValue: {
+              getEvaluatedStateForOrganization: jest.fn().mockResolvedValue({ state: 'VALID' }),
+            },
+          },
           {
             provide: JwtService,
             useValue: { sign: jwtSignMock, verify: jwtVerifyMock },

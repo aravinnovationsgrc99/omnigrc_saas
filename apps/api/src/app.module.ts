@@ -38,6 +38,7 @@ import { OrganizationMembersModule } from './organization-members/organization-m
 import { ApprovalEngineModule } from './approval/approval-engine.module';
 import { DocumentIntelligenceModule } from './document-intelligence/document-intelligence.module';
 import { WorkflowModule } from './workflow/workflow.module';
+import { ProvisioningModule } from './provisioning/provisioning.module';
 
 @Module({
   imports: [
@@ -87,6 +88,7 @@ import { WorkflowModule } from './workflow/workflow.module';
     ApprovalEngineModule,
     DocumentIntelligenceModule,
     WorkflowModule,
+    ProvisioningModule,
   ],
   providers: [
     {

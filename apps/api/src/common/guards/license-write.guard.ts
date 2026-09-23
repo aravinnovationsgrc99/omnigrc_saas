@@ -4,6 +4,7 @@ import {
   ExecutionContext,
   HttpException,
   HttpStatus,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
@@ -35,39 +36,63 @@ export class LicenseWriteGuard implements CanActivate {
       return true;
     }
 
-    // 2. Check explicit RequiresActiveLicense decorator
-    const requiresLicense = this.reflector.getAllAndOverride<boolean>(
+    const request = context.switchToHttp().getRequest();
+    const method = (request?.method || 'GET').toUpperCase();
+    const requiresActiveLicense = this.reflector.getAllAndOverride<boolean>(
       REQUIRES_ACTIVE_LICENSE_KEY,
       [handler, targetClass],
     );
 
-    const request = context.switchToHttp().getRequest();
-    const method = (request?.method || 'GET').toUpperCase();
+    // organizationId strictly comes from already authenticated/verified request principal (request.user)
+    const organizationId = request?.user?.organizationId || process.env.ORGANIZATION_ID;
 
-    // Read methods (GET, HEAD, OPTIONS) do not require active write license unless explicitly requested
-    const isReadMethod = ['GET', 'HEAD', 'OPTIONS'].includes(method);
-
-    if (!requiresLicense && isReadMethod) {
+    if (!organizationId) {
       return true;
     }
 
-    // Allow JwtAuthGuard to process unauthenticated requests first so unauthenticated calls return 401 Unauthorized
-    if (!request?.headers?.authorization && !request?.user) {
-      return true;
-    }
-
-
-
-    // 3. Evaluate License State
-    const evaluated = await this.licenseVerificationService.getEvaluatedState();
+    // 2. Evaluate Organization License State server-side
+    const evaluated = await this.licenseVerificationService.getEvaluatedStateForOrganization(organizationId);
 
     if (evaluated.state === 'VALID') {
       return true;
     }
 
-    if (evaluated.state === 'EXPIRED') {
+    if (evaluated.state === 'UNLICENSED' || evaluated.state === 'INVALID_OR_UNAVAILABLE') {
       this.logger.warn(
-        `LicenseWriteGuard BLOCKED write mutation for path "${request?.url}" (License EXPIRED at ${evaluated.expiresAt})`,
+        `LicenseWriteGuard BLOCKED request for org "${organizationId}" on path "${request?.url}" (State: UNLICENSED / ${evaluated.reason})`,
+      );
+      throw new ForbiddenException({
+        statusCode: HttpStatus.FORBIDDEN,
+        error: 'Forbidden',
+        message: "Your organization is not currently licensed for OMNiGRC. Please contact your organization's administrator or Arav Innovations.",
+        code: 'ORGANIZATION_NOT_LICENSED',
+        reason: evaluated.reason,
+      });
+    }
+
+    if (evaluated.state === 'SUSPENDED' || evaluated.state === 'REVOKED') {
+      this.logger.warn(
+        `LicenseWriteGuard BLOCKED request for org "${organizationId}" on path "${request?.url}" (State: ${evaluated.state})`,
+      );
+      throw new ForbiddenException({
+        statusCode: HttpStatus.FORBIDDEN,
+        error: 'Forbidden',
+        message: 'Product access for this organization has been suspended or revoked.',
+        code: 'PRODUCT_ACCESS_REVOKED',
+      });
+    }
+
+    if (evaluated.state === 'EXPIRED') {
+      const isReadMethod = ['GET', 'HEAD', 'OPTIONS'].includes(method);
+      const isWriteMutation = !isReadMethod || requiresActiveLicense;
+
+      if (!isWriteMutation) {
+        // Expired read-only policy: allow login, reads, and exports
+        return true;
+      }
+
+      this.logger.warn(
+        `LicenseWriteGuard BLOCKED write/operation for org "${organizationId}" on path "${request?.url}" (License EXPIRED at ${evaluated.expiresAt})`,
       );
       throw new HttpException(
         {
@@ -81,19 +106,6 @@ export class LicenseWriteGuard implements CanActivate {
       );
     }
 
-    // INVALID_OR_UNAVAILABLE State
-    this.logger.warn(
-      `LicenseWriteGuard BLOCKED request for path "${request?.url}" (License state INVALID_OR_UNAVAILABLE: ${evaluated.reason})`,
-    );
-    throw new HttpException(
-      {
-        statusCode: HttpStatus.SERVICE_UNAVAILABLE,
-        error: 'Service Unavailable',
-        message: 'Valid software license state is unavailable. Please verify deployment registration.',
-        code: 'LICENSE_UNAVAILABLE',
-        reason: evaluated.reason,
-      },
-      HttpStatus.SERVICE_UNAVAILABLE,
-    );
+    return true;
   }
 }

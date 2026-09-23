@@ -1,3 +1,5 @@
+import * as crypto from 'crypto';
+
 /**
  * Standard RFC 8785 JSON Canonicalization Scheme (JCS) serializer.
  * Guarantees identical UTF-8 string output across all platforms for identical logical JSON values.
@@ -36,6 +38,14 @@ export enum OrgType {
   MSSP_PROVIDER = "MSSP_PROVIDER",
   CLIENT_TENANT = "CLIENT_TENANT",
 }
+
+export const ERROR_CODES = {
+  ORGANIZATION_NOT_LICENSED: "ORGANIZATION_NOT_LICENSED",
+  ORGANIZATION_CREATION_RESTRICTED: "ORGANIZATION_CREATION_RESTRICTED",
+  LICENSE_EXPIRED: "LICENSE_EXPIRED",
+  PRODUCT_ACCESS_REVOKED: "PRODUCT_ACCESS_REVOKED",
+  FRAMEWORK_NOT_ENTITLED: "FRAMEWORK_NOT_ENTITLED",
+} as const;
 
 export enum Role {
   ADMIN = "ADMIN",
@@ -782,6 +792,7 @@ export interface ValidateInvitationResponseDto {
 }
 
 export enum DeploymentModel {
+  SAAS_MULTI_TENANT = "SAAS_MULTI_TENANT",
   MSSP_SHARED = "MSSP_SHARED",
   PRIVATE_MSSP = "PRIVATE_MSSP",
   SELF_HOSTED = "SELF_HOSTED",
@@ -872,6 +883,8 @@ export enum LicenseStatus {
   TRIAL = "TRIAL",
   ACTIVE = "ACTIVE",
   EXPIRED = "EXPIRED",
+  SUSPENDED = "SUSPENDED",
+  REVOKED = "REVOKED",
 }
 
 export interface EntitlementDto {
@@ -974,7 +987,7 @@ export interface SignedLicenseArtifactResponseDto {
   artifact: SignedLicenseArtifact;
 }
 
-export type RuntimeLicenseState = 'VALID' | 'EXPIRED' | 'INVALID_OR_UNAVAILABLE';
+export type RuntimeLicenseState = 'VALID' | 'EXPIRED' | 'UNLICENSED' | 'SUSPENDED' | 'REVOKED' | 'INVALID_OR_UNAVAILABLE';
 
 export interface EvaluatedLicenseState {
   state: RuntimeLicenseState;
@@ -1031,6 +1044,26 @@ export function evaluateLicenseStatus(
     };
   }
 
+  if (payload.status === LicenseStatus.SUSPENDED || (payload.status as any) === 'SUSPENDED') {
+    return {
+      state: 'SUSPENDED',
+      reason: 'License has been suspended by Control Plane',
+      startsAt: payload.startsAt,
+      expiresAt: payload.expiresAt,
+      payload,
+    };
+  }
+
+  if (payload.status === LicenseStatus.REVOKED || (payload.status as any) === 'REVOKED') {
+    return {
+      state: 'REVOKED',
+      reason: 'License has been revoked by Control Plane',
+      startsAt: payload.startsAt,
+      expiresAt: payload.expiresAt,
+      payload,
+    };
+  }
+
   if (payload.status === LicenseStatus.EXPIRED || now.getTime() > expiresAtDate.getTime()) {
     return {
       state: 'EXPIRED',
@@ -1049,7 +1082,43 @@ export function evaluateLicenseStatus(
   };
 }
 
-export const DEV_LICENSE_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAKXvoa0IDQQhIu4RGDOdFE+VGX8i5mUnunoaoxB9i+cY=\n-----END PUBLIC KEY-----\n`;
+export const DEV_LICENSE_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEANIgAAK2sFhF0cEUhkO0hWrC3L+XBQ+FDe+mRXuaNHao=\n-----END PUBLIC KEY-----\n`;
+export const DEV_LICENSE_PRIVATE_KEY = `-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEINcalHJqZoHCJNcRs8/svogmE4cjiMJM6NF/Mq27ZV7/\n-----END PRIVATE KEY-----\n`;
+
+export function generateDevSignedLicenseArtifact(
+  overrides: Partial<SignedLicensePayload> = {},
+): SignedLicenseArtifact {
+  const payload: SignedLicensePayload = {
+    licenseId: overrides.licenseId || 'dev-license-100',
+    licenseFormatVersion: '1.0',
+    product: LicenseProduct.OMNIGRC,
+    status: overrides.status || LicenseStatus.ACTIVE,
+    customerId: overrides.customerId || 'cust-dev-100',
+    commercialAgreementId: overrides.commercialAgreementId || 'agr-dev-100',
+    deploymentId: overrides.deploymentId || 'deploy-dev-100',
+    organizationId: overrides.organizationId || 'org-dev-100',
+    startsAt: overrides.startsAt || new Date(Date.now() - 86400000).toISOString(),
+    expiresAt: overrides.expiresAt || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+    maxDeployments: overrides.maxDeployments || 5,
+    entitlements: overrides.entitlements || [
+      { code: 'ISO27001', name: 'ISO 27001', enabled: true },
+      { code: 'SOC2', name: 'SOC 2', enabled: true },
+    ],
+    issuedAt: overrides.issuedAt || new Date().toISOString(),
+    keyId: overrides.keyId || 'arav-license-v1-2026',
+  };
+
+  const canonicalJson = jcsCanonicalize(payload);
+  const signature = crypto.sign(null, Buffer.from(canonicalJson, 'utf-8'), DEV_LICENSE_PRIVATE_KEY).toString('base64');
+
+  return {
+    formatVersion: '1.0',
+    keyId: payload.keyId,
+    algorithm: 'Ed25519',
+    payload,
+    signature,
+  };
+}
 
 export interface VulnerabilityAssetDto {
   id: string;
@@ -2381,6 +2450,40 @@ export interface ReviewFindingDto {
   editedDescription?: string;
   editedCategory?: FindingType;
   humanComment?: string;
+}
+
+export interface SaasProvisioningDto {
+  controlPlaneDeploymentId: string;
+  subscriptionId: string;
+  customerEmail: string;
+  customerName?: string;
+  organizationName: string;
+  primaryRegion?: string;
+  adminInitialPassword?: string;
+  signedLicenseArtifact?: SignedLicenseArtifact;
+}
+
+export interface ControlPlaneProvisioningDto {
+  controlPlaneDeploymentId: string;
+  deploymentModel: DeploymentModel;
+  organizationName: string;
+  primaryRegion?: string;
+  parentOrganizationId?: string;
+  adminEmail: string;
+  adminName?: string;
+  adminInitialPassword?: string;
+  signedLicenseArtifact?: SignedLicenseArtifact;
+}
+
+export interface ProvisioningResultDto {
+  success: boolean;
+  isExisting: boolean;
+  organizationId: string;
+  deploymentId: string;
+  controlPlaneDeploymentId: string;
+  adminUserId: string;
+  adminEmail: string;
+  licenseState: string;
 }
 
 

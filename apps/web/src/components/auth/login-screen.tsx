@@ -368,40 +368,14 @@ export function LoginScreen() {
             </button>
           </form>
 
-          {/* Toggle Register / Sign-in */}
+          {/* Provisioning Guidance Footer */}
           <div
             style={{
               marginTop: 24, paddingTop: 20, borderTop: '1px solid #2B3A5A',
-              textAlign: 'center', fontSize: 13, color: '#CBD5E1', fontWeight: 500,
+              textAlign: 'center', fontSize: 12, color: '#94A3B8', fontWeight: 500, lineHeight: 1.5,
             }}
           >
-            {isRegisterMode ? (
-              <span>
-                Already have a workspace?{' '}
-                <button
-                  onClick={() => { setIsRegisterMode(false); setErrorMsg(null); }}
-                  style={{
-                    color: '#F15E1C', fontWeight: 700, textDecoration: 'underline',
-                    textUnderlineOffset: 3, border: 'none', background: 'none', cursor: 'pointer', marginLeft: 4,
-                  }}
-                >
-                  Sign in to workspace
-                </button>
-              </span>
-            ) : (
-              <span>
-                Need a new organization workspace?{' '}
-                <button
-                  onClick={() => { setIsRegisterMode(true); setErrorMsg(null); }}
-                  style={{
-                    color: '#F15E1C', fontWeight: 700, textDecoration: 'underline',
-                    textUnderlineOffset: 3, border: 'none', background: 'none', cursor: 'pointer', marginLeft: 4,
-                  }}
-                >
-                  Register Organization
-                </button>
-              </span>
-            )}
+            Organization creation is restricted. New organizations are provisioned via an authorized subscription or Control Plane operator.
           </div>
         </div>
       </div>

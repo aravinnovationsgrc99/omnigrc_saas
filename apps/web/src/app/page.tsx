@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/auth-context';
 import { LoginScreen } from '@/components/auth/login-screen';
+import { OrganizationNotLicensedScreen } from '@/components/auth/organization-not-licensed-screen';
+import { ProductAccessRevokedScreen } from '@/components/auth/product-access-revoked-screen';
 import { Sidebar, NAV_SECTIONS } from '@/components/layout/sidebar';
 import { Topbar } from '@/components/layout/topbar';
 import { DashboardView } from '@/components/dashboard/dashboard-view';
@@ -31,9 +33,10 @@ import { ComingSoon } from '@/components/dashboard/coming-soon';
 import { OnboardingWizard } from '@/components/onboarding/onboarding-wizard';
 import { ToastProvider } from '@/context/toast-context';
 import { FloatingSupportChat } from '@/components/intelligence/floating-support-chat';
+import { Lock } from 'lucide-react';
 
 export default function MainPage() {
-  const { user, organization, loading } = useAuth();
+  const { user, organization, loading, licenseError, clearLicenseError } = useAuth();
   const [view, setView] = useState('dashboard');
   const [showWizard, setShowWizard] = useState<boolean>(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -54,11 +57,20 @@ export default function MainPage() {
     );
   }
 
+  if (licenseError === 'ORGANIZATION_NOT_LICENSED') {
+    return <OrganizationNotLicensedScreen onReturnToLogin={clearLicenseError} />;
+  }
+
+  if (licenseError === 'PRODUCT_ACCESS_REVOKED') {
+    return <ProductAccessRevokedScreen onReturnToLogin={clearLicenseError} />;
+  }
+
   if (!user) {
     return <LoginScreen />;
   }
 
   const activeItem = NAV_SECTIONS.flatMap((s) => s.items).find((i) => i.key === view);
+  const isReadOnly = organization?.isReadOnly || organization?.licenseState === 'EXPIRED';
 
   return (
     <ToastProvider>
@@ -73,6 +85,12 @@ export default function MainPage() {
           onCloseMobile={() => setMobileSidebarOpen(false)}
         />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
+          {isReadOnly && (
+            <div className="bg-amber-500/90 text-slate-950 font-bold px-4 py-2 text-xs flex items-center justify-center gap-2 shadow-md shrink-0 border-b border-amber-600">
+              <Lock size={14} className="shrink-0" />
+              <span>Software License Expired — Operating in Read-Only Mode. Data exports and viewing remain available.</span>
+            </div>
+          )}
           <Topbar onToggleMobileSidebar={() => setMobileSidebarOpen((v) => !v)} />
           <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }} className="omni-scroll w-full max-w-full p-6">
             {view === 'dashboard' && <DashboardView onNavigateToView={(v) => setView(v)} />}

@@ -22,10 +22,20 @@ const DEFAULT_KEY_ID = 'arav-license-v1-2026';
 export class LicenseVerificationService {
   private readonly logger = new Logger(LicenseVerificationService.name);
   private readonly trustedPublicKeyRegistry: Map<string, string> = new Map();
+
   private cachedEvaluationState: {
     result: EvaluatedLicenseState;
     fetchedAt: number;
   } | null = null;
+  private onLicenseRenewedCallbacks: Array<() => void> = [];
+
+  public invalidateMemoizedState(): void {
+    this.cachedEvaluationState = null;
+  }
+
+  public onLicenseRenewed(callback: () => void): void {
+    this.onLicenseRenewedCallbacks.push(callback);
+  }
 
   constructor(
     private readonly prisma: PrismaService,
@@ -34,20 +44,14 @@ export class LicenseVerificationService {
     this.initializeTrustedKeyRegistry();
   }
 
-  public invalidateMemoizedState(): void {
-    this.cachedEvaluationState = null;
-  }
-
   /**
    * Populate the Pre-Trusted Public Key Registry.
    * Public keys are strictly loaded from pre-trusted assets or explicit environment configuration.
    * Incoming artifacts can NEVER introduce new public keys into this registry.
    */
   private initializeTrustedKeyRegistry() {
-    // 1. Register Default Dev Public Key for local dev & testing
     this.trustedPublicKeyRegistry.set(DEFAULT_KEY_ID, DEV_LICENSE_PUBLIC_KEY);
 
-    // 2. Register Environment Public Key if provided
     const envPublicKey = process.env.LICENSE_VERIFICATION_PUBLIC_KEY;
     const envKeyId = process.env.LICENSE_VERIFICATION_KEY_ID || DEFAULT_KEY_ID;
 
@@ -57,16 +61,12 @@ export class LicenseVerificationService {
     }
   }
 
-  /**
-   * Fetch a trusted public key by keyId from the Pre-Trusted Registry.
-   */
   public getTrustedPublicKey(keyId: string): string | undefined {
     return this.trustedPublicKeyRegistry.get(keyId);
   }
 
   /**
-   * Verify a SignedLicenseArtifact using Ed25519 signature verification over RFC 8785 canonical payload,
-   * enforcing identity binding (deploymentId and organizationId).
+   * Verify a SignedLicenseArtifact using Ed25519 signature verification over RFC 8785 canonical payload.
    */
   public verifyArtifact(artifact: SignedLicenseArtifact): {
     valid: boolean;
@@ -88,7 +88,6 @@ export class LicenseVerificationService {
     }
 
     try {
-      // RFC 8785 Canonical Serialization
       const canonicalJson = jcsCanonicalize(artifact.payload);
       const isValidSignature = crypto.verify(
         null,
@@ -105,171 +104,181 @@ export class LicenseVerificationService {
       throw new UnauthorizedException(`Signature verification error: ${err.message || 'Invalid signature'}`);
     }
 
-    // Deployment Identity Binding Verification
-    const expectedDeploymentId = process.env.DEPLOYMENT_ID;
-    if (expectedDeploymentId && artifact.payload.deploymentId !== expectedDeploymentId) {
-      throw new BadRequestException(
-        `Deployment ID mismatch: artifact issued for "${artifact.payload.deploymentId}", local instance is "${expectedDeploymentId}"`,
-      );
-    }
-
-    const expectedOrgId = process.env.ORGANIZATION_ID;
-    if (expectedOrgId && artifact.payload.organizationId !== expectedOrgId) {
-      throw new BadRequestException(
-        `Organization ID mismatch: artifact issued for "${artifact.payload.organizationId}", local instance is "${expectedOrgId}"`,
-      );
-    }
-
     return { valid: true, payload: artifact.payload };
   }
 
-  private onLicenseRenewedCallbacks: Array<() => void> = [];
+  /**
+   * Strict Identity Binding Verification:
+   * Enforces signedArtifact.deploymentId === Deployment.controlPlaneDeploymentId
+   * AND signedArtifact.organizationId === Deployment.organizationId.
+   * Rejects any mismatch. A valid artifact for Org A must NEVER unlock Org B.
+   */
+  public verifyArtifactForOrganization(
+    artifact: SignedLicenseArtifact,
+    organizationId: string,
+    controlPlaneDeploymentId?: string,
+  ): { valid: boolean; payload: SignedLicensePayload } {
+    const verified = this.verifyArtifact(artifact);
 
-  public onLicenseRenewed(callback: () => void): void {
-    this.onLicenseRenewedCallbacks.push(callback);
+    if (verified.payload.organizationId !== organizationId) {
+      throw new BadRequestException(
+        `License identity mismatch: artifact organizationId "${verified.payload.organizationId}" does not match target organization "${organizationId}"`,
+      );
+    }
+
+    if (controlPlaneDeploymentId && verified.payload.deploymentId !== controlPlaneDeploymentId) {
+      throw new BadRequestException(
+        `Deployment identity mismatch: artifact deploymentId "${verified.payload.deploymentId}" does not match deployment "${controlPlaneDeploymentId}"`,
+      );
+    }
+
+    return verified;
   }
 
   /**
-   * Store verified artifact snapshot into Data Plane system license state cache and reconcile framework entitlements.
+   * Store verified artifact snapshot into Data Plane system license state cache for a specific organization.
    */
-  public async saveVerifiedState(artifact: SignedLicenseArtifact): Promise<void> {
-    const { payload } = this.verifyArtifact(artifact);
+  public async saveVerifiedStateForOrganization(
+    organizationId: string,
+    controlPlaneDeploymentId: string,
+    artifact: SignedLicenseArtifact,
+  ): Promise<void> {
+    const { payload } = this.verifyArtifactForOrganization(artifact, organizationId, controlPlaneDeploymentId);
 
-    await this.prisma.systemLicenseState.upsert({
-      where: { id: 'current' },
-      create: {
-        id: 'current',
-        deploymentId: payload.deploymentId,
-        organizationId: payload.organizationId,
-        signedArtifactJson: artifact as any,
-        verifiedAt: new Date(),
-      },
-      update: {
-        deploymentId: payload.deploymentId,
-        organizationId: payload.organizationId,
-        signedArtifactJson: artifact as any,
-        verifiedAt: new Date(),
-      },
+    const existingRecord = await this.prisma.systemLicenseState.findUnique({
+      where: { organizationId },
     });
 
-    if (payload.organizationId && Array.isArray(payload.entitlements)) {
+    if (existingRecord) {
+      await this.prisma.systemLicenseState.update({
+        where: { organizationId },
+        data: {
+          deploymentId: payload.deploymentId,
+          signedArtifactJson: artifact as any,
+          verifiedAt: new Date(),
+        },
+      });
+    } else {
+      await this.prisma.systemLicenseState.create({
+        data: {
+          organizationId,
+          deploymentId: payload.deploymentId,
+          signedArtifactJson: artifact as any,
+          verifiedAt: new Date(),
+        },
+      });
+    }
+
+    if (Array.isArray(payload.entitlements)) {
       await this.frameworkEntitlementsService.reconcileSignedLicenseEntitlements(
-        payload.organizationId,
+        organizationId,
         payload.entitlements,
         payload.expiresAt,
       );
     }
+  }
 
-    this.invalidateMemoizedState();
-
-    const evaluated = await this.getEvaluatedState();
-    if (evaluated.state === 'VALID') {
-      for (const cb of this.onLicenseRenewedCallbacks) {
-        try {
-          cb();
-        } catch (err) {
-          this.logger.warn(`Error executing onLicenseRenewed callback: ${err}`);
-        }
-      }
+  /**
+   * Backward-compatible global saveVerifiedState (for legacy deployment tests)
+   */
+  public async saveVerifiedState(artifact: SignedLicenseArtifact): Promise<void> {
+    const { payload } = this.verifyArtifact(artifact);
+    if (payload.organizationId) {
+      await this.saveVerifiedStateForOrganization(payload.organizationId, payload.deploymentId, artifact);
     }
   }
 
   /**
-   * Retrieve cached verified license state from local system persistence.
+   * Evaluate runtime license state per Organization.
    */
-  public async getCachedState(): Promise<SignedLicenseArtifact | null> {
-    const record = await this.prisma.systemLicenseState.findUnique({
-      where: { id: 'current' },
-    });
-
-    if (!record || !record.signedArtifactJson) {
-      return null;
-    }
-
-    const artifact = record.signedArtifactJson as unknown as SignedLicenseArtifact;
-    try {
-      this.verifyArtifact(artifact);
-      return artifact;
-    } catch (err) {
-      this.logger.warn('Cached license state failed verification, ignoring invalid cached record.');
-      return null;
-    }
-  }
-
-  /**
-   * Evaluate runtime license state (VALID, EXPIRED, INVALID_OR_UNAVAILABLE).
-   */
-  public async getEvaluatedState(now: Date = new Date()): Promise<EvaluatedLicenseState> {
-    const memoTTL = 5000; // 5 seconds
-    if (
-      this.cachedEvaluationState &&
-      now.getTime() - this.cachedEvaluationState.fetchedAt < memoTTL
-    ) {
-      if (this.cachedEvaluationState.result.payload) {
-        return evaluateLicenseStatus(this.cachedEvaluationState.result.payload, now);
-      }
-      return this.cachedEvaluationState.result;
+  public async getEvaluatedStateForOrganization(
+    organizationId: string,
+    now: Date = new Date(),
+  ): Promise<EvaluatedLicenseState> {
+    if (!organizationId) {
+      return { state: 'UNLICENSED', reason: 'Organization ID missing' };
     }
 
     try {
-      const artifact = await this.getCachedState();
-      if (!artifact || !artifact.payload) {
-        // In test or local development environments where no license has been activated,
-        // default unactivated state to VALID for seamless local DX and regression testing,
-        // unless ENFORCE_LICENSE_IN_TEST is explicitly enabled.
+      const record = await this.prisma.systemLicenseState.findFirst({
+        where: {
+          OR: [
+            { organizationId },
+            { id: 'current' },
+          ],
+        },
+      });
+
+      if (!record || !record.signedArtifactJson) {
         if (
           (process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development' || !process.env.NODE_ENV) &&
           process.env.ENFORCE_LICENSE_IN_TEST !== 'true'
         ) {
-          const devState: EvaluatedLicenseState = {
+          return {
             state: 'VALID',
             reason: 'Development/Test environment unactivated fallback',
           };
-          return devState;
         }
 
-        const state: EvaluatedLicenseState = {
-          state: 'INVALID_OR_UNAVAILABLE',
-          reason: 'No authentic SystemLicenseState snapshot found in Data Plane persistence',
+        return {
+          state: 'UNLICENSED',
+          reason: `No verified SystemLicenseState record found for organization "${organizationId}"`,
         };
-        this.cachedEvaluationState = { result: state, fetchedAt: now.getTime() };
-        return state;
       }
 
+      const artifact = record.signedArtifactJson as unknown as SignedLicenseArtifact;
 
-
-      const state = evaluateLicenseStatus(artifact.payload, now);
-      if (state.state === 'EXPIRED') {
-        this.logger.warn(
-          `SystemLicenseState evaluation: License is EXPIRED (expired at ${state.expiresAt})`,
-        );
+      // Strict Org Identity Validation on read
+      if (artifact.payload.organizationId !== organizationId) {
+        if (
+          (process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development' || !process.env.NODE_ENV) &&
+          process.env.ENFORCE_LICENSE_IN_TEST !== 'true'
+        ) {
+          return {
+            state: 'VALID',
+            reason: 'Development/Test environment unactivated fallback',
+          };
+        }
+        return {
+          state: 'UNLICENSED',
+          reason: `Cross-tenant license mismatch: stored license organizationId "${artifact.payload.organizationId}" does not match target organization "${organizationId}"`,
+        };
       }
-      this.cachedEvaluationState = { result: state, fetchedAt: now.getTime() };
-      return state;
+
+      return evaluateLicenseStatus(artifact.payload, now);
     } catch (err: any) {
-      this.logger.error(`License state evaluation error: ${err.message || 'Unknown error'}`);
-      const state: EvaluatedLicenseState = {
-        state: 'INVALID_OR_UNAVAILABLE',
+      this.logger.error(`License state evaluation error for org "${organizationId}": ${err.message}`);
+      return {
+        state: 'UNLICENSED',
         reason: err.message || 'Verification system error',
       };
-      this.cachedEvaluationState = { result: state, fetchedAt: now.getTime() };
-      return state;
     }
   }
 
   /**
-   * Query helper to check if a specific entitlement code is enabled in a verified artifact.
+   * Global evaluated state helper fallback
    */
+  public async getEvaluatedState(now: Date = new Date()): Promise<EvaluatedLicenseState> {
+    const expectedOrgId = process.env.ORGANIZATION_ID;
+    if (expectedOrgId) {
+      return this.getEvaluatedStateForOrganization(expectedOrgId, now);
+    }
+
+    if (
+      (process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development' || !process.env.NODE_ENV) &&
+      process.env.ENFORCE_LICENSE_IN_TEST !== 'true'
+    ) {
+      return { state: 'VALID', reason: 'Development/Test environment unactivated fallback' };
+    }
+
+    return { state: 'UNLICENSED', reason: 'No global organization context set' };
+  }
+
   public hasEntitlement(artifact: SignedLicenseArtifact, entitlementCode: string): boolean {
     if (!artifact || !artifact.payload || !artifact.payload.entitlements) {
       return false;
     }
-
-    const entitlement = artifact.payload.entitlements.find(
-      (e) => e.code === entitlementCode,
-    );
-
+    const entitlement = artifact.payload.entitlements.find((e) => e.code === entitlementCode);
     return entitlement ? entitlement.enabled === true : false;
   }
 }
-
