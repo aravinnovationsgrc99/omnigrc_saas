@@ -5,66 +5,111 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { Role, JwtPayload } from '@omnigrc/shared';
+import { Role } from '@omnigrc/shared';
 import { RequiresActiveLicense } from '../common/decorators/requires-active-license.decorator';
+import { ResourceAuthContext } from '../auth/resource-authorization.service';
 
 @Controller('compliance-tasks')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN, Role.ANALYST)
+@Roles(Role.ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
 export class ComplianceTasksController {
   constructor(private readonly complianceTasksService: ComplianceTasksService) {}
 
   @Get()
-  async findAll(@CurrentUser() user: JwtPayload, @Query() query: ComplianceTaskQueryDto) {
-    return this.complianceTasksService.findAll(user.organizationId, query);
+  async findAll(@CurrentUser() user: any, @Query() query: ComplianceTaskQueryDto) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.complianceTasksService.findAll(authCtx, query);
   }
 
   @Get('dashboard-summary')
-  async getDashboardSummary(@CurrentUser() user: JwtPayload) {
-    return this.complianceTasksService.getDashboardSummary(user.organizationId);
+  async getDashboardSummary(@CurrentUser() user: any) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.complianceTasksService.getDashboardSummary(authCtx);
   }
 
   @Get('due-this-week-count')
-  async getDueThisWeekCount(@CurrentUser() user: JwtPayload) {
-    return this.complianceTasksService.getDueThisWeekCount(user.organizationId);
+  async getDueThisWeekCount(@CurrentUser() user: any) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.complianceTasksService.getDueThisWeekCount(authCtx);
   }
 
   @Get(':id')
-  async findOne(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
-    return this.complianceTasksService.findOne(user.organizationId, id);
+  async findOne(@CurrentUser() user: any, @Param('id') id: string) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.complianceTasksService.findOne(authCtx, id);
   }
 
   @Get(':id/audit-log')
-  async getAuditLogs(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
-    return this.complianceTasksService.getAuditLogs(user.organizationId, id);
+  async getAuditLogs(@CurrentUser() user: any, @Param('id') id: string) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.complianceTasksService.getAuditLogs(authCtx, id);
   }
 
   @Post()
   @RequiresActiveLicense()
-  async create(@CurrentUser() user: JwtPayload, @Body() dto: CreateComplianceTaskDto) {
-    const userId = (user as any).id || (user as any).userId || user.sub;
-    return this.complianceTasksService.create(user.organizationId, userId, dto);
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async create(@CurrentUser() user: any, @Body() dto: CreateComplianceTaskDto) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.complianceTasksService.create(authCtx, dto);
   }
 
   @Patch(':id')
   @RequiresActiveLicense()
-  async update(@CurrentUser() user: JwtPayload, @Param('id') id: string, @Body() dto: UpdateComplianceTaskDto) {
-    const userId = (user as any).id || (user as any).userId || user.sub;
-    return this.complianceTasksService.update(user.organizationId, userId, id, dto);
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async update(@CurrentUser() user: any, @Param('id') id: string, @Body() dto: UpdateComplianceTaskDto) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.complianceTasksService.update(authCtx, id, dto);
   }
 
   @Patch(':id/status')
   @RequiresActiveLicense()
-  async updateStatus(@CurrentUser() user: JwtPayload, @Param('id') id: string, @Body() dto: UpdateTaskStatusDto) {
-    const userId = (user as any).id || (user as any).userId || user.sub;
-    return this.complianceTasksService.updateStatus(user.organizationId, userId, id, dto.status);
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async updateStatus(@CurrentUser() user: any, @Param('id') id: string, @Body() dto: UpdateTaskStatusDto) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.complianceTasksService.updateStatus(authCtx, id, dto.status);
   }
 
   @Delete(':id')
   @RequiresActiveLicense()
-  async softDelete(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
-    const userId = (user as any).id || (user as any).userId || user.sub;
-    return this.complianceTasksService.softDelete(user.organizationId, userId, id);
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async softDelete(@CurrentUser() user: any, @Param('id') id: string) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.complianceTasksService.softDelete(authCtx, id);
   }
 }
-

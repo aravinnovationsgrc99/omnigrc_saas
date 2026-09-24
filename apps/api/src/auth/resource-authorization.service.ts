@@ -21,6 +21,16 @@ export interface ResourceAuthOptions {
   isSettingsMutation?: boolean;
 }
 
+export interface EffectiveScopeContext {
+  userId: string;
+  organizationId: string;
+  role: Role | string;
+  membershipId: string;
+  isOrganizationWideAccess: boolean;
+  assignedDepartmentIds: string[];
+  assignedProjectIds: string[];
+}
+
 @Injectable()
 export class ResourceAuthorizationService {
   private readonly logger = new Logger(ResourceAuthorizationService.name);
@@ -28,9 +38,9 @@ export class ResourceAuthorizationService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Evaluate member access state, role permissions, and resource scopes server-side.
+   * Fetch effective membership, role, assigned department IDs, and assigned project IDs.
    */
-  async authorize(ctx: ResourceAuthContext, opts: ResourceAuthOptions): Promise<void> {
+  async getEffectiveScopeContext(ctx: ResourceAuthContext): Promise<EffectiveScopeContext> {
     if (!ctx.userId || !ctx.organizationId) {
       throw new ForbiddenException({
         statusCode: 403,
@@ -40,7 +50,6 @@ export class ResourceAuthorizationService {
       });
     }
 
-    // 1. Fetch or auto-provision active OrganizationMembership for authenticated user
     let membership = await this.prisma.organizationMembership.findUnique({
       where: {
         organizationId_userId: {
@@ -55,7 +64,6 @@ export class ResourceAuthorizationService {
     });
 
     if (!membership) {
-      // Lazy migration fallback: If user exists in User table, auto-create membership
       const user = await this.prisma.user.findUnique({ where: { id: ctx.userId } });
       if (!user) {
         throw new ForbiddenException({
@@ -80,7 +88,6 @@ export class ResourceAuthorizationService {
       });
     }
 
-    // 2. Validate Product Access Status (ACTIVE required)
     if (membership.status !== ProductAccessStatus.ACTIVE) {
       this.logger.warn(
         `SECURITY: Access attempt denied for user "${ctx.userId}" in org "${ctx.organizationId}" with status "${membership.status}".`,
@@ -95,10 +102,100 @@ export class ResourceAuthorizationService {
     }
 
     const effectiveRole = membership.role || (ctx.role as Role);
+    const assignedDepartmentIds = membership.departments.map((d) => d.departmentId);
+    const assignedProjectIds = membership.projects.map((p) => p.projectId);
 
-    // 3. Role-Based Action Matrix Evaluation
+    // ADMIN and MSSP_ADMIN have organization-wide visibility.
+    // ANALYST / EXTERNAL_AUDITOR with 0 explicit department/project assignments fall back to organization-wide access.
+    const isOrganizationWideAccess =
+      effectiveRole === Role.ADMIN ||
+      effectiveRole === Role.MSSP_ADMIN ||
+      (assignedDepartmentIds.length === 0 && assignedProjectIds.length === 0);
+
+    return {
+      userId: ctx.userId,
+      organizationId: ctx.organizationId,
+      role: effectiveRole,
+      membershipId: membership.id,
+      isOrganizationWideAccess,
+      assignedDepartmentIds,
+      assignedProjectIds,
+    };
+  }
+
+  /**
+   * Generate canonical Prisma WHERE clause for query-level database filtering based on user's authorized scope.
+   */
+  async getScopeWhereClause(ctx: ResourceAuthContext): Promise<any> {
+    const scope = await this.getEffectiveScopeContext(ctx);
+
+    if (scope.isOrganizationWideAccess) {
+      return { organizationId: ctx.organizationId };
+    }
+
+    const OR: any[] = [{ departmentId: null, projectId: null }];
+
+    if (scope.assignedProjectIds.length > 0) {
+      OR.push({ projectId: { in: scope.assignedProjectIds } });
+    }
+
+    if (scope.assignedDepartmentIds.length > 0) {
+      OR.push({
+        departmentId: { in: scope.assignedDepartmentIds },
+        projectId: null,
+      });
+    }
+
+    return {
+      organizationId: ctx.organizationId,
+      OR,
+    };
+  }
+
+  /**
+   * Assert server-side authorization on an existing target resource record.
+   */
+  async assertResourceAccess(
+    ctx: ResourceAuthContext,
+    resource: { organizationId: string; departmentId?: string | null; projectId?: string | null },
+  ): Promise<void> {
+    if (resource.organizationId !== ctx.organizationId) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: 'Forbidden',
+        message: 'Cross-tenant resource access violation.',
+        code: 'TENANT_MISMATCH',
+      });
+    }
+
+    const scope = await this.getEffectiveScopeContext(ctx);
+    if (scope.isOrganizationWideAccess) {
+      return;
+    }
+
+    if (resource.projectId) {
+      if (!scope.assignedProjectIds.includes(resource.projectId)) {
+        throw new NotFoundException(`Resource not found or out of scope.`);
+      }
+      return;
+    }
+
+    if (resource.departmentId) {
+      if (!scope.assignedDepartmentIds.includes(resource.departmentId)) {
+        throw new NotFoundException(`Resource not found or out of scope.`);
+      }
+      return;
+    }
+  }
+
+  /**
+   * Evaluate member access state, role permissions, and resource scopes server-side.
+   */
+  async authorize(ctx: ResourceAuthContext, opts: ResourceAuthOptions): Promise<void> {
+    const scope = await this.getEffectiveScopeContext(ctx);
+
     // EXTERNAL_AUDITOR: Read-only access to GRC data. Strict block on ALL write actions, member admin, settings, entitlements.
-    if (effectiveRole === Role.EXTERNAL_AUDITOR) {
+    if (scope.role === Role.EXTERNAL_AUDITOR) {
       if (opts.action === 'WRITE' || opts.action === 'ADMIN' || opts.isSettingsMutation) {
         throw new ForbiddenException({
           statusCode: 403,
@@ -110,7 +207,7 @@ export class ResourceAuthorizationService {
     }
 
     // ANALYST / MSSP_ANALYST: Operational GRC access. Blocked on organization settings mutations and admin actions.
-    if (effectiveRole === Role.ANALYST || effectiveRole === Role.MSSP_ANALYST) {
+    if (scope.role === Role.ANALYST || scope.role === Role.MSSP_ANALYST) {
       if (opts.isSettingsMutation || opts.action === 'ADMIN') {
         throw new ForbiddenException({
           statusCode: 403,
@@ -121,7 +218,7 @@ export class ResourceAuthorizationService {
       }
     }
 
-    // 4. Department Scope Validation
+    // Department Scope Validation if specified in options
     if (opts.departmentId) {
       const dept = await this.prisma.department.findUnique({
         where: { id: opts.departmentId },
@@ -131,21 +228,17 @@ export class ResourceAuthorizationService {
         throw new NotFoundException(`Department "${opts.departmentId}" not found in effective organization.`);
       }
 
-      // If user is ANALYST or EXTERNAL_AUDITOR, check department assignment (ADMIN bypasses department filter)
-      if (effectiveRole !== Role.ADMIN && effectiveRole !== Role.MSSP_ADMIN) {
-        const assignedDeptIds = membership.departments.map((d) => d.departmentId);
-        if (assignedDeptIds.length > 0 && !assignedDeptIds.includes(opts.departmentId)) {
-          throw new ForbiddenException({
-            statusCode: 403,
-            error: 'Forbidden',
-            message: 'User is not assigned to target department scope.',
-            code: 'DEPARTMENT_OUT_OF_SCOPE',
-          });
-        }
+      if (!scope.isOrganizationWideAccess && !scope.assignedDepartmentIds.includes(opts.departmentId)) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          error: 'Forbidden',
+          message: 'User is not assigned to target department scope.',
+          code: 'DEPARTMENT_OUT_OF_SCOPE',
+        });
       }
     }
 
-    // 5. Project Scope Validation
+    // Project Scope Validation if specified in options
     if (opts.projectId) {
       const proj = await this.prisma.project.findUnique({
         where: { id: opts.projectId },
@@ -155,17 +248,13 @@ export class ResourceAuthorizationService {
         throw new NotFoundException(`Project "${opts.projectId}" not found in effective organization.`);
       }
 
-      // If user is ANALYST or EXTERNAL_AUDITOR, check project assignment (ADMIN bypasses project filter)
-      if (effectiveRole !== Role.ADMIN && effectiveRole !== Role.MSSP_ADMIN) {
-        const assignedProjIds = membership.projects.map((p) => p.projectId);
-        if (assignedProjIds.length > 0 && !assignedProjIds.includes(opts.projectId)) {
-          throw new ForbiddenException({
-            statusCode: 403,
-            error: 'Forbidden',
-            message: 'User is not assigned to target project scope.',
-            code: 'PROJECT_OUT_OF_SCOPE',
-          });
-        }
+      if (!scope.isOrganizationWideAccess && !scope.assignedProjectIds.includes(opts.projectId)) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          error: 'Forbidden',
+          message: 'User is not assigned to target project scope.',
+          code: 'PROJECT_OUT_OF_SCOPE',
+        });
       }
     }
   }

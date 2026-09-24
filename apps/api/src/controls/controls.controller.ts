@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards, NotFoundException } from '@nestjs/common';
 import { ControlsService } from './controls.service';
 import { MappingQueueService } from './ai/mapping-queue.service';
 import { CreateControlDto, UpdateControlDto, ControlQueryDto, SignOffMappingDto } from './dto/controls.dto';
@@ -8,10 +8,11 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Role, JwtPayload, MappingJobStatusDto } from '@omnigrc/shared';
 import { RequiresActiveLicense } from '../common/decorators/requires-active-license.decorator';
+import { ResourceAuthContext } from '../auth/resource-authorization.service';
 
 @Controller('controls')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN, Role.ANALYST)
+@Roles(Role.ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
 export class ControlsController {
   constructor(
     private readonly controlsService: ControlsService,
@@ -19,66 +20,103 @@ export class ControlsController {
   ) {}
 
   @Get()
-  async findAll(@CurrentUser() user: JwtPayload, @Query() query: ControlQueryDto) {
-    return this.controlsService.findAll(user.organizationId, query);
+  async findAll(@CurrentUser() user: any, @Query() query: ControlQueryDto) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id || user.sub,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.controlsService.findAll(authCtx, query);
   }
 
   @Get('approved-count')
-  async getApprovedCount(@CurrentUser() user: JwtPayload) {
-    return this.controlsService.getApprovedCount(user.organizationId);
+  async getApprovedCount(@CurrentUser() user: any) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id || user.sub,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.controlsService.getApprovedCount(authCtx);
   }
 
   @Get('framework-clauses')
-  async getAllFrameworkClauses(@CurrentUser() user: JwtPayload) {
+  async getAllFrameworkClauses(@CurrentUser() user: any) {
     return this.controlsService.getAllFrameworkClauses(user.organizationId);
   }
 
   @Get('frameworks')
-  async getFrameworks(@CurrentUser() user: JwtPayload) {
+  async getFrameworks(@CurrentUser() user: any) {
     return this.controlsService.getFrameworks(user.organizationId);
   }
 
   @Get(':id')
-  async findOne(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
-    return this.controlsService.findOne(user.organizationId, id);
+  async findOne(@CurrentUser() user: any, @Param('id') id: string) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id || user.sub,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.controlsService.findOne(authCtx, id);
   }
 
   @Get(':id/audit-log')
-  async getAuditLogs(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
-    return this.controlsService.getAuditLogs(user.organizationId, id);
+  async getAuditLogs(@CurrentUser() user: any, @Param('id') id: string) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id || user.sub,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.controlsService.getAuditLogs(authCtx, id);
   }
 
   @Post()
   @RequiresActiveLicense()
-  async create(@CurrentUser() user: JwtPayload, @Body() dto: CreateControlDto) {
-    const userId = (user as any).id || (user as any).userId || user.sub;
-    return this.controlsService.create(user.organizationId, userId, dto);
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async create(@CurrentUser() user: any, @Body() dto: CreateControlDto) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id || user.sub,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.controlsService.create(authCtx, dto);
   }
 
   @Patch(':id')
   @RequiresActiveLicense()
-  async update(@CurrentUser() user: JwtPayload, @Param('id') id: string, @Body() dto: UpdateControlDto) {
-    const userId = (user as any).id || (user as any).userId || user.sub;
-    return this.controlsService.update(user.organizationId, userId, id, dto);
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async update(@CurrentUser() user: any, @Param('id') id: string, @Body() dto: UpdateControlDto) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id || user.sub,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.controlsService.update(authCtx, id, dto);
   }
 
   @Delete(':id')
   @RequiresActiveLicense()
-  async softDelete(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
-    const userId = (user as any).id || (user as any).userId || user.sub;
-    return this.controlsService.softDelete(user.organizationId, userId, id);
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async softDelete(@CurrentUser() user: any, @Param('id') id: string) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id || user.sub,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.controlsService.softDelete(authCtx, id);
   }
 
-  /**
-   * Stage 1: Enqueue async AI job, return jobId immediately
-   */
   @Post(':id/suggest-mappings')
   @RequiresActiveLicense()
-  async suggestMappings(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
-    // Verify control exists first
-    await this.controlsService.findOne(user.organizationId, id);
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async suggestMappings(@CurrentUser() user: any, @Param('id') id: string) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id || user.sub,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    await this.controlsService.findOne(authCtx, id);
 
-    const jobId = await this.mappingQueueService.enqueueMappingJob(user.organizationId, user.sub, id);
+    const jobId = await this.mappingQueueService.enqueueMappingJob(user.organizationId, user.sub || user.userId, id);
 
     return {
       jobId,
@@ -87,55 +125,33 @@ export class ControlsController {
     };
   }
 
-  /**
-   * Stage 3: Poll endpoint for job status
-   */
   @Get(':id/mapping-jobs/:jobId')
   async getJobStatus(
-    @CurrentUser() user: JwtPayload,
+    @CurrentUser() user: any,
     @Param('id') id: string,
     @Param('jobId') jobId: string,
   ): Promise<MappingJobStatusDto> {
     const jobState = this.mappingQueueService.getJobState(jobId);
-
     if (!jobState) {
-      return {
-        jobId,
-        status: 'failed',
-        error: 'Job not found or expired',
-      };
+      throw new NotFoundException(`Mapping job "${jobId}" not found`);
     }
-
-    if (jobState.status === 'done') {
-      const control = await this.controlsService.findOne(user.organizationId, id);
-      return {
-        jobId,
-        status: 'done',
-        progress: 100,
-        mappings: control.mappings,
-      };
-    }
-
-    return {
-      jobId,
-      status: jobState.status,
-      progress: jobState.progress,
-      error: jobState.error,
-    };
+    return jobState;
   }
 
-  /**
-   * Stage 4: Human sign-off: APPROVE or OVERRIDE
-   */
-  @Patch(':id/mappings/:mappingId')
+  @Post(':id/mappings/:mappingId/sign-off')
   @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
   async signOffMapping(
-    @CurrentUser() user: JwtPayload,
+    @CurrentUser() user: any,
     @Param('id') controlId: string,
     @Param('mappingId') mappingId: string,
     @Body() dto: SignOffMappingDto,
   ) {
-    return this.controlsService.signOffMapping(user.organizationId, user.sub, controlId, mappingId, dto);
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id || user.sub,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.controlsService.signOffMapping(authCtx, controlId, mappingId, dto);
   }
 }
-

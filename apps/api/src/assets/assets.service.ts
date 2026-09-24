@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
 import { CreateAssetDto, UpdateAssetDto, AssetQueryDto } from './dto/assets.dto';
 import { AssetDto, PaginatedAssetsDto, AssetType, AssetCriticality } from '@omnigrc/shared';
 
@@ -9,15 +10,18 @@ export class AssetsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
+    private readonly resourceAuthService: ResourceAuthorizationService,
   ) {}
 
-  async findAll(organizationId: string, query: AssetQueryDto): Promise<PaginatedAssetsDto> {
+  async findAll(authCtx: ResourceAuthContext, query: AssetQueryDto): Promise<PaginatedAssetsDto> {
     const page = query.page || 1;
     const limit = query.limit || 20;
     const skip = (page - 1) * limit;
 
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+
     const where: any = {
-      organizationId,
+      ...scopeWhere,
       deletedAt: null,
     };
 
@@ -31,12 +35,22 @@ export class AssetsService {
 
     if (query.search && query.search.trim()) {
       const searchTerm = query.search.trim();
-      where.OR = [
+      const searchConditions = [
         { name: { contains: searchTerm, mode: 'insensitive' } },
         { owner: { contains: searchTerm, mode: 'insensitive' } },
         { vendorName: { contains: searchTerm, mode: 'insensitive' } },
         { description: { contains: searchTerm, mode: 'insensitive' } },
       ];
+
+      if (where.OR) {
+        where.AND = [
+          { OR: where.OR },
+          { OR: searchConditions },
+        ];
+        delete where.OR;
+      } else {
+        where.OR = searchConditions;
+      }
     }
 
     const [items, total] = await Promise.all([
@@ -57,21 +71,23 @@ export class AssetsService {
     };
   }
 
-  async count(organizationId: string): Promise<{ count: number }> {
+  async count(authCtx: ResourceAuthContext): Promise<{ count: number }> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const count = await this.prisma.asset.count({
       where: {
-        organizationId,
+        ...scopeWhere,
         deletedAt: null,
       },
     });
     return { count };
   }
 
-  async findOne(organizationId: string, id: string): Promise<AssetDto> {
+  async findOne(authCtx: ResourceAuthContext, id: string): Promise<AssetDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const asset = await this.prisma.asset.findFirst({
       where: {
         id,
-        organizationId,
+        ...scopeWhere,
         deletedAt: null,
       },
     });
@@ -83,10 +99,10 @@ export class AssetsService {
     return this.mapToDto(asset);
   }
 
-  async getAuditLogs(organizationId: string, assetId: string) {
-    // Verify asset exists or was deleted within tenant
+  async getAuditLogs(authCtx: ResourceAuthContext, assetId: string) {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const asset = await this.prisma.asset.findFirst({
-      where: { id: assetId, organizationId },
+      where: { id: assetId, ...scopeWhere },
     });
 
     if (!asset) {
@@ -95,7 +111,7 @@ export class AssetsService {
 
     return this.prisma.auditLogEntry.findMany({
       where: {
-        organizationId,
+        organizationId: authCtx.organizationId,
         entityType: 'Asset',
         entityId: assetId,
       },
@@ -103,10 +119,24 @@ export class AssetsService {
     });
   }
 
-  async create(organizationId: string, userId: string, dto: CreateAssetDto): Promise<AssetDto> {
+  async create(authCtx: ResourceAuthContext, dto: CreateAssetDto): Promise<AssetDto> {
+    await this.resourceAuthService.authorize(authCtx, {
+      action: 'WRITE',
+      departmentId: dto.departmentId,
+      projectId: dto.projectId,
+    });
+
+    await this.resourceAuthService.validateHierarchyInvariants(
+      authCtx.organizationId,
+      dto.departmentId,
+      dto.projectId,
+    );
+
     const asset = await this.prisma.asset.create({
       data: {
-        organizationId,
+        organizationId: authCtx.organizationId,
+        departmentId: dto.departmentId || null,
+        projectId: dto.projectId || null,
         name: dto.name,
         type: dto.type,
         description: dto.description || null,
@@ -120,13 +150,13 @@ export class AssetsService {
         lastScannedAt: dto.lastScannedAt ? new Date(dto.lastScannedAt) : null,
         maintenanceDueDate: dto.maintenanceDueDate ? new Date(dto.maintenanceDueDate) : null,
         vendorId: dto.vendorId || null,
-        createdById: userId,
+        createdById: authCtx.userId,
       },
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: userId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'ASSET_CREATED',
       entityType: 'Asset',
       entityId: asset.id,
@@ -136,22 +166,41 @@ export class AssetsService {
         criticality: asset.criticality,
         owner: asset.owner,
         environment: asset.environment,
+        departmentId: asset.departmentId,
+        projectId: asset.projectId,
       },
     });
 
     return this.mapToDto(asset);
   }
 
-  async update(organizationId: string, userId: string, id: string, dto: UpdateAssetDto): Promise<AssetDto> {
+  async update(authCtx: ResourceAuthContext, id: string, dto: UpdateAssetDto): Promise<AssetDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const existing = await this.prisma.asset.findFirst({
-      where: { id, organizationId, deletedAt: null },
+      where: { id, ...scopeWhere, deletedAt: null },
     });
 
     if (!existing) {
       throw new NotFoundException(`Asset with ID "${id}" not found`);
     }
 
-    // Determine changed field names for non-sensitive audit metadata
+    if (dto.departmentId !== undefined || dto.projectId !== undefined) {
+      const targetDeptId = dto.departmentId !== undefined ? dto.departmentId : existing.departmentId || undefined;
+      const targetProjId = dto.projectId !== undefined ? dto.projectId : existing.projectId || undefined;
+
+      await this.resourceAuthService.authorize(authCtx, {
+        action: 'WRITE',
+        departmentId: targetDeptId,
+        projectId: targetProjId,
+      });
+
+      await this.resourceAuthService.validateHierarchyInvariants(
+        authCtx.organizationId,
+        targetDeptId,
+        targetProjId,
+      );
+    }
+
     const changedFields: string[] = [];
     if (dto.name !== undefined && dto.name !== existing.name) changedFields.push('name');
     if (dto.type !== undefined && dto.type !== existing.type) changedFields.push('type');
@@ -164,6 +213,8 @@ export class AssetsService {
     if (dto.environment !== undefined && dto.environment !== existing.environment) changedFields.push('environment');
     if (dto.isManaged !== undefined && dto.isManaged !== existing.isManaged) changedFields.push('isManaged');
     if (dto.vendorId !== undefined && dto.vendorId !== existing.vendorId) changedFields.push('vendorId');
+    if (dto.departmentId !== undefined && dto.departmentId !== existing.departmentId) changedFields.push('departmentId');
+    if (dto.projectId !== undefined && dto.projectId !== existing.projectId) changedFields.push('projectId');
 
     const updated = await this.prisma.asset.update({
       where: { id },
@@ -181,13 +232,15 @@ export class AssetsService {
         ...(dto.lastScannedAt !== undefined && { lastScannedAt: dto.lastScannedAt ? new Date(dto.lastScannedAt) : null }),
         ...(dto.maintenanceDueDate !== undefined && { maintenanceDueDate: dto.maintenanceDueDate ? new Date(dto.maintenanceDueDate) : null }),
         ...(dto.vendorId !== undefined && { vendorId: dto.vendorId }),
+        ...(dto.departmentId !== undefined && { departmentId: dto.departmentId }),
+        ...(dto.projectId !== undefined && { projectId: dto.projectId }),
       },
     });
 
     if (changedFields.length > 0) {
       await this.auditLogsService.log({
-        organizationId,
-        actorId: userId,
+        organizationId: authCtx.organizationId,
+        actorId: authCtx.userId,
         action: 'ASSET_UPDATED',
         entityType: 'Asset',
         entityId: updated.id,
@@ -201,9 +254,10 @@ export class AssetsService {
     return this.mapToDto(updated);
   }
 
-  async softDelete(organizationId: string, userId: string, id: string): Promise<{ success: boolean }> {
+  async softDelete(authCtx: ResourceAuthContext, id: string): Promise<{ success: boolean }> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const existing = await this.prisma.asset.findFirst({
-      where: { id, organizationId, deletedAt: null },
+      where: { id, ...scopeWhere, deletedAt: null },
     });
 
     if (!existing) {
@@ -216,8 +270,8 @@ export class AssetsService {
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: userId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'ASSET_DELETED',
       entityType: 'Asset',
       entityId: existing.id,
@@ -233,6 +287,8 @@ export class AssetsService {
     return {
       id: asset.id,
       organizationId: asset.organizationId,
+      departmentId: asset.departmentId || null,
+      projectId: asset.projectId || null,
       name: asset.name,
       type: asset.type as AssetType,
       description: asset.description,

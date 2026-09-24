@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { FrameworkEntitlementsService } from '../frameworks/framework-entitlements.service';
+import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
 import { CreateControlDto, UpdateControlDto, ControlQueryDto, SignOffMappingDto } from './dto/controls.dto';
 import { ControlDto, PaginatedControlsDto, MappingStatus, ControlFrameworkMappingDto, FrameworkCode, NotificationType } from '@omnigrc/shared';
 
@@ -13,15 +14,18 @@ export class ControlsService {
     private readonly auditLogsService: AuditLogsService,
     private readonly notificationsService: NotificationsService,
     private readonly frameworkEntitlementsService: FrameworkEntitlementsService,
+    private readonly resourceAuthService: ResourceAuthorizationService,
   ) {}
 
-  async findAll(organizationId: string, query: ControlQueryDto): Promise<PaginatedControlsDto> {
+  async findAll(authCtx: ResourceAuthContext, query: ControlQueryDto): Promise<PaginatedControlsDto> {
     const page = query.page || 1;
     const limit = query.limit || 20;
     const skip = (page - 1) * limit;
 
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+
     const where: any = {
-      organizationId,
+      ...scopeWhere,
       deletedAt: null,
     };
 
@@ -37,11 +41,21 @@ export class ControlsService {
 
     if (query.search && query.search.trim()) {
       const searchTerm = query.search.trim();
-      where.OR = [
+      const searchConditions = [
         { name: { contains: searchTerm, mode: 'insensitive' } },
         { description: { contains: searchTerm, mode: 'insensitive' } },
         { category: { contains: searchTerm, mode: 'insensitive' } },
       ];
+
+      if (where.OR) {
+        where.AND = [
+          { OR: where.OR },
+          { OR: searchConditions },
+        ];
+        delete where.OR;
+      } else {
+        where.OR = searchConditions;
+      }
     }
 
     const [items, total] = await Promise.all([
@@ -74,19 +88,21 @@ export class ControlsService {
     };
   }
 
-  async getApprovedCount(organizationId: string): Promise<{ count: number }> {
+  async getApprovedCount(authCtx: ResourceAuthContext): Promise<{ count: number }> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const count = await this.prisma.controlFrameworkMapping.count({
       where: {
-        control: { organizationId, deletedAt: null },
+        control: { ...scopeWhere, deletedAt: null },
         status: MappingStatus.APPROVED,
       },
     });
     return { count };
   }
 
-  async findOne(organizationId: string, id: string): Promise<ControlDto> {
+  async findOne(authCtx: ResourceAuthContext, id: string): Promise<ControlDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const control = await this.prisma.control.findFirst({
-      where: { id, organizationId, deletedAt: null },
+      where: { id, ...scopeWhere, deletedAt: null },
       include: {
         mappings: {
           include: {
@@ -156,15 +172,23 @@ export class ControlsService {
     }));
   }
 
-  async create(organizationId: string, userId: string, dto: CreateControlDto): Promise<ControlDto> {
+  async create(authCtx: ResourceAuthContext, dto: CreateControlDto): Promise<ControlDto> {
+    await this.resourceAuthService.authorize(authCtx, {
+      action: 'WRITE',
+      departmentId: dto.departmentId,
+      projectId: dto.projectId,
+    });
+
     const name = dto.name || dto.title || dto.code || 'Untitled Control';
     const control = await this.prisma.control.create({
       data: {
-        organizationId,
+        organizationId: authCtx.organizationId,
+        departmentId: dto.departmentId || null,
+        projectId: dto.projectId || null,
         name,
         description: dto.description,
         category: dto.category || null,
-        createdById: userId,
+        createdById: authCtx.userId,
       },
 
       include: {
@@ -182,14 +206,16 @@ export class ControlsService {
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: userId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'CONTROL_CREATED',
       entityType: 'Control',
       entityId: control.id,
       metadata: {
         name: control.name,
         category: control.category,
+        departmentId: control.departmentId,
+        projectId: control.projectId,
       },
     });
 
@@ -200,19 +226,30 @@ export class ControlsService {
     return result;
   }
 
-  async update(organizationId: string, userId: string, id: string, dto: UpdateControlDto): Promise<ControlDto> {
+  async update(authCtx: ResourceAuthContext, id: string, dto: UpdateControlDto): Promise<ControlDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const existing = await this.prisma.control.findFirst({
-      where: { id, organizationId, deletedAt: null },
+      where: { id, ...scopeWhere, deletedAt: null },
     });
 
     if (!existing) {
       throw new NotFoundException(`Control with ID "${id}" not found`);
     }
 
+    if (dto.departmentId || dto.projectId) {
+      await this.resourceAuthService.authorize(authCtx, {
+        action: 'WRITE',
+        departmentId: dto.departmentId,
+        projectId: dto.projectId,
+      });
+    }
+
     const changedFields: string[] = [];
     if (dto.name !== undefined && dto.name !== existing.name) changedFields.push('name');
     if (dto.description !== undefined && dto.description !== existing.description) changedFields.push('description');
     if (dto.category !== undefined && dto.category !== existing.category) changedFields.push('category');
+    if (dto.departmentId !== undefined && dto.departmentId !== existing.departmentId) changedFields.push('departmentId');
+    if (dto.projectId !== undefined && dto.projectId !== existing.projectId) changedFields.push('projectId');
 
     const updated = await this.prisma.control.update({
       where: { id },
@@ -220,6 +257,8 @@ export class ControlsService {
         ...(dto.name !== undefined && { name: dto.name }),
         ...(dto.description !== undefined && { description: dto.description }),
         ...(dto.category !== undefined && { category: dto.category }),
+        ...(dto.departmentId !== undefined && { departmentId: dto.departmentId || null }),
+        ...(dto.projectId !== undefined && { projectId: dto.projectId || null }),
       },
       include: {
         mappings: {
@@ -237,8 +276,8 @@ export class ControlsService {
 
     if (changedFields.length > 0) {
       await this.auditLogsService.log({
-        organizationId,
-        actorId: userId,
+        organizationId: authCtx.organizationId,
+        actorId: authCtx.userId,
         action: 'CONTROL_UPDATED',
         entityType: 'Control',
         entityId: updated.id,
@@ -252,9 +291,10 @@ export class ControlsService {
     return this.mapToDto(updated);
   }
 
-  async softDelete(organizationId: string, userId: string, id: string): Promise<{ success: boolean }> {
+  async softDelete(authCtx: ResourceAuthContext, id: string): Promise<{ success: boolean }> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const existing = await this.prisma.control.findFirst({
-      where: { id, organizationId, deletedAt: null },
+      where: { id, ...scopeWhere, deletedAt: null },
     });
 
     if (!existing) {
@@ -267,8 +307,8 @@ export class ControlsService {
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: userId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'CONTROL_DELETED',
       entityType: 'Control',
       entityId: existing.id,
@@ -282,17 +322,17 @@ export class ControlsService {
 
   /**
    * Human sign-off: body is { decision: 'APPROVE' | 'OVERRIDE', overrideClauseId?, note? }
-   * RBAC NOTE: Both ADMIN and ANALYST can approve/override for now (leave as open question for business tightening).
    */
   async signOffMapping(
-    organizationId: string,
-    userId: string,
+    authCtx: ResourceAuthContext,
     controlId: string,
     mappingId: string,
     dto: SignOffMappingDto,
   ): Promise<ControlFrameworkMappingDto> {
+    const { userId, organizationId } = authCtx;
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const control = await this.prisma.control.findFirst({
-      where: { id: controlId, organizationId, deletedAt: null },
+      where: { id: controlId, ...scopeWhere, deletedAt: null },
     });
 
     if (!control) {
@@ -414,9 +454,10 @@ export class ControlsService {
     }
   }
 
-  async getAuditLogs(organizationId: string, controlId: string) {
+  async getAuditLogs(authCtx: ResourceAuthContext, controlId: string) {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const control = await this.prisma.control.findFirst({
-      where: { id: controlId, organizationId },
+      where: { id: controlId, ...scopeWhere, deletedAt: null },
     });
 
     if (!control) {
@@ -425,7 +466,7 @@ export class ControlsService {
 
     return this.prisma.auditLogEntry.findMany({
       where: {
-        organizationId,
+        organizationId: authCtx.organizationId,
         entityType: 'Control',
         entityId: controlId,
       },
@@ -437,6 +478,8 @@ export class ControlsService {
     return {
       id: control.id,
       organizationId: control.organizationId,
+      departmentId: control.departmentId || null,
+      projectId: control.projectId || null,
       name: control.name,
       description: control.description,
       category: control.category,

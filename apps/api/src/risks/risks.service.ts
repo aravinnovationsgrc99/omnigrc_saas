@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
 import { CreateRiskDto, UpdateRiskDto, RiskQueryDto } from './dto/risks.dto';
 import { RiskDto, PaginatedRisksDto, HeatmapSummaryDto, HeatmapCellDto, RiskStatus, RiskScoreBand } from '@omnigrc/shared';
 
@@ -9,6 +10,7 @@ export class RisksService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
+    private readonly resourceAuthService: ResourceAuthorizationService,
   ) {}
 
   public static getScoreBand(score: number): RiskScoreBand {
@@ -17,13 +19,15 @@ export class RisksService {
     return RiskScoreBand.LOW;
   }
 
-  async findAll(organizationId: string, query: RiskQueryDto): Promise<PaginatedRisksDto> {
+  async findAll(authCtx: ResourceAuthContext, query: RiskQueryDto): Promise<PaginatedRisksDto> {
     const page = query.page || 1;
     const limit = query.limit || 20;
     const skip = (page - 1) * limit;
 
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+
     const where: any = {
-      organizationId,
+      ...scopeWhere,
       deletedAt: null,
     };
 
@@ -51,12 +55,22 @@ export class RisksService {
 
     if (query.search && query.search.trim()) {
       const searchTerm = query.search.trim();
-      where.OR = [
+      const searchConditions = [
         { title: { contains: searchTerm, mode: 'insensitive' } },
         { owner: { contains: searchTerm, mode: 'insensitive' } },
         { description: { contains: searchTerm, mode: 'insensitive' } },
         { treatmentPlan: { contains: searchTerm, mode: 'insensitive' } },
       ];
+
+      if (where.OR) {
+        where.AND = [
+          { OR: where.OR },
+          { OR: searchConditions },
+        ];
+        delete where.OR;
+      } else {
+        where.OR = searchConditions;
+      }
     }
 
     const [items, total] = await Promise.all([
@@ -78,10 +92,11 @@ export class RisksService {
     };
   }
 
-  async getOpenCount(organizationId: string): Promise<{ count: number }> {
+  async getOpenCount(authCtx: ResourceAuthContext): Promise<{ count: number }> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const count = await this.prisma.risk.count({
       where: {
-        organizationId,
+        ...scopeWhere,
         deletedAt: null,
         status: { not: RiskStatus.CLOSED },
       },
@@ -89,10 +104,11 @@ export class RisksService {
     return { count };
   }
 
-  async getHeatmapSummary(organizationId: string): Promise<HeatmapSummaryDto> {
+  async getHeatmapSummary(authCtx: ResourceAuthContext): Promise<HeatmapSummaryDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const activeRisks = await this.prisma.risk.findMany({
       where: {
-        organizationId,
+        ...scopeWhere,
         deletedAt: null,
         status: { not: RiskStatus.CLOSED },
       },
@@ -125,9 +141,10 @@ export class RisksService {
     };
   }
 
-  async findOne(organizationId: string, id: string): Promise<RiskDto> {
+  async findOne(authCtx: ResourceAuthContext, id: string): Promise<RiskDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const risk = await this.prisma.risk.findFirst({
-      where: { id, organizationId, deletedAt: null },
+      where: { id, ...scopeWhere, deletedAt: null },
       include: { asset: { select: { name: true } } },
     });
 
@@ -138,9 +155,10 @@ export class RisksService {
     return this.mapToDto(risk);
   }
 
-  async getAuditLogs(organizationId: string, riskId: string) {
+  async getAuditLogs(authCtx: ResourceAuthContext, riskId: string) {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const risk = await this.prisma.risk.findFirst({
-      where: { id: riskId, organizationId },
+      where: { id: riskId, ...scopeWhere, deletedAt: null },
     });
 
     if (!risk) {
@@ -149,7 +167,7 @@ export class RisksService {
 
     return this.prisma.auditLogEntry.findMany({
       where: {
-        organizationId,
+        organizationId: authCtx.organizationId,
         entityType: 'Risk',
         entityId: riskId,
       },
@@ -157,12 +175,20 @@ export class RisksService {
     });
   }
 
-  async create(organizationId: string, userId: string, dto: CreateRiskDto): Promise<RiskDto> {
+  async create(authCtx: ResourceAuthContext, dto: CreateRiskDto): Promise<RiskDto> {
+    await this.resourceAuthService.authorize(authCtx, {
+      action: 'WRITE',
+      departmentId: dto.departmentId,
+      projectId: dto.projectId,
+    });
+
     const score = dto.likelihood * dto.impact;
 
     const risk = await this.prisma.risk.create({
       data: {
-        organizationId,
+        organizationId: authCtx.organizationId,
+        departmentId: dto.departmentId || null,
+        projectId: dto.projectId || null,
         title: dto.title,
         description: dto.description || null,
         likelihood: dto.likelihood,
@@ -172,14 +198,14 @@ export class RisksService {
         owner: dto.owner,
         assetId: dto.assetId || null,
         treatmentPlan: dto.treatmentPlan || null,
-        createdById: userId,
+        createdById: authCtx.userId,
       },
       include: { asset: { select: { name: true } } },
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: userId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'RISK_CREATED',
       entityType: 'Risk',
       entityId: risk.id,
@@ -187,19 +213,30 @@ export class RisksService {
         title: risk.title,
         score: risk.score,
         status: risk.status,
+        departmentId: risk.departmentId,
+        projectId: risk.projectId,
       },
     });
 
     return this.mapToDto(risk);
   }
 
-  async update(organizationId: string, userId: string, id: string, dto: UpdateRiskDto): Promise<RiskDto> {
+  async update(authCtx: ResourceAuthContext, id: string, dto: UpdateRiskDto): Promise<RiskDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const existing = await this.prisma.risk.findFirst({
-      where: { id, organizationId, deletedAt: null },
+      where: { id, ...scopeWhere, deletedAt: null },
     });
 
     if (!existing) {
       throw new NotFoundException(`Risk with ID "${id}" not found`);
+    }
+
+    if (dto.departmentId || dto.projectId) {
+      await this.resourceAuthService.authorize(authCtx, {
+        action: 'WRITE',
+        departmentId: dto.departmentId,
+        projectId: dto.projectId,
+      });
     }
 
     const likelihood = dto.likelihood !== undefined ? dto.likelihood : existing.likelihood;
@@ -213,6 +250,8 @@ export class RisksService {
     if (dto.status !== undefined && dto.status !== existing.status) changedFields.push('status');
     if (dto.owner !== undefined && dto.owner !== existing.owner) changedFields.push('owner');
     if (dto.assetId !== undefined && dto.assetId !== existing.assetId) changedFields.push('assetId');
+    if (dto.departmentId !== undefined && dto.departmentId !== existing.departmentId) changedFields.push('departmentId');
+    if (dto.projectId !== undefined && dto.projectId !== existing.projectId) changedFields.push('projectId');
     if (dto.treatmentPlan !== undefined && dto.treatmentPlan !== existing.treatmentPlan) changedFields.push('treatmentPlan');
 
     const updated = await this.prisma.risk.update({
@@ -226,6 +265,8 @@ export class RisksService {
         ...(dto.status !== undefined && { status: dto.status }),
         ...(dto.owner !== undefined && { owner: dto.owner }),
         ...(dto.assetId !== undefined && { assetId: dto.assetId || null }),
+        ...(dto.departmentId !== undefined && { departmentId: dto.departmentId || null }),
+        ...(dto.projectId !== undefined && { projectId: dto.projectId || null }),
         ...(dto.treatmentPlan !== undefined && { treatmentPlan: dto.treatmentPlan }),
       },
       include: { asset: { select: { name: true } } },
@@ -234,8 +275,8 @@ export class RisksService {
     if (changedFields.length > 0) {
       const isStatusChangeOnly = changedFields.length === 1 && changedFields[0] === 'status';
       await this.auditLogsService.log({
-        organizationId,
-        actorId: userId,
+        organizationId: authCtx.organizationId,
+        actorId: authCtx.userId,
         action: isStatusChangeOnly ? 'RISK_STATUS_CHANGED' : 'RISK_UPDATED',
         entityType: 'Risk',
         entityId: updated.id,
@@ -250,9 +291,10 @@ export class RisksService {
     return this.mapToDto(updated);
   }
 
-  async softDelete(organizationId: string, userId: string, id: string): Promise<{ success: boolean }> {
+  async softDelete(authCtx: ResourceAuthContext, id: string): Promise<{ success: boolean }> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const existing = await this.prisma.risk.findFirst({
-      where: { id, organizationId, deletedAt: null },
+      where: { id, ...scopeWhere, deletedAt: null },
     });
 
     if (!existing) {
@@ -265,8 +307,8 @@ export class RisksService {
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: userId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'RISK_DELETED',
       entityType: 'Risk',
       entityId: existing.id,
@@ -283,6 +325,8 @@ export class RisksService {
     return {
       id: risk.id,
       organizationId: risk.organizationId,
+      departmentId: risk.departmentId || null,
+      projectId: risk.projectId || null,
       title: risk.title,
       description: risk.description,
       likelihood: risk.likelihood,

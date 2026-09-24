@@ -23,6 +23,8 @@ import {
   RiskScoreBand,
 } from '@omnigrc/shared';
 
+import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
+
 @Injectable()
 export class ReportsService {
   constructor(
@@ -31,6 +33,7 @@ export class ReportsService {
     private readonly auditLogsService: AuditLogsService,
     private readonly excelExportService: ExcelExportService,
     private readonly reportsRegistry: ReportsRegistry,
+    private readonly resourceAuthService: ResourceAuthorizationService,
   ) {}
 
   public getReportDefinitions() {
@@ -46,11 +49,13 @@ export class ReportsService {
   }
 
   async getReport(
-    organizationId: string,
+    authCtx: ResourceAuthContext,
     reportType: ReportType,
     query: ReportQueryDto,
     isExport = false,
   ): Promise<ReportResponseDto> {
+    const { organizationId } = authCtx;
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const meta = this.getReportDefinition(reportType);
     const page = Math.max(Number(query.page) || 1, 1);
     const limit = isExport ? 5000 : Math.min(Math.max(Number(query.limit) || 20, 1), 100);
@@ -64,7 +69,7 @@ export class ReportsService {
 
     switch (reportType) {
       case ReportType.EXECUTIVE_GRC_POSTURE: {
-        const overview = await this.metricsService.getOverviewMetrics(organizationId);
+        const overview = await this.metricsService.getOverviewMetrics(authCtx);
         rows = [
           { domain: 'Assets', metricName: 'Total Assets', metricValue: overview.assets.total, unit: 'count' },
           { domain: 'Assets', metricName: 'High Criticality Assets', metricValue: overview.assets.criticalityHighCount, unit: 'count' },
@@ -525,15 +530,15 @@ export class ReportsService {
   }
 
   async exportReport(
-    organizationId: string,
-    userId: string,
+    authCtx: ResourceAuthContext,
     reportType: ReportType,
     query: ReportQueryDto,
   ): Promise<{ buffer: Buffer; filename: string; contentType: string }> {
+    const { organizationId, userId } = authCtx;
     const meta = this.getReportDefinition(reportType);
     const format = query.format === 'xlsx' ? 'xlsx' : 'csv';
 
-    const reportData = await this.getReport(organizationId, reportType, query, true);
+    const reportData = await this.getReport(authCtx, reportType, query, true);
 
     let buffer: Buffer;
     let filename: string;

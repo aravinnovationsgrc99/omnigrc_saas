@@ -17,6 +17,8 @@ export class CreateAuditPlanDto {
   ownerId: string;
   plannedStartDate?: string;
   plannedEndDate?: string;
+  departmentId?: string;
+  projectId?: string;
 }
 
 export class UpdateAuditPlanDto {
@@ -28,6 +30,8 @@ export class UpdateAuditPlanDto {
   plannedStartDate?: string;
   plannedEndDate?: string;
   status?: AuditPlanStatus;
+  departmentId?: string;
+  projectId?: string;
 }
 
 export class CreateAuditScheduleDto {

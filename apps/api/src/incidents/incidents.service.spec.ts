@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { IncidentsService } from './incidents.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
-import { IncidentSeverity, IncidentStatus } from '@omnigrc/shared';
+import { IncidentSeverity, IncidentStatus, Role } from '@omnigrc/shared';
 import { NotFoundException } from '@nestjs/common';
 
 describe('IncidentsService', () => {
@@ -66,7 +66,8 @@ describe('IncidentsService', () => {
     prisma.incident.findMany.mockResolvedValue([mockIncident]);
     prisma.incident.count.mockResolvedValue(1);
 
-    const result = await service.findAll('org-1', { page: 1, limit: 10 });
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    const result = await service.findAll(authCtx, { page: 1, limit: 10 });
     expect(result.total).toBe(1);
     expect(result.items.length).toBe(1);
     expect(result.items[0].title).toBe('Security Breach Test');
@@ -95,7 +96,8 @@ describe('IncidentsService', () => {
 
     prisma.incident.create.mockResolvedValue(mockCreated);
 
-    const result = await service.create('org-1', 'user-1', {
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    const result = await service.create(authCtx, {
       title: 'Data Leak',
       severity: IncidentSeverity.CRITICAL,
     });
@@ -112,8 +114,9 @@ describe('IncidentsService', () => {
   it('should throw NotFoundException if affectedAssetId belongs to another tenant', async () => {
     prisma.asset.findFirst.mockResolvedValue(null);
 
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
     await expect(
-      service.create('org-1', 'user-1', {
+      service.create(authCtx, {
         title: 'Unauthorized Asset Incident',
         affectedAssetId: 'foreign-asset-id',
       }),
@@ -123,6 +126,7 @@ describe('IncidentsService', () => {
   it('should throw NotFoundException if incident ID does not exist for tenant', async () => {
     prisma.incident.findFirst.mockResolvedValue(null);
 
-    await expect(service.findOne('org-1', 'non-existent-id')).rejects.toThrow(NotFoundException);
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    await expect(service.findOne(authCtx, 'non-existent-id')).rejects.toThrow(NotFoundException);
   });
 });

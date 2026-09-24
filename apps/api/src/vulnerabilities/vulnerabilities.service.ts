@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
 import { CreateVulnerabilityDto, UpdateVulnerabilityDto, VulnerabilityQueryDto } from './dto/vulnerabilities.dto';
 import { VulnerabilityDto, PaginatedVulnerabilitiesDto, VulnerabilitySeverity, VulnerabilityStatus } from '@omnigrc/shared';
 
@@ -9,15 +10,18 @@ export class VulnerabilitiesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
+    private readonly resourceAuthService: ResourceAuthorizationService,
   ) {}
 
-  async findAll(organizationId: string, query: VulnerabilityQueryDto): Promise<PaginatedVulnerabilitiesDto> {
+  async findAll(authCtx: ResourceAuthContext, query: VulnerabilityQueryDto): Promise<PaginatedVulnerabilitiesDto> {
     const page = query.page || 1;
     const limit = query.limit || 20;
     const skip = (page - 1) * limit;
 
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+
     const where: any = {
-      organizationId,
+      ...scopeWhere,
       deletedAt: null,
     };
 
@@ -37,12 +41,22 @@ export class VulnerabilitiesService {
 
     if (query.search && query.search.trim()) {
       const searchTerm = query.search.trim();
-      where.OR = [
+      const searchConditions = [
         { title: { contains: searchTerm, mode: 'insensitive' } },
         { cveId: { contains: searchTerm, mode: 'insensitive' } },
         { remediationOwner: { contains: searchTerm, mode: 'insensitive' } },
         { description: { contains: searchTerm, mode: 'insensitive' } },
       ];
+
+      if (where.OR) {
+        where.AND = [
+          { OR: where.OR },
+          { OR: searchConditions },
+        ];
+        delete where.OR;
+      } else {
+        where.OR = searchConditions;
+      }
     }
 
     const [items, total] = await Promise.all([
@@ -68,11 +82,12 @@ export class VulnerabilitiesService {
     };
   }
 
-  async findOne(organizationId: string, id: string): Promise<VulnerabilityDto> {
+  async findOne(authCtx: ResourceAuthContext, id: string): Promise<VulnerabilityDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const vuln = await this.prisma.vulnerability.findFirst({
       where: {
         id,
-        organizationId,
+        ...scopeWhere,
         deletedAt: null,
       },
       include: {
@@ -89,10 +104,35 @@ export class VulnerabilitiesService {
     return this.mapToDto(vuln);
   }
 
-  async create(organizationId: string, userId: string, dto: CreateVulnerabilityDto): Promise<VulnerabilityDto> {
+  async create(authCtx: ResourceAuthContext, dto: CreateVulnerabilityDto): Promise<VulnerabilityDto> {
+    await this.resourceAuthService.authorize(authCtx, {
+      action: 'WRITE',
+      departmentId: dto.departmentId,
+      projectId: dto.projectId,
+    });
+
+    await this.resourceAuthService.validateHierarchyInvariants(
+      authCtx.organizationId,
+      dto.departmentId,
+      dto.projectId,
+    );
+
+    // Validate that affected assets belong to user's authorized scope
+    if (dto.assetIds && dto.assetIds.length > 0) {
+      const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+      const assets = await this.prisma.asset.findMany({
+        where: { id: { in: dto.assetIds }, ...scopeWhere, deletedAt: null },
+      });
+      if (assets.length !== dto.assetIds.length) {
+        throw new NotFoundException('One or more affected assets not found or out of scope.');
+      }
+    }
+
     const vuln = await this.prisma.vulnerability.create({
       data: {
-        organizationId,
+        organizationId: authCtx.organizationId,
+        departmentId: dto.departmentId || null,
+        projectId: dto.projectId || null,
         cveId: dto.cveId || null,
         title: dto.title,
         description: dto.description || null,
@@ -101,10 +141,10 @@ export class VulnerabilitiesService {
         remediationOwner: dto.remediationOwner,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
         remediationNotes: dto.remediationNotes || null,
-        createdById: userId,
+        createdById: authCtx.userId,
         affectedAssets: {
           create: dto.assetIds.map((assetId) => ({
-            organizationId,
+            organizationId: authCtx.organizationId,
             assetId,
           })),
         },
@@ -117,8 +157,8 @@ export class VulnerabilitiesService {
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: userId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'VULNERABILITY_CREATED',
       entityType: 'Vulnerability',
       entityId: vuln.id,
@@ -127,29 +167,55 @@ export class VulnerabilitiesService {
         cveId: vuln.cveId,
         severity: vuln.severity,
         assetCount: dto.assetIds.length,
+        departmentId: vuln.departmentId,
+        projectId: vuln.projectId,
       },
     });
 
     return this.mapToDto(vuln);
   }
 
-  async update(organizationId: string, userId: string, id: string, dto: UpdateVulnerabilityDto): Promise<VulnerabilityDto> {
+  async update(authCtx: ResourceAuthContext, id: string, dto: UpdateVulnerabilityDto): Promise<VulnerabilityDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const existing = await this.prisma.vulnerability.findFirst({
-      where: { id, organizationId, deletedAt: null },
+      where: { id, ...scopeWhere, deletedAt: null },
     });
 
     if (!existing) {
       throw new NotFoundException(`Vulnerability with ID "${id}" not found`);
     }
 
-    // Update asset relations if assetIds supplied
+    if (dto.departmentId !== undefined || dto.projectId !== undefined) {
+      const targetDeptId = dto.departmentId !== undefined ? dto.departmentId : existing.departmentId || undefined;
+      const targetProjId = dto.projectId !== undefined ? dto.projectId : existing.projectId || undefined;
+
+      await this.resourceAuthService.authorize(authCtx, {
+        action: 'WRITE',
+        departmentId: targetDeptId,
+        projectId: targetProjId,
+      });
+
+      await this.resourceAuthService.validateHierarchyInvariants(
+        authCtx.organizationId,
+        targetDeptId,
+        targetProjId,
+      );
+    }
+
     if (dto.assetIds !== undefined) {
+      const assets = await this.prisma.asset.findMany({
+        where: { id: { in: dto.assetIds }, ...scopeWhere, deletedAt: null },
+      });
+      if (assets.length !== dto.assetIds.length) {
+        throw new NotFoundException('One or more affected assets not found or out of scope.');
+      }
+
       await this.prisma.vulnerabilityAsset.deleteMany({
         where: { vulnerabilityId: id },
       });
       await this.prisma.vulnerabilityAsset.createMany({
         data: dto.assetIds.map((assetId) => ({
-          organizationId,
+          organizationId: authCtx.organizationId,
           vulnerabilityId: id,
           assetId,
         })),
@@ -167,6 +233,8 @@ export class VulnerabilitiesService {
         ...(dto.remediationOwner !== undefined && { remediationOwner: dto.remediationOwner }),
         ...(dto.dueDate !== undefined && { dueDate: dto.dueDate ? new Date(dto.dueDate) : null }),
         ...(dto.remediationNotes !== undefined && { remediationNotes: dto.remediationNotes }),
+        ...(dto.departmentId !== undefined && { departmentId: dto.departmentId }),
+        ...(dto.projectId !== undefined && { projectId: dto.projectId }),
         lastSeenAt: new Date(),
       },
       include: {
@@ -177,8 +245,8 @@ export class VulnerabilitiesService {
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: userId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'VULNERABILITY_UPDATED',
       entityType: 'Vulnerability',
       entityId: updated.id,
@@ -191,9 +259,10 @@ export class VulnerabilitiesService {
     return this.mapToDto(updated);
   }
 
-  async softDelete(organizationId: string, userId: string, id: string): Promise<{ success: boolean }> {
+  async softDelete(authCtx: ResourceAuthContext, id: string): Promise<{ success: boolean }> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const existing = await this.prisma.vulnerability.findFirst({
-      where: { id, organizationId, deletedAt: null },
+      where: { id, ...scopeWhere, deletedAt: null },
     });
 
     if (!existing) {
@@ -206,8 +275,8 @@ export class VulnerabilitiesService {
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: userId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'VULNERABILITY_DELETED',
       entityType: 'Vulnerability',
       entityId: existing.id,
@@ -223,6 +292,8 @@ export class VulnerabilitiesService {
     return {
       id: vuln.id,
       organizationId: vuln.organizationId,
+      departmentId: vuln.departmentId || null,
+      projectId: vuln.projectId || null,
       cveId: vuln.cveId,
       title: vuln.title,
       description: vuln.description,
@@ -241,6 +312,6 @@ export class VulnerabilitiesService {
         assetId: va.assetId,
         assetName: va.asset?.name || '',
       })) : [],
-    };
+    } as any;
   }
 }

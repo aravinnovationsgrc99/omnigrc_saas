@@ -12,6 +12,7 @@ import {
   VulnerabilityStatus,
   RiskScoreBand,
   AuditPlanStatus,
+  Role,
 } from '@omnigrc/shared';
 import { NotFoundException } from '@nestjs/common';
 
@@ -99,16 +100,18 @@ describe('ReportsService', () => {
   });
 
   it('should consume Phase 13 MetricsService for Executive GRC Posture without duplicate DB queries', async () => {
-    const report = await service.getReport('org-a', ReportType.EXECUTIVE_GRC_POSTURE, {});
+    const authCtx = { userId: 'user-1', organizationId: 'org-a', role: Role.ADMIN };
+    const report = await service.getReport(authCtx, ReportType.EXECUTIVE_GRC_POSTURE, {});
 
-    expect(metricsService.getOverviewMetrics).toHaveBeenCalledWith('org-a');
+    expect(metricsService.getOverviewMetrics).toHaveBeenCalledWith(authCtx);
     expect(report.data.length).toBeGreaterThan(0);
     expect(report.data.find((r) => r.metricName === 'Total Assets')?.metricValue).toBe(10);
     expect(report.data.find((r) => r.metricName === 'Overall Audit Score')?.metricValue).toBe(92.5);
   });
 
   it('should enforce multi-tenant isolation and MSSP context by passing organizationId to Prisma queries', async () => {
-    await service.getReport('client-a-id', ReportType.VULNERABILITY_REPORT, {});
+    const authCtx = { userId: 'user-1', organizationId: 'client-a-id', role: Role.ADMIN };
+    await service.getReport(authCtx, ReportType.VULNERABILITY_REPORT, {});
 
     expect(prisma.vulnerability.count).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -123,7 +126,8 @@ describe('ReportsService', () => {
   });
 
   it('should enforce authoritative obligation task predicate (cadence != ONE_OFF OR obligationReference IS NOT NULL)', async () => {
-    await service.getReport('org-a', ReportType.COMPLIANCE_OBLIGATION_REPORT, {});
+    const authCtx = { userId: 'user-1', organizationId: 'org-a', role: Role.ADMIN };
+    await service.getReport(authCtx, ReportType.COMPLIANCE_OBLIGATION_REPORT, {});
 
     expect(prisma.complianceTask.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -158,7 +162,8 @@ describe('ReportsService', () => {
       },
     ]);
 
-    const report = await service.getReport('org-a', ReportType.BUSINESS_AUDIT_REPORT, {});
+    const authCtx = { userId: 'user-1', organizationId: 'org-a', role: Role.ADMIN };
+    const report = await service.getReport(authCtx, ReportType.BUSINESS_AUDIT_REPORT, {});
 
     expect(report.data[0].latestAssessmentScore).toBe(88.5);
     expect(report.data[0].findingsOpen).toBe(1);
@@ -187,11 +192,12 @@ describe('ReportsService', () => {
 
   it('should emit REPORT_EXPORTED audit entry on export download and zero audit logs on interactive report views', async () => {
     // Interactive View
-    await service.getReport('org-a', ReportType.ASSET_INVENTORY_REPORT, {});
+    const authCtx = { userId: 'user-1', organizationId: 'org-a', role: Role.ADMIN };
+    await service.getReport(authCtx, ReportType.ASSET_INVENTORY_REPORT, {});
     expect(auditLogsService.log).not.toHaveBeenCalled();
 
     // Export Download
-    const exportResult = await service.exportReport('org-a', 'user-1', ReportType.ASSET_INVENTORY_REPORT, { format: 'csv' });
+    const exportResult = await service.exportReport(authCtx, ReportType.ASSET_INVENTORY_REPORT, { format: 'csv' });
 
     expect(exportResult.filename).toContain('asset_inventory_report');
     expect(exportResult.contentType).toBe('text/csv');

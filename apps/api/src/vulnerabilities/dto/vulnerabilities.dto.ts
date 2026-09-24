@@ -38,6 +38,14 @@ export class CreateVulnerabilityDto {
   @IsString()
   @IsOptional()
   remediationNotes?: string;
+
+  @IsString()
+  @IsOptional()
+  departmentId?: string;
+
+  @IsString()
+  @IsOptional()
+  projectId?: string;
 }
 
 export class UpdateVulnerabilityDto {
@@ -77,6 +85,14 @@ export class UpdateVulnerabilityDto {
   @IsString()
   @IsOptional()
   remediationNotes?: string;
+
+  @IsString()
+  @IsOptional()
+  departmentId?: string;
+
+  @IsString()
+  @IsOptional()
+  projectId?: string;
 }
 
 export class VulnerabilityQueryDto {

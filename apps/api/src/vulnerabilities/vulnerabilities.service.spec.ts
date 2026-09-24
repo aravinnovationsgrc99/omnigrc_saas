@@ -3,7 +3,7 @@ import { VulnerabilitiesService } from './vulnerabilities.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotFoundException } from '@nestjs/common';
-import { VulnerabilitySeverity, VulnerabilityStatus } from '@omnigrc/shared';
+import { VulnerabilitySeverity, VulnerabilityStatus, Role } from '@omnigrc/shared';
 
 describe('VulnerabilitiesService', () => {
   let service: VulnerabilitiesService;
@@ -64,7 +64,8 @@ describe('VulnerabilitiesService', () => {
 
     prisma.vulnerability.create.mockResolvedValue(mockVuln);
 
-    const result = await service.create('org-1', 'user-1', {
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    const result = await service.create(authCtx, {
       title: 'RCE in Web Server',
       severity: VulnerabilitySeverity.CRITICAL,
       remediationOwner: 'SecOps',
@@ -78,6 +79,7 @@ describe('VulnerabilitiesService', () => {
   it('should throw NotFoundException when fetching nonexistent vulnerability', async () => {
     prisma.vulnerability.findFirst.mockResolvedValue(null);
 
-    await expect(service.findOne('org-1', 'non-existent')).rejects.toThrow(NotFoundException);
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    await expect(service.findOne(authCtx, 'non-existent')).rejects.toThrow(NotFoundException);
   });
 });

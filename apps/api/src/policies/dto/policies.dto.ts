@@ -36,6 +36,14 @@ export class CreatePolicyDto {
   @IsString()
   @IsNotEmpty()
   initialContent!: string;
+
+  @IsString()
+  @IsOptional()
+  departmentId?: string;
+
+  @IsString()
+  @IsOptional()
+  projectId?: string;
 }
 
 export class UpdatePolicyDto {
@@ -68,6 +76,14 @@ export class UpdatePolicyDto {
   @Min(1)
   @IsOptional()
   reviewCadenceDays?: number;
+
+  @IsString()
+  @IsOptional()
+  departmentId?: string;
+
+  @IsString()
+  @IsOptional()
+  projectId?: string;
 }
 
 export class CreatePolicyVersionDto {

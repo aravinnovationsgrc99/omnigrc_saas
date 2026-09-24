@@ -16,8 +16,11 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { EvidenceService } from './evidence.service';
+import { RequiresActiveLicense } from '../common/decorators/requires-active-license.decorator';
+import { ResourceAuthContext } from '../auth/resource-authorization.service';
 import {
   CreateEvidenceUploadDto,
   AttachEvidenceDto,
@@ -29,62 +32,82 @@ import {
 
 @Controller('evidence')
 @UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(Role.ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
 export class EvidenceController {
   constructor(private readonly evidenceService: EvidenceService) {}
 
   @Post('upload')
+  @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
   @UseInterceptors(FileInterceptor('file'))
   async uploadEvidence(
-    @CurrentUser('organizationId') organizationId: string,
-    @CurrentUser('id') userId: string,
+    @CurrentUser() user: any,
     @UploadedFile() file: any,
     @Body() dto: CreateEvidenceUploadDto,
   ): Promise<EvidenceDto> {
-    return this.evidenceService.createAndUpload(organizationId, userId, file, dto);
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.evidenceService.createAndUpload(authCtx, file, dto);
   }
 
   @Get('vault')
   async getVaultItems(
-    @CurrentUser('organizationId') organizationId: string,
+    @CurrentUser() user: any,
     @Query() query: EvidenceVaultQueryDto,
   ): Promise<PaginatedEvidenceDto> {
-    return this.evidenceService.findAll(organizationId, query);
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.evidenceService.findAll(authCtx, query);
   }
 
   @Get(':id')
   async getEvidence(
-    @CurrentUser('organizationId') organizationId: string,
+    @CurrentUser() user: any,
     @Param('id') id: string,
   ): Promise<EvidenceDto> {
-    return this.evidenceService.findOne(organizationId, id);
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.evidenceService.findOne(authCtx, id);
   }
 
   @Get(':id/download')
   async downloadEvidence(
-    @CurrentUser('organizationId') organizationId: string,
-    @CurrentUser('id') userId: string,
-    @CurrentUser('role') role: Role,
+    @CurrentUser() user: any,
     @Param('id') id: string,
     @Res() res: Response,
   ): Promise<void> {
-    await this.evidenceService.downloadEvidence(
-      organizationId,
-      id,
-      { userId, role },
-      res,
-    );
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    await this.evidenceService.downloadEvidence(authCtx, id, res);
   }
 
   @Post(':id/attach')
+  @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
   async attachEvidence(
-    @CurrentUser('organizationId') organizationId: string,
-    @CurrentUser('id') userId: string,
+    @CurrentUser() user: any,
     @Param('id') evidenceId: string,
     @Body() dto: AttachEvidenceDto,
   ): Promise<EvidenceDto> {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
     return this.evidenceService.attachEvidence(
-      organizationId,
-      userId,
+      authCtx,
       evidenceId,
       dto.resourceType,
       dto.resourceId,
@@ -92,15 +115,20 @@ export class EvidenceController {
   }
 
   @Delete(':id/detach')
+  @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
   async detachEvidence(
-    @CurrentUser('organizationId') organizationId: string,
-    @CurrentUser('id') userId: string,
+    @CurrentUser() user: any,
     @Param('id') evidenceId: string,
     @Body() dto: AttachEvidenceDto,
   ): Promise<EvidenceDto> {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
     return this.evidenceService.detachEvidence(
-      organizationId,
-      userId,
+      authCtx,
       evidenceId,
       dto.resourceType,
       dto.resourceId,
@@ -108,11 +136,17 @@ export class EvidenceController {
   }
 
   @Delete(':id')
+  @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
   async archiveEvidence(
-    @CurrentUser('organizationId') organizationId: string,
-    @CurrentUser('id') userId: string,
+    @CurrentUser() user: any,
     @Param('id') id: string,
   ): Promise<EvidenceDto> {
-    return this.evidenceService.archiveEvidence(organizationId, userId, id);
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.evidenceService.archiveEvidence(authCtx, id);
   }
 }

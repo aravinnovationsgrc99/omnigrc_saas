@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
 import { CreateVendorDto, UpdateVendorDto, VendorQueryDto, CreateVendorAssessmentDto } from './dto/vendors.dto';
 import { VendorDto, PaginatedVendorsDto, VendorCriticality, VendorStatus, VendorAssessmentDto, VendorAssessmentStatus } from '@omnigrc/shared';
 
@@ -9,15 +10,18 @@ export class VendorsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
+    private readonly resourceAuthService: ResourceAuthorizationService,
   ) {}
 
-  async findAll(organizationId: string, query: VendorQueryDto): Promise<PaginatedVendorsDto> {
+  async findAll(authCtx: ResourceAuthContext, query: VendorQueryDto): Promise<PaginatedVendorsDto> {
     const page = query.page || 1;
     const limit = query.limit || 20;
     const skip = (page - 1) * limit;
 
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+
     const where: any = {
-      organizationId,
+      ...scopeWhere,
       deletedAt: null,
     };
 
@@ -31,12 +35,22 @@ export class VendorsService {
 
     if (query.search && query.search.trim()) {
       const searchTerm = query.search.trim();
-      where.OR = [
+      const searchConditions = [
         { name: { contains: searchTerm, mode: 'insensitive' } },
         { owner: { contains: searchTerm, mode: 'insensitive' } },
         { category: { contains: searchTerm, mode: 'insensitive' } },
         { description: { contains: searchTerm, mode: 'insensitive' } },
       ];
+
+      if (where.OR) {
+        where.AND = [
+          { OR: where.OR },
+          { OR: searchConditions },
+        ];
+        delete where.OR;
+      } else {
+        where.OR = searchConditions;
+      }
     }
 
     const [items, total] = await Promise.all([
@@ -61,11 +75,12 @@ export class VendorsService {
     };
   }
 
-  async findOne(organizationId: string, id: string): Promise<VendorDto> {
+  async findOne(authCtx: ResourceAuthContext, id: string): Promise<VendorDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const vendor = await this.prisma.vendor.findFirst({
       where: {
         id,
-        organizationId,
+        ...scopeWhere,
         deletedAt: null,
       },
       include: {
@@ -81,13 +96,27 @@ export class VendorsService {
     return this.mapToDto(vendor);
   }
 
-  async create(organizationId: string, userId: string, dto: CreateVendorDto): Promise<VendorDto> {
+  async create(authCtx: ResourceAuthContext, dto: CreateVendorDto): Promise<VendorDto> {
+    await this.resourceAuthService.authorize(authCtx, {
+      action: 'WRITE',
+      departmentId: dto.departmentId,
+      projectId: dto.projectId,
+    });
+
+    await this.resourceAuthService.validateHierarchyInvariants(
+      authCtx.organizationId,
+      dto.departmentId,
+      dto.projectId,
+    );
+
     const nextReviewDate = new Date();
     nextReviewDate.setDate(nextReviewDate.getDate() + (dto.reviewCadenceDays || 365));
 
     const vendor = await this.prisma.vendor.create({
       data: {
-        organizationId,
+        organizationId: authCtx.organizationId,
+        departmentId: dto.departmentId || null,
+        projectId: dto.projectId || null,
         name: dto.name,
         description: dto.description || null,
         category: dto.category || null,
@@ -98,13 +127,13 @@ export class VendorsService {
         reviewCadenceDays: dto.reviewCadenceDays || 365,
         nextReviewDate,
         websiteUrl: dto.websiteUrl || null,
-        createdById: userId,
+        createdById: authCtx.userId,
       },
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: userId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'VENDOR_CREATED',
       entityType: 'Vendor',
       entityId: vendor.id,
@@ -112,19 +141,39 @@ export class VendorsService {
         name: vendor.name,
         criticality: vendor.criticality,
         owner: vendor.owner,
+        departmentId: vendor.departmentId,
+        projectId: vendor.projectId,
       },
     });
 
     return this.mapToDto(vendor);
   }
 
-  async update(organizationId: string, userId: string, id: string, dto: UpdateVendorDto): Promise<VendorDto> {
+  async update(authCtx: ResourceAuthContext, id: string, dto: UpdateVendorDto): Promise<VendorDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const existing = await this.prisma.vendor.findFirst({
-      where: { id, organizationId, deletedAt: null },
+      where: { id, ...scopeWhere, deletedAt: null },
     });
 
     if (!existing) {
       throw new NotFoundException(`Vendor with ID "${id}" not found`);
+    }
+
+    if (dto.departmentId !== undefined || dto.projectId !== undefined) {
+      const targetDeptId = dto.departmentId !== undefined ? dto.departmentId : existing.departmentId || undefined;
+      const targetProjId = dto.projectId !== undefined ? dto.projectId : existing.projectId || undefined;
+
+      await this.resourceAuthService.authorize(authCtx, {
+        action: 'WRITE',
+        departmentId: targetDeptId,
+        projectId: targetProjId,
+      });
+
+      await this.resourceAuthService.validateHierarchyInvariants(
+        authCtx.organizationId,
+        targetDeptId,
+        targetProjId,
+      );
     }
 
     const updated = await this.prisma.vendor.update({
@@ -139,6 +188,8 @@ export class VendorsService {
         ...(dto.department !== undefined && { department: dto.department }),
         ...(dto.reviewCadenceDays !== undefined && { reviewCadenceDays: dto.reviewCadenceDays }),
         ...(dto.websiteUrl !== undefined && { websiteUrl: dto.websiteUrl }),
+        ...(dto.departmentId !== undefined && { departmentId: dto.departmentId }),
+        ...(dto.projectId !== undefined && { projectId: dto.projectId }),
       },
       include: {
         assessments: true,
@@ -147,8 +198,8 @@ export class VendorsService {
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: userId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'VENDOR_UPDATED',
       entityType: 'Vendor',
       entityId: updated.id,
@@ -160,9 +211,10 @@ export class VendorsService {
     return this.mapToDto(updated);
   }
 
-  async softDelete(organizationId: string, userId: string, id: string): Promise<{ success: boolean }> {
+  async softDelete(authCtx: ResourceAuthContext, id: string): Promise<{ success: boolean }> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const existing = await this.prisma.vendor.findFirst({
-      where: { id, organizationId, deletedAt: null },
+      where: { id, ...scopeWhere, deletedAt: null },
     });
 
     if (!existing) {
@@ -175,8 +227,8 @@ export class VendorsService {
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: userId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'VENDOR_DELETED',
       entityType: 'Vendor',
       entityId: existing.id,
@@ -189,13 +241,13 @@ export class VendorsService {
   }
 
   async createAssessment(
-    organizationId: string,
-    userId: string,
+    authCtx: ResourceAuthContext,
     vendorId: string,
     dto: CreateVendorAssessmentDto,
   ): Promise<VendorAssessmentDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const vendor = await this.prisma.vendor.findFirst({
-      where: { id: vendorId, organizationId, deletedAt: null },
+      where: { id: vendorId, ...scopeWhere, deletedAt: null },
     });
 
     if (!vendor) {
@@ -204,7 +256,7 @@ export class VendorsService {
 
     const assessment = await this.prisma.vendorAssessment.create({
       data: {
-        organizationId,
+        organizationId: authCtx.organizationId,
         vendorId,
         title: dto.title,
         score: dto.score !== undefined ? dto.score : null,
@@ -216,7 +268,6 @@ export class VendorsService {
       },
     });
 
-    // Update vendor last reviewed date if assessment is completed
     if (dto.status === VendorAssessmentStatus.COMPLETED) {
       const nextReviewDate = new Date();
       nextReviewDate.setDate(nextReviewDate.getDate() + vendor.reviewCadenceDays);
@@ -230,8 +281,8 @@ export class VendorsService {
     }
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: userId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'VENDOR_ASSESSMENT_CREATED',
       entityType: 'VendorAssessment',
       entityId: assessment.id,
@@ -258,14 +309,11 @@ export class VendorsService {
     };
   }
 
-  /**
-   * Safe data migration: Populate Vendor records from distinct Asset.vendorName values per tenant.
-   * Preserves existing string vendorName on assets and links vendorId when created.
-   */
-  async migrateAssetVendors(organizationId: string, userId: string): Promise<{ migratedCount: number }> {
+  async migrateAssetVendors(authCtx: ResourceAuthContext): Promise<{ migratedCount: number }> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const assetsWithVendors = await this.prisma.asset.findMany({
       where: {
-        organizationId,
+        ...scopeWhere,
         deletedAt: null,
         vendorName: { not: null },
         vendorId: null,
@@ -278,26 +326,24 @@ export class VendorsService {
       if (!asset.vendorName || !asset.vendorName.trim()) continue;
       const vName = asset.vendorName.trim();
 
-      // Find or create Vendor record per tenant for exact name
       let vendor = await this.prisma.vendor.findFirst({
-        where: { organizationId, name: { equals: vName, mode: 'insensitive' }, deletedAt: null },
+        where: { organizationId: authCtx.organizationId, name: { equals: vName, mode: 'insensitive' }, deletedAt: null },
       });
 
       if (!vendor) {
         vendor = await this.prisma.vendor.create({
           data: {
-            organizationId,
+            organizationId: authCtx.organizationId,
             name: vName,
             owner: asset.owner || 'System',
             criticality: VendorCriticality.MEDIUM,
             status: VendorStatus.ACTIVE,
-            createdById: userId,
+            createdById: authCtx.userId,
           },
         });
         count++;
       }
 
-      // Update asset vendorId link while preserving vendorName string
       await this.prisma.asset.update({
         where: { id: asset.id },
         data: { vendorId: vendor.id },
@@ -311,6 +357,8 @@ export class VendorsService {
     return {
       id: vendor.id,
       organizationId: vendor.organizationId,
+      departmentId: vendor.departmentId || null,
+      projectId: vendor.projectId || null,
       name: vendor.name,
       description: vendor.description,
       category: vendor.category,
@@ -340,6 +388,6 @@ export class VendorsService {
         updatedAt: a.updatedAt.toISOString(),
       })) : [],
       assetCount: vendor._count?.assets || 0,
-    };
+    } as any;
   }
 }

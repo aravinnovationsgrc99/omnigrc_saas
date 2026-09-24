@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
 import {
   IncidentDto,
   CreateIncidentDto,
@@ -16,18 +17,21 @@ export class IncidentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
+    private readonly resourceAuthService: ResourceAuthorizationService,
   ) {}
 
   async findAll(
-    organizationId: string,
+    authCtx: ResourceAuthContext,
     query: IncidentQueryDto,
   ): Promise<PaginatedIncidentsDto> {
     const page = Math.max(1, Number(query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
     const skip = (page - 1) * limit;
 
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+
     const where: any = {
-      organizationId,
+      ...scopeWhere,
       deletedAt: null,
     };
 
@@ -41,12 +45,22 @@ export class IncidentsService {
 
     if (query.search?.trim()) {
       const search = query.search.trim();
-      where.OR = [
+      const searchConditions = [
         { title: { contains: search, mode: 'insensitive' } },
         { description: { contains: search, mode: 'insensitive' } },
         { rootCause: { contains: search, mode: 'insensitive' } },
         { owner: { contains: search, mode: 'insensitive' } },
       ];
+
+      if (where.OR) {
+        where.AND = [
+          { OR: where.OR },
+          { OR: searchConditions },
+        ];
+        delete where.OR;
+      } else {
+        where.OR = searchConditions;
+      }
     }
 
     const [items, total] = await Promise.all([
@@ -70,9 +84,10 @@ export class IncidentsService {
     };
   }
 
-  async findOne(organizationId: string, id: string): Promise<IncidentDto> {
+  async findOne(authCtx: ResourceAuthContext, id: string): Promise<IncidentDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const incident = await this.prisma.incident.findFirst({
-      where: { id, organizationId, deletedAt: null },
+      where: { id, ...scopeWhere, deletedAt: null },
       include: {
         affectedAsset: { select: { id: true, name: true } },
       },
@@ -86,23 +101,37 @@ export class IncidentsService {
   }
 
   async create(
-    organizationId: string,
-    createdById: string,
-    dto: CreateIncidentDto,
+    authCtx: ResourceAuthContext,
+    dto: CreateIncidentDto & { departmentId?: string; projectId?: string },
   ): Promise<IncidentDto> {
+    await this.resourceAuthService.authorize(authCtx, {
+      action: 'WRITE',
+      departmentId: dto.departmentId,
+      projectId: dto.projectId,
+    });
+
+    await this.resourceAuthService.validateHierarchyInvariants(
+      authCtx.organizationId,
+      dto.departmentId,
+      dto.projectId,
+    );
+
     if (dto.affectedAssetId) {
+      const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
       const asset = await this.prisma.asset.findFirst({
-        where: { id: dto.affectedAssetId, organizationId, deletedAt: null },
+        where: { id: dto.affectedAssetId, ...scopeWhere, deletedAt: null },
       });
       if (!asset) {
-        throw new NotFoundException(`Affected asset ${dto.affectedAssetId} not found in tenant organization.`);
+        throw new NotFoundException(`Affected asset ${dto.affectedAssetId} not found or out of scope.`);
       }
     }
 
     const incident = await this.prisma.incident.create({
       data: {
-        organizationId,
-        createdById,
+        organizationId: authCtx.organizationId,
+        departmentId: dto.departmentId || null,
+        projectId: dto.projectId || null,
+        createdById: authCtx.userId,
         title: dto.title,
         description: dto.description || null,
         severity: (dto.severity || IncidentSeverity.MEDIUM) as any,
@@ -121,8 +150,8 @@ export class IncidentsService {
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: createdById,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'INCIDENT_CREATED',
       entityType: 'Incident',
       entityId: incident.id,
@@ -133,17 +162,34 @@ export class IncidentsService {
   }
 
   async update(
-    organizationId: string,
-    userId: string,
+    authCtx: ResourceAuthContext,
     id: string,
-    dto: UpdateIncidentDto,
+    dto: UpdateIncidentDto & { departmentId?: string; projectId?: string },
   ): Promise<IncidentDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const existing = await this.prisma.incident.findFirst({
-      where: { id, organizationId, deletedAt: null },
+      where: { id, ...scopeWhere, deletedAt: null },
     });
 
     if (!existing) {
       throw new NotFoundException(`Incident with ID ${id} not found.`);
+    }
+
+    if (dto.departmentId !== undefined || dto.projectId !== undefined) {
+      const targetDeptId = dto.departmentId !== undefined ? dto.departmentId : existing.departmentId || undefined;
+      const targetProjId = dto.projectId !== undefined ? dto.projectId : existing.projectId || undefined;
+
+      await this.resourceAuthService.authorize(authCtx, {
+        action: 'WRITE',
+        departmentId: targetDeptId,
+        projectId: targetProjId,
+      });
+
+      await this.resourceAuthService.validateHierarchyInvariants(
+        authCtx.organizationId,
+        targetDeptId,
+        targetProjId,
+      );
     }
 
     const data: any = {};
@@ -159,19 +205,21 @@ export class IncidentsService {
       data.resolvedAt = dto.resolvedAt ? new Date(dto.resolvedAt) : null;
     if (dto.dueDate !== undefined) data.dueDate = dto.dueDate ? new Date(dto.dueDate) : null;
     if (dto.rootCause !== undefined) data.rootCause = dto.rootCause;
+    if (dto.departmentId !== undefined) data.departmentId = dto.departmentId;
+    if (dto.projectId !== undefined) data.projectId = dto.projectId;
+
     if (dto.affectedAssetId) {
       const asset = await this.prisma.asset.findFirst({
-        where: { id: dto.affectedAssetId, organizationId, deletedAt: null },
+        where: { id: dto.affectedAssetId, ...scopeWhere, deletedAt: null },
       });
       if (!asset) {
-        throw new NotFoundException(`Affected asset ${dto.affectedAssetId} not found in tenant organization.`);
+        throw new NotFoundException(`Affected asset ${dto.affectedAssetId} not found or out of scope.`);
       }
       data.affectedAssetId = dto.affectedAssetId;
     } else if (dto.affectedAssetId === null) {
       data.affectedAssetId = null;
     }
 
-    // Automatically stamp containedAt/resolvedAt on status transition if not explicitly provided
     if (dto.status === IncidentStatus.CONTAINED && !data.containedAt && !existing.containedAt) {
       data.containedAt = new Date();
     }
@@ -188,8 +236,8 @@ export class IncidentsService {
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: userId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'INCIDENT_UPDATED',
       entityType: 'Incident',
       entityId: updated.id,
@@ -203,6 +251,8 @@ export class IncidentsService {
     return {
       id: inc.id,
       organizationId: inc.organizationId,
+      departmentId: inc.departmentId || null,
+      projectId: inc.projectId || null,
       title: inc.title,
       description: inc.description,
       severity: inc.severity as IncidentSeverity,
@@ -218,6 +268,6 @@ export class IncidentsService {
       createdById: inc.createdById,
       createdAt: inc.createdAt.toISOString(),
       updatedAt: inc.updatedAt.toISOString(),
-    };
+    } as any;
   }
 }

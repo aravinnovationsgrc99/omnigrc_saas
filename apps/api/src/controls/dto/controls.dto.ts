@@ -26,6 +26,14 @@ export class CreateControlDto {
   @IsString()
   @IsOptional()
   owner?: string;
+
+  @IsString()
+  @IsOptional()
+  departmentId?: string;
+
+  @IsString()
+  @IsOptional()
+  projectId?: string;
 }
 
 
@@ -41,6 +49,14 @@ export class UpdateControlDto {
   @IsString()
   @IsOptional()
   category?: string;
+
+  @IsString()
+  @IsOptional()
+  departmentId?: string;
+
+  @IsString()
+  @IsOptional()
+  projectId?: string;
 }
 
 export class ControlQueryDto {

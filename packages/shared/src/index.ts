@@ -229,6 +229,8 @@ export interface RegionalPodDto {
 export interface AssetDto {
   id: string;
   organizationId: string;
+  departmentId?: string | null;
+  projectId?: string | null;
   name: string;
   type: AssetType;
   description?: string | null;
@@ -250,6 +252,8 @@ export interface CreateAssetDto {
   criticality: AssetCriticality;
   vendorName?: string;
   dataResidencyRegion?: string;
+  departmentId?: string;
+  projectId?: string;
 }
 
 export interface UpdateAssetDto {
@@ -260,6 +264,8 @@ export interface UpdateAssetDto {
   criticality?: AssetCriticality;
   vendorName?: string;
   dataResidencyRegion?: string;
+  departmentId?: string;
+  projectId?: string;
 }
 
 export interface AssetQueryDto {
@@ -291,6 +297,8 @@ export interface AuditLogEntryDto {
 export interface RiskDto {
   id: string;
   organizationId: string;
+  departmentId?: string | null;
+  projectId?: string | null;
   title: string;
   description?: string | null;
   likelihood: number;
@@ -316,6 +324,8 @@ export interface CreateRiskDto {
   status?: RiskStatus;
   owner: string;
   assetId?: string;
+  departmentId?: string;
+  projectId?: string;
   treatmentPlan?: string;
 }
 
@@ -327,6 +337,8 @@ export interface UpdateRiskDto {
   status?: RiskStatus;
   owner?: string;
   assetId?: string | null;
+  departmentId?: string;
+  projectId?: string;
   treatmentPlan?: string;
 }
 
@@ -531,6 +543,8 @@ export interface ControlFrameworkMappingDto {
 export interface ControlDto {
   id: string;
   organizationId: string;
+  departmentId?: string | null;
+  projectId?: string | null;
   name: string;
   code?: string;
   description: string;
@@ -546,12 +560,16 @@ export interface CreateControlDto {
   name: string;
   description: string;
   category?: string;
+  departmentId?: string;
+  projectId?: string;
 }
 
 export interface UpdateControlDto {
   name?: string;
   description?: string;
   category?: string;
+  departmentId?: string;
+  projectId?: string;
 }
 
 export interface ControlQueryDto {

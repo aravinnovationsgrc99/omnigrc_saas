@@ -299,11 +299,11 @@ describe('Phase 7 — Dedicated Security, Settings, Access Control & Acceptance 
   // --------------------------------------------------
   it('11. evidence security gate (Path traversal & extension validation)', async () => {
     const invalidBuffer = Buffer.from('console.log("malicious code");');
+    const authCtxAdminA = { userId: userAdminA.id, organizationId: orgA, role: Role.ADMIN };
     await expect(
       evidenceService.createAndUpload(
-        orgA,
-        userAdminA.id,
-        { originalname: '../../etc/passwd.exe', buffer: invalidBuffer, mimetype: 'application/x-msdownload' },
+        authCtxAdminA,
+        { originalname: '../../etc/passwd.exe', buffer: invalidBuffer, mimetype: 'application/x-msdownload' } as any,
         { title: 'Path Traversal File' },
       ),
     ).rejects.toThrow(BadRequestException);
@@ -314,10 +314,10 @@ describe('Phase 7 — Dedicated Security, Settings, Access Control & Acceptance 
   // --------------------------------------------------
   it('12 & 13. AI advisory boundary and conversion authorization', async () => {
     const evidenceBuffer = Buffer.from('%PDF-1.4 Sample AI Doc Content');
+    const authCtxAdminA = { userId: userAdminA.id, organizationId: orgA, role: Role.ADMIN };
     const ev = await evidenceService.createAndUpload(
-      orgA,
-      userAdminA.id,
-      { originalname: 'sample-ai-doc.pdf', buffer: evidenceBuffer, mimetype: 'application/pdf' },
+      authCtxAdminA,
+      { originalname: 'sample-ai-doc.pdf', buffer: evidenceBuffer, mimetype: 'application/pdf' } as any,
       { title: 'AI Proof Document' },
     );
 
@@ -525,10 +525,10 @@ describe('Phase 7 — Dedicated Security, Settings, Access Control & Acceptance 
 
     // 4. Evidence Upload
     const evidenceBuffer = Buffer.from('%PDF-1.4 E2E Test Proof Content');
+    const authCtxAdminA = { userId: userAdminA.id, organizationId: orgA, role: Role.ADMIN };
     const evidence = await evidenceService.createAndUpload(
-      orgA,
-      userAdminA.id,
-      { originalname: 'lifecycle-proof.pdf', buffer: evidenceBuffer, mimetype: 'application/pdf' },
+      authCtxAdminA,
+      { originalname: 'lifecycle-proof.pdf', buffer: evidenceBuffer, mimetype: 'application/pdf' } as any,
       { title: 'E2E Lifecycle Proof Document', targetResourceType: 'CONTROL', targetResourceId: ctrl.id },
     );
     expect(evidence.id).toBeDefined();

@@ -3,7 +3,7 @@ import { ComplianceTasksService } from './compliance-tasks.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { TaskStatus } from '@omnigrc/shared';
+import { TaskStatus, Role } from '@omnigrc/shared';
 
 describe('ComplianceTasksService', () => {
   let service: ComplianceTasksService;
@@ -61,7 +61,8 @@ describe('ComplianceTasksService', () => {
     prisma.complianceTask.findMany.mockResolvedValue([mockTask]);
     prisma.complianceTask.count.mockResolvedValue(1);
 
-    const res = await service.findAll('org-1', {});
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    const res = await service.findAll(authCtx, {});
 
     expect(prisma.complianceTask.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -90,7 +91,8 @@ describe('ComplianceTasksService', () => {
     prisma.complianceTask.findFirst.mockResolvedValue(mockTask);
     prisma.complianceTask.update.mockResolvedValue(updatedTask);
 
-    const res = await service.updateStatus('org-1', 'user-1', 'task-1', TaskStatus.IN_PROGRESS);
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    const res = await service.updateStatus(authCtx, 'task-1', TaskStatus.IN_PROGRESS);
 
     expect(res.status).toBe(TaskStatus.IN_PROGRESS);
     expect(auditLogsService.log).toHaveBeenCalledWith(

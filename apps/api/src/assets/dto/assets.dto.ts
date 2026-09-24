@@ -52,6 +52,14 @@ export class CreateAssetDto {
   @IsString()
   @IsOptional()
   vendorId?: string;
+
+  @IsString()
+  @IsOptional()
+  departmentId?: string;
+
+  @IsString()
+  @IsOptional()
+  projectId?: string;
 }
 
 export class UpdateAssetDto {
@@ -106,6 +114,14 @@ export class UpdateAssetDto {
   @IsString()
   @IsOptional()
   vendorId?: string;
+
+  @IsString()
+  @IsOptional()
+  departmentId?: string;
+
+  @IsString()
+  @IsOptional()
+  projectId?: string;
 }
 
 export class AssetQueryDto {

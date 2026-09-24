@@ -3,7 +3,7 @@ import { PoliciesService } from './policies.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
-import { PolicyStatus } from '@omnigrc/shared';
+import { PolicyStatus, Role } from '@omnigrc/shared';
 
 describe('PoliciesService', () => {
   let service: PoliciesService;
@@ -71,7 +71,8 @@ describe('PoliciesService', () => {
 
     prisma.policy.create.mockResolvedValue(mockCreatedPolicy);
 
-    const result = await service.create('org-1', 'user-1', {
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    const result = await service.create(authCtx, {
       code: 'POL-001',
       title: 'InfoSec Policy',
       category: 'Security',
@@ -100,7 +101,8 @@ describe('PoliciesService', () => {
       status: PolicyStatus.UNDER_REVIEW,
     });
 
-    const updated = await service.submitForReview('org-1', 'pol-1', 'user-1');
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    const updated = await service.submitForReview(authCtx, 'pol-1');
     expect(updated.status).toBe(PolicyStatus.UNDER_REVIEW);
   });
 
@@ -115,6 +117,7 @@ describe('PoliciesService', () => {
 
     prisma.policy.findFirst.mockResolvedValue(draftPolicy);
 
-    await expect(service.publish('org-1', 'pol-1', 'user-1')).rejects.toThrow(BadRequestException);
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    await expect(service.publish(authCtx, 'pol-1')).rejects.toThrow(BadRequestException);
   });
 });

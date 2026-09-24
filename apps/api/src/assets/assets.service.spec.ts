@@ -3,7 +3,7 @@ import { AssetsService } from './assets.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotFoundException } from '@nestjs/common';
-import { AssetType, AssetCriticality } from '@omnigrc/shared';
+import { AssetType, AssetCriticality, Role } from '@omnigrc/shared';
 
 describe('AssetsService', () => {
   let service: AssetsService;
@@ -63,7 +63,8 @@ describe('AssetsService', () => {
     prisma.asset.findMany.mockResolvedValue([mockAsset]);
     prisma.asset.count.mockResolvedValue(1);
 
-    const result = await service.findAll('org-1', {});
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    const result = await service.findAll(authCtx, {});
 
     expect(prisma.asset.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -80,7 +81,8 @@ describe('AssetsService', () => {
   it('should throw NotFoundException if asset belongs to another organization', async () => {
     prisma.asset.findFirst.mockResolvedValue(null);
 
-    await expect(service.findOne('org-1', 'asset-other-org')).rejects.toThrow(NotFoundException);
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    await expect(service.findOne(authCtx, 'asset-other-org')).rejects.toThrow(NotFoundException);
   });
 
   it('should log audit entry on asset creation', async () => {
@@ -98,7 +100,8 @@ describe('AssetsService', () => {
 
     prisma.asset.create.mockResolvedValue(newAsset);
 
-    const result = await service.create('org-1', 'user-1', {
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    const result = await service.create(authCtx, {
       name: 'DB Cluster',
       type: AssetType.DATA_STORE,
       owner: 'DBA',

@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, ForbiddenException 
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
 import {
   AuditPlanStatus,
   AuditScheduleStatus,
@@ -38,16 +39,31 @@ export class BusinessAuditsService {
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
     private readonly notificationsService: NotificationsService,
+    private readonly resourceAuthService: ResourceAuthorizationService,
   ) {}
 
   // --------------------------------------------------
   // AUDIT PLANS
   // --------------------------------------------------
 
-  async createPlan(organizationId: string, createdById: string, dto: CreateAuditPlanDto): Promise<AuditPlanDto> {
+  async createPlan(authCtx: ResourceAuthContext, dto: CreateAuditPlanDto): Promise<AuditPlanDto> {
+    await this.resourceAuthService.authorize(authCtx, {
+      action: 'WRITE',
+      departmentId: dto.departmentId,
+      projectId: dto.projectId,
+    });
+
+    await this.resourceAuthService.validateHierarchyInvariants(
+      authCtx.organizationId,
+      dto.departmentId,
+      dto.projectId,
+    );
+
     const plan = await this.prisma.auditPlan.create({
       data: {
-        organizationId,
+        organizationId: authCtx.organizationId,
+        departmentId: dto.departmentId || null,
+        projectId: dto.projectId || null,
         title: dto.title,
         objective: dto.objective,
         scope: dto.scope,
@@ -56,37 +72,50 @@ export class BusinessAuditsService {
         plannedStartDate: dto.plannedStartDate ? new Date(dto.plannedStartDate) : null,
         plannedEndDate: dto.plannedEndDate ? new Date(dto.plannedEndDate) : null,
         status: AuditPlanStatus.DRAFT,
-        createdById,
+        createdById: authCtx.userId,
       },
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: createdById,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'AUDIT_PLAN_CREATED',
       entityType: 'AuditPlan',
       entityId: plan.id,
-      metadata: { title: plan.title, frameworkCode: plan.frameworkCode },
+      metadata: { title: plan.title, frameworkCode: plan.frameworkCode, departmentId: plan.departmentId, projectId: plan.projectId },
     });
 
     return this.mapPlanToDto(plan);
   }
 
   async findAllPlans(
-    organizationId: string,
+    authCtx: ResourceAuthContext,
     query: { page?: number; limit?: number; status?: AuditPlanStatus; search?: string },
   ): Promise<PaginatedAuditPlansDto> {
     const page = Number(query.page) || 1;
     const limit = Number(query.limit) || 20;
     const skip = (page - 1) * limit;
 
-    const where: any = { organizationId };
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+
+    const where: any = { ...scopeWhere };
     if (query.status) where.status = query.status;
-    if (query.search) {
-      where.OR = [
-        { title: { contains: query.search, mode: 'insensitive' } },
-        { objective: { contains: query.search, mode: 'insensitive' } },
+    if (query.search && query.search.trim()) {
+      const searchTerm = query.search.trim();
+      const searchConditions = [
+        { title: { contains: searchTerm, mode: 'insensitive' } },
+        { objective: { contains: searchTerm, mode: 'insensitive' } },
       ];
+
+      if (where.OR) {
+        where.AND = [
+          { OR: where.OR },
+          { OR: searchConditions },
+        ];
+        delete where.OR;
+      } else {
+        where.OR = searchConditions;
+      }
     }
 
     const [items, total] = await Promise.all([
@@ -108,9 +137,10 @@ export class BusinessAuditsService {
     };
   }
 
-  async findOnePlan(organizationId: string, id: string): Promise<AuditPlanDto> {
+  async findOnePlan(authCtx: ResourceAuthContext, id: string): Promise<AuditPlanDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const plan = await this.prisma.auditPlan.findFirst({
-      where: { id, organizationId },
+      where: { id, ...scopeWhere },
       include: {
         schedules: true,
         assessments: {
@@ -126,8 +156,30 @@ export class BusinessAuditsService {
     return this.mapPlanToDto(plan);
   }
 
-  async updatePlan(organizationId: string, id: string, actorId: string, dto: UpdateAuditPlanDto): Promise<AuditPlanDto> {
-    await this.findOnePlan(organizationId, id);
+  async updatePlan(authCtx: ResourceAuthContext, id: string, dto: UpdateAuditPlanDto): Promise<AuditPlanDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+    const existing = await this.prisma.auditPlan.findFirst({
+      where: { id, ...scopeWhere },
+    });
+
+    if (!existing) throw new NotFoundException(`Audit Plan with ID "${id}" not found`);
+
+    if (dto.departmentId !== undefined || dto.projectId !== undefined) {
+      const targetDeptId = dto.departmentId !== undefined ? dto.departmentId : existing.departmentId || undefined;
+      const targetProjId = dto.projectId !== undefined ? dto.projectId : existing.projectId || undefined;
+
+      await this.resourceAuthService.authorize(authCtx, {
+        action: 'WRITE',
+        departmentId: targetDeptId,
+        projectId: targetProjId,
+      });
+
+      await this.resourceAuthService.validateHierarchyInvariants(
+        authCtx.organizationId,
+        targetDeptId,
+        targetProjId,
+      );
+    }
 
     const updated = await this.prisma.auditPlan.update({
       where: { id },
@@ -140,12 +192,14 @@ export class BusinessAuditsService {
         ...(dto.plannedStartDate !== undefined && { plannedStartDate: dto.plannedStartDate ? new Date(dto.plannedStartDate) : null }),
         ...(dto.plannedEndDate !== undefined && { plannedEndDate: dto.plannedEndDate ? new Date(dto.plannedEndDate) : null }),
         ...(dto.status && { status: dto.status }),
+        ...(dto.departmentId !== undefined && { departmentId: dto.departmentId }),
+        ...(dto.projectId !== undefined && { projectId: dto.projectId }),
       },
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'AUDIT_PLAN_UPDATED',
       entityType: 'AuditPlan',
       entityId: id,
@@ -159,12 +213,12 @@ export class BusinessAuditsService {
   // AUDIT SCHEDULES
   // --------------------------------------------------
 
-  async createSchedule(organizationId: string, actorId: string, dto: CreateAuditScheduleDto): Promise<AuditScheduleDto> {
-    await this.findOnePlan(organizationId, dto.auditPlanId);
+  async createSchedule(authCtx: ResourceAuthContext, dto: CreateAuditScheduleDto): Promise<AuditScheduleDto> {
+    const plan = await this.findOnePlan(authCtx, dto.auditPlanId);
 
     const schedule = await this.prisma.auditSchedule.create({
       data: {
-        organizationId,
+        organizationId: authCtx.organizationId,
         auditPlanId: dto.auditPlanId,
         scheduledStartDate: new Date(dto.scheduledStartDate),
         scheduledEndDate: new Date(dto.scheduledEndDate),
@@ -175,7 +229,7 @@ export class BusinessAuditsService {
     });
 
     await this.notificationsService.notify({
-      organizationId,
+      organizationId: authCtx.organizationId,
       userId: dto.leadAuditorId,
       type: NotificationType.TASK_ASSIGNED,
       message: `You have been assigned as Lead Auditor for an upcoming Audit Schedule.`,
@@ -184,8 +238,8 @@ export class BusinessAuditsService {
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'AUDIT_SCHEDULE_CREATED',
       entityType: 'AuditSchedule',
       entityId: schedule.id,
@@ -199,38 +253,38 @@ export class BusinessAuditsService {
   // AUDIT ASSESSMENTS & EXECUTION
   // --------------------------------------------------
 
-  async createAssessment(organizationId: string, createdById: string, dto: CreateAuditAssessmentDto): Promise<AuditAssessmentDto> {
-    const plan = await this.findOnePlan(organizationId, dto.auditPlanId);
+  async createAssessment(authCtx: ResourceAuthContext, dto: CreateAuditAssessmentDto): Promise<AuditAssessmentDto> {
+    const plan = await this.findOnePlan(authCtx, dto.auditPlanId);
 
-    // Auto-populate check items from mapped controls or standard framework controls if available
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+
     const controls = await this.prisma.control.findMany({
-      where: { organizationId, deletedAt: null },
+      where: { ...scopeWhere, deletedAt: null },
       take: 20,
     });
 
     const assessment = await this.prisma.$transaction(async (tx) => {
       const newAssessment = await tx.auditAssessment.create({
         data: {
-          organizationId,
+          organizationId: authCtx.organizationId,
           auditPlanId: dto.auditPlanId,
           scheduleId: dto.scheduleId || null,
           auditorId: dto.auditorId,
           summary: dto.summary,
           status: AuditAssessmentStatus.IN_PROGRESS,
           score: 0,
-          createdById,
+          createdById: authCtx.userId,
         },
       });
 
-      // Create check items
       const checkItemsData = controls.map((c) => ({
-        organizationId,
+        organizationId: authCtx.organizationId,
         assessmentId: newAssessment.id,
         controlId: c.id,
         title: `Evaluate Control: ${c.name}`,
         description: c.description,
         result: AuditCheckResult.NOT_EVALUATED,
-        createdById,
+        createdById: authCtx.userId,
       }));
 
       if (checkItemsData.length > 0) {
@@ -243,15 +297,14 @@ export class BusinessAuditsService {
       });
     });
 
-    // Mark plan status IN_PROGRESS
     await this.prisma.auditPlan.update({
       where: { id: dto.auditPlanId },
       data: { status: AuditPlanStatus.IN_PROGRESS },
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: createdById,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'AUDIT_ASSESSMENT_STARTED',
       entityType: 'AuditAssessment',
       entityId: assessment!.id,
@@ -261,13 +314,15 @@ export class BusinessAuditsService {
     return this.mapAssessmentToDto(assessment);
   }
 
-  async evaluateCheckItem(organizationId: string, checkItemId: string, actorId: string, dto: UpdateCheckItemDto): Promise<any> {
+  async evaluateCheckItem(authCtx: ResourceAuthContext, checkItemId: string, dto: UpdateCheckItemDto): Promise<any> {
     const checkItem = await this.prisma.auditCheckItem.findFirst({
-      where: { id: checkItemId, organizationId },
-      include: { assessment: { include: { checkItems: true } } },
+      where: { id: checkItemId, organizationId: authCtx.organizationId },
+      include: { assessment: { include: { auditPlan: true, checkItems: true } } },
     });
 
     if (!checkItem) throw new NotFoundException(`AuditCheckItem "${checkItemId}" not found`);
+
+    await this.resourceAuthService.assertResourceAccess(authCtx, checkItem.assessment.auditPlan);
 
     const updatedCheckItem = await this.prisma.auditCheckItem.update({
       where: { id: checkItemId },
@@ -277,7 +332,6 @@ export class BusinessAuditsService {
       },
     });
 
-    // Recalculate authoritative assessment score
     const allCheckItems = await this.prisma.auditCheckItem.findMany({
       where: { assessmentId: checkItem.assessmentId },
     });
@@ -298,10 +352,19 @@ export class BusinessAuditsService {
   // FINDINGS & CAPA
   // --------------------------------------------------
 
-  async createFinding(organizationId: string, createdById: string, dto: CreateAuditFindingDto): Promise<AuditFindingDto> {
+  async createFinding(authCtx: ResourceAuthContext, dto: CreateAuditFindingDto): Promise<AuditFindingDto> {
+    const assessment = await this.prisma.auditAssessment.findFirst({
+      where: { id: dto.assessmentId, organizationId: authCtx.organizationId },
+      include: { auditPlan: true },
+    });
+
+    if (!assessment) throw new NotFoundException(`Audit Assessment "${dto.assessmentId}" not found`);
+
+    await this.resourceAuthService.assertResourceAccess(authCtx, assessment.auditPlan);
+
     const finding = await this.prisma.auditFinding.create({
       data: {
-        organizationId,
+        organizationId: authCtx.organizationId,
         assessmentId: dto.assessmentId,
         checkItemId: dto.checkItemId || null,
         title: dto.title,
@@ -312,13 +375,13 @@ export class BusinessAuditsService {
         dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
         riskId: dto.riskId || null,
         remediationPlan: dto.remediationPlan,
-        createdById,
+        createdById: authCtx.userId,
       },
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: createdById,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'AUDIT_FINDING_CREATED',
       entityType: 'AuditFinding',
       entityId: finding.id,
@@ -329,16 +392,18 @@ export class BusinessAuditsService {
   }
 
   async updateFindingStatus(
-    organizationId: string,
+    authCtx: ResourceAuthContext,
     id: string,
-    actorId: string,
     dto: UpdateAuditFindingDto,
   ): Promise<AuditFindingDto> {
     const finding = await this.prisma.auditFinding.findFirst({
-      where: { id, organizationId },
+      where: { id, organizationId: authCtx.organizationId },
+      include: { assessment: { include: { auditPlan: true } } },
     });
 
     if (!finding) throw new NotFoundException(`Audit Finding "${id}" not found`);
+
+    await this.resourceAuthService.assertResourceAccess(authCtx, finding.assessment.auditPlan);
 
     const updated = await this.prisma.auditFinding.update({
       where: { id },
@@ -355,8 +420,8 @@ export class BusinessAuditsService {
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'AUDIT_FINDING_UPDATED',
       entityType: 'AuditFinding',
       entityId: id,
@@ -367,17 +432,19 @@ export class BusinessAuditsService {
   }
 
   async verifyFinding(
-    organizationId: string,
+    authCtx: ResourceAuthContext,
     id: string,
-    verifiedById: string,
     status: FindingStatus.VERIFIED | FindingStatus.CLOSED,
     verificationNotes?: string,
   ): Promise<AuditFindingDto> {
     const finding = await this.prisma.auditFinding.findFirst({
-      where: { id, organizationId },
+      where: { id, organizationId: authCtx.organizationId },
+      include: { assessment: { include: { auditPlan: true } } },
     });
 
     if (!finding) throw new NotFoundException(`Audit Finding "${id}" not found`);
+
+    await this.resourceAuthService.assertResourceAccess(authCtx, finding.assessment.auditPlan);
 
     if (finding.status !== FindingStatus.READY_FOR_VERIFICATION && finding.status !== FindingStatus.IN_REMEDIATION) {
       throw new BadRequestException(`Finding must be IN_REMEDIATION or READY_FOR_VERIFICATION before verification/closure.`);
@@ -387,15 +454,15 @@ export class BusinessAuditsService {
       where: { id },
       data: {
         status,
-        verifiedById,
+        verifiedById: authCtx.userId,
         verifiedAt: new Date(),
         verificationNotes: verificationNotes || finding.verificationNotes,
       },
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: verifiedById,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: status === FindingStatus.VERIFIED ? 'AUDIT_FINDING_VERIFIED' : 'AUDIT_FINDING_CLOSED',
       entityType: 'AuditFinding',
       entityId: id,
@@ -405,10 +472,19 @@ export class BusinessAuditsService {
     return this.mapFindingToDto(updated);
   }
 
-  async createCapa(organizationId: string, dto: CreateAuditCapaDto): Promise<AuditCapaDto> {
+  async createCapa(authCtx: ResourceAuthContext, dto: CreateAuditCapaDto): Promise<AuditCapaDto> {
+    const finding = await this.prisma.auditFinding.findFirst({
+      where: { id: dto.findingId, organizationId: authCtx.organizationId },
+      include: { assessment: { include: { auditPlan: true } } },
+    });
+
+    if (!finding) throw new NotFoundException(`Audit Finding "${dto.findingId}" not found`);
+
+    await this.resourceAuthService.assertResourceAccess(authCtx, finding.assessment.auditPlan);
+
     const capa = await this.prisma.auditCapa.create({
       data: {
-        organizationId,
+        organizationId: authCtx.organizationId,
         findingId: dto.findingId,
         title: dto.title,
         correctiveAction: dto.correctiveAction,
@@ -422,17 +498,35 @@ export class BusinessAuditsService {
     return this.mapCapaToDto(capa);
   }
 
-  async addEvidence(organizationId: string, uploadedById: string, dto: CreateAuditEvidenceDto): Promise<any> {
+  async addEvidence(authCtx: ResourceAuthContext, dto: CreateAuditEvidenceDto): Promise<any> {
+    if (dto.checkItemId) {
+      const checkItem = await this.prisma.auditCheckItem.findFirst({
+        where: { id: dto.checkItemId, organizationId: authCtx.organizationId },
+        include: { assessment: { include: { auditPlan: true } } },
+      });
+      if (!checkItem) throw new NotFoundException(`AuditCheckItem "${dto.checkItemId}" not found`);
+      await this.resourceAuthService.assertResourceAccess(authCtx, checkItem.assessment.auditPlan);
+    }
+
+    if (dto.findingId) {
+      const finding = await this.prisma.auditFinding.findFirst({
+        where: { id: dto.findingId, organizationId: authCtx.organizationId },
+        include: { assessment: { include: { auditPlan: true } } },
+      });
+      if (!finding) throw new NotFoundException(`AuditFinding "${dto.findingId}" not found`);
+      await this.resourceAuthService.assertResourceAccess(authCtx, finding.assessment.auditPlan);
+    }
+
     return this.prisma.auditEvidence.create({
       data: {
-        organizationId,
+        organizationId: authCtx.organizationId,
         checkItemId: dto.checkItemId || null,
         findingId: dto.findingId || null,
         fileName: dto.fileName,
         fileUrl: dto.fileUrl,
         fileSize: dto.fileSize || null,
         mimeType: dto.mimeType || null,
-        uploadedById,
+        uploadedById: authCtx.userId,
       },
     });
   }
@@ -445,6 +539,8 @@ export class BusinessAuditsService {
     return {
       id: p.id,
       organizationId: p.organizationId,
+      departmentId: p.departmentId || null,
+      projectId: p.projectId || null,
       title: p.title,
       objective: p.objective,
       scope: p.scope,
@@ -458,7 +554,7 @@ export class BusinessAuditsService {
       updatedAt: p.updatedAt.toISOString(),
       schedules: p.schedules ? p.schedules.map((s: any) => this.mapScheduleToDto(s)) : [],
       assessments: p.assessments ? p.assessments.map((a: any) => this.mapAssessmentToDto(a)) : [],
-    };
+    } as any;
   }
 
   private mapScheduleToDto(s: any): AuditScheduleDto {

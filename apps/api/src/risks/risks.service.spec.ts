@@ -3,7 +3,7 @@ import { RisksService } from './risks.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotFoundException } from '@nestjs/common';
-import { RiskStatus } from '@omnigrc/shared';
+import { RiskStatus, Role } from '@omnigrc/shared';
 
 describe('RisksService', () => {
   let service: RisksService;
@@ -59,7 +59,8 @@ describe('RisksService', () => {
     prisma.risk.findMany.mockResolvedValue([mockRisk]);
     prisma.risk.count.mockResolvedValue(1);
 
-    const result = await service.findAll('org-1', {});
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    const result = await service.findAll(authCtx, {});
 
     expect(prisma.risk.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -90,7 +91,8 @@ describe('RisksService', () => {
 
     prisma.risk.create.mockResolvedValue(createdRisk);
 
-    const res = await service.create('org-1', 'user-1', {
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    const res = await service.create(authCtx, {
       title: 'Phishing Risk',
       likelihood: 3,
       impact: 3,

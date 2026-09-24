@@ -3,7 +3,7 @@ import { VendorsService } from './vendors.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotFoundException } from '@nestjs/common';
-import { VendorCriticality, VendorStatus } from '@omnigrc/shared';
+import { VendorCriticality, VendorStatus, Role } from '@omnigrc/shared';
 
 describe('VendorsService', () => {
   let service: VendorsService;
@@ -63,7 +63,8 @@ describe('VendorsService', () => {
     prisma.vendor.findMany.mockResolvedValue([mockVendor]);
     prisma.vendor.count.mockResolvedValue(1);
 
-    const result = await service.findAll('org-1', {});
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    const result = await service.findAll(authCtx, {});
     expect(prisma.vendor.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ organizationId: 'org-1' }),
@@ -90,7 +91,8 @@ describe('VendorsService', () => {
     prisma.vendor.findFirst.mockResolvedValue(mockVendor);
     prisma.vendorAssessment.create.mockResolvedValue(mockAssessment);
 
-    const result = await service.createAssessment('org-1', 'ven-1', 'user-1', {
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    const result = await service.createAssessment(authCtx, 'ven-1', {
       title: 'Annual Review',
       score: 90,
       evaluatorId: 'user-1',

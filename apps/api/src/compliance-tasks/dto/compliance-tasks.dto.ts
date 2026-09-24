@@ -38,6 +38,14 @@ export class CreateComplianceTaskDto {
   @IsString()
   @IsOptional()
   obligationReference?: string;
+
+  @IsString()
+  @IsOptional()
+  departmentId?: string;
+
+  @IsString()
+  @IsOptional()
+  projectId?: string;
 }
 
 export class UpdateComplianceTaskDto {
@@ -76,6 +84,14 @@ export class UpdateComplianceTaskDto {
   @IsString()
   @IsOptional()
   obligationReference?: string;
+
+  @IsString()
+  @IsOptional()
+  departmentId?: string;
+
+  @IsString()
+  @IsOptional()
+  projectId?: string;
 }
 
 export class UpdateTaskStatusDto {

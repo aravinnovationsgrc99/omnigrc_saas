@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
-import { ResourceAuthorizationService } from '../auth/resource-authorization.service';
+import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
 import { EvidenceStorageService } from './evidence-storage.service';
 import { EvidenceScannerService } from './evidence-scanner.service';
 import {
@@ -33,33 +33,32 @@ export class EvidenceService {
   ) {}
 
   async createAndUpload(
-    organizationId: string,
-    uploadedById: string,
+    authCtx: ResourceAuthContext,
     file: { originalname: string; buffer: Buffer; mimetype: string },
-    dto: CreateEvidenceUploadDto,
+    dto: CreateEvidenceUploadDto & { departmentId?: string; projectId?: string },
   ): Promise<EvidenceDto> {
     if (!file || !file.buffer) {
       throw new BadRequestException('Binary proof file is required for upload.');
     }
 
-    // 1. Verify resource ownership and cross-tenant invariants if target resource specified
+    await this.resourceAuthService.authorize(authCtx, {
+      action: 'WRITE',
+      departmentId: dto.departmentId,
+      projectId: dto.projectId,
+    });
+
     if (dto.targetResourceType && dto.targetResourceId) {
-      await this.verifyResourceBelongsToOrg(organizationId, dto.targetResourceType, dto.targetResourceId);
+      await this.verifyResourceBelongsToOrg(authCtx, dto.targetResourceType, dto.targetResourceId);
     }
 
-    // 2. Save file to storage abstraction & calculate checksum
-    const saved = await this.storageService.saveFile(file, organizationId);
-
-    // 3. Scan file
+    const saved = await this.storageService.saveFile(file, authCtx.organizationId);
     const scanStatus = await this.scannerService.scanFile(saved.storageKey, file.buffer);
 
-    // 4. Calculate retention if retentionDays provided
     let retentionUntil: Date | null = null;
     if (dto.retentionDays && dto.retentionDays > 0) {
       retentionUntil = new Date(Date.now() + dto.retentionDays * 24 * 60 * 60 * 1000);
     }
 
-    // 5. Determine evidence type
     let evidenceType = dto.evidenceType || EvidenceType.DOCUMENT;
     if (!dto.evidenceType) {
       if (saved.mimeType.startsWith('image/')) evidenceType = EvidenceType.IMAGE;
@@ -67,10 +66,11 @@ export class EvidenceService {
         evidenceType = EvidenceType.SPREADSHEET;
     }
 
-    // 6. Create Evidence record in database
     const evidence = await this.prisma.evidence.create({
       data: {
-        organizationId,
+        organizationId: authCtx.organizationId,
+        departmentId: dto.departmentId || null,
+        projectId: dto.projectId || null,
         title: dto.title.trim(),
         description: dto.description?.trim() || null,
         evidenceType,
@@ -81,17 +81,15 @@ export class EvidenceService {
         checksum: saved.checksum,
         status: scanStatus === EvidenceScanStatus.QUARANTINED ? EvidenceStatus.QUARANTINED : EvidenceStatus.ACTIVE,
         scanStatus,
-        uploadedById,
+        uploadedById: authCtx.userId,
         retentionUntil,
       },
     });
 
-    // 7. Create explicit association if target specified
     if (dto.targetResourceType && dto.targetResourceId) {
-      await this.createAssociationRecord(organizationId, evidence.id, dto.targetResourceType, dto.targetResourceId);
+      await this.createAssociationRecord(authCtx.organizationId, evidence.id, dto.targetResourceType, dto.targetResourceId);
     }
 
-    // 8. Attach framework reference if requested
     if (dto.frameworkReferenceId) {
       const ref = await this.prisma.frameworkReference.findUnique({
         where: { id: dto.frameworkReferenceId },
@@ -106,10 +104,9 @@ export class EvidenceService {
       }
     }
 
-    // 9. Log audit event
     await this.auditLogsService.log({
-      organizationId,
-      actorId: uploadedById,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'EVIDENCE_UPLOADED',
       entityType: 'Evidence',
       entityId: evidence.id,
@@ -126,16 +123,17 @@ export class EvidenceService {
     return this.mapToDto(evidence.id);
   }
 
-  async findAll(organizationId: string, query: EvidenceVaultQueryDto): Promise<PaginatedEvidenceDto> {
+  async findAll(authCtx: ResourceAuthContext, query: EvidenceVaultQueryDto): Promise<PaginatedEvidenceDto> {
     const page = Math.max(1, Number(query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
     const search = query.search?.trim().toLowerCase();
     const status = query.status || EvidenceStatus.ACTIVE;
 
-    // Fetch canonical evidence items
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+
     const evidences = await this.prisma.evidence.findMany({
       where: {
-        organizationId,
+        ...scopeWhere,
         deletedAt: null,
         ...(query.evidenceType && { evidenceType: query.evidenceType }),
         ...(status && { status }),
@@ -175,6 +173,8 @@ export class EvidenceService {
       return {
         id: e.id,
         organizationId: e.organizationId,
+        departmentId: e.departmentId || null,
+        projectId: e.projectId || null,
         title: e.title,
         description: e.description,
         evidenceType: e.evidenceType as EvidenceType,
@@ -196,18 +196,16 @@ export class EvidenceService {
           identifier: fr.frameworkReference.identifier,
           title: fr.frameworkReference.title,
         })),
-      };
+      } as any;
     });
 
-    // Reconcile legacy AuditEvidence records if domain is AUDIT or unspecified
     if (!query.domain || query.domain === 'AUDIT' || query.domain === 'ALL') {
       const legacyAuditEvidences = await this.prisma.auditEvidence.findMany({
-        where: { organizationId },
+        where: { organizationId: authCtx.organizationId },
         include: { checkItem: true, finding: true },
       });
 
       for (const leg of legacyAuditEvidences) {
-        // Skip if already represented in canonical evidences
         if (!dtos.some((d) => d.id === leg.id)) {
           const associations: ResourceAssociationDto[] = [];
           if (leg.checkItem) associations.push({ resourceType: 'AUDIT_CHECK', resourceId: leg.checkItemId!, resourceTitle: leg.checkItem.title });
@@ -237,7 +235,6 @@ export class EvidenceService {
       }
     }
 
-    // Search filtering
     if (search) {
       dtos = dtos.filter(
         (d) =>
@@ -262,42 +259,35 @@ export class EvidenceService {
     };
   }
 
-  async findOne(organizationId: string, evidenceId: string): Promise<EvidenceDto> {
-    const dto = await this.mapToDto(evidenceId);
-    if (dto.organizationId !== organizationId) {
-      throw new NotFoundException(`Evidence record "${evidenceId}" not found.`);
-    }
-    return dto;
-  }
-
-  async downloadEvidence(
-    organizationId: string,
-    evidenceId: string,
-    userContext: { userId: string; role: Role; departmentIds?: string[]; projectIds?: string[] },
-    res: Response,
-  ): Promise<void> {
+  async findOne(authCtx: ResourceAuthContext, evidenceId: string): Promise<EvidenceDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const evidence = await this.prisma.evidence.findFirst({
-      where: { id: evidenceId, organizationId, deletedAt: null },
-      include: {
-        controlAssociations: true,
-        riskAssociations: true,
-        policyAssociations: true,
-        auditCheckAssociations: true,
-        auditFindingAssociations: true,
-        vendorAssociations: true,
-        vulnerabilityAssociations: true,
-        incidentAssociations: true,
-      },
+      where: { id: evidenceId, ...scopeWhere, deletedAt: null },
     });
 
     if (!evidence) {
-      // Check legacy audit evidence fallback
+      throw new NotFoundException(`Evidence record "${evidenceId}" not found.`);
+    }
+
+    return this.mapToDto(evidenceId);
+  }
+
+  async downloadEvidence(
+    authCtx: ResourceAuthContext,
+    evidenceId: string,
+    res: Response,
+  ): Promise<void> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+    const evidence = await this.prisma.evidence.findFirst({
+      where: { id: evidenceId, ...scopeWhere, deletedAt: null },
+    });
+
+    if (!evidence) {
       const legacy = await this.prisma.auditEvidence.findFirst({
-        where: { id: evidenceId, organizationId },
+        where: { id: evidenceId, organizationId: authCtx.organizationId },
       });
       if (!legacy) throw new NotFoundException(`Evidence record "${evidenceId}" not found.`);
 
-      // Stream URL redirect or error if purely external
       res.redirect(legacy.fileUrl);
       return;
     }
@@ -306,13 +296,11 @@ export class EvidenceService {
       throw new ForbiddenException(`Evidence file "${evidence.title}" is QUARANTINED due to malware scan policy.`);
     }
 
-    // Stream file securely from storage service
     const { stream } = this.storageService.getFileStream(evidence.storageKey);
 
-    // Audit log
     await this.auditLogsService.log({
-      organizationId,
-      actorId: userContext.userId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'EVIDENCE_DOWNLOADED',
       entityType: 'Evidence',
       entityId: evidence.id,
@@ -325,23 +313,23 @@ export class EvidenceService {
   }
 
   async attachEvidence(
-    organizationId: string,
-    actorId: string,
+    authCtx: ResourceAuthContext,
     evidenceId: string,
     resourceType: 'CONTROL' | 'RISK' | 'POLICY' | 'AUDIT_CHECK' | 'AUDIT_FINDING' | 'VENDOR' | 'VULNERABILITY' | 'INCIDENT',
     resourceId: string,
   ): Promise<EvidenceDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const evidence = await this.prisma.evidence.findFirst({
-      where: { id: evidenceId, organizationId, deletedAt: null },
+      where: { id: evidenceId, ...scopeWhere, deletedAt: null },
     });
     if (!evidence) throw new NotFoundException(`Evidence "${evidenceId}" not found.`);
 
-    await this.verifyResourceBelongsToOrg(organizationId, resourceType, resourceId);
-    await this.createAssociationRecord(organizationId, evidenceId, resourceType, resourceId);
+    await this.verifyResourceBelongsToOrg(authCtx, resourceType, resourceId);
+    await this.createAssociationRecord(authCtx.organizationId, evidenceId, resourceType, resourceId);
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'EVIDENCE_ATTACHED',
       entityType: 'Evidence',
       entityId: evidenceId,
@@ -352,22 +340,22 @@ export class EvidenceService {
   }
 
   async detachEvidence(
-    organizationId: string,
-    actorId: string,
+    authCtx: ResourceAuthContext,
     evidenceId: string,
     resourceType: 'CONTROL' | 'RISK' | 'POLICY' | 'AUDIT_CHECK' | 'AUDIT_FINDING' | 'VENDOR' | 'VULNERABILITY' | 'INCIDENT',
     resourceId: string,
   ): Promise<EvidenceDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const evidence = await this.prisma.evidence.findFirst({
-      where: { id: evidenceId, organizationId, deletedAt: null },
+      where: { id: evidenceId, ...scopeWhere, deletedAt: null },
     });
     if (!evidence) throw new NotFoundException(`Evidence "${evidenceId}" not found.`);
 
     await this.removeAssociationRecord(evidenceId, resourceType, resourceId);
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'EVIDENCE_DETACHED',
       entityType: 'Evidence',
       entityId: evidenceId,
@@ -377,9 +365,10 @@ export class EvidenceService {
     return this.mapToDto(evidenceId);
   }
 
-  async archiveEvidence(organizationId: string, actorId: string, evidenceId: string): Promise<EvidenceDto> {
+  async archiveEvidence(authCtx: ResourceAuthContext, evidenceId: string): Promise<EvidenceDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const evidence = await this.prisma.evidence.findFirst({
-      where: { id: evidenceId, organizationId, deletedAt: null },
+      where: { id: evidenceId, ...scopeWhere, deletedAt: null },
     });
     if (!evidence) throw new NotFoundException(`Evidence "${evidenceId}" not found.`);
 
@@ -389,8 +378,8 @@ export class EvidenceService {
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'EVIDENCE_ARCHIVED',
       entityType: 'Evidence',
       entityId: evidenceId,
@@ -400,41 +389,38 @@ export class EvidenceService {
     return this.mapToDto(evidenceId);
   }
 
-  // --------------------------------------------------
-  // HELPER METHODS
-  // --------------------------------------------------
-
   private async verifyResourceBelongsToOrg(
-    organizationId: string,
+    authCtx: ResourceAuthContext,
     resourceType: string,
     resourceId: string,
   ): Promise<void> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     let exists = false;
 
     switch (resourceType) {
       case 'CONTROL':
-        exists = !!(await this.prisma.control.findFirst({ where: { id: resourceId, organizationId } }));
+        exists = !!(await this.prisma.control.findFirst({ where: { id: resourceId, ...scopeWhere } }));
         break;
       case 'RISK':
-        exists = !!(await this.prisma.risk.findFirst({ where: { id: resourceId, organizationId } }));
+        exists = !!(await this.prisma.risk.findFirst({ where: { id: resourceId, ...scopeWhere } }));
         break;
       case 'POLICY':
-        exists = !!(await this.prisma.policy.findFirst({ where: { id: resourceId, organizationId } }));
+        exists = !!(await this.prisma.policy.findFirst({ where: { id: resourceId, ...scopeWhere } }));
         break;
       case 'AUDIT_CHECK':
-        exists = !!(await this.prisma.auditCheckItem.findFirst({ where: { id: resourceId, organizationId } }));
+        exists = !!(await this.prisma.auditCheckItem.findFirst({ where: { id: resourceId, organizationId: authCtx.organizationId } }));
         break;
       case 'AUDIT_FINDING':
-        exists = !!(await this.prisma.auditFinding.findFirst({ where: { id: resourceId, organizationId } }));
+        exists = !!(await this.prisma.auditFinding.findFirst({ where: { id: resourceId, organizationId: authCtx.organizationId } }));
         break;
       case 'VENDOR':
-        exists = !!(await this.prisma.vendor.findFirst({ where: { id: resourceId, organizationId } }));
+        exists = !!(await this.prisma.vendor.findFirst({ where: { id: resourceId, ...scopeWhere } }));
         break;
       case 'VULNERABILITY':
-        exists = !!(await this.prisma.vulnerability.findFirst({ where: { id: resourceId, organizationId } }));
+        exists = !!(await this.prisma.vulnerability.findFirst({ where: { id: resourceId, ...scopeWhere } }));
         break;
       case 'INCIDENT':
-        exists = !!(await this.prisma.incident.findFirst({ where: { id: resourceId, organizationId } }));
+        exists = !!(await this.prisma.incident.findFirst({ where: { id: resourceId, ...scopeWhere } }));
         break;
       default:
         throw new BadRequestException(`Unsupported resource type "${resourceType}".`);
@@ -442,7 +428,7 @@ export class EvidenceService {
 
     if (!exists) {
       throw new NotFoundException(
-        `Target resource "${resourceType}" with ID "${resourceId}" not found in current organization context.`,
+        `Target resource "${resourceType}" with ID "${resourceId}" not found or out of scope.`,
       );
     }
   }
@@ -481,7 +467,6 @@ export class EvidenceService {
           break;
       }
     } catch {
-      // Ignore duplicate association attempts
     }
   }
 
@@ -547,6 +532,8 @@ export class EvidenceService {
     return {
       id: e.id,
       organizationId: e.organizationId,
+      departmentId: e.departmentId || null,
+      projectId: e.projectId || null,
       title: e.title,
       description: e.description,
       evidenceType: e.evidenceType as EvidenceType,
@@ -568,6 +555,6 @@ export class EvidenceService {
         identifier: fr.frameworkReference.identifier,
         title: fr.frameworkReference.title,
       })),
-    };
+    } as any;
   }
 }

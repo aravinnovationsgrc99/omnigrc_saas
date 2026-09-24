@@ -40,6 +40,14 @@ export class CreateVendorDto {
   @IsUrl()
   @IsOptional()
   websiteUrl?: string;
+
+  @IsString()
+  @IsOptional()
+  departmentId?: string;
+
+  @IsString()
+  @IsOptional()
+  projectId?: string;
 }
 
 export class UpdateVendorDto {
@@ -80,6 +88,14 @@ export class UpdateVendorDto {
   @IsUrl()
   @IsOptional()
   websiteUrl?: string;
+
+  @IsString()
+  @IsOptional()
+  departmentId?: string;
+
+  @IsString()
+  @IsOptional()
+  projectId?: string;
 }
 
 export class VendorQueryDto {

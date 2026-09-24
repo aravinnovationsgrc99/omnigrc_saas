@@ -37,6 +37,14 @@ export class CreateRiskDto {
 
   @IsString()
   @IsOptional()
+  departmentId?: string;
+
+  @IsString()
+  @IsOptional()
+  projectId?: string;
+
+  @IsString()
+  @IsOptional()
   treatmentPlan?: string;
 }
 
@@ -74,6 +82,14 @@ export class UpdateRiskDto {
   @IsString()
   @IsOptional()
   assetId?: string;
+
+  @IsString()
+  @IsOptional()
+  departmentId?: string;
+
+  @IsString()
+  @IsOptional()
+  projectId?: string;
 
   @IsString()
   @IsOptional()

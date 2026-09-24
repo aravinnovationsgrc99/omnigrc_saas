@@ -6,9 +6,10 @@ import { ReportsRegistry } from './reports.registry';
 import { PrismaModule } from '../prisma/prisma.module';
 import { MetricsModule } from '../metrics/metrics.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [PrismaModule, MetricsModule, AuditLogsModule],
+  imports: [PrismaModule, MetricsModule, AuditLogsModule, AuthModule],
   controllers: [ReportsController],
   providers: [ReportsService, ExcelExportService, ReportsRegistry],
   exports: [ReportsService],

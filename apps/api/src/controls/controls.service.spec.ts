@@ -5,6 +5,8 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { FrameworkEntitlementsService } from '../frameworks/framework-entitlements.service';
 
+import { Role } from '@omnigrc/shared';
+
 describe('ControlsService', () => {
   let service: ControlsService;
   let prisma: jest.Mocked<any>;
@@ -75,7 +77,8 @@ describe('ControlsService', () => {
     prisma.control.findMany.mockResolvedValue([mockControl]);
     prisma.control.count.mockResolvedValue(1);
 
-    const result = await service.findAll('org-1', {});
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    const result = await service.findAll(authCtx, {});
 
     expect(prisma.control.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -102,7 +105,8 @@ describe('ControlsService', () => {
 
     prisma.control.create.mockResolvedValue(createdControl);
 
-    const res = await service.create('org-1', 'user-1', {
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    const res = await service.create(authCtx, {
       name: 'Encryption Policy',
       description: 'AES-256 for data at rest',
       category: 'Cryptography',

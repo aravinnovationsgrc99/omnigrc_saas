@@ -3,6 +3,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { MetricsService } from './metrics.service';
 import { OverviewMetricsDto } from '@omnigrc/shared';
+import { ResourceAuthContext } from '../auth/resource-authorization.service';
 
 @Controller('metrics')
 @UseGuards(JwtAuthGuard)
@@ -11,8 +12,13 @@ export class MetricsController {
 
   @Get('overview')
   async getOverviewMetrics(
-    @CurrentUser('organizationId') organizationId: string,
+    @CurrentUser() user: any,
   ): Promise<OverviewMetricsDto> {
-    return this.metricsService.getOverviewMetrics(organizationId);
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.metricsService.getOverviewMetrics(authCtx);
   }
 }

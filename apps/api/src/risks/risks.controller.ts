@@ -7,76 +7,116 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Role } from '@omnigrc/shared';
 import { RequiresActiveLicense } from '../common/decorators/requires-active-license.decorator';
+import { ResourceAuthContext } from '../auth/resource-authorization.service';
 
 @Controller('risks')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN, Role.ANALYST)
+@Roles(Role.ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
 export class RisksController {
   constructor(private readonly risksService: RisksService) {}
 
   @Get()
   async findAll(
-    @CurrentUser('organizationId') organizationId: string,
+    @CurrentUser() user: any,
     @Query() query: RiskQueryDto,
   ) {
-    return this.risksService.findAll(organizationId, query);
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.risksService.findAll(authCtx, query);
   }
 
   @Get('open-count')
-  async getOpenCount(@CurrentUser('organizationId') organizationId: string) {
-    return this.risksService.getOpenCount(organizationId);
+  async getOpenCount(@CurrentUser() user: any) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.risksService.getOpenCount(authCtx);
   }
 
   @Get('heatmap-summary')
-  async getHeatmapSummary(@CurrentUser('organizationId') organizationId: string) {
-    return this.risksService.getHeatmapSummary(organizationId);
+  async getHeatmapSummary(@CurrentUser() user: any) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.risksService.getHeatmapSummary(authCtx);
   }
 
   @Get(':id')
   async findOne(
-    @CurrentUser('organizationId') organizationId: string,
+    @CurrentUser() user: any,
     @Param('id') id: string,
   ) {
-    return this.risksService.findOne(organizationId, id);
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.risksService.findOne(authCtx, id);
   }
 
   @Get(':id/audit-log')
   async getAuditLogs(
-    @CurrentUser('organizationId') organizationId: string,
+    @CurrentUser() user: any,
     @Param('id') id: string,
   ) {
-    return this.risksService.getAuditLogs(organizationId, id);
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.risksService.getAuditLogs(authCtx, id);
   }
 
   @Post()
   @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
   async create(
-    @CurrentUser('organizationId') organizationId: string,
-    @CurrentUser('userId') userId: string,
+    @CurrentUser() user: any,
     @Body() dto: CreateRiskDto,
   ) {
-    return this.risksService.create(organizationId, userId, dto);
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.risksService.create(authCtx, dto);
   }
 
   @Patch(':id')
   @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
   async update(
-    @CurrentUser('organizationId') organizationId: string,
-    @CurrentUser('userId') userId: string,
+    @CurrentUser() user: any,
     @Param('id') id: string,
     @Body() dto: UpdateRiskDto,
   ) {
-    return this.risksService.update(organizationId, userId, id, dto);
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.risksService.update(authCtx, id, dto);
   }
 
   @Delete(':id')
   @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
   async softDelete(
-    @CurrentUser('organizationId') organizationId: string,
-    @CurrentUser('userId') userId: string,
+    @CurrentUser() user: any,
     @Param('id') id: string,
   ) {
-    return this.risksService.softDelete(organizationId, userId, id);
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.risksService.softDelete(authCtx, id);
   }
 }
-

@@ -128,9 +128,9 @@ describe('E2E Phase 3: Universal Evidence & Proof Vault Suite', () => {
       mimetype: 'application/pdf',
     };
 
+    const authCtxA = { userId: USER_ADMIN_A, organizationId: ORG_A_ID, role: Role.ADMIN };
     const evidence = await evidenceService.createAndUpload(
-      ORG_A_ID,
-      USER_ADMIN_A,
+      authCtxA,
       file,
       {
         title: 'SOC 2 Type II Audit Proof Document',
@@ -155,11 +155,11 @@ describe('E2E Phase 3: Universal Evidence & Proof Vault Suite', () => {
   it('B. File Format & Signature Validation: Rejects invalid file extension or magic signature mismatch', async () => {
     // 1. Invalid extension .exe
     const exeBuffer = Buffer.from('MZ Executable file');
+    const authCtxA = { userId: USER_ADMIN_A, organizationId: ORG_A_ID, role: Role.ADMIN };
     await expect(
       evidenceService.createAndUpload(
-        ORG_A_ID,
-        USER_ADMIN_A,
-        { originalname: 'malware.exe', buffer: exeBuffer, mimetype: 'application/x-msdownload' },
+        authCtxA,
+        { originalname: 'malware.exe', buffer: exeBuffer, mimetype: 'application/x-msdownload' } as any,
         { title: 'Malicious File' },
       ),
     ).rejects.toThrow(BadRequestException);
@@ -168,28 +168,30 @@ describe('E2E Phase 3: Universal Evidence & Proof Vault Suite', () => {
     const fakePdfBuffer = Buffer.from('NOT A PDF FILE HEADER');
     await expect(
       evidenceService.createAndUpload(
-        ORG_A_ID,
-        USER_ADMIN_A,
-        { originalname: 'fake.pdf', buffer: fakePdfBuffer, mimetype: 'application/pdf' },
+        authCtxA,
+        { originalname: 'fake.pdf', buffer: fakePdfBuffer, mimetype: 'application/pdf' } as any,
         { title: 'Fake PDF' },
       ),
     ).rejects.toThrow(BadRequestException);
   });
 
   it('C. Tenant Isolation: Org B user cannot retrieve or access Org A evidence', async () => {
+    const authCtxB = { userId: USER_ADMIN_B, organizationId: ORG_B_ID, role: Role.ADMIN };
     await expect(
-      evidenceService.findOne(ORG_B_ID, evidenceAId),
+      evidenceService.findOne(authCtxB, evidenceAId),
     ).rejects.toThrow(NotFoundException);
   });
 
   it('D. Cross-Tenant Attachment Rejection: Cannot attach Org A evidence to Org B control', async () => {
+    const authCtxA = { userId: USER_ADMIN_A, organizationId: ORG_A_ID, role: Role.ADMIN };
     await expect(
-      evidenceService.attachEvidence(ORG_A_ID, USER_ADMIN_A, evidenceAId, 'CONTROL', controlBId),
+      evidenceService.attachEvidence(authCtxA, evidenceAId, 'CONTROL', controlBId),
     ).rejects.toThrow(NotFoundException);
   });
 
   it('E. Vault Query: Returns paginated canonical evidence items with resource associations', async () => {
-    const res = await evidenceService.findAll(ORG_A_ID, { page: 1, limit: 10 });
+    const authCtxA = { userId: USER_ADMIN_A, organizationId: ORG_A_ID, role: Role.ADMIN };
+    const res = await evidenceService.findAll(authCtxA, { page: 1, limit: 10 });
     expect(res.items.length).toBeGreaterThanOrEqual(1);
     const item = res.items.find((i) => i.id === evidenceAId);
     expect(item).toBeDefined();
@@ -197,13 +199,14 @@ describe('E2E Phase 3: Universal Evidence & Proof Vault Suite', () => {
   });
 
   it('F. Detach & Re-attach: Detaching evidence leaves canonical evidence intact', async () => {
-    await evidenceService.detachEvidence(ORG_A_ID, USER_ADMIN_A, evidenceAId, 'CONTROL', controlAId);
+    const authCtxA = { userId: USER_ADMIN_A, organizationId: ORG_A_ID, role: Role.ADMIN };
+    await evidenceService.detachEvidence(authCtxA, evidenceAId, 'CONTROL', controlAId);
 
-    const updated = await evidenceService.findOne(ORG_A_ID, evidenceAId);
+    const updated = await evidenceService.findOne(authCtxA, evidenceAId);
     expect(updated.associations.length).toBe(0);
 
-    await evidenceService.attachEvidence(ORG_A_ID, USER_ADMIN_A, evidenceAId, 'CONTROL', controlAId);
-    const reattached = await evidenceService.findOne(ORG_A_ID, evidenceAId);
+    await evidenceService.attachEvidence(authCtxA, evidenceAId, 'CONTROL', controlAId);
+    const reattached = await evidenceService.findOne(authCtxA, evidenceAId);
     expect(reattached.associations.length).toBe(1);
   }, 30000);
 

@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
 import {
   CreatePolicyDto,
   UpdatePolicyDto,
@@ -29,15 +30,18 @@ export class PoliciesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
+    private readonly resourceAuthService: ResourceAuthorizationService,
   ) {}
 
-  async findAll(organizationId: string, query: PolicyQueryDto): Promise<PaginatedPoliciesDto> {
+  async findAll(authCtx: ResourceAuthContext, query: PolicyQueryDto): Promise<PaginatedPoliciesDto> {
     const page = query.page || 1;
     const limit = query.limit || 20;
     const skip = (page - 1) * limit;
 
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+
     const where: any = {
-      organizationId,
+      ...scopeWhere,
       deletedAt: null,
     };
 
@@ -51,12 +55,22 @@ export class PoliciesService {
 
     if (query.search && query.search.trim()) {
       const searchTerm = query.search.trim();
-      where.OR = [
+      const searchConditions = [
         { title: { contains: searchTerm, mode: 'insensitive' } },
         { code: { contains: searchTerm, mode: 'insensitive' } },
         { category: { contains: searchTerm, mode: 'insensitive' } },
         { description: { contains: searchTerm, mode: 'insensitive' } },
       ];
+
+      if (where.OR) {
+        where.AND = [
+          { OR: where.OR },
+          { OR: searchConditions },
+        ];
+        delete where.OR;
+      } else {
+        where.OR = searchConditions;
+      }
     }
 
     const [items, total] = await Promise.all([
@@ -82,9 +96,10 @@ export class PoliciesService {
     };
   }
 
-  async findOne(organizationId: string, id: string): Promise<PolicyDto> {
+  async findOne(authCtx: ResourceAuthContext, id: string): Promise<PolicyDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const policy = await this.prisma.policy.findFirst({
-      where: { id, organizationId, deletedAt: null },
+      where: { id, ...scopeWhere, deletedAt: null },
       include: {
         publishedVersion: true,
         versions: { orderBy: { createdAt: 'desc' } },
@@ -99,19 +114,32 @@ export class PoliciesService {
     return this.mapToDto(policy);
   }
 
-  async create(organizationId: string, userId: string, dto: CreatePolicyDto): Promise<PolicyDto> {
+  async create(authCtx: ResourceAuthContext, dto: CreatePolicyDto): Promise<PolicyDto> {
+    await this.resourceAuthService.authorize(authCtx, {
+      action: 'WRITE',
+      departmentId: dto.departmentId,
+      projectId: dto.projectId,
+    });
+
+    await this.resourceAuthService.validateHierarchyInvariants(
+      authCtx.organizationId,
+      dto.departmentId,
+      dto.projectId,
+    );
+
     const existingCode = await this.prisma.policy.findFirst({
-      where: { organizationId, code: dto.code, deletedAt: null },
+      where: { organizationId: authCtx.organizationId, code: dto.code, deletedAt: null },
     });
 
     if (existingCode) {
       throw new BadRequestException(`Policy with code "${dto.code}" already exists in this organization`);
     }
 
-    // Create Policy and initial 1.0 PolicyVersion
     const policy = await this.prisma.policy.create({
       data: {
-        organizationId,
+        organizationId: authCtx.organizationId,
+        departmentId: dto.departmentId || null,
+        projectId: dto.projectId || null,
         code: dto.code,
         title: dto.title,
         description: dto.description || null,
@@ -120,13 +148,13 @@ export class PoliciesService {
         ownerId: dto.ownerId,
         businessUnit: dto.businessUnit || null,
         reviewCadenceDays: dto.reviewCadenceDays || 365,
-        createdById: userId,
+        createdById: authCtx.userId,
         versions: {
           create: {
             versionNumber: '1.0',
             content: dto.initialContent,
             changeLog: 'Initial policy draft created',
-            createdById: userId,
+            createdById: authCtx.userId,
           },
         },
       },
@@ -137,8 +165,8 @@ export class PoliciesService {
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: userId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'POLICY_CREATED',
       entityType: 'Policy',
       entityId: policy.id,
@@ -146,19 +174,39 @@ export class PoliciesService {
         code: policy.code,
         title: policy.title,
         status: policy.status,
+        departmentId: policy.departmentId,
+        projectId: policy.projectId,
       },
     });
 
     return this.mapToDto(policy);
   }
 
-  async updateMetadata(organizationId: string, userId: string, id: string, dto: UpdatePolicyDto): Promise<PolicyDto> {
+  async updateMetadata(authCtx: ResourceAuthContext, id: string, dto: UpdatePolicyDto): Promise<PolicyDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const existing = await this.prisma.policy.findFirst({
-      where: { id, organizationId, deletedAt: null },
+      where: { id, ...scopeWhere, deletedAt: null },
     });
 
     if (!existing) {
       throw new NotFoundException(`Policy with ID "${id}" not found`);
+    }
+
+    if (dto.departmentId !== undefined || dto.projectId !== undefined) {
+      const targetDeptId = dto.departmentId !== undefined ? dto.departmentId : existing.departmentId || undefined;
+      const targetProjId = dto.projectId !== undefined ? dto.projectId : existing.projectId || undefined;
+
+      await this.resourceAuthService.authorize(authCtx, {
+        action: 'WRITE',
+        departmentId: targetDeptId,
+        projectId: targetProjId,
+      });
+
+      await this.resourceAuthService.validateHierarchyInvariants(
+        authCtx.organizationId,
+        targetDeptId,
+        targetProjId,
+      );
     }
 
     const updated = await this.prisma.policy.update({
@@ -171,6 +219,8 @@ export class PoliciesService {
         ...(dto.ownerId !== undefined && { ownerId: dto.ownerId }),
         ...(dto.businessUnit !== undefined && { businessUnit: dto.businessUnit }),
         ...(dto.reviewCadenceDays !== undefined && { reviewCadenceDays: dto.reviewCadenceDays }),
+        ...(dto.departmentId !== undefined && { departmentId: dto.departmentId }),
+        ...(dto.projectId !== undefined && { projectId: dto.projectId }),
       },
       include: {
         publishedVersion: true,
@@ -179,8 +229,8 @@ export class PoliciesService {
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: userId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'POLICY_UPDATED',
       entityType: 'Policy',
       entityId: updated.id,
@@ -191,13 +241,13 @@ export class PoliciesService {
   }
 
   async createVersion(
-    organizationId: string,
-    userId: string,
+    authCtx: ResourceAuthContext,
     policyId: string,
     dto: CreatePolicyVersionDto,
   ): Promise<PolicyVersionDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const policy = await this.prisma.policy.findFirst({
-      where: { id: policyId, organizationId, deletedAt: null },
+      where: { id: policyId, ...scopeWhere, deletedAt: null },
     });
 
     if (!policy) {
@@ -225,13 +275,13 @@ export class PoliciesService {
         versionNumber: dto.versionNumber,
         content: dto.content,
         changeLog: dto.changeLog || null,
-        createdById: userId,
+        createdById: authCtx.userId,
       },
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: userId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'POLICY_VERSION_CREATED',
       entityType: 'PolicyVersion',
       entityId: version.id,
@@ -254,9 +304,10 @@ export class PoliciesService {
 
   // --- EXPLICIT AUTHORIZATION-CONTROLLED LIFECYCLE TRANSITIONS ---
 
-  async submitForReview(organizationId: string, userId: string, id: string): Promise<PolicyDto> {
+  async submitForReview(authCtx: ResourceAuthContext, id: string): Promise<PolicyDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const policy = await this.prisma.policy.findFirst({
-      where: { id, organizationId, deletedAt: null },
+      where: { id, ...scopeWhere, deletedAt: null },
     });
 
     if (!policy) throw new NotFoundException(`Policy with ID "${id}" not found`);
@@ -271,8 +322,8 @@ export class PoliciesService {
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: userId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'POLICY_SUBMITTED_FOR_REVIEW',
       entityType: 'Policy',
       entityId: id,
@@ -282,13 +333,14 @@ export class PoliciesService {
     return this.mapToDto(updated);
   }
 
-  async approve(organizationId: string, userId: string, userRole: Role, id: string): Promise<PolicyDto> {
-    if (userRole !== Role.ADMIN && userRole !== Role.MSSP_ADMIN) {
+  async approve(authCtx: ResourceAuthContext, id: string): Promise<PolicyDto> {
+    if (authCtx.role !== Role.ADMIN && authCtx.role !== Role.MSSP_ADMIN) {
       throw new ForbiddenException('Only ADMIN users can approve policy documents');
     }
 
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const policy = await this.prisma.policy.findFirst({
-      where: { id, organizationId, deletedAt: null },
+      where: { id, ...scopeWhere, deletedAt: null },
     });
 
     if (!policy) throw new NotFoundException(`Policy with ID "${id}" not found`);
@@ -303,8 +355,8 @@ export class PoliciesService {
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: userId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'POLICY_APPROVED',
       entityType: 'Policy',
       entityId: id,
@@ -314,9 +366,10 @@ export class PoliciesService {
     return this.mapToDto(updated);
   }
 
-  async publish(organizationId: string, userId: string, id: string, versionId?: string): Promise<PolicyDto> {
+  async publish(authCtx: ResourceAuthContext, id: string, versionId?: string): Promise<PolicyDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const policy = await this.prisma.policy.findFirst({
-      where: { id, organizationId, deletedAt: null },
+      where: { id, ...scopeWhere, deletedAt: null },
       include: { versions: { orderBy: { createdAt: 'desc' } } },
     });
 
@@ -349,8 +402,8 @@ export class PoliciesService {
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: userId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'POLICY_PUBLISHED',
       entityType: 'Policy',
       entityId: id,
@@ -364,9 +417,10 @@ export class PoliciesService {
     return this.mapToDto(updated);
   }
 
-  async retire(organizationId: string, userId: string, id: string): Promise<PolicyDto> {
+  async retire(authCtx: ResourceAuthContext, id: string): Promise<PolicyDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const policy = await this.prisma.policy.findFirst({
-      where: { id, organizationId, deletedAt: null },
+      where: { id, ...scopeWhere, deletedAt: null },
     });
 
     if (!policy) throw new NotFoundException(`Policy with ID "${id}" not found`);
@@ -381,8 +435,8 @@ export class PoliciesService {
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: userId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'POLICY_RETIRED',
       entityType: 'Policy',
       entityId: id,
@@ -395,25 +449,27 @@ export class PoliciesService {
   // --- ATTESTATION & EXCEPTION ---
 
   async attestVersion(
-    organizationId: string,
-    userId: string,
+    authCtx: ResourceAuthContext,
     versionId: string,
     ipAddress?: string,
   ): Promise<PolicyAttestationDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const version = await this.prisma.policyVersion.findUnique({
       where: { id: versionId },
       include: { policy: true },
     });
 
-    if (!version || version.policy.organizationId !== organizationId) {
+    if (!version) {
       throw new NotFoundException(`Policy version with ID "${versionId}" not found`);
     }
+
+    await this.resourceAuthService.assertResourceAccess(authCtx, version.policy);
 
     const existingAttestation = await this.prisma.policyAttestation.findUnique({
       where: {
         policyVersionId_userId: {
           policyVersionId: versionId,
-          userId,
+          userId: authCtx.userId,
         },
       },
     });
@@ -424,16 +480,16 @@ export class PoliciesService {
 
     const attestation = await this.prisma.policyAttestation.create({
       data: {
-        organizationId,
+        organizationId: authCtx.organizationId,
         policyVersionId: versionId,
-        userId,
+        userId: authCtx.userId,
         ipAddress: ipAddress || null,
       },
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: userId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'POLICY_ATTESTED',
       entityType: 'PolicyAttestation',
       entityId: attestation.id,
@@ -454,32 +510,32 @@ export class PoliciesService {
   }
 
   async createException(
-    organizationId: string,
-    userId: string,
+    authCtx: ResourceAuthContext,
     policyId: string,
     dto: CreatePolicyExceptionDto,
   ): Promise<PolicyExceptionDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const policy = await this.prisma.policy.findFirst({
-      where: { id: policyId, organizationId, deletedAt: null },
+      where: { id: policyId, ...scopeWhere, deletedAt: null },
     });
 
     if (!policy) throw new NotFoundException(`Policy with ID "${policyId}" not found`);
 
     const exception = await this.prisma.policyException.create({
       data: {
-        organizationId,
+        organizationId: authCtx.organizationId,
         policyId,
         title: dto.title,
         reason: dto.reason,
-        requestedById: userId,
+        requestedById: authCtx.userId,
         status: PolicyExceptionStatus.PENDING,
         expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
       },
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: userId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'POLICY_EXCEPTION_REQUESTED',
       entityType: 'PolicyException',
       entityId: exception.id,
@@ -511,6 +567,8 @@ export class PoliciesService {
     return {
       id: policy.id,
       organizationId: policy.organizationId,
+      departmentId: policy.departmentId || null,
+      projectId: policy.projectId || null,
       code: policy.code,
       title: policy.title,
       description: policy.description,
@@ -543,6 +601,6 @@ export class PoliciesService {
       createdById: policy.createdById,
       createdAt: this.toIsoString(policy.createdAt),
       updatedAt: this.toIsoString(policy.updatedAt),
-    };
+    } as any;
   }
 }

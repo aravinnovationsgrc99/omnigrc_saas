@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
 import { CreateComplianceTaskDto, UpdateComplianceTaskDto, ComplianceTaskQueryDto } from './dto/compliance-tasks.dto';
 import { ComplianceTaskDto, PaginatedComplianceTasksDto, TaskStatus, ComplianceTaskSummaryDto, NotificationType, ObligationCadence } from '@omnigrc/shared';
 
@@ -11,15 +12,18 @@ export class ComplianceTasksService {
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
     private readonly notificationsService: NotificationsService,
+    private readonly resourceAuthService: ResourceAuthorizationService,
   ) {}
 
-  async findAll(organizationId: string, query: ComplianceTaskQueryDto): Promise<PaginatedComplianceTasksDto> {
+  async findAll(authCtx: ResourceAuthContext, query: ComplianceTaskQueryDto): Promise<PaginatedComplianceTasksDto> {
     const page = query.page || 1;
-    const limit = query.limit || 100; // default large limit for Kanban board view
+    const limit = query.limit || 100;
     const skip = (page - 1) * limit;
 
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+
     const where: any = {
-      organizationId,
+      ...scopeWhere,
       deletedAt: null,
     };
 
@@ -33,11 +37,21 @@ export class ComplianceTasksService {
 
     if (query.search && query.search.trim()) {
       const searchTerm = query.search.trim();
-      where.OR = [
+      const searchConditions = [
         { title: { contains: searchTerm, mode: 'insensitive' } },
         { owner: { contains: searchTerm, mode: 'insensitive' } },
         { description: { contains: searchTerm, mode: 'insensitive' } },
       ];
+
+      if (where.OR) {
+        where.AND = [
+          { OR: where.OR },
+          { OR: searchConditions },
+        ];
+        delete where.OR;
+      } else {
+        where.OR = searchConditions;
+      }
     }
 
     const [items, total] = await Promise.all([
@@ -59,7 +73,8 @@ export class ComplianceTasksService {
     };
   }
 
-  async getDashboardSummary(organizationId: string): Promise<ComplianceTaskSummaryDto> {
+  async getDashboardSummary(authCtx: ResourceAuthContext): Promise<ComplianceTaskSummaryDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const now = new Date();
     const d30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
     const d60 = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
@@ -67,7 +82,7 @@ export class ComplianceTasksService {
 
     const openTasks = await this.prisma.complianceTask.findMany({
       where: {
-        organizationId,
+        ...scopeWhere,
         deletedAt: null,
         status: { not: TaskStatus.COMPLETE },
       },
@@ -102,13 +117,14 @@ export class ComplianceTasksService {
     };
   }
 
-  async getDueThisWeekCount(organizationId: string): Promise<{ count: number }> {
+  async getDueThisWeekCount(authCtx: ResourceAuthContext): Promise<{ count: number }> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const now = new Date();
     const next7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
     const count = await this.prisma.complianceTask.count({
       where: {
-        organizationId,
+        ...scopeWhere,
         deletedAt: null,
         status: { not: TaskStatus.COMPLETE },
         dueDate: {
@@ -121,9 +137,10 @@ export class ComplianceTasksService {
     return { count };
   }
 
-  async findOne(organizationId: string, id: string): Promise<ComplianceTaskDto> {
+  async findOne(authCtx: ResourceAuthContext, id: string): Promise<ComplianceTaskDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const task = await this.prisma.complianceTask.findFirst({
-      where: { id, organizationId, deletedAt: null },
+      where: { id, ...scopeWhere, deletedAt: null },
       include: { control: { select: { name: true } } },
     });
 
@@ -134,10 +151,34 @@ export class ComplianceTasksService {
     return this.mapToDto(task);
   }
 
-  async create(organizationId: string, userId: string, dto: CreateComplianceTaskDto): Promise<ComplianceTaskDto> {
+  async create(authCtx: ResourceAuthContext, dto: CreateComplianceTaskDto): Promise<ComplianceTaskDto> {
+    await this.resourceAuthService.authorize(authCtx, {
+      action: 'WRITE',
+      departmentId: dto.departmentId,
+      projectId: dto.projectId,
+    });
+
+    await this.resourceAuthService.validateHierarchyInvariants(
+      authCtx.organizationId,
+      dto.departmentId,
+      dto.projectId,
+    );
+
+    if (dto.controlId) {
+      const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+      const control = await this.prisma.control.findFirst({
+        where: { id: dto.controlId, ...scopeWhere, deletedAt: null },
+      });
+      if (!control) {
+        throw new NotFoundException(`Control "${dto.controlId}" not found or out of scope.`);
+      }
+    }
+
     const task = await this.prisma.complianceTask.create({
       data: {
-        organizationId,
+        organizationId: authCtx.organizationId,
+        departmentId: dto.departmentId || null,
+        projectId: dto.projectId || null,
         title: dto.title,
         description: dto.description || null,
         status: dto.status || TaskStatus.NOT_STARTED,
@@ -147,14 +188,14 @@ export class ComplianceTasksService {
         cadence: dto.cadence || ObligationCadence.ONE_OFF,
         category: dto.category || null,
         obligationReference: dto.obligationReference || null,
-        createdById: userId,
+        createdById: authCtx.userId,
       },
       include: { control: { select: { name: true } } },
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: userId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'COMPLIANCE_TASK_CREATED',
       entityType: 'ComplianceTask',
       entityId: task.id,
@@ -164,12 +205,14 @@ export class ComplianceTasksService {
         owner: task.owner,
         dueDate: task.dueDate ? task.dueDate.toISOString() : null,
         cadence: task.cadence,
+        departmentId: task.departmentId,
+        projectId: task.projectId,
       },
     });
 
     await this.notificationsService.notify({
-      organizationId,
-      userId,
+      organizationId: authCtx.organizationId,
+      userId: authCtx.userId,
       type: NotificationType.TASK_ASSIGNED,
       message: `New compliance task assigned: "${task.title}" (Owner: ${task.owner}).`,
       entityType: 'COMPLIANCE_TASK',
@@ -179,13 +222,40 @@ export class ComplianceTasksService {
     return this.mapToDto(task);
   }
 
-  async update(organizationId: string, userId: string, id: string, dto: UpdateComplianceTaskDto): Promise<ComplianceTaskDto> {
+  async update(authCtx: ResourceAuthContext, id: string, dto: UpdateComplianceTaskDto): Promise<ComplianceTaskDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const existing = await this.prisma.complianceTask.findFirst({
-      where: { id, organizationId, deletedAt: null },
+      where: { id, ...scopeWhere, deletedAt: null },
     });
 
     if (!existing) {
       throw new NotFoundException(`Compliance task with ID "${id}" not found`);
+    }
+
+    if (dto.departmentId !== undefined || dto.projectId !== undefined) {
+      const targetDeptId = dto.departmentId !== undefined ? dto.departmentId : existing.departmentId || undefined;
+      const targetProjId = dto.projectId !== undefined ? dto.projectId : existing.projectId || undefined;
+
+      await this.resourceAuthService.authorize(authCtx, {
+        action: 'WRITE',
+        departmentId: targetDeptId,
+        projectId: targetProjId,
+      });
+
+      await this.resourceAuthService.validateHierarchyInvariants(
+        authCtx.organizationId,
+        targetDeptId,
+        targetProjId,
+      );
+    }
+
+    if (dto.controlId) {
+      const control = await this.prisma.control.findFirst({
+        where: { id: dto.controlId, ...scopeWhere, deletedAt: null },
+      });
+      if (!control) {
+        throw new NotFoundException(`Control "${dto.controlId}" not found or out of scope.`);
+      }
     }
 
     const changedFields: string[] = [];
@@ -197,7 +267,6 @@ export class ComplianceTasksService {
     if (dto.controlId !== undefined && dto.controlId !== existing.controlId) changedFields.push('controlId');
     if (dto.cadence !== undefined && dto.cadence !== existing.cadence) changedFields.push('cadence');
 
-    // Deterministic recurring due-date math: calculate nextDueDate from previous scheduled dueDate
     let lastCompletedAt = existing.lastCompletedAt;
     let nextDueDate = existing.nextDueDate;
 
@@ -224,6 +293,8 @@ export class ComplianceTasksService {
         ...(dto.cadence !== undefined && { cadence: dto.cadence }),
         ...(dto.category !== undefined && { category: dto.category }),
         ...(dto.obligationReference !== undefined && { obligationReference: dto.obligationReference }),
+        ...(dto.departmentId !== undefined && { departmentId: dto.departmentId }),
+        ...(dto.projectId !== undefined && { projectId: dto.projectId }),
         lastCompletedAt,
         nextDueDate,
       },
@@ -233,8 +304,8 @@ export class ComplianceTasksService {
     if (changedFields.length > 0) {
       const isStatusChangeOnly = changedFields.length === 1 && changedFields[0] === 'status';
       await this.auditLogsService.log({
-        organizationId,
-        actorId: userId,
+        organizationId: authCtx.organizationId,
+        actorId: authCtx.userId,
         action: isStatusChangeOnly ? 'COMPLIANCE_TASK_STATUS_CHANGED' : 'COMPLIANCE_TASK_UPDATED',
         entityType: 'ComplianceTask',
         entityId: updated.id,
@@ -249,12 +320,10 @@ export class ComplianceTasksService {
     return this.mapToDto(updated);
   }
 
-  /**
-   * Dedicated status change endpoint for Kanban drag-and-drop
-   */
-  async updateStatus(organizationId: string, userId: string, id: string, status: TaskStatus): Promise<ComplianceTaskDto> {
+  async updateStatus(authCtx: ResourceAuthContext, id: string, status: TaskStatus): Promise<ComplianceTaskDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const existing = await this.prisma.complianceTask.findFirst({
-      where: { id, organizationId, deletedAt: null },
+      where: { id, ...scopeWhere, deletedAt: null },
     });
 
     if (!existing) {
@@ -272,8 +341,8 @@ export class ComplianceTasksService {
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: userId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'COMPLIANCE_TASK_STATUS_CHANGED',
       entityType: 'ComplianceTask',
       entityId: updated.id,
@@ -287,9 +356,10 @@ export class ComplianceTasksService {
     return this.mapToDto(updated);
   }
 
-  async softDelete(organizationId: string, userId: string, id: string): Promise<{ success: boolean }> {
+  async softDelete(authCtx: ResourceAuthContext, id: string): Promise<{ success: boolean }> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const existing = await this.prisma.complianceTask.findFirst({
-      where: { id, organizationId, deletedAt: null },
+      where: { id, ...scopeWhere, deletedAt: null },
     });
 
     if (!existing) {
@@ -302,8 +372,8 @@ export class ComplianceTasksService {
     });
 
     await this.auditLogsService.log({
-      organizationId,
-      actorId: userId,
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
       action: 'COMPLIANCE_TASK_DELETED',
       entityType: 'ComplianceTask',
       entityId: existing.id,
@@ -315,9 +385,10 @@ export class ComplianceTasksService {
     return { success: true };
   }
 
-  async getAuditLogs(organizationId: string, taskId: string) {
+  async getAuditLogs(authCtx: ResourceAuthContext, taskId: string) {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const task = await this.prisma.complianceTask.findFirst({
-      where: { id: taskId, organizationId },
+      where: { id: taskId, ...scopeWhere },
     });
 
     if (!task) {
@@ -326,7 +397,7 @@ export class ComplianceTasksService {
 
     return this.prisma.auditLogEntry.findMany({
       where: {
-        organizationId,
+        organizationId: authCtx.organizationId,
         entityType: 'ComplianceTask',
         entityId: taskId,
       },
@@ -350,6 +421,8 @@ export class ComplianceTasksService {
     return {
       id: task.id,
       organizationId: task.organizationId,
+      departmentId: task.departmentId || null,
+      projectId: task.projectId || null,
       title: task.title,
       description: task.description,
       status: task.status as TaskStatus,

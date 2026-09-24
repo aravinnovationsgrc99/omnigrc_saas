@@ -10,6 +10,7 @@ import {
   FindingStatus,
   calculateAuditScore,
   VulnerabilitySeverity,
+  Role,
 } from '@omnigrc/shared';
 
 describe('BusinessAuditsService', () => {
@@ -115,7 +116,8 @@ describe('BusinessAuditsService', () => {
 
     prisma.auditPlan.create.mockResolvedValue(mockPlan);
 
-    const result = await service.createPlan('org-1', 'user-1', {
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    const result = await service.createPlan(authCtx, {
       title: 'ISO27001 Internal Audit',
       ownerId: 'auditor-1',
     });
@@ -129,8 +131,9 @@ describe('BusinessAuditsService', () => {
   it('should throw NotFoundException if finding to verify does not exist', async () => {
     prisma.auditFinding.findFirst.mockResolvedValue(null);
 
+    const authCtx = { userId: 'admin-1', organizationId: 'org-1', role: Role.ADMIN };
     await expect(
-      service.verifyFinding('org-1', 'non-existent', 'admin-1', FindingStatus.VERIFIED),
+      service.verifyFinding(authCtx, 'non-existent', FindingStatus.VERIFIED),
     ).rejects.toThrow(NotFoundException);
   });
 
@@ -141,8 +144,9 @@ describe('BusinessAuditsService', () => {
       status: FindingStatus.OPEN,
     });
 
+    const authCtx = { userId: 'admin-1', organizationId: 'org-1', role: Role.ADMIN };
     await expect(
-      service.verifyFinding('org-1', 'finding-1', 'admin-1', FindingStatus.VERIFIED),
+      service.verifyFinding(authCtx, 'finding-1', FindingStatus.VERIFIED),
     ).rejects.toThrow(BadRequestException);
   });
 
@@ -163,10 +167,10 @@ describe('BusinessAuditsService', () => {
       verifiedAt: new Date(),
     });
 
+    const authCtx = { userId: 'admin-1', organizationId: 'org-1', role: Role.ADMIN };
     const verified = await service.verifyFinding(
-      'org-1',
+      authCtx,
       'finding-1',
-      'admin-1',
       FindingStatus.VERIFIED,
       'Verified fix in staging',
     );
