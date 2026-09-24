@@ -212,8 +212,16 @@ export class LicenseVerificationService {
       if (!record || !record.signedArtifactJson) {
         if (
           (process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development' || !process.env.NODE_ENV) &&
-          process.env.ENFORCE_LICENSE_IN_TEST !== 'true'
+          process.env.ENFORCE_LICENSE_IN_TEST !== 'true' &&
+          process.env.ENFORCE_LICENSE_IN_DEV !== 'true'
         ) {
+          const deployment = await this.prisma.deployment.findFirst({ where: { organizationId } });
+          if (deployment) {
+            return {
+              state: 'UNLICENSED',
+              reason: `Provisioned deployment for organization "${organizationId}" missing verified SystemLicenseState record`,
+            };
+          }
           return {
             state: 'VALID',
             reason: 'Development/Test environment unactivated fallback',
@@ -232,8 +240,16 @@ export class LicenseVerificationService {
       if (artifact.payload.organizationId !== organizationId) {
         if (
           (process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development' || !process.env.NODE_ENV) &&
-          process.env.ENFORCE_LICENSE_IN_TEST !== 'true'
+          process.env.ENFORCE_LICENSE_IN_TEST !== 'true' &&
+          process.env.ENFORCE_LICENSE_IN_DEV !== 'true'
         ) {
+          const deployment = await this.prisma.deployment.findFirst({ where: { organizationId } });
+          if (deployment) {
+            return {
+              state: 'UNLICENSED',
+              reason: `Cross-tenant license mismatch: stored license organizationId "${artifact.payload.organizationId}" does not match target organization "${organizationId}"`,
+            };
+          }
           return {
             state: 'VALID',
             reason: 'Development/Test environment unactivated fallback',

@@ -95,10 +95,19 @@ export class FrameworkEntitlementsService {
       return activeIds;
     }
 
-    // Unactivated / Local Development Mode Fallback
+    // Check if system has explicit license state or deployment for this organization
+    const hasLicenseOrDeployment = await this.prisma.systemLicenseState.findFirst({
+      where: { organizationId },
+    });
+    if (hasLicenseOrDeployment) {
+      return [];
+    }
+
+    // Unactivated / Local Development Mode Fallback only for unactivated demo environment
     if (
       (process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development' || !process.env.NODE_ENV) &&
-      process.env.ENFORCE_LICENSE_IN_TEST !== 'true'
+      process.env.ENFORCE_LICENSE_IN_TEST !== 'true' &&
+      process.env.ENFORCE_LICENSE_IN_DEV !== 'true'
     ) {
       const allFrameworks = await this.prisma.framework.findMany({ select: { id: true } });
       return allFrameworks.map((f) => f.id);
@@ -127,10 +136,23 @@ export class FrameworkEntitlementsService {
     });
 
     if (records.length === 0) {
-      // Local dev / test fallback
+      // Check if org has any system license state, deployment, or any entitlement records
+      const [licenseState, deployment, anyEntitlement] = await Promise.all([
+        this.prisma.systemLicenseState.findFirst({ where: { organizationId } }),
+        this.prisma.deployment.findFirst({ where: { organizationId } }),
+        this.prisma.organizationFrameworkEntitlement.findFirst({ where: { organizationId } }),
+      ]);
+
+      if (licenseState || deployment || anyEntitlement) {
+        // Provisioned/licensed org, but no active entitlement for this framework -> NOT entitled
+        return false;
+      }
+
+      // Local dev / test fallback only for unactivated demo environment
       if (
         (process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development' || !process.env.NODE_ENV) &&
-        process.env.ENFORCE_LICENSE_IN_TEST !== 'true'
+        process.env.ENFORCE_LICENSE_IN_TEST !== 'true' &&
+        process.env.ENFORCE_LICENSE_IN_DEV !== 'true'
       ) {
         return true;
       }
@@ -201,6 +223,17 @@ export class FrameworkEntitlementsService {
   ): Promise<void> {
     const frameworks = await this.prisma.framework.findMany();
     const expiresAt = expiresAtIso ? new Date(expiresAtIso) : null;
+
+    const catalogCodes = new Set(frameworks.map((f) => f.code));
+
+    for (const ent of signedEntitlements) {
+      const rawCode = ent.code.replace(/^framework:/i, '').replace(/^FRAMEWORK_/i, '');
+      if (!catalogCodes.has(rawCode as any)) {
+        this.logger.warn(
+          `RECONCILIATION WARNING: Control Plane entitlement code "${ent.code}" (normalized: "${rawCode}") is not present in Data Plane framework catalog. Skipping projection until catalog is updated.`,
+        );
+      }
+    }
 
     for (const fw of frameworks) {
       const matched = signedEntitlements.find(
