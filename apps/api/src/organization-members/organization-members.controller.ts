@@ -24,6 +24,23 @@ export class OrganizationMembersController {
     return this.membersService.findAll(req.user.organizationId);
   }
 
+  @Get('details')
+  @RequireResourceScope({ action: 'READ', scopeType: ResourceScopeType.ORGANIZATION })
+  async getDetails(@Req() req: any) {
+    return this.membersService.getOrganizationDetails(req.user.organizationId);
+  }
+
+  @Patch('details')
+  @RequireResourceScope({ action: 'ADMIN', scopeType: ResourceScopeType.ORGANIZATION })
+  async updateDetails(@Req() req: any, @Body() dto: any) {
+    return this.membersService.updateOrganizationDetails(
+      req.user.organizationId,
+      req.user.sub || req.user.id || req.user.userId,
+      req.user.role,
+      dto,
+    );
+  }
+
   @Get(':id')
   @RequireResourceScope({ action: 'READ', scopeType: ResourceScopeType.ORGANIZATION })
   async findOne(@Req() req: any, @Param('id') id: string) {

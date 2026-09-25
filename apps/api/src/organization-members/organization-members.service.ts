@@ -1,14 +1,27 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
-import { Role, ProductAccessStatus, OrganizationMemberDto, UpdateMemberAccessDto } from '@omnigrc/shared';
+import { LicenseVerificationService } from '../license-verification/license-verification.service';
+import { FrameworkEntitlementsService } from '../frameworks/framework-entitlements.service';
+import {
+  Role,
+  ProductAccessStatus,
+  OrganizationMemberDto,
+  UpdateMemberAccessDto,
+  OrganizationDetailsDto,
+  UpdateOrganizationDetailsDto,
+  OrganizationEntitlementDetailDto,
+} from '@omnigrc/shared';
 
 @Injectable()
 export class OrganizationMembersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogs: AuditLogsService,
+    private readonly licenseVerificationService: LicenseVerificationService,
+    private readonly frameworkEntitlementsService: FrameworkEntitlementsService,
   ) {}
+
 
   async findAll(organizationId: string): Promise<OrganizationMemberDto[]> {
     const users = await this.prisma.user.findMany({
@@ -269,4 +282,114 @@ export class OrganizationMembersService {
 
     return this.findOne(organizationId, targetUserId);
   }
+
+  /**
+   * Fetch complete Organization Administrative Details from backend
+   */
+  async getOrganizationDetails(organizationId: string): Promise<OrganizationDetailsDto> {
+    const org = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+    });
+
+    if (!org) {
+      throw new NotFoundException(`Organization "${organizationId}" not found.`);
+    }
+
+    const evalLicense = await this.licenseVerificationService.getEvaluatedStateForOrganization(organizationId);
+    const isReadOnly = evalLicense.state === 'EXPIRED';
+
+    const [activeMemberCount, departmentCount, projectCount, rawEntitlements] = await Promise.all([
+      this.prisma.organizationMembership.count({
+        where: { organizationId, status: ProductAccessStatus.ACTIVE },
+      }),
+      this.prisma.department.count({
+        where: { organizationId },
+      }),
+      this.prisma.project.count({
+        where: { organizationId },
+      }),
+      this.prisma.organizationFrameworkEntitlement.findMany({
+        where: { organizationId },
+        include: {
+          framework: { select: { id: true, code: true, name: true } },
+          frameworkVersion: { select: { id: true, version: true, name: true } },
+        },
+      }),
+    ]);
+
+    const entitlements: OrganizationEntitlementDetailDto[] = rawEntitlements.map((e) => ({
+      id: e.id,
+      frameworkId: e.frameworkId,
+      frameworkCode: e.framework.code,
+      frameworkName: e.framework.name,
+      versionId: e.versionId,
+      versionName: e.frameworkVersion ? `${e.frameworkVersion.name} (${e.frameworkVersion.version})` : null,
+      status: e.status,
+      expiresAt: e.expiresAt ? e.expiresAt.toISOString() : null,
+      source: e.source,
+    }));
+
+    return {
+      id: org.id,
+      name: org.name,
+      type: org.type,
+      parentOrganizationId: org.parentOrganizationId,
+      primaryRegion: org.primaryRegion,
+      primaryFramework: org.primaryFramework,
+      slackWebhookUrl: org.slackWebhookUrl,
+      onboardingCompleted: org.onboardingCompleted,
+      createdAt: org.createdAt.toISOString(),
+      licenseState: evalLicense.state,
+      isReadOnly,
+      activeMemberCount,
+      departmentCount,
+      projectCount,
+      entitlements,
+    };
+  }
+
+  /**
+   * Update Organization Administrative Details (Server-Authorized for ADMIN/MSSP_ADMIN)
+   */
+  async updateOrganizationDetails(
+    organizationId: string,
+    actorUserId: string,
+    actorRole: Role,
+    dto: UpdateOrganizationDetailsDto,
+  ): Promise<OrganizationDetailsDto> {
+    if (actorRole !== Role.ADMIN && actorRole !== Role.MSSP_ADMIN) {
+      throw new ForbiddenException('Only Organization Administrators can update organization settings.');
+    }
+
+    const org = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+    });
+
+    if (!org) {
+      throw new NotFoundException(`Organization "${organizationId}" not found.`);
+    }
+
+    const updateData: any = {};
+    if (dto.name && dto.name.trim()) updateData.name = dto.name.trim();
+    if (dto.primaryRegion && dto.primaryRegion.trim()) updateData.primaryRegion = dto.primaryRegion.trim();
+    if (dto.primaryFramework && dto.primaryFramework.trim()) updateData.primaryFramework = dto.primaryFramework.trim();
+    if (dto.slackWebhookUrl !== undefined) updateData.slackWebhookUrl = dto.slackWebhookUrl ? dto.slackWebhookUrl.trim() : null;
+
+    const updated = await this.prisma.organization.update({
+      where: { id: organizationId },
+      data: updateData,
+    });
+
+    await this.auditLogs.log({
+      action: 'ORGANIZATION_SETTINGS_CHANGED',
+      organizationId,
+      actorId: actorUserId,
+      entityType: 'Organization',
+      entityId: organizationId,
+      metadata: { updatedFields: Object.keys(updateData) },
+    });
+
+    return this.getOrganizationDetails(organizationId);
+  }
 }
+

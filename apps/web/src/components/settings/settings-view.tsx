@@ -4,8 +4,31 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/auth-context';
 import { useToast } from '@/context/toast-context';
 import { apiRequest } from '@/lib/api-client';
-import { RegionalPodDto, PodStatus, Role } from '@omnigrc/shared';
-import { Globe2, ShieldAlert, CheckCircle2, Lock, AlertTriangle, Send, Mail, Link, Layers, Check, ShieldCheck, HelpCircle } from 'lucide-react';
+import {
+  RegionalPodDto,
+  PodStatus,
+  Role,
+  OrganizationDetailsDto,
+  OrganizationEntitlementDetailDto,
+} from '@omnigrc/shared';
+import {
+  Globe2,
+  ShieldAlert,
+  CheckCircle2,
+  Lock,
+  AlertTriangle,
+  Send,
+  Mail,
+  Building2,
+  Edit2,
+  Shield,
+  BookOpen,
+  Users,
+  FolderKanban,
+  Layers,
+  Check,
+  RefreshCw,
+} from 'lucide-react';
 import { SkeletonLine } from '@/components/ui/skeleton';
 import { InlineErrorState } from '@/components/ui/inline-error-state';
 
@@ -15,17 +38,26 @@ import { OrganizationHierarchyView } from '@/components/organization/organizatio
 export function SettingsView() {
   const { user, organization } = useAuth();
   const { addToast } = useToast();
-  const [pods, setPods] = useState<RegionalPodDto[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [fetchError, setFetchError] = useState<string | null>(null);
 
-  // Regional Pod Modal State
+  // Organization Details State
+  const [orgDetails, setOrgDetails] = useState<OrganizationDetailsDto | null>(null);
+  const [loadingOrg, setLoadingOrg] = useState(true);
+  const [orgError, setOrgError] = useState<string | null>(null);
+  const [showEditOrgModal, setShowEditOrgModal] = useState(false);
+  const [editOrgName, setEditOrgName] = useState('');
+  const [editPrimaryRegion, setEditPrimaryRegion] = useState('');
+  const [savingOrg, setSavingOrg] = useState(false);
+
+  // Regional Pods State
+  const [pods, setPods] = useState<RegionalPodDto[]>([]);
+  const [loadingPods, setLoadingPods] = useState(true);
+  const [podError, setPodError] = useState<string | null>(null);
   const [selectedPod, setSelectedPod] = useState<RegionalPodDto | null>(null);
   const [podAckChecked, setPodAckChecked] = useState(false);
-  const [updating, setUpdating] = useState(false);
-  const [modalError, setModalError] = useState<string | null>(null);
+  const [updatingPod, setUpdatingPod] = useState(false);
+  const [podModalError, setPodModalError] = useState<string | null>(null);
 
-  // Email Notification Preference State
+  // User Preferences State
   const [emailNotifs, setEmailNotifs] = useState(user?.emailNotifications ?? true);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [savingEmailPref, setSavingEmailPref] = useState(false);
@@ -37,24 +69,32 @@ export function SettingsView() {
   const [savingSlack, setSavingSlack] = useState(false);
   const [testingSlack, setTestingSlack] = useState(false);
 
-  const isAdmin = user?.role === Role.ADMIN;
+  const isAdmin = user?.role === Role.ADMIN || user?.role === Role.MSSP_ADMIN;
+
+  const fetchOrgDetails = async () => {
+    setLoadingOrg(true);
+    setOrgError(null);
+    try {
+      const data = await apiRequest<OrganizationDetailsDto>('/organization-members/details');
+      setOrgDetails(data);
+    } catch (err: any) {
+      setOrgError(err.message || 'Failed to load organization details');
+    } finally {
+      setLoadingOrg(false);
+    }
+  };
 
   const fetchPods = async () => {
-    setLoading(true);
-    setFetchError(null);
+    setLoadingPods(true);
+    setPodError(null);
     try {
       const data = await apiRequest<RegionalPodDto[]>('/regional-pods');
       setPods(data);
-    } catch {
-      // Fallback default pods if backend is unreachable
-      setPods([
-        { id: '1', region: 'INDIA' as any, status: 'ACTIVE' as any, organizationId: '' },
-        { id: '2', region: 'UK' as any, status: 'INACTIVE' as any, organizationId: '' },
-        { id: '3', region: 'EU' as any, status: 'INACTIVE' as any, organizationId: '' },
-        { id: '4', region: 'AUSTRALIA' as any, status: 'INACTIVE' as any, organizationId: '' },
-      ]);
+    } catch (err: any) {
+      setPodError(err.message || 'Unable to retrieve regional hosting pod configuration.');
+      setPods([]);
     } finally {
-      setLoading(false);
+      setLoadingPods(false);
     }
   };
 
@@ -69,6 +109,7 @@ export function SettingsView() {
   };
 
   useEffect(() => {
+    fetchOrgDetails();
     fetchPods();
     fetchSlackStatus();
   }, []);
@@ -80,19 +121,49 @@ export function SettingsView() {
     AUSTRALIA: 'Australia (ap-southeast-2)',
   };
 
-  // 1. Regional Pod Extreme Caution Toggle Handler
+  // Edit Organization Handler
+  const handleOpenEditOrg = () => {
+    if (!orgDetails || !isAdmin) return;
+    setEditOrgName(orgDetails.name);
+    setEditPrimaryRegion(orgDetails.primaryRegion);
+    setShowEditOrgModal(true);
+  };
+
+  const handleSaveOrgDetails = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editOrgName.trim() || savingOrg) return;
+    setSavingOrg(true);
+    try {
+      const updated = await apiRequest<OrganizationDetailsDto>('/organization-members/details', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          name: editOrgName.trim(),
+          primaryRegion: editPrimaryRegion.trim(),
+        }),
+      });
+      setOrgDetails(updated);
+      setShowEditOrgModal(false);
+      addToast('Organization settings updated successfully', 'success');
+    } catch (err: any) {
+      addToast(err.message || 'Failed to update organization settings', 'error');
+    } finally {
+      setSavingOrg(false);
+    }
+  };
+
+  // Regional Pod Toggle Handler
   const handleToggleClick = (pod: RegionalPodDto) => {
     if (!isAdmin) return;
     setSelectedPod(pod);
     setPodAckChecked(false);
-    setModalError(null);
+    setPodModalError(null);
   };
 
   const handleConfirmToggle = async () => {
     if (!selectedPod || !podAckChecked) return;
     const nextStatus = selectedPod.status === PodStatus.ACTIVE ? PodStatus.INACTIVE : PodStatus.ACTIVE;
-    setUpdating(true);
-    setModalError(null);
+    setUpdatingPod(true);
+    setPodModalError(null);
 
     try {
       const updatedPod = await apiRequest<RegionalPodDto>(`/regional-pods/${selectedPod.id}`, {
@@ -102,17 +173,17 @@ export function SettingsView() {
 
       setPods((prev) => prev.map((p) => (p.id === updatedPod.id ? updatedPod : p)));
       setSelectedPod(null);
-      addToast(`Updated pod status for ${selectedPod.region} to ${nextStatus}`, 'success');
+      addToast(`Updated hosting pod status for ${selectedPod.region} to ${nextStatus}`, 'success');
     } catch (err: any) {
       const errMsg = err.message || 'Failed to update regional pod status.';
-      setModalError(errMsg);
+      setPodModalError(errMsg);
       addToast(errMsg, 'error');
     } finally {
-      setUpdating(false);
+      setUpdatingPod(false);
     }
   };
 
-  // 2. Email Preference Caution Modal Handler
+  // Email Notification Preference Handler
   const handleOpenEmailModal = () => {
     setShowEmailModal(true);
   };
@@ -129,14 +200,14 @@ export function SettingsView() {
       });
       addToast(`Email notifications ${nextVal ? 'enabled' : 'disabled'}`, 'success');
     } catch {
-      setEmailNotifs(!nextVal); // Revert on failure
+      setEmailNotifs(!nextVal);
       addToast('Failed to update email preferences', 'error');
     } finally {
       setSavingEmailPref(false);
     }
   };
 
-  // 3. Slack Webhook Confirmation Handler
+  // Slack Integration Handlers
   const handleOpenSlackModal = (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAdmin || !slackWebhook.trim()) return;
@@ -177,36 +248,186 @@ export function SettingsView() {
   };
 
   return (
-    <div className="omni-fade-in px-4 py-6 md:px-8 max-w-3xl">
-      <h1 className="text-xl font-semibold text-[#1B2430] mb-5">Settings</h1>
-
-      {/* Organization Info Card */}
-      <div className="bg-white border border-[#E2E6E4] rounded-lg p-5 mb-5 shadow-sm">
-        <h2 className="text-sm font-semibold text-[#1B2430] mb-3.5">Organization Context</h2>
-        <div className="text-xs text-[#5B6672] flex justify-between py-2 border-b border-[#EDEFED]">
-          <span>Organization Name</span>
-          <span className="text-[#1B2430] font-medium">{organization?.name || 'N/A'}</span>
-        </div>
-        <div className="text-xs text-[#5B6672] flex justify-between py-2">
-          <span>Current Session User</span>
-          <span className="text-[#1B2430] font-medium">
-            {user?.name} · <span className="omni-mono text-[11px] bg-[#EDEFED] px-1.5 py-0.5 rounded">{user?.role}</span>
-          </span>
-        </div>
+    <div className="omni-fade-in px-4 py-6 md:px-8 max-w-5xl space-y-6">
+      <div>
+        <h1 className="text-xl font-bold text-[#1B2430] flex items-center gap-2">
+          <Building2 className="text-teal-700" size={22} /> Organization Administration & Settings
+        </h1>
+        <p className="text-xs text-[#5B6672] mt-1">
+          Centralized administrative controls for tenant identity, commercial framework entitlements, employee access control, and security preferences.
+        </p>
       </div>
 
-      {/* Team & Invitations Management Card */}
+      {/* 1. ORGANIZATION CONTEXT & DETAILS CARD */}
+      <div className="bg-white border border-[#E2E6E4] rounded-lg p-5 shadow-sm">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-sm font-semibold text-[#1B2430] flex items-center gap-2">
+            <Building2 size={16} className="text-teal-700" /> Organization Profile & License State
+          </h2>
+          {isAdmin && (
+            <button
+              onClick={handleOpenEditOrg}
+              className="omni-btn-ghost text-xs h-7 px-2.5 flex items-center gap-1.5 text-teal-700 hover:bg-teal-50"
+            >
+              <Edit2 size={13} /> Edit Profile
+            </button>
+          )}
+        </div>
+
+        {loadingOrg ? (
+          <div className="space-y-2 py-2">
+            <SkeletonLine height="20px" width="100%" />
+            <SkeletonLine height="20px" width="100%" />
+            <SkeletonLine height="20px" width="100%" />
+          </div>
+        ) : orgError ? (
+          <InlineErrorState message={orgError} onRetry={fetchOrgDetails} />
+        ) : orgDetails ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <div className="space-y-2">
+              <div className="flex justify-between py-1.5 border-b border-[#EDEFED]">
+                <span className="text-[#5B6672]">Organization Name</span>
+                <span className="font-semibold text-[#1B2430]">{orgDetails.name}</span>
+              </div>
+              <div className="flex justify-between py-1.5 border-b border-[#EDEFED]">
+                <span className="text-[#5B6672]">Organization ID</span>
+                <span className="omni-mono text-[11px] bg-[#EDEFED] px-1.5 py-0.5 rounded text-[#1B2430]">
+                  {orgDetails.id}
+                </span>
+              </div>
+              <div className="flex justify-between py-1.5 border-b border-[#EDEFED]">
+                <span className="text-[#5B6672]">Organization Type</span>
+                <span className="omni-mono text-[11px] font-semibold text-teal-700">{orgDetails.type}</span>
+              </div>
+              <div className="flex justify-between py-1.5">
+                <span className="text-[#5B6672]">Primary Region</span>
+                <span className="font-medium text-[#1B2430]">{orgDetails.primaryRegion}</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between py-1.5 border-b border-[#EDEFED]">
+                <span className="text-[#5B6672]">License Evaluation State</span>
+                <span
+                  className={`omni-badge ${
+                    orgDetails.licenseState === 'ACTIVE'
+                      ? 'omni-badge-teal'
+                      : orgDetails.licenseState === 'EXPIRED'
+                      ? 'omni-badge-rose'
+                      : 'bg-amber-100 text-amber-800'
+                  }`}
+                >
+                  {orgDetails.licenseState}
+                </span>
+              </div>
+              <div className="flex justify-between py-1.5 border-b border-[#EDEFED]">
+                <span className="text-[#5B6672]">Active Employees / Members</span>
+                <span className="font-semibold text-[#1B2430]">{orgDetails.activeMemberCount}</span>
+              </div>
+              <div className="flex justify-between py-1.5 border-b border-[#EDEFED]">
+                <span className="text-[#5B6672]">Departments / Projects</span>
+                <span className="font-semibold text-[#1B2430]">
+                  {orgDetails.departmentCount} Depts · {orgDetails.projectCount} Projects
+                </span>
+              </div>
+              <div className="flex justify-between py-1.5">
+                <span className="text-[#5B6672]">Current Session Role</span>
+                <span className="omni-mono text-[11px] bg-[#EDEFED] px-1.5 py-0.5 rounded font-semibold">
+                  {user?.role}
+                </span>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      {/* 2. FRAMEWORK COMMERCIAL ENTITLEMENTS CARD */}
+      <div className="bg-white border border-[#E2E6E4] rounded-lg p-5 shadow-sm">
+        <div className="flex justify-between items-center mb-3">
+          <div>
+            <h2 className="text-sm font-semibold text-[#1B2430] flex items-center gap-2">
+              <BookOpen size={16} className="text-teal-700" /> Commercial Framework Entitlements
+            </h2>
+            <p className="text-xs text-[#5B6672] mt-0.5">
+              Framework access provisioned for this organization by Arav Control Plane licensing authority.
+            </p>
+          </div>
+          <span className="text-[11px] text-[#8493A5] flex items-center gap-1 bg-[#FAFBFB] px-2 py-1 rounded border border-[#E2E6E4]">
+            <Lock size={12} /> Managed by Arav Control Plane
+          </span>
+        </div>
+
+        {loadingOrg ? (
+          <div className="space-y-2 py-2">
+            <SkeletonLine height="24px" width="100%" />
+            <SkeletonLine height="24px" width="100%" />
+          </div>
+        ) : !orgDetails || orgDetails.entitlements.length === 0 ? (
+          <div className="text-center py-6 border border-dashed border-[#EDEFED] rounded-lg bg-[#FAFBFB]">
+            <Shield size={24} className="mx-auto text-gray-400 mb-2" />
+            <p className="text-xs text-[#5B6672]">No framework commercial entitlements currently provisioned.</p>
+            <p className="text-[11px] text-gray-400 mt-0.5">
+              Contact Arav Innovations Platform Support to activate framework catalog licenses.
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-[#EDEFED] bg-[#FAFBFB] text-[#5B6672] font-semibold">
+                  <th className="py-2.5 px-3">Framework Code</th>
+                  <th className="py-2.5 px-3">Framework Name</th>
+                  <th className="py-2.5 px-3">Version Scope</th>
+                  <th className="py-2.5 px-3">Entitlement Status</th>
+                  <th className="py-2.5 px-3">Provenance / Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                {orgDetails.entitlements.map((e) => (
+                  <tr key={e.id} className="border-b border-[#EDEFED] hover:bg-slate-50/50">
+                    <td className="py-2.5 px-3 font-semibold text-[#1B2430]">
+                      <span className="omni-mono text-[11px] bg-[#EDEFED] px-1.5 py-0.5 rounded text-teal-800">
+                        {e.frameworkCode}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3 text-[#1B2430] font-medium">{e.frameworkName}</td>
+                    <td className="py-2.5 px-3 text-[#5B6672]">{e.versionName || 'Framework-wide (All Versions)'}</td>
+                    <td className="py-2.5 px-3">
+                      <span
+                        className={`omni-badge ${
+                          e.status === 'ACTIVE'
+                            ? 'omni-badge-teal'
+                            : e.status === 'EXPIRED'
+                            ? 'omni-badge-rose'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}
+                      >
+                        {e.status}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3 text-[#5B6672] omni-mono text-[11px]">{e.source || 'ARAV_CONTROL_PLANE'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* 3. ORGANIZATION HIERARCHY, MEMBERS, DEPARTMENTS & PROJECTS */}
+      <OrganizationHierarchyView />
+
+      {/* 4. TEAM & SECURE INVITATIONS MANAGEMENT */}
       <TeamInvitationsView />
 
-
-      {/* User Preferences Card */}
-      <div className="bg-white border border-[#E2E6E4] rounded-lg p-5 mb-5 shadow-sm">
+      {/* 5. USER PREFERENCES CARD */}
+      <div className="bg-white border border-[#E2E6E4] rounded-lg p-5 shadow-sm">
         <h2 className="text-sm font-semibold text-[#1B2430] mb-3.5">User Preferences</h2>
         <div className="flex justify-between items-center py-2">
           <div className="flex items-center gap-2.5">
             <Mail size={16} className="text-teal-700" />
             <div>
-              <span className="text-xs font-medium text-[#1B2430]">Resend Email Notifications</span>
+              <span className="text-xs font-medium text-[#1B2430]">Email Notifications & Reminders</span>
               <p className="text-[11.5px] text-[#5B6672] m-0">Receive email alerts for task assignments and due-date reminders</p>
             </div>
           </div>
@@ -223,8 +444,8 @@ export function SettingsView() {
         </div>
       </div>
 
-      {/* Integrations Card */}
-      <div className="bg-white border border-[#E2E6E4] rounded-lg p-5 mb-5 shadow-sm">
+      {/* 6. PLATFORM INTEGRATIONS CARD */}
+      <div className="bg-white border border-[#E2E6E4] rounded-lg p-5 shadow-sm">
         <div className="flex justify-between items-center mb-3.5">
           <div>
             <h2 className="text-sm font-semibold text-[#1B2430]">Platform Integrations</h2>
@@ -289,47 +510,9 @@ export function SettingsView() {
             )}
           </form>
         </div>
-
-        {/* Jira Software Card (Structured Stub) */}
-        <div className="border border-[#EDEFED] rounded-lg p-3.5 mb-3 bg-[#FAFBFB] opacity-75">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center gap-2">
-              <span className="text-base">🔷</span>
-              <div>
-                <span className="text-xs font-semibold text-[#1B2430]">Jira Software Cloud</span>
-                <span className="text-[11px] text-[#5B6672] ml-2">Bidirectional issue & compliance task sync</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="omni-mono text-[9.5px] text-[#6E7A8A] bg-[#EDEFED] px-1.5 py-0.5 rounded">Coming soon</span>
-              <button disabled className="omni-btn-secondary opacity-50 cursor-not-allowed h-7 text-[11.5px] px-2.5">
-                Connect
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Google Workspace Card (Structured Stub) */}
-        <div className="border border-[#EDEFED] rounded-lg p-3.5 bg-[#FAFBFB] opacity-75">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center gap-2">
-              <span className="text-base">📁</span>
-              <div>
-                <span className="text-xs font-semibold text-[#1B2430]">Google Workspace</span>
-                <span className="text-[11px] text-[#5B6672] ml-2">Directory user sync & Google Drive audit evidence</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="omni-mono text-[9.5px] text-[#6E7A8A] bg-[#EDEFED] px-1.5 py-0.5 rounded">Coming soon</span>
-              <button disabled className="omni-btn-secondary opacity-50 cursor-not-allowed h-7 text-[11.5px] px-2.5">
-                Connect
-              </button>
-            </div>
-          </div>
-        </div>
       </div>
 
-      {/* Regional Hosting Pods Card */}
+      {/* 7. REGIONAL HOSTING PODS CARD */}
       <div className="bg-white border border-[#E2E6E4] rounded-lg p-5 shadow-sm">
         <div className="flex justify-between items-center mb-3.5">
           <div>
@@ -345,17 +528,17 @@ export function SettingsView() {
           )}
         </div>
 
-        {fetchError && (
-          <div className="mb-3">
-            <InlineErrorState message={fetchError} onRetry={fetchPods} />
-          </div>
-        )}
-
-        {loading ? (
+        {podError ? (
+          <InlineErrorState message={podError} onRetry={fetchPods} />
+        ) : loadingPods ? (
           <div className="space-y-3 py-2">
             <SkeletonLine height="24px" width="100%" />
             <SkeletonLine height="24px" width="100%" />
-            <SkeletonLine height="24px" width="100%" />
+          </div>
+        ) : pods.length === 0 ? (
+          <div className="text-center py-6 border border-dashed border-[#EDEFED] rounded-lg bg-[#FAFBFB]">
+            <Globe2 size={24} className="mx-auto text-gray-400 mb-2" />
+            <p className="text-xs text-[#5B6672]">No regional hosting pod configurations returned from backend.</p>
           </div>
         ) : (
           pods.map((r, i, arr) => {
@@ -396,7 +579,65 @@ export function SettingsView() {
         )}
       </div>
 
-      {/* MODAL 1: Regional Pod Extreme Caution Confirmation Modal */}
+      {/* EDIT ORGANIZATION MODAL */}
+      {showEditOrgModal && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="omni-fade-in bg-white rounded-xl w-full max-w-md p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center shrink-0">
+                <Building2 size={20} className="text-teal-700" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 m-0">Edit Organization Profile</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Update administrator-level tenant metadata</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveOrgDetails} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-[#1B2430] mb-1">Organization Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editOrgName}
+                  onChange={(e) => setEditOrgName(e.target.value)}
+                  className="omni-input w-full text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#1B2430] mb-1">Primary Region</label>
+                <input
+                  type="text"
+                  required
+                  value={editPrimaryRegion}
+                  onChange={(e) => setEditPrimaryRegion(e.target.value)}
+                  className="omni-input w-full text-xs"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowEditOrgModal(false)}
+                  className="omni-btn-ghost text-xs px-4 py-2"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingOrg || !editOrgName.trim()}
+                  className="omni-btn-primary text-xs px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white font-bold"
+                >
+                  {savingOrg ? 'Saving...' : 'Save Settings'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* REGIONAL POD CAUTION CONFIRMATION MODAL */}
       {selectedPod && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="omni-fade-in bg-white rounded-xl w-full max-w-lg p-6 shadow-2xl border-2 border-red-200">
@@ -417,7 +658,6 @@ export function SettingsView() {
               </div>
             </div>
 
-            {/* Impact Details Box */}
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-700 space-y-2 mb-4 leading-relaxed">
               <div className="font-bold text-slate-900 flex items-center gap-1.5 text-xs text-red-700">
                 <AlertTriangle size={14} /> Data Residency & Compliance Consequences:
@@ -429,7 +669,6 @@ export function SettingsView() {
               </ul>
             </div>
 
-            {/* Admin Acknowledgment Checkbox */}
             <label className="flex items-start gap-2.5 p-3 rounded-xl bg-red-50/70 border border-red-200 text-xs font-semibold text-red-950 cursor-pointer mb-5">
               <input
                 type="checkbox"
@@ -442,25 +681,23 @@ export function SettingsView() {
               </span>
             </label>
 
-            {/* Modal Error State */}
-            {modalError && (
+            {podModalError && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-xs mb-4 flex items-center gap-2">
                 <ShieldAlert size={16} className="shrink-0" />
-                <span>{modalError}</span>
+                <span>{podModalError}</span>
               </div>
             )}
 
-            {/* Actions */}
             <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
               <button
-                disabled={updating}
+                disabled={updatingPod}
                 onClick={() => setSelectedPod(null)}
                 className="omni-btn-ghost text-xs px-4 py-2"
               >
                 Cancel
               </button>
               <button
-                disabled={updating || !podAckChecked}
+                disabled={updatingPod || !podAckChecked}
                 onClick={handleConfirmToggle}
                 className={`omni-btn-primary text-xs px-4 py-2 font-bold ${
                   !podAckChecked
@@ -470,14 +707,14 @@ export function SettingsView() {
                     : 'bg-teal-700 hover:bg-teal-800 text-white'
                 }`}
               >
-                {updating ? 'Updating Status...' : selectedPod.status === PodStatus.ACTIVE ? 'Confirm Deactivation' : 'Confirm Activation'}
+                {updatingPod ? 'Updating Status...' : selectedPod.status === PodStatus.ACTIVE ? 'Confirm Deactivation' : 'Confirm Activation'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL 2: User Email Notifications Preference Caution Modal */}
+      {/* USER EMAIL NOTIFICATION MODAL */}
       {showEmailModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="omni-fade-in bg-white rounded-xl w-full max-w-md p-6 shadow-2xl border border-slate-200">
@@ -519,7 +756,7 @@ export function SettingsView() {
         </div>
       )}
 
-      {/* MODAL 3: Slack Integration Webhook Caution Modal */}
+      {/* SLACK INTEGRATION MODAL */}
       {showSlackModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="omni-fade-in bg-white rounded-xl w-full max-w-md p-6 shadow-2xl border border-slate-200">
@@ -561,5 +798,3 @@ export function SettingsView() {
     </div>
   );
 }
-
-

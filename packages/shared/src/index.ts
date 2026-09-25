@@ -1937,6 +1937,44 @@ export interface UpdateMemberAccessDto {
   projectIds?: string[];
 }
 
+export interface OrganizationEntitlementDetailDto {
+  id: string;
+  frameworkId: string;
+  frameworkCode: string;
+  frameworkName: string;
+  versionId?: string | null;
+  versionName?: string | null;
+  status: string;
+  expiresAt?: string | null;
+  source?: string | null;
+}
+
+export interface OrganizationDetailsDto {
+  id: string;
+  name: string;
+  type: OrgType | string;
+  parentOrganizationId?: string | null;
+  primaryRegion: string;
+  primaryFramework?: string | null;
+  slackWebhookUrl?: string | null;
+  onboardingCompleted: boolean;
+  createdAt: string;
+  licenseState: string;
+  isReadOnly: boolean;
+  activeMemberCount: number;
+  departmentCount: number;
+  projectCount: number;
+  entitlements: OrganizationEntitlementDetailDto[];
+}
+
+export interface UpdateOrganizationDetailsDto {
+  name?: string;
+  primaryRegion?: string;
+  primaryFramework?: string;
+  slackWebhookUrl?: string;
+}
+
+
 // --------------------------------------------------
 // PHASE 3 — UNIVERSAL EVIDENCE & PROOF VAULT TYPES
 // --------------------------------------------------
