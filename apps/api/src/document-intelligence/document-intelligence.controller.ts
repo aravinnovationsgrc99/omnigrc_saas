@@ -5,12 +5,13 @@ import {
   Body,
   Param,
   UseGuards,
-  Req,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ResourceAuthorizationGuard } from '../auth/guards/resource-authorization.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { ResourceAuthContext } from '../auth/resource-authorization.service';
 import { DocumentIntelligenceService } from './document-intelligence.service';
 import { CreateAnalysisDto, ReviewFindingDto } from '@omnigrc/shared';
 
@@ -22,66 +23,55 @@ export class DocumentIntelligenceController {
   @Post('evidence/:id/analyze')
   @HttpCode(HttpStatus.ACCEPTED)
   async analyzeEvidence(
-    @Req() req: any,
+    @CurrentUser() user: ResourceAuthContext,
     @Param('id') evidenceId: string,
     @Body() dto: CreateAnalysisDto,
   ) {
-    const orgId = req.user.organizationId;
-    const userId = req.user.userId;
-    return this.service.createAnalysis(orgId, userId, evidenceId, dto);
+    return this.service.createAnalysis(user, evidenceId, dto);
   }
 
   @Get('evidence/:id/analyses')
   async getEvidenceAnalyses(
-    @Req() req: any,
+    @CurrentUser() user: ResourceAuthContext,
     @Param('id') evidenceId: string,
   ) {
-    const orgId = req.user.organizationId;
-    return this.service.findAllAnalysesForEvidence(orgId, evidenceId);
+    return this.service.findAllAnalysesForEvidence(user, evidenceId);
   }
 
   @Get('analyses/:id')
   async getAnalysisById(
-    @Req() req: any,
+    @CurrentUser() user: ResourceAuthContext,
     @Param('id') analysisId: string,
   ) {
-    const orgId = req.user.organizationId;
-    return this.service.findAnalysisById(orgId, analysisId);
+    return this.service.findAnalysisById(user, analysisId);
   }
 
   @Post('analyses/:id/findings/:findingId/review')
   async reviewFinding(
-    @Req() req: any,
+    @CurrentUser() user: ResourceAuthContext,
     @Param('id') analysisId: string,
     @Param('findingId') findingId: string,
     @Body() dto: ReviewFindingDto,
   ) {
-    const orgId = req.user.organizationId;
-    const userId = req.user.userId;
-    const role = req.user.role;
-    return this.service.reviewFinding(orgId, userId, role, analysisId, findingId, dto);
+    return this.service.reviewFinding(user, analysisId, findingId, dto);
   }
 
   @Post('analyses/:id/findings/:findingId/convert')
   async convertFinding(
-    @Req() req: any,
+    @CurrentUser() user: ResourceAuthContext,
     @Param('id') analysisId: string,
     @Param('findingId') findingId: string,
     @Body() dto: any,
   ) {
-    const orgId = req.user.organizationId;
-    const userId = req.user.userId;
-    const role = req.user.role;
-    return this.service.convertFindingToAction(orgId, userId, role, analysisId, findingId, dto);
+    return this.service.convertFindingToAction(user, analysisId, findingId, dto);
   }
 
   @Post('analyses/:id/retry')
   async retryAnalysis(
-    @Req() req: any,
+    @CurrentUser() user: ResourceAuthContext,
     @Param('id') analysisId: string,
   ) {
-    const orgId = req.user.organizationId;
-    const userId = req.user.userId;
-    return this.service.retryAnalysis(orgId, userId, analysisId);
+    return this.service.retryAnalysis(user, analysisId);
   }
 }
+
