@@ -45,31 +45,7 @@ export function Topbar({ onToggleMobileSidebar }: TopbarProps) {
       setNotifications(res.items);
       setUnreadCount(res.unreadCount);
     } catch {
-      // Fallback demo notifications if backend unreachable
-      setNotifications([
-        {
-          id: '1',
-          organizationId: '',
-          userId: '',
-          type: NotificationType.TASK_ASSIGNED,
-          message: 'New compliance task assigned: "Conduct Annual ISO 27001 Internal Audit".',
-          entityType: 'COMPLIANCE_TASK',
-          entityId: 'task-1',
-          read: false,
-          createdAt: new Date().toISOString(),
-        },
-        {
-          id: '2',
-          organizationId: '',
-          userId: '',
-          type: NotificationType.POD_STATUS_CHANGED,
-          message: 'Regional hosting pod "UK" status changed to INACTIVE.',
-          entityType: 'REGIONAL_POD',
-          entityId: 'pod-2',
-          read: true,
-          createdAt: new Date(Date.now() - 3600000).toISOString(),
-        },
-      ]);
+      setNotifications([]);
     } finally {
       setLoadingNotifs(false);
     }
