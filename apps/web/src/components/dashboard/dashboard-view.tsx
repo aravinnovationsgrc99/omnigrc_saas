@@ -23,6 +23,8 @@ import { ExecutivePostureBanner } from './widgets/executive-posture-banner';
 import { ExecutiveKpiStrip } from './widgets/executive-kpi-strip';
 import { AttentionRequiredWidget } from './widgets/attention-required-widget';
 
+import { EntitledFrameworkCoverageWidget } from './widgets/entitled-framework-coverage-widget';
+
 interface DashboardViewProps {
   onNavigateToView?: (view: string) => void;
 }
@@ -83,6 +85,8 @@ export function DashboardView({ onNavigateToView }: DashboardViewProps) {
     switch (id) {
       case 'risk_overview':
         return <RiskOverviewWidget key={id} metrics={metrics.risks} />;
+      case 'entitled_framework_coverage':
+        return <EntitledFrameworkCoverageWidget key={id} metrics={metrics.frameworkCoverage} controls={metrics.controls} />;
       case 'compliance_obligations':
         return <ComplianceObligationsWidget key={id} metrics={metrics.obligations} />;
       case 'audit_readiness':

@@ -7,6 +7,7 @@ import {
   BookOpen,
   Building2,
   Server,
+  Layers,
 } from 'lucide-react';
 
 export interface WidgetMeta {
@@ -24,6 +25,13 @@ export const WIDGET_METADATA: Record<string, WidgetMeta> = {
     category: 'Risk Management',
     description: 'Open risks breakdown by score band (High, Medium, Low) and treatment status',
     icon: ShieldAlert,
+  },
+  entitled_framework_coverage: {
+    id: 'entitled_framework_coverage',
+    title: 'Entitled Framework Coverage',
+    category: 'Framework & Compliance',
+    description: 'Authoritative audit reference coverage for all licensed frameworks',
+    icon: Layers,
   },
   compliance_obligations: {
     id: 'compliance_obligations',

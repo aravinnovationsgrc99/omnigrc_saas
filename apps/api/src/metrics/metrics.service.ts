@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
+import { FrameworkEntitlementsService } from '../frameworks/framework-entitlements.service';
+import { FrameworkCoverageService } from '../frameworks/framework-coverage.service';
 import {
   OverviewMetricsDto,
   AssetMetricsDto,
@@ -10,6 +12,8 @@ import {
   ObligationMetricsDto,
   AuditMetricsDto,
   RiskMetricsDto,
+  ControlCoverageMetricsDto,
+  EntitledFrameworkCoverageSummaryDto,
   ObligationCadence,
   TaskStatus,
   VulnerabilityStatus,
@@ -26,6 +30,8 @@ export class MetricsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly resourceAuthService: ResourceAuthorizationService,
+    private readonly frameworkEntitlementsService: FrameworkEntitlementsService,
+    private readonly frameworkCoverageService: FrameworkCoverageService,
   ) {}
 
   /**
@@ -89,6 +95,7 @@ export class MetricsService {
       auditFindingsOverdue,
       auditFindingsBySeverity,
       auditCapaOpen,
+      auditCapaByStatus,
       // Risks
       riskTotalOpen,
       riskHighBand,
@@ -198,6 +205,7 @@ export class MetricsService {
       }),
       this.prisma.auditFinding.groupBy({ by: ['severity'], where: { organizationId: authCtx.organizationId }, _count: true }),
       this.prisma.auditCapa.count({ where: { organizationId: authCtx.organizationId, status: { in: [CapaStatus.OPEN, CapaStatus.IN_PROGRESS] } } }),
+      this.prisma.auditCapa.groupBy({ by: ['status'], where: { organizationId: authCtx.organizationId }, _count: true }),
 
       // Risks
       this.prisma.risk.count({
@@ -261,6 +269,61 @@ export class MetricsService {
       }),
     ]);
 
+    // Fetch Entitled Frameworks and compute Phase C Coverage without N+1 frontend requests
+    const entitledFrameworkIds = await this.frameworkEntitlementsService.getEntitledFrameworkIds(authCtx.organizationId);
+    const entitledFrameworks = entitledFrameworkIds.length > 0
+      ? await this.prisma.framework.findMany({
+          where: { id: { in: entitledFrameworkIds } },
+          select: { id: true, code: true, name: true },
+          orderBy: { code: 'asc' },
+        })
+      : [];
+
+    const frameworkCoverage: EntitledFrameworkCoverageSummaryDto[] = await Promise.all(
+      entitledFrameworks.map(async (fw) => {
+        try {
+          const res = await this.frameworkCoverageService.calculateCoverage(authCtx, fw.id);
+          return {
+            frameworkId: fw.id,
+            code: fw.code,
+            name: fw.name,
+            totalReferences: res.summary.totalReferences,
+            covered: res.summary.covered,
+            partial: res.summary.partial,
+            notCovered: res.summary.notCovered,
+            coveragePercentage: res.summary.coveragePercentage,
+          };
+        } catch {
+          return {
+            frameworkId: fw.id,
+            code: fw.code,
+            name: fw.name,
+            totalReferences: 0,
+            covered: 0,
+            partial: 0,
+            notCovered: 0,
+            coveragePercentage: 0,
+          };
+        }
+      }),
+    );
+
+    const totalRefSummary = frameworkCoverage.reduce((sum, f) => sum + f.totalReferences, 0);
+    const coveredRefSummary = frameworkCoverage.reduce((sum, f) => sum + f.covered, 0);
+    const partialRefSummary = frameworkCoverage.reduce((sum, f) => sum + f.partial, 0);
+    const notCoveredRefSummary = frameworkCoverage.reduce((sum, f) => sum + f.notCovered, 0);
+    const overallCoveragePercentage = totalRefSummary > 0
+      ? Math.round((coveredRefSummary / totalRefSummary) * 1000) / 10
+      : 0;
+
+    const controls: ControlCoverageMetricsDto = {
+      total: totalRefSummary,
+      covered: coveredRefSummary,
+      partial: partialRefSummary,
+      notCovered: notCoveredRefSummary,
+      coveragePercentage: overallCoveragePercentage,
+    };
+
     const assets: AssetMetricsDto = {
       total: assetTotal,
       criticalityHighCount: assetHigh,
@@ -313,6 +376,7 @@ export class MetricsService {
       findingsOverdueCount: auditFindingsOverdue,
       findingsBySeverity: Object.fromEntries(auditFindingsBySeverity.map((g) => [g.severity, g._count])),
       capaOpenCount: auditCapaOpen,
+      byCapaStatus: Object.fromEntries(auditCapaByStatus.map((g) => [g.status, g._count])),
     };
 
     const risks: RiskMetricsDto = {
@@ -385,6 +449,8 @@ export class MetricsService {
       obligations,
       audits,
       risks,
+      controls,
+      frameworkCoverage,
       attentionRequired,
     };
   }

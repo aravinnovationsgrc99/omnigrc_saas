@@ -1520,6 +1520,7 @@ export interface AuditMetricsDto {
   capaOpenCount: number;
   byPlanStatus: Record<string, number>;
   findingsBySeverity: Record<string, number>;
+  byCapaStatus?: Record<string, number>;
 }
 
 export interface RiskMetricsDto {
@@ -1530,6 +1531,25 @@ export interface RiskMetricsDto {
     LOW: number;
   };
   byStatus: Record<string, number>;
+}
+
+export interface ControlCoverageMetricsDto {
+  total: number;
+  covered: number;
+  partial: number;
+  notCovered: number;
+  coveragePercentage: number;
+}
+
+export interface EntitledFrameworkCoverageSummaryDto {
+  frameworkId: string;
+  code: string;
+  name: string;
+  totalReferences: number;
+  covered: number;
+  partial: number;
+  notCovered: number;
+  coveragePercentage: number;
 }
 
 export interface AttentionItemDto {
@@ -1551,6 +1571,8 @@ export interface OverviewMetricsDto {
   obligations: ObligationMetricsDto;
   audits: AuditMetricsDto;
   risks: RiskMetricsDto;
+  controls: ControlCoverageMetricsDto;
+  frameworkCoverage: EntitledFrameworkCoverageSummaryDto[];
   attentionRequired?: AttentionItemDto[];
 }
 
@@ -1580,12 +1602,13 @@ export interface UpdateDashboardPreferenceDto {
 
 export const DEFAULT_WIDGET_LAYOUT: WidgetLayoutItem[] = [
   { id: 'risk_overview', visible: true, position: 0 },
-  { id: 'compliance_obligations', visible: true, position: 1 },
-  { id: 'audit_readiness', visible: true, position: 2 },
-  { id: 'vulnerability_posture', visible: true, position: 3 },
-  { id: 'policy_governance', visible: true, position: 4 },
-  { id: 'vendor_risk', visible: true, position: 5 },
-  { id: 'asset_inventory', visible: true, position: 6 },
+  { id: 'entitled_framework_coverage', visible: true, position: 1 },
+  { id: 'compliance_obligations', visible: true, position: 2 },
+  { id: 'audit_readiness', visible: true, position: 3 },
+  { id: 'vulnerability_posture', visible: true, position: 4 },
+  { id: 'policy_governance', visible: true, position: 5 },
+  { id: 'vendor_risk', visible: true, position: 6 },
+  { id: 'asset_inventory', visible: true, position: 7 },
 ];
 
 // Phase 15: Reporting & Exports Enums & DTOs

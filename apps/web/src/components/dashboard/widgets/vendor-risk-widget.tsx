@@ -2,14 +2,23 @@
 
 import React from 'react';
 import { VendorMetricsDto } from '@omnigrc/shared';
-import { Building2, AlertTriangle, ClipboardCheck, ShieldAlert } from 'lucide-react';
+import { Building2 } from 'lucide-react';
 import { AnimatedCountUp } from '@/components/ui/animated-count-up';
+import { DonutChart, ChartSegment } from '../charts/donut-chart';
 
 export function VendorRiskWidget({ metrics }: { metrics: VendorMetricsDto }) {
-  const critical = metrics.byCriticality.CRITICAL || 0;
-  const high = metrics.byCriticality.HIGH || 0;
-  const medium = metrics.byCriticality.MEDIUM || 0;
-  const low = metrics.byCriticality.LOW || 0;
+  const critical = metrics.byCriticality?.CRITICAL || 0;
+  const high = metrics.byCriticality?.HIGH || 0;
+  const medium = metrics.byCriticality?.MEDIUM || 0;
+  const low = metrics.byCriticality?.LOW || 0;
+  const total = metrics.total || (critical + high + medium + low);
+
+  const segments: ChartSegment[] = [
+    { key: 'critical', label: 'Critical Vendor', value: critical, color: '#dc2626' },
+    { key: 'high', label: 'High Criticality', value: high, color: '#f97316' },
+    { key: 'medium', label: 'Medium Criticality', value: medium, color: '#f59e0b' },
+    { key: 'low', label: 'Low Criticality', value: low, color: '#64748b' },
+  ];
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow">
@@ -28,38 +37,31 @@ export function VendorRiskWidget({ metrics }: { metrics: VendorMetricsDto }) {
         </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 mb-4">
+      {/* Donut Chart Visualization */}
+      <div className="mb-4 pt-1">
+        <DonutChart
+          segments={segments}
+          centerLabel="Vendors"
+          centerValue={total}
+          size={120}
+          thickness={18}
+          emptyMessage="No vendors registered"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 pt-3 border-t border-slate-100">
         <div className="bg-amber-50/50 p-2.5 rounded-lg border border-amber-100/60">
           <span className="text-xs text-amber-700 font-medium">Review Required</span>
-          <p className="text-lg font-bold text-amber-900 mt-1 omni-mono">
+          <p className="text-base font-bold text-amber-900 mt-1 omni-mono">
             <AnimatedCountUp value={metrics.requiringReviewCount} />
           </p>
         </div>
 
         <div className="bg-rose-50/50 p-2.5 rounded-lg border border-rose-100/60">
-          <span className="text-xs text-rose-700 font-medium">Assessments Overdue</span>
-          <p className="text-lg font-bold text-rose-900 mt-1 omni-mono">
+          <span className="text-xs text-rose-700 font-medium">Overdue Reviews</span>
+          <p className="text-base font-bold text-rose-900 mt-1 omni-mono">
             <AnimatedCountUp value={metrics.assessmentsOverdueCount} />
           </p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-4 gap-1.5 pt-2 border-t border-slate-100">
-        <div className="bg-red-50 p-2 rounded text-center border border-red-100">
-          <span className="text-[10px] font-semibold text-red-700 block uppercase">Critical</span>
-          <span className="text-xs font-bold text-red-900 omni-mono">{critical}</span>
-        </div>
-        <div className="bg-orange-50 p-2 rounded text-center border border-orange-100">
-          <span className="text-[10px] font-semibold text-orange-700 block uppercase">High</span>
-          <span className="text-xs font-bold text-orange-900 omni-mono">{high}</span>
-        </div>
-        <div className="bg-amber-50 p-2 rounded text-center border border-amber-100">
-          <span className="text-[10px] font-semibold text-amber-700 block uppercase">Medium</span>
-          <span className="text-xs font-bold text-amber-900 omni-mono">{medium}</span>
-        </div>
-        <div className="bg-slate-50 p-2 rounded text-center border border-slate-100">
-          <span className="text-[10px] font-semibold text-slate-600 block uppercase">Low</span>
-          <span className="text-xs font-bold text-slate-800 omni-mono">{low}</span>
         </div>
       </div>
     </div>

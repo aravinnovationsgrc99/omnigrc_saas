@@ -1,6 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { MetricsService } from './metrics.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ResourceAuthorizationService } from '../auth/resource-authorization.service';
+import { FrameworkEntitlementsService } from '../frameworks/framework-entitlements.service';
+import { FrameworkCoverageService } from '../frameworks/framework-coverage.service';
 import { Role } from '@omnigrc/shared';
 
 describe('MetricsService', () => {
@@ -50,11 +53,15 @@ describe('MetricsService', () => {
       },
       auditCapa: {
         count: jest.fn().mockResolvedValue(0),
+        groupBy: jest.fn().mockResolvedValue([]),
         findMany: jest.fn().mockResolvedValue([]),
       },
       risk: {
         count: jest.fn().mockResolvedValue(0),
         groupBy: jest.fn().mockResolvedValue([]),
+      },
+      framework: {
+        findMany: jest.fn().mockResolvedValue([]),
       },
     };
 
@@ -62,6 +69,26 @@ describe('MetricsService', () => {
       providers: [
         MetricsService,
         { provide: PrismaService, useValue: prisma },
+        {
+          provide: ResourceAuthorizationService,
+          useValue: {
+            getScopeWhereClause: jest.fn().mockImplementation(async (authCtx) => ({ organizationId: authCtx.organizationId })),
+          },
+        },
+        {
+          provide: FrameworkEntitlementsService,
+          useValue: {
+            getEntitledFrameworkIds: jest.fn().mockResolvedValue([]),
+          },
+        },
+        {
+          provide: FrameworkCoverageService,
+          useValue: {
+            calculateCoverage: jest.fn().mockResolvedValue({
+              summary: { totalReferences: 0, covered: 0, partial: 0, notCovered: 0, coveragePercentage: 0 },
+            }),
+          },
+        },
       ],
     }).compile();
 
@@ -83,7 +110,7 @@ describe('MetricsService', () => {
     expect(result.policies.total).toBe(0);
     expect(result.vendors.total).toBe(0);
     expect(result.obligations.total).toBe(0);
-    expect(result.audits.overallAuditScore).toBe(85.5);
+    expect(result.audits.overallAuditScore).toBe(86);
     expect(result.risks.totalOpen).toBe(0);
     expect(result.attentionRequired).toEqual([]);
   });
