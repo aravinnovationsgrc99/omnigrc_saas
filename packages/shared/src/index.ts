@@ -2504,5 +2504,87 @@ export interface ProvisioningResultDto {
   licenseState: string;
 }
 
+// --------------------------------------------------
+// PHASE C — FRAMEWORK COVERAGE & GAP ANALYSIS TYPES
+// --------------------------------------------------
+
+export type CoverageStatus = 'COVERED' | 'PARTIAL' | 'NOT_COVERED';
+
+export interface MappedControlSummaryDto {
+  controlId: string;
+  name: string;
+  description?: string | null;
+  category?: string | null;
+  mappingStatus: MappingStatus | string;
+  departmentId?: string | null;
+  projectId?: string | null;
+}
+
+export interface EvidenceSummaryDto {
+  totalCount: number;
+  cleanActiveCount: number;
+  evidences: Array<{
+    id: string;
+    title: string;
+    fileName: string;
+    status: string;
+    scanStatus: string;
+  }>;
+}
+
+export interface ApprovalSummaryDto {
+  hasApproval: boolean;
+  status: string | null;
+  instances: Array<{
+    id: string;
+    title: string;
+    status: string;
+    purpose?: string | null;
+  }>;
+}
+
+export interface FrameworkReferenceCoverageDto {
+  referenceId: string;
+  code: string;
+  title: string;
+  type: string;
+  status: CoverageStatus;
+  normativeText: string | null;
+  mappedControlsCount: number;
+  mappedControls: MappedControlSummaryDto[];
+  evidenceSummary: EvidenceSummaryDto;
+  approvalSummary: ApprovalSummaryDto;
+}
+
+export interface FrameworkCoverageSummaryDto {
+  totalReferences: number;
+  covered: number;
+  partial: number;
+  notCovered: number;
+  coveragePercentage: number;
+}
+
+export interface FrameworkCoverageResultDto {
+  framework: {
+    id: string;
+    code: FrameworkCode | string;
+    name: string;
+  };
+  version: {
+    id: string;
+    version: string;
+    name: string;
+  };
+  summary: FrameworkCoverageSummaryDto;
+  references: FrameworkReferenceCoverageDto[];
+}
+
+export interface FrameworkGapQueryDto {
+  versionId?: string;
+  status?: CoverageStatus;
+  type?: string;
+  search?: string;
+}
+
 
 

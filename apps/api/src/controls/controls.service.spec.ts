@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { FrameworkEntitlementsService } from '../frameworks/framework-entitlements.service';
+import { ResourceAuthorizationService } from '../auth/resource-authorization.service';
 
 import { Role } from '@omnigrc/shared';
 
@@ -49,6 +50,16 @@ describe('ControlsService', () => {
           useValue: {
             assertEntitled: jest.fn().mockResolvedValue(true),
             getEntitledFrameworkIds: jest.fn().mockResolvedValue(null),
+          },
+        },
+        {
+          provide: ResourceAuthorizationService,
+          useValue: {
+            getScopeWhereClause: jest.fn().mockImplementation(async (ctx: any) => ({
+              organizationId: ctx.organizationId,
+            })),
+            assertResourceAccess: jest.fn().mockResolvedValue(undefined),
+            authorize: jest.fn().mockResolvedValue(undefined),
           },
         },
       ],

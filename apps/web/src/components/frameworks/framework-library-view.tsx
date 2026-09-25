@@ -2,9 +2,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { FrameworkItemDto, CustomFrameworkImportDto } from '@omnigrc/shared';
-import { Library, Search, Shield, X, Upload } from 'lucide-react';
+import { Library, Search, Shield, X, Upload, ShieldCheck } from 'lucide-react';
+import { FrameworkCoverageView } from './framework-coverage-view';
 
 export function FrameworkLibraryView() {
+  const [activeTab, setActiveTab] = useState<'catalog' | 'coverage'>('catalog');
   const [frameworks, setFrameworks] = useState<FrameworkItemDto[]>([]);
   const [selectedFramework, setSelectedFramework] = useState<FrameworkItemDto | null>(null);
   const [loading, setLoading] = useState(true);
@@ -108,10 +110,10 @@ export function FrameworkLibraryView() {
         <div>
           <div className="flex items-center gap-2">
             <Library size={22} className="text-teal-700" />
-            <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Compliance Framework Library</h1>
+            <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Compliance Frameworks</h1>
           </div>
           <p className="text-xs sm:text-sm text-slate-600 mt-1">
-            Browse standard reference frameworks, inspect clause hierarchies, and manage framework control mappings.
+            Browse standard reference frameworks, inspect clause hierarchies, and analyze framework coverage & gaps.
           </p>
         </div>
         <button
@@ -122,7 +124,33 @@ export function FrameworkLibraryView() {
         </button>
       </div>
 
-      {loading ? (
+      {/* Tab Navigation */}
+      <div className="flex border-b border-slate-200 gap-6">
+        <button
+          onClick={() => setActiveTab('catalog')}
+          className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${
+            activeTab === 'catalog'
+              ? 'border-teal-700 text-teal-800'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Library className="w-4 h-4" /> Framework Catalog & Clauses
+        </button>
+        <button
+          onClick={() => setActiveTab('coverage')}
+          className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${
+            activeTab === 'coverage'
+              ? 'border-teal-700 text-teal-800'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <ShieldCheck className="w-4 h-4" /> Coverage & Gap Analysis
+        </button>
+      </div>
+
+      {activeTab === 'coverage' ? (
+        <FrameworkCoverageView />
+      ) : loading ? (
         <div className="py-16 text-center text-slate-500 font-medium">Loading framework catalog...</div>
       ) : error ? (
         <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-red-900 text-sm font-medium">{error}</div>
