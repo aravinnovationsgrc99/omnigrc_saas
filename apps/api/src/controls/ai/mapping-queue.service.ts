@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, OnModuleDestroy, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../../audit-logs/audit-logs.service';
 import { AiRouterService } from './ai-router.service';
@@ -23,10 +23,12 @@ export interface JobState {
 import { LicenseVerificationService } from '../../license-verification/license-verification.service';
 
 @Injectable()
-export class MappingQueueService implements OnModuleInit {
+export class MappingQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MappingQueueService.name);
   private jobStore = new Map<string, JobState>();
   private bullQueue: Queue | null = null;
+  private worker: Worker | null = null;
+  private redisClient: Redis | null = null;
   private isRedisConnected = false;
 
   private readonly DEFAULT_JOB_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -83,41 +85,54 @@ export class MappingQueueService implements OnModuleInit {
 
   async onModuleInit() {
     const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+    this.logger.log(`Initializing MappingQueueService: connecting to Redis at ${redisUrl}...`);
     try {
-      const redisClient = new Redis(redisUrl, {
+      this.redisClient = new Redis(redisUrl, {
         maxRetriesPerRequest: null,
         enableReadyCheck: false,
-        connectTimeout: 2000,
-        retryStrategy: () => null, // Do not retry continuously if Redis is offline
+        connectTimeout: 5000,
+        retryStrategy: (times) => Math.min(times * 500, 5000),
       });
 
-      redisClient.on('connect', () => {
-        if (!this.isRedisConnected) {
-          this.isRedisConnected = true;
-          this.logger.log(`Connected to Redis at ${redisUrl} for BullMQ job queue.`);
-          try {
-            this.bullQueue = new Queue('control-mapping-queue', { connection: redisClient });
-            new Worker(
-              'control-mapping-queue',
-              async (job) => {
-                await this.processJob(job.data);
-              },
-              { connection: redisClient },
-            );
-          } catch (err: any) {
-            this.logger.warn(`BullMQ init failed: ${err.message}`);
-          }
-        }
+      this.redisClient.on('connect', () => {
+        this.isRedisConnected = true;
+        this.logger.log(`MappingQueueService: Redis connection established at ${redisUrl}.`);
       });
 
-      redisClient.on('error', (err) => {
-        if (this.isRedisConnected) {
-          this.logger.warn(`Redis disconnected: ${err.message}. Falling back to in-memory async job queue.`);
-        }
+      this.redisClient.on('ready', () => {
+        this.isRedisConnected = true;
+      });
+
+      this.redisClient.on('error', (err) => {
+        this.isRedisConnected = false;
+        this.logger.warn(`MappingQueueService: Redis connection error: ${err.message}`);
+      });
+
+      this.redisClient.on('close', () => {
         this.isRedisConnected = false;
       });
+
+      // Single Queue and Worker instances created ONCE on init
+      this.bullQueue = new Queue('control-mapping-queue', { connection: this.redisClient });
+
+      this.worker = new Worker(
+        'control-mapping-queue',
+        async (job) => {
+          await this.processJob(job.data);
+        },
+        {
+          connection: this.redisClient,
+          stalledInterval: 300000, // 5 minutes operational balance (90% lower idle Redis commands)
+        },
+      );
+
+      this.worker.on('error', (err) => {
+        this.logger.error(`BullMQ Worker error [control-mapping-queue]: ${err.message}`);
+      });
+
+      this.logger.log('MappingQueueService: BullMQ Queue and Worker initialized successfully (Worker count: 1).');
     } catch (err: any) {
-      this.logger.warn(`Could not initialize Redis client (${err.message}). Using in-memory async job runner.`);
+      this.logger.warn(`Could not initialize Redis / BullMQ for Control Mapping (${err.message}). Durable processing is unavailable.`);
       this.isRedisConnected = false;
     }
 
@@ -127,7 +142,30 @@ export class MappingQueueService implements OnModuleInit {
     });
   }
 
+  async onModuleDestroy() {
+    this.logger.log('Shutting down MappingQueueService: closing BullMQ Worker and Queue...');
+    if (this.worker) {
+      (this.worker as any)?.removeAllListeners?.();
+      await this.worker.close().catch(() => {});
+      this.worker = null;
+    }
+    if (this.bullQueue) {
+      (this.bullQueue as any)?.removeAllListeners?.();
+      await this.bullQueue.close().catch(() => {});
+      this.bullQueue = null;
+    }
+    if (this.redisClient) {
+      (this.redisClient as any)?.removeAllListeners?.();
+      await this.redisClient.quit().catch(() => {});
+      this.redisClient.disconnect();
+      this.redisClient = null;
+    }
+    this.isRedisConnected = false;
+    this.logger.log('MappingQueueService: BullMQ Worker and Queue closed cleanly.');
+  }
+
   async enqueueMappingJob(organizationId: string, userId: string, controlId: string): Promise<string> {
+    const isProduction = process.env.NODE_ENV === 'production';
     const jobId = `job_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
     const jobState: JobState = {
@@ -140,23 +178,42 @@ export class MappingQueueService implements OnModuleInit {
       createdAt: new Date(),
     };
 
-    this.jobStore.set(jobId, jobState);
-
     const jobPayload = { jobId, organizationId, userId, controlId };
 
-    if (this.isRedisConnected && this.bullQueue) {
-      try {
-        await this.bullQueue.add('suggest-mappings', jobPayload, { jobId });
-      } catch (err: any) {
-        this.logger.warn(`BullMQ enqueue failed (${err.message}). Executing via in-memory job runner.`);
-        this.executeInMemoryJob(jobPayload);
+    if (!this.isRedisConnected || !this.bullQueue) {
+      if (isProduction) {
+        this.logger.error('Production execution error: Redis/BullMQ queue is unavailable for durable Control Mapping.');
+        throw new ServiceUnavailableException({
+          code: 'REDIS_UNAVAILABLE',
+          message: 'Durable control mapping processing queue is currently unavailable. Request rejected to guarantee durability.',
+        });
       }
-    } else {
-      // In-memory fallback
+
+      this.logger.warn(`Development mode: Enqueuing Control Mapping job "${jobId}" via non-durable in-memory fallback.`);
+      this.jobStore.set(jobId, jobState);
       this.executeInMemoryJob(jobPayload);
+      return jobId;
     }
 
-    return jobId;
+    try {
+      this.jobStore.set(jobId, jobState);
+      await this.bullQueue.add('suggest-mappings', jobPayload, { jobId });
+      this.logger.log(`Successfully enqueued durable Control Mapping job "${jobId}".`);
+      return jobId;
+    } catch (err: any) {
+      if (isProduction) {
+        this.jobStore.delete(jobId);
+        this.logger.error(`Production enqueue error for Control Mapping job "${jobId}": ${err.message}`);
+        throw new ServiceUnavailableException({
+          code: 'REDIS_UNAVAILABLE',
+          message: 'Durable control mapping processing queue is currently unavailable. Request rejected to guarantee durability.',
+        });
+      }
+
+      this.logger.warn(`Development mode: Enqueuing Control Mapping job "${jobId}" via non-durable in-memory fallback after BullMQ add failure (${err.message}).`);
+      this.executeInMemoryJob(jobPayload);
+      return jobId;
+    }
   }
 
   public getJobState(jobId: string): JobState | undefined {

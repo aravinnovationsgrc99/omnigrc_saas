@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, OnModuleDestroy, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { FrameworkEntitlementsService } from '../frameworks/framework-entitlements.service';
@@ -18,9 +18,11 @@ export interface DocumentAnalysisJobData {
 }
 
 @Injectable()
-export class AnalysisQueueService implements OnModuleInit {
+export class AnalysisQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AnalysisQueueService.name);
   private bullQueue: Queue | null = null;
+  private worker: Worker | null = null;
+  private redisClient: Redis | null = null;
   private isRedisConnected = false;
 
   constructor(
@@ -33,43 +35,78 @@ export class AnalysisQueueService implements OnModuleInit {
 
   async onModuleInit() {
     const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+    this.logger.log(`Initializing AnalysisQueueService: connecting to Redis at ${redisUrl}...`);
     try {
-      const redisClient = new Redis(redisUrl, {
+      this.redisClient = new Redis(redisUrl, {
         maxRetriesPerRequest: null,
         enableReadyCheck: false,
-        connectTimeout: 2000,
-        retryStrategy: () => null,
+        connectTimeout: 5000,
+        retryStrategy: (times) => Math.min(times * 500, 5000),
       });
 
-      redisClient.on('connect', () => {
-        if (!this.isRedisConnected) {
-          this.isRedisConnected = true;
-          this.logger.log(`AnalysisQueueService connected to Redis at ${redisUrl}.`);
-          try {
-            this.bullQueue = new Queue('document-analysis-queue', { connection: redisClient });
-            new Worker(
-              'document-analysis-queue',
-              async (job) => {
-                await this.processJob(job.data);
-              },
-              { connection: redisClient },
-            );
-          } catch (err: any) {
-            this.logger.warn(`BullMQ init failed for Document Analysis: ${err.message}`);
-          }
-        }
+      this.redisClient.on('connect', () => {
+        this.isRedisConnected = true;
+        this.logger.log(`AnalysisQueueService: Redis connection established at ${redisUrl}.`);
       });
 
-      redisClient.on('error', (err) => {
-        if (this.isRedisConnected) {
-          this.logger.warn(`Redis disconnected from Document Analysis queue: ${err.message}.`);
-        }
+      this.redisClient.on('ready', () => {
+        this.isRedisConnected = true;
+      });
+
+      this.redisClient.on('error', (err) => {
+        this.isRedisConnected = false;
+        this.logger.warn(`AnalysisQueueService: Redis connection error: ${err.message}`);
+      });
+
+      this.redisClient.on('close', () => {
         this.isRedisConnected = false;
       });
+
+      // Single Queue and Worker instances created ONCE on init
+      this.bullQueue = new Queue('document-analysis-queue', { connection: this.redisClient });
+
+      this.worker = new Worker(
+        'document-analysis-queue',
+        async (job) => {
+          await this.processJob(job.data);
+        },
+        {
+          connection: this.redisClient,
+          stalledInterval: 300000, // 5 minutes operational balance (90% lower idle Redis commands)
+        },
+      );
+
+      this.worker.on('error', (err) => {
+        this.logger.error(`BullMQ Worker error [document-analysis-queue]: ${err.message}`);
+      });
+
+      this.logger.log('AnalysisQueueService: BullMQ Queue and Worker initialized successfully (Worker count: 1).');
     } catch (err: any) {
-      this.logger.warn(`Could not connect to Redis (${err.message}).`);
+      this.logger.warn(`Could not initialize Redis / BullMQ for Document Analysis (${err.message}).`);
       this.isRedisConnected = false;
     }
+  }
+
+  async onModuleDestroy() {
+    this.logger.log('Shutting down AnalysisQueueService: closing BullMQ Worker and Queue...');
+    if (this.worker) {
+      (this.worker as any)?.removeAllListeners?.();
+      await this.worker.close().catch(() => {});
+      this.worker = null;
+    }
+    if (this.bullQueue) {
+      (this.bullQueue as any)?.removeAllListeners?.();
+      await this.bullQueue.close().catch(() => {});
+      this.bullQueue = null;
+    }
+    if (this.redisClient) {
+      (this.redisClient as any)?.removeAllListeners?.();
+      await this.redisClient.quit().catch(() => {});
+      this.redisClient.disconnect();
+      this.redisClient = null;
+    }
+    this.isRedisConnected = false;
+    this.logger.log('AnalysisQueueService: BullMQ Worker and Queue closed cleanly.');
   }
 
   /**
