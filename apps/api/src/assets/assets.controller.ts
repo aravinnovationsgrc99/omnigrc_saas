@@ -23,7 +23,7 @@ export class AssetsController {
     @Query() query: AssetQueryDto,
   ) {
     const authCtx: ResourceAuthContext = {
-      userId: user.userId,
+      userId: user?.userId || user?.id || user?.sub,
       organizationId: user.organizationId,
       role: user.role,
     };
@@ -33,7 +33,7 @@ export class AssetsController {
   @Get('count')
   async count(@CurrentUser() user: any) {
     const authCtx: ResourceAuthContext = {
-      userId: user.userId,
+      userId: user?.userId || user?.id || user?.sub,
       organizationId: user.organizationId,
       role: user.role,
     };
@@ -46,7 +46,7 @@ export class AssetsController {
     @Param('id') id: string,
   ) {
     const authCtx: ResourceAuthContext = {
-      userId: user.userId,
+      userId: user?.userId || user?.id || user?.sub,
       organizationId: user.organizationId,
       role: user.role,
     };
@@ -59,7 +59,7 @@ export class AssetsController {
     @Param('id') id: string,
   ) {
     const authCtx: ResourceAuthContext = {
-      userId: user.userId,
+      userId: user?.userId || user?.id || user?.sub,
       organizationId: user.organizationId,
       role: user.role,
     };
@@ -74,7 +74,7 @@ export class AssetsController {
     @Body() dto: CreateAssetDto,
   ) {
     const authCtx: ResourceAuthContext = {
-      userId: user.userId,
+      userId: user?.userId || user?.id || user?.sub,
       organizationId: user.organizationId,
       role: user.role,
     };
@@ -90,7 +90,7 @@ export class AssetsController {
     @Body() dto: UpdateAssetDto,
   ) {
     const authCtx: ResourceAuthContext = {
-      userId: user.userId,
+      userId: user?.userId || user?.id || user?.sub,
       organizationId: user.organizationId,
       role: user.role,
     };
@@ -105,7 +105,7 @@ export class AssetsController {
     @Param('id') id: string,
   ) {
     const authCtx: ResourceAuthContext = {
-      userId: user.userId,
+      userId: user?.userId || user?.id || user?.sub,
       organizationId: user.organizationId,
       role: user.role,
     };

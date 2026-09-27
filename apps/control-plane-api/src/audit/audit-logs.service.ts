@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ControlPlanePrismaService } from '../prisma/prisma.service';
 import { RedactionService } from './redaction.service';
+import { requestLocalStorage } from './request-context';
 
 export interface AuditLogParams {
   action: string;
@@ -42,11 +43,17 @@ export class ControlPlaneAuditLogsService {
       params = actionOrParams;
     }
 
+    const store = requestLocalStorage.getStore();
+    const actorId = params.actorId || store?.actorId || null;
+    const actorRole = params.actorRole || store?.actorRole || null;
+    const ipAddress = params.ipAddress || store?.ipAddress || null;
+    const correlationId = params.correlationId || store?.correlationId || null;
+
     const redactedMetadata = params.metadata ? this.redactionService.redact(params.metadata) : {};
 
     this.logger.log(
       `Audit [${params.result || 'SUCCESS'}]: ${params.action} on ${params.entityType}:${params.entityId} ` +
-        `by actor:${params.actorId || 'SYSTEM'} (${params.actorRole || 'N/A'})`,
+        `by actor:${actorId || 'SYSTEM'} (${actorRole || 'N/A'})`,
     );
 
     return this.prisma.controlPlaneAuditLog.create({
@@ -54,10 +61,10 @@ export class ControlPlaneAuditLogsService {
         action: params.action,
         entityType: params.entityType,
         entityId: params.entityId,
-        actorId: params.actorId || null,
-        actorRole: params.actorRole || null,
-        ipAddress: params.ipAddress || null,
-        correlationId: params.correlationId || null,
+        actorId,
+        actorRole,
+        ipAddress,
+        correlationId,
         result: params.result || 'SUCCESS',
         metadata: redactedMetadata,
       },

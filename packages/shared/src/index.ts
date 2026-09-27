@@ -958,6 +958,20 @@ export interface CreateLicenseDto {
   maxDeployments?: number;
 }
 
+export interface UpdateLicenseDto {
+  startsAt?: string;
+  expiresAt?: string;
+  maxDeployments?: number;
+  reason?: string;
+}
+
+export interface GrantEntitlementDto {
+  code: string;
+  name: string;
+  enabled?: boolean;
+  value?: any;
+}
+
 export interface AssociateLicenseDeploymentDto {
   deploymentId: string;
   licenseId: string;
@@ -983,6 +997,7 @@ export interface SignedLicensePayload {
   licenseFormatVersion: string;
   product: LicenseProduct;
   status: LicenseStatus;
+  sequence?: number;
   customerId: string;
   commercialAgreementId: string;
   deploymentId: string;

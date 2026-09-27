@@ -77,6 +77,12 @@ export class DeploymentsService {
       },
     });
 
+    await this.audit.log('DEPLOYMENT_CREATED', 'Deployment', deployment.id, {
+      organizationId: deployment.organizationId,
+      deploymentModel: deployment.deploymentModel,
+      environment: deployment.environment,
+    });
+
     return {
       id: deployment.id,
       organizationId: deployment.organizationId,
@@ -427,6 +433,12 @@ export class DeploymentsService {
       data: {
         activationState: dto.activationState as any,
       },
+    });
+
+    await this.audit.log('DEPLOYMENT_STATE_CHANGED', 'Deployment', updated.id, {
+      organizationId: updated.organizationId,
+      previousState: deployment.activationState,
+      newState: updated.activationState,
     });
 
     return {

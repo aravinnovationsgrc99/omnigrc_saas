@@ -3,6 +3,7 @@ import {
   CanActivate,
   ExecutionContext,
   ForbiddenException,
+  HttpException,
   HttpStatus,
   Logger,
 } from '@nestjs/common';
@@ -69,6 +70,19 @@ export class ServiceCapabilityGuard implements CanActivate {
     );
 
     if (!resolved.isAvailable) {
+      if (resolved.reason?.includes('INVALID_OR_UNAVAILABLE')) {
+        throw new HttpException(
+          {
+            statusCode: HttpStatus.SERVICE_UNAVAILABLE,
+            error: 'Service Unavailable',
+            message: 'License verification state is currently unavailable or invalid.',
+            code: 'LICENSE_UNAVAILABLE',
+            reason: resolved.reason,
+          },
+          HttpStatus.SERVICE_UNAVAILABLE,
+        );
+      }
+
       this.logger.warn(
         `ServiceCapabilityGuard BLOCKED request for org "${organizationId}" on capability [${requirement.capabilityCode}] (${resolved.source}: ${resolved.reason})`,
       );

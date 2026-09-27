@@ -42,6 +42,8 @@ enum LicenseStatus {
   TRIAL
   ACTIVE
   EXPIRED
+  SUSPENDED
+  REVOKED
 }
 
 model Customer {
@@ -75,6 +77,7 @@ model License {
   commercialAgreementId String
   product               LicenseProduct @default(OMNIGRC)
   status                LicenseStatus  @default(TRIAL)
+  sequence              BigInt         @default(1)
   issuedAt              DateTime       @default(now())
   startsAt              DateTime
   expiresAt             DateTime

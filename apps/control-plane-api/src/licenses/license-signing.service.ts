@@ -78,6 +78,7 @@ export class LicenseSigningService {
       id: string;
       product: string;
       status: string;
+      sequence?: number | bigint | null;
       customerId?: string | null;
       commercialAgreementId: string;
       startsAt: Date;
@@ -109,6 +110,7 @@ export class LicenseSigningService {
       licenseFormatVersion: '1.0',
       product: input.license.product as LicenseProduct,
       status: input.license.status as LicenseStatus,
+      sequence: input.license.sequence != null ? Number(input.license.sequence) : 1,
       customerId: input.deployment.customerId || input.license.customerId || '',
       commercialAgreementId: input.license.commercialAgreementId,
       deploymentId: input.deployment.id,

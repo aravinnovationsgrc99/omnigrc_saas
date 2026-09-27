@@ -35,20 +35,30 @@ describe('Phase 6: Runtime License Enforcement E2E Test Suite', () => {
 
   const testKeyId = 'arav-license-v1-2026';
 
-  function createTestArtifact(status: LicenseStatus, expiresAt: string): SignedLicenseArtifact {
+  let autoSeq = 1;
+
+  function createTestArtifact(
+    status: LicenseStatus,
+    expiresAt: string,
+    targetOrgId?: string,
+    sequence?: number,
+    entitlements: any[] = [{ code: 'AI_MAPPING', name: 'AI Mapping', enabled: true }],
+  ): SignedLicenseArtifact {
+    const currentSeq = sequence ?? autoSeq++;
     const payload: SignedLicensePayload = {
       licenseId: 'lic-e2e-test',
       licenseFormatVersion: '1.0',
       product: LicenseProduct.OMNIGRC,
       status,
+      sequence: currentSeq,
       customerId: 'cust-e2e',
       commercialAgreementId: 'agr-e2e',
       deploymentId: 'dep-e2e',
-      organizationId: orgId,
+      organizationId: targetOrgId || orgId,
       startsAt: new Date(Date.now() - 86400000).toISOString(),
       expiresAt,
       maxDeployments: 1,
-      entitlements: [{ code: 'AI_MAPPING', name: 'AI Mapping', enabled: true }],
+      entitlements,
       issuedAt: new Date().toISOString(),
       keyId: testKeyId,
     };
@@ -112,6 +122,24 @@ describe('Phase 6: Runtime License Enforcement E2E Test Suite', () => {
         name: 'MSSP Admin User',
         role: Role.MSSP_ADMIN,
         passwordHash: 'dummy_hash',
+      },
+    });
+
+    await prisma.organizationMembership.create({
+      data: {
+        organizationId: orgId,
+        userId: user.id,
+        role: Role.MSSP_ADMIN,
+        status: 'ACTIVE' as any,
+      },
+    });
+
+    await prisma.organizationMembership.create({
+      data: {
+        organizationId: clientOrgId,
+        userId: user.id,
+        role: Role.MSSP_ADMIN,
+        status: 'ACTIVE' as any,
       },
     });
 
@@ -266,12 +294,26 @@ describe('Phase 6: Runtime License Enforcement E2E Test Suite', () => {
   });
 
   it('5. MSSP Context Switching: MSSP admin reading expired client data succeeds (200), mutation returns 402', async () => {
-    // Set expired state
     const expiredArtifact = createTestArtifact(
       LicenseStatus.EXPIRED,
       new Date(Date.now() - 3600000).toISOString(),
     );
     await licenseVerification.saveVerifiedState(expiredArtifact);
+
+    const clientExpiredArtifact = createTestArtifact(
+      LicenseStatus.EXPIRED,
+      new Date(Date.now() - 3600000).toISOString(),
+      clientOrgId,
+    );
+    await licenseVerification.saveVerifiedState(clientExpiredArtifact);
+
+    const msspRes = await request(app.getHttpServer())
+      .post('/auth/switch-context')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ targetOrganizationId: clientOrgId })
+      .expect(200);
+
+    const msspToken = msspRes.body.accessToken;
 
     // MSSP Read of Client Org -> 200 OK
     await request(app.getHttpServer())
@@ -320,5 +362,40 @@ describe('Phase 6: Runtime License Enforcement E2E Test Suite', () => {
     // Verify system state became VALID
     const evaluated = await licenseVerification.getEvaluatedState();
     expect(evaluated.state).toBe('VALID');
+  });
+
+  it('7. Anti-Rollback Sequence Enforcement: Rejects presentation of older Seq 20 artifact after Seq 21 artifact has been verified', async () => {
+    const expiresAt = new Date(Date.now() + 86400000).toISOString();
+
+    // Step 1: Save Seq 20 artifact with ISO27001 ACTIVE
+    const seq20Artifact = createTestArtifact(
+      LicenseStatus.ACTIVE,
+      expiresAt,
+      orgId,
+      20,
+      [{ code: 'ISO27001', name: 'ISO 27001', enabled: true }],
+    );
+    await licenseVerification.saveVerifiedStateForOrganization(orgId, 'dep-e2e', seq20Artifact);
+
+    // Step 2: Save Seq 21 artifact with ISO27001 REVOKED
+    const seq21Artifact = createTestArtifact(
+      LicenseStatus.ACTIVE,
+      expiresAt,
+      orgId,
+      21,
+      [{ code: 'ISO27001', name: 'ISO 27001', enabled: false }],
+    );
+    await licenseVerification.saveVerifiedStateForOrganization(orgId, 'dep-e2e', seq21Artifact);
+
+    // Step 3: Presenting delayed older Seq 20 artifact MUST be rejected with ConflictException
+    await expect(
+      licenseVerification.saveVerifiedStateForOrganization(orgId, 'dep-e2e', seq20Artifact),
+    ).rejects.toThrow();
+
+    // Step 4: Verify current stored projection in DP still has sequence 21 and ISO27001 remains REVOKED
+    const record = await prisma.systemLicenseState.findUnique({ where: { organizationId: orgId } });
+    const currentArtifact = record?.signedArtifactJson as unknown as SignedLicenseArtifact;
+    expect(currentArtifact.payload.sequence).toBe(21);
+    expect(currentArtifact.payload.entitlements.find((e) => e.code === 'ISO27001')?.enabled).toBe(false);
   });
 });

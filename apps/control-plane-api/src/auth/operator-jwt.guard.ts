@@ -1,5 +1,6 @@
 import { Injectable, ExecutionContext, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { requestLocalStorage } from '../audit/request-context';
 
 @Injectable()
 export class OperatorJwtGuard extends AuthGuard('operator-jwt') {
@@ -29,6 +30,12 @@ export class OperatorJwtGuard extends AuthGuard('operator-jwt') {
         };
         request.user = sysUser;
         request.operator = sysUser;
+        requestLocalStorage.enterWith({
+          actorId: sysUser.id,
+          actorRole: sysUser.role,
+          ipAddress: request.ip || request.headers['x-forwarded-for'],
+          correlationId: request.correlationId,
+        });
         return true;
       } else {
         throw new ForbiddenException('Invalid Control Plane administrative key');
@@ -44,7 +51,15 @@ export class OperatorJwtGuard extends AuthGuard('operator-jwt') {
     }
     if (context) {
       const req = context.switchToHttp().getRequest();
-      if (req) req.operator = operator;
+      if (req) {
+        req.operator = operator;
+        requestLocalStorage.enterWith({
+          actorId: operator.id || operator.sub,
+          actorRole: operator.role,
+          ipAddress: req.ip || req.headers['x-forwarded-for'],
+          correlationId: req.correlationId,
+        });
+      }
     }
     return operator;
   }

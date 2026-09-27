@@ -57,7 +57,23 @@ export class LicenseWriteGuard implements CanActivate {
       return true;
     }
 
-    if (evaluated.state === 'UNLICENSED' || evaluated.state === 'INVALID_OR_UNAVAILABLE') {
+    if (evaluated.state === 'INVALID_OR_UNAVAILABLE') {
+      this.logger.warn(
+        `LicenseWriteGuard BLOCKED request for org "${organizationId}" on path "${request?.url}" (State: INVALID_OR_UNAVAILABLE / ${evaluated.reason})`,
+      );
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.SERVICE_UNAVAILABLE,
+          error: 'Service Unavailable',
+          message: 'License verification state is currently unavailable or invalid.',
+          code: 'LICENSE_UNAVAILABLE',
+          reason: evaluated.reason,
+        },
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+
+    if (evaluated.state === 'UNLICENSED') {
       this.logger.warn(
         `LicenseWriteGuard BLOCKED request for org "${organizationId}" on path "${request?.url}" (State: UNLICENSED / ${evaluated.reason})`,
       );

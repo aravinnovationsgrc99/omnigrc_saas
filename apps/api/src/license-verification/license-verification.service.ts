@@ -2,6 +2,7 @@ import {
   Injectable,
   UnauthorizedException,
   BadRequestException,
+  ConflictException,
   Logger,
 } from '@nestjs/common';
 import * as crypto from 'crypto';
@@ -80,6 +81,12 @@ export class LicenseVerificationService {
       throw new BadRequestException(`Unsupported signing algorithm: ${artifact.algorithm}`);
     }
 
+    if (process.env.DEPLOYMENT_ID && artifact.payload.deploymentId !== process.env.DEPLOYMENT_ID) {
+      throw new BadRequestException(
+        `Deployment ID mismatch: artifact deploymentId "${artifact.payload.deploymentId}" does not match local DEPLOYMENT_ID "${process.env.DEPLOYMENT_ID}"`,
+      );
+    }
+
     const publicKeyPem = this.getTrustedPublicKey(artifact.keyId);
     if (!publicKeyPem) {
       throw new UnauthorizedException(
@@ -149,10 +156,24 @@ export class LicenseVerificationService {
       where: { organizationId },
     });
 
-    if (existingRecord) {
+    if (existingRecord && existingRecord.signedArtifactJson) {
+      const existingArtifact = existingRecord.signedArtifactJson as unknown as SignedLicenseArtifact;
+      const existingSeq = existingArtifact.payload?.sequence ?? 0;
+      const incomingSeq = payload.sequence ?? 0;
+
+      if (incomingSeq > 0 && existingSeq > 0 && incomingSeq <= existingSeq) {
+        this.logger.warn(
+          `Rejected stale signed license artifact (Incoming Seq ${incomingSeq} <= Current Seq ${existingSeq}) for Org "${organizationId}"`,
+        );
+        throw new ConflictException(
+          `Stale license artifact rejected: incoming sequence (${incomingSeq}) is older or equal to current projected sequence (${existingSeq}).`,
+        );
+      }
+
       await this.prisma.systemLicenseState.update({
-        where: { organizationId },
+        where: { id: existingRecord.id },
         data: {
+          organizationId,
           deploymentId: payload.deploymentId,
           signedArtifactJson: artifact as any,
           verifiedAt: new Date(),
@@ -176,16 +197,22 @@ export class LicenseVerificationService {
         payload.expiresAt,
       );
     }
+
+    this.invalidateMemoizedState();
+    this.onLicenseRenewedCallbacks.forEach((cb) => {
+      try {
+        cb();
+      } catch (e) {
+        /* ignore */
+      }
+    });
   }
 
-  /**
-   * Backward-compatible global saveVerifiedState (for legacy deployment tests)
-   */
   public async saveVerifiedState(artifact: SignedLicenseArtifact): Promise<void> {
     const { payload } = this.verifyArtifact(artifact);
-    if (payload.organizationId) {
-      await this.saveVerifiedStateForOrganization(payload.organizationId, payload.deploymentId, artifact);
-    }
+    const orgId = payload.organizationId || process.env.ORGANIZATION_ID || 'global-default-org';
+    const depId = payload.deploymentId || 'dep-default';
+    await this.saveVerifiedStateForOrganization(orgId, depId, artifact);
   }
 
   /**
@@ -200,14 +227,15 @@ export class LicenseVerificationService {
     }
 
     try {
-      const record = await this.prisma.systemLicenseState.findFirst({
-        where: {
-          OR: [
-            { organizationId },
-            { id: 'current' },
-          ],
-        },
+      let record = await this.prisma.systemLicenseState.findUnique({
+        where: { organizationId },
       });
+
+      if (!record) {
+        record = await this.prisma.systemLicenseState.findUnique({
+          where: { id: 'current' },
+        });
+      }
 
       if (!record || !record.signedArtifactJson) {
         if (
@@ -229,7 +257,7 @@ export class LicenseVerificationService {
         }
 
         return {
-          state: 'UNLICENSED',
+          state: 'INVALID_OR_UNAVAILABLE',
           reason: `No verified SystemLicenseState record found for organization "${organizationId}"`,
         };
       }
@@ -237,7 +265,7 @@ export class LicenseVerificationService {
       const artifact = record.signedArtifactJson as unknown as SignedLicenseArtifact;
 
       // Strict Org Identity Validation on read
-      if (artifact.payload.organizationId !== organizationId) {
+      if (artifact.payload.organizationId && artifact.payload.organizationId !== organizationId) {
         if (
           (process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development' || !process.env.NODE_ENV) &&
           process.env.ENFORCE_LICENSE_IN_TEST !== 'true' &&
@@ -265,7 +293,7 @@ export class LicenseVerificationService {
     } catch (err: any) {
       this.logger.error(`License state evaluation error for org "${organizationId}": ${err.message}`);
       return {
-        state: 'UNLICENSED',
+        state: 'INVALID_OR_UNAVAILABLE',
         reason: err.message || 'Verification system error',
       };
     }
@@ -278,6 +306,14 @@ export class LicenseVerificationService {
     const expectedOrgId = process.env.ORGANIZATION_ID;
     if (expectedOrgId) {
       return this.getEvaluatedStateForOrganization(expectedOrgId, now);
+    }
+
+    const record = await this.prisma.systemLicenseState.findFirst({
+      orderBy: { verifiedAt: 'desc' },
+    });
+    if (record && record.signedArtifactJson) {
+      const artifact = record.signedArtifactJson as unknown as SignedLicenseArtifact;
+      return evaluateLicenseStatus(artifact.payload, now);
     }
 
     if (
