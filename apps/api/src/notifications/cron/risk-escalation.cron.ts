@@ -34,15 +34,27 @@ export class RiskEscalationCron {
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
     // Canonical Risk Score Definition: High Risk score >= 15 (matching RisksService.getScoreBand(score) === HIGH)
-    const highRisks = await this.prisma.risk.findMany({
+    const highRisksRaw = await this.prisma.risk.findMany({
       where: {
         score: { gte: 15 },
         status: { in: [RiskStatus.OPEN, RiskStatus.IN_TREATMENT] },
         deletedAt: null,
       },
+      include: {
+        organization: {
+          select: {
+            controlStateProjection: { select: { state: true } },
+          },
+        },
+      },
     });
 
-    this.logger.log(`Found ${highRisks.length} unmitigated high-severity risks (score >= 15).`);
+    const highRisks = highRisksRaw.filter((risk) => {
+      const state = risk.organization?.controlStateProjection?.state;
+      return !state || !['SUSPENDED', 'DISABLED', 'DECOMMISSIONED'].includes(state);
+    });
+
+    this.logger.log(`Found ${highRisks.length} unmitigated high-severity risks (score >= 15) for active organizations.`);
 
     if (highRisks.length === 0) {
       this.logger.log('Completed daily High-Risk SLA Escalation cron execution.');

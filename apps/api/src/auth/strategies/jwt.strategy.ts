@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { JwtPayload } from '@omnigrc/shared';
@@ -71,6 +71,23 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       }
       if (membership.role) {
         effectiveRole = membership.role as any;
+      }
+    }
+
+    // Live OrganizationControlState projection check
+    const controlProjection = await this.prisma.organizationControlStateProjection.findUnique({
+      where: { organizationId: effectiveOrgId },
+      select: { state: true },
+    });
+
+    if (controlProjection) {
+      if (controlProjection.state === 'DISABLED' || controlProjection.state === 'DECOMMISSIONED') {
+        throw new ForbiddenException({
+          statusCode: 403,
+          error: 'Forbidden',
+          message: `Organization access is ${controlProjection.state.toLowerCase()} by platform authority.`,
+          code: `ORGANIZATION_${controlProjection.state}`,
+        });
       }
     }
 

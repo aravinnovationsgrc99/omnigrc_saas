@@ -39,6 +39,8 @@ import { ApprovalEngineModule } from './approval/approval-engine.module';
 import { DocumentIntelligenceModule } from './document-intelligence/document-intelligence.module';
 import { WorkflowModule } from './workflow/workflow.module';
 import { ProvisioningModule } from './provisioning/provisioning.module';
+import { OrganizationControlModule } from './organization-control/organization-control.module';
+import { OrganizationControlStateGuard } from './common/guards/organization-control-state.guard';
 
 @Module({
   imports: [
@@ -89,6 +91,7 @@ import { ProvisioningModule } from './provisioning/provisioning.module';
     DocumentIntelligenceModule,
     WorkflowModule,
     ProvisioningModule,
+    OrganizationControlModule,
   ],
   providers: [
     {
@@ -99,6 +102,10 @@ import { ProvisioningModule } from './provisioning/provisioning.module';
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: OrganizationControlStateGuard,
     },
     {
       provide: APP_GUARD,

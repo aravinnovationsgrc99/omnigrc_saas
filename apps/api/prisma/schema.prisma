@@ -238,9 +238,34 @@ model Organization {
   extractedFindings   ExtractedFinding[]
   deployment          Deployment?
   systemLicenseState  SystemLicenseState?
+  controlStateProjection OrganizationControlStateProjection?
 
   @@index([parentOrganizationId])
   @@map("organizations")
+}
+
+enum OrganizationControlStateEnum {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  DISABLED
+  DECOMMISSIONED
+}
+
+model OrganizationControlStateProjection {
+  id             String                       @id @default(uuid())
+  organizationId String                       @unique
+  state          OrganizationControlStateEnum @default(PENDING)
+  sequence       BigInt                       @default(1)
+  reason         String?
+  receivedAt     DateTime                     @default(now())
+  updatedAt      DateTime                     @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([state])
+  @@map("organization_control_state_projections")
 }
 
 model Asset {

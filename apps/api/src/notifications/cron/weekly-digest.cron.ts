@@ -32,12 +32,21 @@ export class WeeklyDigestCron {
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(now.getDate() - 7);
 
-    // Fetch all active organizations
+    // Fetch all active organizations with control state projection
     const orgs = await this.prisma.organization.findMany({
-      select: { id: true, name: true },
+      select: {
+        id: true,
+        name: true,
+        controlStateProjection: { select: { state: true } },
+      },
     });
 
     for (const org of orgs) {
+      if (org.controlStateProjection && ['SUSPENDED', 'DISABLED', 'DECOMMISSIONED'].includes(org.controlStateProjection.state)) {
+        this.logger.debug(`Skipping weekly digest for org ${org.name}: control state is ${org.controlStateProjection.state}.`);
+        continue;
+      }
+
       // 1. Two-phase Idempotency Check: check if weekly digest was already sent to this org in the past 6 days
       const existingDigestSent = await this.prisma.notification.findFirst({
         where: {

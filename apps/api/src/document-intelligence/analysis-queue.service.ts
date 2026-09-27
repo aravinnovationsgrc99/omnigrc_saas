@@ -158,6 +158,18 @@ export class AnalysisQueueService implements OnModuleInit, OnModuleDestroy {
 
     this.logger.log(`Worker processing Document Analysis job "${analysisId}" (Org: ${organizationId}).`);
 
+    // 0. Authoritative Organization Control State Check
+    const controlProjection = await this.prisma.organizationControlStateProjection.findUnique({
+      where: { organizationId },
+    });
+
+    if (controlProjection && ['SUSPENDED', 'DISABLED', 'DECOMMISSIONED'].includes(controlProjection.state)) {
+      this.logger.warn(
+        `Background worker job skipped for DocumentAnalysis "${analysisId}": Organization ${organizationId} control state is [${controlProjection.state}].`,
+      );
+      return;
+    }
+
     // 1. Fetch Document Analysis record
     const analysis = await this.prisma.documentAnalysis.findFirst({
       where: { id: analysisId, organizationId },

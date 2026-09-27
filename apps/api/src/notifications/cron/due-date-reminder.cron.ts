@@ -34,7 +34,7 @@ export class DueDateReminderCron {
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
     // Find compliance tasks that are not complete and due within 3 days (or overdue)
-    const pendingTasks = await this.prisma.complianceTask.findMany({
+    const pendingTasksRaw = await this.prisma.complianceTask.findMany({
       where: {
         status: { not: TaskStatus.COMPLETE },
         deletedAt: null,
@@ -42,9 +42,21 @@ export class DueDateReminderCron {
           lte: inThreeDays,
         },
       },
+      include: {
+        organization: {
+          select: {
+            controlStateProjection: { select: { state: true } },
+          },
+        },
+      },
     });
 
-    this.logger.log(`Found ${pendingTasks.length} compliance tasks approaching due date / overdue.`);
+    const pendingTasks = pendingTasksRaw.filter((task) => {
+      const state = task.organization?.controlStateProjection?.state;
+      return !state || !['SUSPENDED', 'DISABLED', 'DECOMMISSIONED'].includes(state);
+    });
+
+    this.logger.log(`Found ${pendingTasks.length} compliance tasks approaching due date / overdue for active organizations.`);
 
     if (pendingTasks.length === 0) {
       this.logger.log('Completed daily due date reminder cron execution.');

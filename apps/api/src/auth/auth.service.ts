@@ -115,6 +115,30 @@ export class AuthService {
       });
     }
 
+    // Authoritative Organization Control State Check
+    const controlProjection = await this.prisma.organizationControlStateProjection.findUnique({
+      where: { organizationId: user.organizationId },
+    });
+
+    if (controlProjection) {
+      if (controlProjection.state === 'DISABLED') {
+        throw new ForbiddenException({
+          statusCode: 403,
+          error: 'Forbidden',
+          message: 'Organization access is disabled by platform control state authority.',
+          code: 'ORGANIZATION_DISABLED',
+        });
+      }
+      if (controlProjection.state === 'DECOMMISSIONED') {
+        throw new ForbiddenException({
+          statusCode: 403,
+          error: 'Forbidden',
+          message: 'Organization has been decommissioned.',
+          code: 'ORGANIZATION_DECOMMISSIONED',
+        });
+      }
+    }
+
     const isReadOnly = evalLicense.state === 'EXPIRED';
     const effectiveRole = membership ? (membership.role as Role) : (user.role as Role);
 
@@ -972,6 +996,46 @@ export class AuthService {
         metadata: { reason: 'Target organization cannot be an MSSP Provider' },
       });
       throw new ForbiddenException('Cannot switch context to another MSSP Provider organization.');
+    }
+
+    // Authoritative Organization Control State Check for MSSP target child organization
+    const targetControlProjection = await this.prisma.organizationControlStateProjection.findUnique({
+      where: { organizationId: targetOrg.id },
+    });
+
+    if (targetControlProjection) {
+      if (targetControlProjection.state === 'DISABLED') {
+        await this.auditLogsService.log({
+          organizationId: homeOrgId,
+          actorId: userId,
+          action: 'MSSP_CONTEXT_SWITCH_FAILED',
+          entityType: 'Organization',
+          entityId: targetOrg.id,
+          metadata: { reason: 'Target organization is disabled by platform control state authority' },
+        });
+        throw new ForbiddenException({
+          statusCode: 403,
+          error: 'Forbidden',
+          message: 'Target organization access is disabled by platform control authority.',
+          code: 'ORGANIZATION_DISABLED',
+        });
+      }
+      if (targetControlProjection.state === 'DECOMMISSIONED') {
+        await this.auditLogsService.log({
+          organizationId: homeOrgId,
+          actorId: userId,
+          action: 'MSSP_CONTEXT_SWITCH_FAILED',
+          entityType: 'Organization',
+          entityId: targetOrg.id,
+          metadata: { reason: 'Target organization is decommissioned' },
+        });
+        throw new ForbiddenException({
+          statusCode: 403,
+          error: 'Forbidden',
+          message: 'Target organization has been decommissioned.',
+          code: 'ORGANIZATION_DECOMMISSIONED',
+        });
+      }
     }
 
     // 6. Fetch user details
