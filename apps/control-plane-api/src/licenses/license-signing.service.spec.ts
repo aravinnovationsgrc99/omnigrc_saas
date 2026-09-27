@@ -11,13 +11,13 @@ describe('LicenseSigningService', () => {
   const originalEnv = process.env;
 
   beforeEach(() => {
-    process.env = { ...originalEnv };
+    process.env.NODE_ENV = 'development';
     delete process.env.CONTROL_PLANE_LICENSE_SIGNING_PRIVATE_KEY;
     service = new LicenseSigningService();
   });
 
   afterEach(() => {
-    process.env = originalEnv;
+    process.env.NODE_ENV = 'development';
   });
 
   it('should generate a valid Ed25519 signature over canonical payload', () => {
@@ -126,6 +126,7 @@ describe('LicenseSigningService', () => {
       expect(() => service.signLicenseArtifact(sampleInput)).toThrow(
         InternalServerErrorException,
       );
+      process.env.NODE_ENV = 'development';
     });
 
     it('should FAIL-CLOSED (throw InternalServerErrorException) in staging when signing key is missing', () => {
@@ -135,6 +136,7 @@ describe('LicenseSigningService', () => {
       expect(() => service.signLicenseArtifact(sampleInput)).toThrow(
         InternalServerErrorException,
       );
+      process.env.NODE_ENV = 'development';
     });
 
     it('should succeed in production when a valid private key is explicitly configured', () => {
@@ -156,6 +158,7 @@ describe('LicenseSigningService', () => {
         Buffer.from(artifact.signature, 'base64'),
       );
       expect(isValid).toBe(true);
+      process.env.NODE_ENV = 'development';
     });
   });
 });

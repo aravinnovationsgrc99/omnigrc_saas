@@ -7,6 +7,7 @@ import {
   LicenseStatus,
   LicenseProduct,
   DEV_LICENSE_PUBLIC_KEY,
+  DEV_LICENSE_PRIVATE_KEY,
 } from '@omnigrc/shared';
 
 export { DEV_LICENSE_PUBLIC_KEY };
@@ -18,7 +19,7 @@ export const DEFAULT_KEY_ID = 'arav-license-v1-2026';
 // It is ONLY used by the Control Plane binary (never shipped to Data Plane or shared packages).
 // In production, this key MUST be overridden by CONTROL_PLANE_LICENSE_SIGNING_PRIVATE_KEY.
 // Failure to set the env var in production is flagged as a SECURITY CRITICAL error at startup.
-export const CONTROL_PLANE_DEV_LICENSE_PRIVATE_KEY = `-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIOT7ZcthPtpVCfcgezPFd1++YceF8D/g2pvle7fhmQ5M\n-----END PRIVATE KEY-----\n`;
+export const CONTROL_PLANE_DEV_LICENSE_PRIVATE_KEY = DEV_LICENSE_PRIVATE_KEY;
 
 @Injectable()
 export class LicenseSigningService {

@@ -3,6 +3,9 @@
   "rootDir": ".",
   "testEnvironment": "node",
   "testRegex": ".e2e-spec.ts$",
+  "moduleNameMapper": {
+    "^@omnigrc/shared$": "<rootDir>/../../../packages/shared/src/index.ts"
+  },
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
   },

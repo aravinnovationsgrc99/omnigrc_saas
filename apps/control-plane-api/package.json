@@ -7,7 +7,7 @@
     "dev": "nest start --watch",
     "start": "node dist/src/main.js",
     "test": "jest",
-    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:e2e": "jest --config ./test/jest-e2e.json --runInBand",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev"
   },
@@ -19,6 +19,7 @@
     "@nestjs/platform-express": "^10.3.0",
     "@omnigrc/shared": "*",
     "@prisma/client": "^5.9.1",
+    "argon2": "^0.45.1",
     "bcrypt": "^5.1.1",
     "canonicalize": "^5.0.0",
     "class-transformer": "^0.5.1",

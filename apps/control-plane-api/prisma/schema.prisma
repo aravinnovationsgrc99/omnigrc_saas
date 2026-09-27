@@ -136,14 +136,73 @@ model Deployment {
   @@map("deployments")
 }
 
-model ControlPlaneAuditLog {
-  id         String   @id @default(uuid())
-  action     String
-  entityType String
-  entityId   String
-  metadata   Json?
-  createdAt  DateTime @default(now())
+enum OperatorRole {
+  PLATFORM_SUPER_ADMIN
+  COMMERCIAL_OPERATOR
+  OPERATIONS_ENGINEER
+  SUPPORT_ENGINEER
+  SECURITY_AUDIT
+  READ_ONLY_AUDITOR
+}
 
+enum OperatorStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+model Operator {
+  id                  String         @id @default(uuid())
+  email               String         @unique
+  passwordHash        String
+  fullName            String
+  role                OperatorRole
+  status              OperatorStatus @default(ACTIVE)
+  totpSecret          String?
+  mfaEnabled          Boolean        @default(false)
+  failedLoginAttempts Int            @default(0)
+  lockedUntil         DateTime?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  sessions OperatorSession[]
+
+  @@map("operators")
+}
+
+model OperatorSession {
+  id               String   @id @default(uuid())
+  operatorId       String
+  refreshTokenHash String
+  ipAddress        String
+  userAgent        String
+  familyId         String
+  isRevoked        Boolean  @default(false)
+  expiresAt        DateTime
+  createdAt        DateTime @default(now())
+
+  operator Operator @relation(fields: [operatorId], references: [id], onDelete: Cascade)
+
+  @@index([operatorId])
+  @@index([familyId])
+  @@index([refreshTokenHash])
+  @@map("operator_sessions")
+}
+
+model ControlPlaneAuditLog {
+  id            String   @id @default(uuid())
+  actorId       String?
+  actorRole     String?
+  action        String
+  entityType    String
+  entityId      String
+  ipAddress     String?
+  correlationId String?
+  result        String?  @default("SUCCESS")
+  metadata      Json?
+  createdAt     DateTime @default(now())
+
+  @@index([actorId])
+  @@index([action])
   @@map("control_plane_audit_logs")
 }
 
