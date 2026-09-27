@@ -3,8 +3,8 @@ import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications.service';
 import { NotificationType, TaskStatus } from '@omnigrc/shared';
-
 import { LicenseVerificationService } from '../../license-verification/license-verification.service';
+import { EffectiveServiceStateResolver } from '../../service-control/effective-service-state-resolver.service';
 
 @Injectable()
 export class DueDateReminderCron {
@@ -14,6 +14,7 @@ export class DueDateReminderCron {
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
     private readonly licenseVerificationService: LicenseVerificationService,
+    private readonly effectiveServiceStateResolver: EffectiveServiceStateResolver,
   ) {}
 
   @Cron('0 0 * * *', { timeZone: 'UTC' })
@@ -25,7 +26,6 @@ export class DueDateReminderCron {
     }
 
     this.logger.log('Running daily due date reminder cron job (UTC canonical timezone)...');
-
 
     const now = new Date();
     const inThreeDays = new Date();
@@ -51,21 +51,37 @@ export class DueDateReminderCron {
       },
     });
 
-    const pendingTasks = pendingTasksRaw.filter((task) => {
+    const eligibleTasks: typeof pendingTasksRaw = [];
+    for (const task of pendingTasksRaw) {
       const state = task.organization?.controlStateProjection?.state;
-      return !state || !['SUSPENDED', 'DISABLED', 'DECOMMISSIONED'].includes(state);
-    });
+      if (state && ['SUSPENDED', 'DISABLED', 'DECOMMISSIONED'].includes(state)) {
+        continue;
+      }
 
-    this.logger.log(`Found ${pendingTasks.length} compliance tasks approaching due date / overdue for active organizations.`);
+      // Check CP-3 Capability Controls
+      const taskCap = await this.effectiveServiceStateResolver.resolveEffectiveState(task.organizationId, 'GRC_CORE_TASKS');
+      if (!taskCap.isAvailable) {
+        continue;
+      }
 
-    if (pendingTasks.length === 0) {
+      const emailCap = await this.effectiveServiceStateResolver.resolveEffectiveState(task.organizationId, 'NOTIFICATIONS_EMAIL');
+      if (!emailCap.isAvailable) {
+        continue;
+      }
+
+      eligibleTasks.push(task);
+    }
+
+    this.logger.log(`Found ${eligibleTasks.length} compliance tasks approaching due date / overdue for active organizations.`);
+
+    if (eligibleTasks.length === 0) {
       this.logger.log('Completed daily due date reminder cron execution.');
       return;
     }
 
-    const taskIds = pendingTasks.map((task) => task.id);
+    const taskIds = eligibleTasks.map((task) => task.id);
 
-    // Batched Idempotency query: replace per-record findFirst() with a single batched findMany()
+    // Batched Idempotency query
     const existingNotificationsToday = await this.prisma.notification.findMany({
       where: {
         entityType: 'COMPLIANCE_TASK',
@@ -85,8 +101,7 @@ export class DueDateReminderCron {
         .filter((id): id is string => Boolean(id)),
     );
 
-    for (const task of pendingTasks) {
-      // Idempotency Guard: check if due date reminder was already sent today for this task using batched Set
+    for (const task of eligibleTasks) {
       if (sentTaskIds.has(task.id)) {
         this.logger.debug(`Idempotency Guard: Due date reminder already sent today for task ${task.id}. Skipping.`);
         continue;
@@ -98,10 +113,10 @@ export class DueDateReminderCron {
       await this.notificationsService.notify({
         organizationId: task.organizationId,
         userId: task.createdById,
-        type: NotificationType.DUE_DATE_REMINDER,
         message: isOverdue
-          ? `OVERDUE COMPLIANCE TASK: "${task.title}" was due on ${dueStr}. Owner: ${task.owner}.`
-          : `COMPLIANCE TASK REMINDER: "${task.title}" is due on ${dueStr}. Owner: ${task.owner}.`,
+          ? `Compliance task "${task.title}" is overdue (was due on ${dueStr}). Please update task status immediately.`
+          : `Compliance task "${task.title}" is due on ${dueStr}. Please submit evidence or update status.`,
+        type: NotificationType.DUE_DATE_REMINDER,
         entityType: 'COMPLIANCE_TASK',
         entityId: task.id,
       });

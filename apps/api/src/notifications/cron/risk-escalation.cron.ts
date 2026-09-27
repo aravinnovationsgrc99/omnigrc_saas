@@ -5,8 +5,8 @@ import { NotificationsService } from '../notifications.service';
 import { renderRiskEscalationHtml, PriorityLevel } from '../templates/email-templates';
 import { ResendMailerService } from '../mailer/resend-mailer.service';
 import { NotificationType, Role, RiskStatus } from '@omnigrc/shared';
-
 import { LicenseVerificationService } from '../../license-verification/license-verification.service';
+import { EffectiveServiceStateResolver } from '../../service-control/effective-service-state-resolver.service';
 
 @Injectable()
 export class RiskEscalationCron {
@@ -17,6 +17,7 @@ export class RiskEscalationCron {
     private readonly notificationsService: NotificationsService,
     private readonly resendMailerService: ResendMailerService,
     private readonly licenseVerificationService: LicenseVerificationService,
+    private readonly effectiveServiceStateResolver: EffectiveServiceStateResolver,
   ) {}
 
   @Cron('0 1 * * *', { timeZone: 'UTC' })
@@ -29,11 +30,9 @@ export class RiskEscalationCron {
 
     this.logger.log('Running daily High-Risk SLA Escalation cron job (UTC canonical timezone)...');
 
-
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-    // Canonical Risk Score Definition: High Risk score >= 15 (matching RisksService.getScoreBand(score) === HIGH)
     const highRisksRaw = await this.prisma.risk.findMany({
       where: {
         score: { gte: 15 },
@@ -49,21 +48,36 @@ export class RiskEscalationCron {
       },
     });
 
-    const highRisks = highRisksRaw.filter((risk) => {
+    const eligibleRisks: typeof highRisksRaw = [];
+    for (const risk of highRisksRaw) {
       const state = risk.organization?.controlStateProjection?.state;
-      return !state || !['SUSPENDED', 'DISABLED', 'DECOMMISSIONED'].includes(state);
-    });
+      if (state && ['SUSPENDED', 'DISABLED', 'DECOMMISSIONED'].includes(state)) {
+        continue;
+      }
 
-    this.logger.log(`Found ${highRisks.length} unmitigated high-severity risks (score >= 15) for active organizations.`);
+      // Check CP-3 Capability Controls
+      const riskCap = await this.effectiveServiceStateResolver.resolveEffectiveState(risk.organizationId, 'GRC_CORE_RISKS');
+      if (!riskCap.isAvailable) {
+        continue;
+      }
 
-    if (highRisks.length === 0) {
+      const emailCap = await this.effectiveServiceStateResolver.resolveEffectiveState(risk.organizationId, 'NOTIFICATIONS_EMAIL');
+      if (!emailCap.isAvailable) {
+        continue;
+      }
+
+      eligibleRisks.push(risk);
+    }
+
+    this.logger.log(`Found ${eligibleRisks.length} unmitigated high-severity risks (score >= 15) for active organizations.`);
+
+    if (eligibleRisks.length === 0) {
       this.logger.log('Completed daily High-Risk SLA Escalation cron execution.');
       return;
     }
 
-    const riskIds = highRisks.map((risk) => risk.id);
+    const riskIds = eligibleRisks.map((risk) => risk.id);
 
-    // Batched Idempotency query: replace per-record findFirst() with a single batched findMany()
     const existingEscalationsToday = await this.prisma.notification.findMany({
       where: {
         entityType: 'RISK',
@@ -83,14 +97,12 @@ export class RiskEscalationCron {
         .filter((id): id is string => Boolean(id)),
     );
 
-    for (const risk of highRisks) {
-      // Idempotency Guard: check if risk escalation was already dispatched today for this risk using batched Set
+    for (const risk of eligibleRisks) {
       if (sentRiskIds.has(risk.id)) {
         this.logger.debug(`Idempotency Guard: Risk escalation already dispatched today for risk ${risk.id}. Skipping.`);
         continue;
       }
 
-      // Query Org Admins and Risk Owner (if user matching email exists)
       const targetUsers = await this.prisma.user.findMany({
         where: {
           organizationId: risk.organizationId,
@@ -103,45 +115,40 @@ export class RiskEscalationCron {
         select: { id: true, email: true, name: true },
       });
 
-      if (targetUsers.length === 0) continue;
+      if (targetUsers.length === 0) {
+        continue;
+      }
 
-      const batchPayloads = targetUsers.map((u) => ({
-        to: u.email,
-        subject: `[OMNiGRC SLA ALERT] High-Severity Risk Escalation: ${risk.title}`,
-        html: renderRiskEscalationHtml({
-          userName: u.name,
+      for (const user of targetUsers) {
+        const html = renderRiskEscalationHtml({
+          userName: user.name || user.email,
           riskTitle: risk.title,
           score: risk.score,
           owner: risk.owner,
-          treatmentPlan: risk.treatmentPlan,
-        }),
-      }));
+          treatmentPlan: risk.status,
+        });
 
-      // Send via Resend API (Priority Level P1) & inspect per-recipient result
-      const batchResult = await this.resendMailerService.sendBatchEmail(batchPayloads, PriorityLevel.P1);
-
-      const successfulUsers = targetUsers.filter((u) => batchResult.successfulTos.includes(u.email));
-
-      // Record Notification in DB ONLY for verified successful recipients
-      if (successfulUsers.length > 0) {
-        await this.prisma.notification.createMany({
-          data: successfulUsers.map((u) => ({
+        await this.resendMailerService.sendEmail(
+          {
+            to: user.email,
+            subject: `[CRITICAL SLA ESCALATION] High-Severity Risk Unmitigated: ${risk.title}`,
+            html,
             organizationId: risk.organizationId,
-            userId: u.id,
+          },
+          PriorityLevel.P0,
+        );
+
+        await this.prisma.notification.create({
+          data: {
+            organizationId: risk.organizationId,
+            userId: user.id,
+            message: `Unmitigated High Risk "${risk.title}" (Score: ${risk.score}) requires immediate treatment.`,
             type: NotificationType.RISK_ESCALATION,
-            message: `HIGH-RISK SLA ESCALATION: "${risk.title}" (Score: ${risk.score}). Owner: ${risk.owner}.`,
             entityType: 'RISK',
             entityId: risk.id,
             emailSentAt: new Date(),
-          })),
+          },
         });
-        this.logger.log(`High-risk escalation successfully sent for risk ${risk.id} to ${successfulUsers.length} recipients.`);
-      }
-
-      if (batchResult.failedTos.length > 0) {
-        this.logger.warn(
-          `High-risk escalation delivery failed for ${batchResult.failedTos.length} recipients on risk ${risk.id}: ${batchResult.failedTos.join(', ')}`,
-        );
       }
     }
 

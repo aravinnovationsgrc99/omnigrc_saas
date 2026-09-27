@@ -3,6 +3,7 @@ import { DueDateReminderCron } from './due-date-reminder.cron';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications.service';
 import { LicenseVerificationService } from '../../license-verification/license-verification.service';
+import { EffectiveServiceStateResolver } from '../../service-control/effective-service-state-resolver.service';
 import { NotificationType, TaskStatus } from '@omnigrc/shared';
 
 describe('DueDateReminderCron (Batched Idempotency)', () => {
@@ -30,12 +31,17 @@ describe('DueDateReminderCron (Batched Idempotency)', () => {
       getEvaluatedState: jest.fn().mockResolvedValue({ state: 'VALID' }),
     };
 
+    const effectiveServiceStateResolver = {
+      resolveEffectiveState: jest.fn().mockResolvedValue({ isAvailable: true, state: 'AVAILABLE', reason: 'ENABLED' }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DueDateReminderCron,
         { provide: PrismaService, useValue: prisma },
         { provide: NotificationsService, useValue: notificationsService },
         { provide: LicenseVerificationService, useValue: licenseVerificationService },
+        { provide: EffectiveServiceStateResolver, useValue: effectiveServiceStateResolver },
       ],
     }).compile();
 

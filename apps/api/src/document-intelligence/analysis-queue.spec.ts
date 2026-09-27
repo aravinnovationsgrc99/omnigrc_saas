@@ -8,6 +8,8 @@ import { AiRouterService } from '../controls/ai/ai-router.service';
 import { ServiceUnavailableException } from '@nestjs/common';
 import * as bullmq from 'bullmq';
 
+import { EffectiveServiceStateResolver } from '../service-control/effective-service-state-resolver.service';
+
 jest.mock('bullmq', () => {
   const original = jest.requireActual('bullmq');
   return {
@@ -32,11 +34,23 @@ describe('AnalysisQueueService Lifecycle & Worker Leak Prevention', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AnalysisQueueService,
-        { provide: PrismaService, useValue: {} },
+        {
+          provide: PrismaService,
+          useValue: {
+            organizationControlStateProjection: { findUnique: jest.fn() },
+            documentAnalysis: { findFirst: jest.fn(), update: jest.fn() },
+            analysisRun: { create: jest.fn(), update: jest.fn() },
+            extractedFinding: { deleteMany: jest.fn() },
+          },
+        },
         { provide: AuditLogsService, useValue: {} },
         { provide: FrameworkEntitlementsService, useValue: {} },
-        { provide: DocumentExtractionService, useValue: {} },
+        { provide: DocumentExtractionService, useValue: { extract: jest.fn() } },
         { provide: AiRouterService, useValue: {} },
+        {
+          provide: EffectiveServiceStateResolver,
+          useValue: { resolveEffectiveState: jest.fn().mockResolvedValue({ isAvailable: true }) },
+        },
       ],
     }).compile();
 
@@ -105,5 +119,41 @@ describe('AnalysisQueueService Lifecycle & Worker Leak Prevention', () => {
     } finally {
       process.env.NODE_ENV = originalEnv;
     }
+  });
+
+  it('should abort final persistence and record ERR_SERVICE_DISABLED if authorization is revoked mid-flight', async () => {
+    const resolver = (queueService as any).effectiveServiceStateResolver;
+    jest.spyOn(resolver, 'resolveEffectiveState')
+      .mockResolvedValueOnce({ isAvailable: true } as any)
+      .mockResolvedValueOnce({ isAvailable: false, reason: 'Service disabled mid-flight' } as any);
+
+    const prisma = (queueService as any).prisma;
+    jest.spyOn(prisma.organizationControlStateProjection, 'findUnique').mockResolvedValueOnce(null);
+    jest.spyOn(prisma.documentAnalysis, 'findFirst').mockResolvedValueOnce({
+      id: 'analysis-1',
+      organizationId: 'org-1',
+      evidenceFileName: 'doc.pdf',
+    } as any);
+    jest.spyOn(prisma.analysisRun, 'create').mockResolvedValueOnce({ id: 'run-1' } as any);
+
+    const extractionService = (queueService as any).extractionService;
+    jest.spyOn(extractionService, 'extract').mockResolvedValueOnce({
+      extractionStatus: 'SUCCESS',
+      fullText: 'Document contents',
+      sections: [],
+    } as any);
+
+    await (queueService as any).processJob({ analysisId: 'analysis-1', organizationId: 'org-1' });
+
+    expect(prisma.documentAnalysis.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'analysis-1' },
+        data: expect.objectContaining({
+          status: 'FAILED',
+          errorMessage: expect.stringContaining('ERR_SERVICE_DISABLED'),
+        }),
+      }),
+    );
+    expect(prisma.extractedFinding.deleteMany).not.toHaveBeenCalled();
   });
 });

@@ -336,6 +336,22 @@ export class MappingQueueService implements OnModuleInit, OnModuleDestroy {
 
       if (state) state.progress = 80;
 
+      // STAGE 2d.5: MID-FLIGHT AUTHORIZATION RE-CHECK
+      const midFlightCap = await this.effectiveServiceStateResolver.resolveEffectiveState(
+        organizationId,
+        'AI_CONTROL_MAPPING',
+      );
+      if (!midFlightCap.isAvailable) {
+        this.logger.warn(
+          `MappingQueueService: Mid-flight authorization re-check failed for Org "${organizationId}": ${midFlightCap.reason}. Aborting final persistence.`,
+        );
+        if (state) {
+          state.status = 'failed';
+          state.error = `ERR_SERVICE_DISABLED: Mid-flight capability re-check failed (${midFlightCap.reason})`;
+        }
+        return;
+      }
+
       // STAGE 2e: WRITE ACCEPTED SUGGESTIONS TO DB
       for (const sug of acceptedSuggestions) {
         await this.prisma.controlFrameworkMapping.upsert({

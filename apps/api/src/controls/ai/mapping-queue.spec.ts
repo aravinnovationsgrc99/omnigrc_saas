@@ -26,6 +26,8 @@ jest.mock('bullmq', () => {
   };
 });
 
+import { EffectiveServiceStateResolver } from '../../service-control/effective-service-state-resolver.service';
+
 describe('MappingQueueService Bounded Memory Cleanup', () => {
   let queueService: MappingQueueService;
 
@@ -39,10 +41,11 @@ describe('MappingQueueService Bounded Memory Cleanup', () => {
             control: { findFirst: jest.fn().mockResolvedValue(null) },
             frameworkClause: { findMany: jest.fn().mockResolvedValue([]) },
             controlFrameworkMapping: { upsert: jest.fn().mockResolvedValue({}) },
+            organizationControlStateProjection: { findUnique: jest.fn().mockResolvedValue(null) },
           },
         },
-        { provide: AuditLogsService, useValue: {} },
-        { provide: AiRouterService, useValue: {} },
+        { provide: AuditLogsService, useValue: { log: jest.fn() } },
+        { provide: AiRouterService, useValue: { executeMapping: jest.fn() } },
         {
           provide: LicenseVerificationService,
           useValue: {
@@ -53,7 +56,13 @@ describe('MappingQueueService Bounded Memory Cleanup', () => {
         {
           provide: FrameworkEntitlementsService,
           useValue: {
-            getEntitledFrameworkIds: jest.fn().mockResolvedValue(null),
+            getEntitledFrameworkIds: jest.fn().mockResolvedValue([]),
+          },
+        },
+        {
+          provide: EffectiveServiceStateResolver,
+          useValue: {
+            resolveEffectiveState: jest.fn().mockResolvedValue({ isAvailable: true }),
           },
         },
       ],
@@ -180,5 +189,34 @@ describe('MappingQueueService Bounded Memory Cleanup', () => {
     } finally {
       process.env.NODE_ENV = originalEnv;
     }
+  });
+
+  it('should abort final DB write and record ERR_SERVICE_DISABLED if authorization is revoked mid-flight', async () => {
+    const resolver = (queueService as any).effectiveServiceStateResolver;
+    jest.spyOn(resolver, 'resolveEffectiveState')
+      .mockResolvedValueOnce({ isAvailable: true } as any)
+      .mockResolvedValueOnce({ isAvailable: false, reason: 'Service disabled mid-flight' } as any);
+
+    const prisma = (queueService as any).prisma;
+    jest.spyOn(prisma.control, 'findFirst').mockResolvedValueOnce({
+      id: 'ctrl-1',
+      name: 'Test Control',
+      description: 'Desc',
+      organizationId: 'org-1',
+    } as any);
+
+    const aiRouter = (queueService as any).aiRouterService;
+    jest.spyOn(aiRouter, 'executeMapping').mockResolvedValueOnce({
+      acceptedSuggestions: [{ clauseId: 'clause-1', frameworkCode: 'ISO27001', clauseCode: 'A.5.1', confidenceScore: 0.9 }],
+      tierUsed: 'PRIMARY_LLM',
+    } as any);
+
+    const jobId = await queueService.enqueueMappingJob('org-1', 'user-1', 'ctrl-1');
+    await (queueService as any).processJob({ jobId, organizationId: 'org-1', userId: 'user-1', controlId: 'ctrl-1' });
+
+    const state = queueService.getJobState(jobId);
+    expect(state?.status).toBe('failed');
+    expect(state?.error).toContain('ERR_SERVICE_DISABLED');
+    expect(prisma.controlFrameworkMapping.upsert).not.toHaveBeenCalled();
   });
 });

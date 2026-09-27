@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications.service';
 import { ResendMailerService } from '../mailer/resend-mailer.service';
 import { LicenseVerificationService } from '../../license-verification/license-verification.service';
+import { EffectiveServiceStateResolver } from '../../service-control/effective-service-state-resolver.service';
 import { NotificationType, Role, RiskStatus } from '@omnigrc/shared';
 
 describe('RiskEscalationCron (Batched Idempotency)', () => {
@@ -24,6 +25,7 @@ describe('RiskEscalationCron (Batched Idempotency)', () => {
       notification: {
         findMany: jest.fn(),
         findFirst: jest.fn(),
+        create: jest.fn().mockResolvedValue({ id: 'notif-1' }),
         createMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
     };
@@ -33,6 +35,7 @@ describe('RiskEscalationCron (Batched Idempotency)', () => {
     };
 
     resendMailerService = {
+      sendEmail: jest.fn().mockResolvedValue({ id: 'email-1' }),
       sendBatchEmail: jest.fn().mockResolvedValue({
         successfulTos: ['admin@orga.com', 'admin@orgb.com'],
         failedTos: [],
@@ -43,6 +46,10 @@ describe('RiskEscalationCron (Batched Idempotency)', () => {
       getEvaluatedState: jest.fn().mockResolvedValue({ state: 'VALID' }),
     };
 
+    const effectiveServiceStateResolver = {
+      resolveEffectiveState: jest.fn().mockResolvedValue({ isAvailable: true, state: 'AVAILABLE', reason: 'ENABLED' }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         RiskEscalationCron,
@@ -50,6 +57,7 @@ describe('RiskEscalationCron (Batched Idempotency)', () => {
         { provide: NotificationsService, useValue: notificationsService },
         { provide: ResendMailerService, useValue: resendMailerService },
         { provide: LicenseVerificationService, useValue: licenseVerificationService },
+        { provide: EffectiveServiceStateResolver, useValue: effectiveServiceStateResolver },
       ],
     }).compile();
 
@@ -61,7 +69,7 @@ describe('RiskEscalationCron (Batched Idempotency)', () => {
     await cron.handleRiskEscalations();
 
     expect(prisma.risk.findMany).not.toHaveBeenCalled();
-    expect(resendMailerService.sendBatchEmail).not.toHaveBeenCalled();
+    expect(resendMailerService.sendEmail).not.toHaveBeenCalled();
   });
 
   it('should perform a single BATCHED findMany query for idempotency and send emails for unescalated risks', async () => {
@@ -98,17 +106,15 @@ describe('RiskEscalationCron (Batched Idempotency)', () => {
       }),
     );
 
-    // Verify risk-1 is skipped and risk-2 triggers batch email sending
-    expect(resendMailerService.sendBatchEmail).toHaveBeenCalledTimes(1);
-    expect(prisma.notification.createMany).toHaveBeenCalledTimes(1);
-    expect(prisma.notification.createMany).toHaveBeenCalledWith(
+    // Verify risk-1 is skipped and risk-2 triggers email sending
+    expect(resendMailerService.sendEmail).toHaveBeenCalledTimes(1);
+    expect(prisma.notification.create).toHaveBeenCalledTimes(1);
+    expect(prisma.notification.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.arrayContaining([
-          expect.objectContaining({
-            organizationId: 'org-B',
-            entityId: 'risk-2',
-          }),
-        ]),
+        data: expect.objectContaining({
+          organizationId: 'org-B',
+          entityId: 'risk-2',
+        }),
       }),
     );
   });
@@ -124,6 +130,6 @@ describe('RiskEscalationCron (Batched Idempotency)', () => {
     await cron.handleRiskEscalations();
 
     expect(prisma.user.findMany).not.toHaveBeenCalled();
-    expect(resendMailerService.sendBatchEmail).not.toHaveBeenCalled();
+    expect(resendMailerService.sendEmail).not.toHaveBeenCalled();
   });
 });

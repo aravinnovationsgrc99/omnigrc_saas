@@ -283,6 +283,29 @@ export class AnalysisQueueService implements OnModuleInit, OnModuleDestroy {
       // Mock AI Provider output structure for document intelligence
       const extractedFindingsData = this.generateDocumentFindings(promptText, organizationId, analysis.id, extraction.sections);
 
+      // 6.5 Mid-Flight Authorization & Control State Re-check
+      const midFlightCap = await this.effectiveServiceStateResolver.resolveEffectiveState(
+        organizationId,
+        'AI_DOC_INTELLIGENCE',
+      );
+      if (!midFlightCap.isAvailable) {
+        this.logger.warn(
+          `AnalysisQueueService: Mid-flight authorization re-check failed for Org "${organizationId}": ${midFlightCap.reason}. Aborting final persistence.`,
+        );
+        await this.prisma.documentAnalysis.update({
+          where: { id: analysis.id },
+          data: {
+            status: AnalysisStatus.FAILED,
+            errorMessage: `ERR_SERVICE_DISABLED: Mid-flight capability re-check failed (${midFlightCap.reason})`,
+          },
+        });
+        await this.prisma.analysisRun.update({
+          where: { id: run.id },
+          data: { status: AnalysisStatus.FAILED, errorMessage: `ERR_SERVICE_DISABLED: ${midFlightCap.reason}` },
+        });
+        return;
+      }
+
       // 7. Transactional Persistence & Idempotency Reconciliation
       await this.prisma.$transaction(async (tx) => {
         // Clear existing findings if retrying job

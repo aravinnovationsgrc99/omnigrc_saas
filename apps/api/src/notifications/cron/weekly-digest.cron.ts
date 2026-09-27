@@ -4,8 +4,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ResendMailerService } from '../mailer/resend-mailer.service';
 import { renderWeeklyDigestHtml, PriorityLevel } from '../templates/email-templates';
 import { NotificationType, Role, TaskStatus, RiskStatus } from '@omnigrc/shared';
-
 import { LicenseVerificationService } from '../../license-verification/license-verification.service';
+import { EffectiveServiceStateResolver } from '../../service-control/effective-service-state-resolver.service';
 
 @Injectable()
 export class WeeklyDigestCron {
@@ -15,6 +15,7 @@ export class WeeklyDigestCron {
     private readonly prisma: PrismaService,
     private readonly resendMailerService: ResendMailerService,
     private readonly licenseVerificationService: LicenseVerificationService,
+    private readonly effectiveServiceStateResolver: EffectiveServiceStateResolver,
   ) {}
 
   @Cron('0 8 * * 1', { timeZone: 'UTC' })
@@ -26,7 +27,6 @@ export class WeeklyDigestCron {
     }
 
     this.logger.log('Running Monday Weekly Executive Digest cron job (UTC canonical timezone)...');
-
 
     const now = new Date();
     const sevenDaysAgo = new Date();
@@ -44,6 +44,13 @@ export class WeeklyDigestCron {
     for (const org of orgs) {
       if (org.controlStateProjection && ['SUSPENDED', 'DISABLED', 'DECOMMISSIONED'].includes(org.controlStateProjection.state)) {
         this.logger.debug(`Skipping weekly digest for org ${org.name}: control state is ${org.controlStateProjection.state}.`);
+        continue;
+      }
+
+      // Check CP-3 NOTIFICATIONS_EMAIL capability
+      const emailCap = await this.effectiveServiceStateResolver.resolveEffectiveState(org.id, 'NOTIFICATIONS_EMAIL');
+      if (!emailCap.isAvailable) {
+        this.logger.debug(`Skipping weekly digest for org ${org.name}: NOTIFICATIONS_EMAIL capability is disabled.`);
         continue;
       }
 
@@ -102,45 +109,37 @@ export class WeeklyDigestCron {
         }),
       ]);
 
-      // 4. Prepare Email Payload for Recipients
-      const batchPayloads = adminUsers.map((u) => ({
-        to: u.email,
-        subject: `[OMNiGRC] Weekly Executive Compliance Digest - ${org.name}`,
-        html: renderWeeklyDigestHtml({
-          userName: u.name,
+      for (const admin of adminUsers) {
+        const html = renderWeeklyDigestHtml({
+          userName: admin.name || admin.email,
           orgName: org.name,
           pendingTasks: pendingTasksCount,
           overdueTasks: overdueTasksCount,
           openRisks: openRisksCount,
           highRisks: highRisksCount,
-        }),
-      }));
+        });
 
-      // 5. Send via Batch Resend API (Priority Level P3) & inspect per-recipient result
-      const batchResult = await this.resendMailerService.sendBatchEmail(batchPayloads, PriorityLevel.P3);
-
-      const successfulAdmins = adminUsers.filter((u) => batchResult.successfulTos.includes(u.email));
-
-      // 6. Record Notification in DB ONLY for verified successful recipients
-      if (successfulAdmins.length > 0) {
-        await this.prisma.notification.createMany({
-          data: successfulAdmins.map((u) => ({
+        await this.resendMailerService.sendEmail(
+          {
+            to: admin.email,
+            subject: `[OMNiGRC Executive Digest] Weekly Compliance Summary — ${org.name}`,
+            html,
             organizationId: org.id,
-            userId: u.id,
+          },
+          PriorityLevel.P1,
+        );
+
+        await this.prisma.notification.create({
+          data: {
+            organizationId: org.id,
+            userId: admin.id,
+            message: `Weekly summary: ${overdueTasksCount} overdue tasks, ${highRisksCount} high-severity risks.`,
             type: NotificationType.WEEKLY_DIGEST,
-            message: `Weekly Executive Digest dispatched: ${overdueTasksCount} overdue tasks, ${highRisksCount} high risks.`,
             entityType: 'ORGANIZATION',
             entityId: org.id,
             emailSentAt: new Date(),
-          })),
+          },
         });
-        this.logger.log(`Weekly Executive Digest successfully delivered to ${successfulAdmins.length} admins in ${org.name}.`);
-      }
-
-      if (batchResult.failedTos.length > 0) {
-        this.logger.warn(
-          `Weekly Executive Digest delivery failed for ${batchResult.failedTos.length} recipients in ${org.name}: ${batchResult.failedTos.join(', ')}`,
-        );
       }
     }
 
