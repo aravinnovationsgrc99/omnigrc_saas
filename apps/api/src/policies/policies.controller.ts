@@ -26,10 +26,12 @@ import { Role } from '@omnigrc/shared';
 import { RequiresActiveLicense } from '../common/decorators/requires-active-license.decorator';
 import { ResourceAuthContext } from '../auth/resource-authorization.service';
 import { Request } from 'express';
+import { RequireCapability } from '../common/decorators/require-capability.decorator';
 
 @Controller('policies')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+@RequireCapability('POLICIES_MODULE')
 export class PoliciesController {
   constructor(private readonly policiesService: PoliciesService) {}
 

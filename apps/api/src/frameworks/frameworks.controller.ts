@@ -23,9 +23,11 @@ import {
   CoverageStatus,
   Role,
 } from '@omnigrc/shared';
+import { RequireCapability } from '../common/decorators/require-capability.decorator';
 
 @Controller('frameworks')
 @UseGuards(JwtAuthGuard, RolesGuard, FrameworkEntitlementGuard)
+@RequireCapability('FRAMEWORK_LIBRARY')
 export class FrameworksController {
   constructor(
     private readonly frameworksService: FrameworksService,

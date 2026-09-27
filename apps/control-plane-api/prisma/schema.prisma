@@ -246,3 +246,81 @@ model ControlPlaneAuditLog {
   @@map("control_plane_audit_logs")
 }
 
+enum ServiceStateEnum {
+  AVAILABLE
+  DISABLED
+  TECHNICAL_OUTAGE
+  COMMERCIAL_DISABLED
+}
+
+model ServiceCatalog {
+  id                         String   @id @default(uuid())
+  code                       String   @unique
+  name                       String
+  description                String?
+  category                   String   @default("CORE_GRC")
+  isCatalogActive            Boolean  @default(true)
+  isCommerciallyControllable Boolean  @default(true)
+  isOrgOverridePermitted     Boolean  @default(true)
+  hasBackgroundProcessing   Boolean  @default(false)
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  globalState GlobalServiceState?
+  overrides   OrganizationServiceOverride[]
+
+  @@map("control_plane_service_catalog")
+}
+
+model GlobalServiceState {
+  id                  String           @id @default(uuid())
+  serviceId           String           @unique
+  state               ServiceStateEnum @default(AVAILABLE)
+  reason              String?
+  sequence            BigInt           @default(1)
+  updatedByOperatorId String?
+  updatedAt           DateTime         @updatedAt
+
+  service ServiceCatalog @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@map("control_plane_global_service_states")
+}
+
+model OrganizationServiceOverride {
+  id                  String           @id @default(uuid())
+  organizationId      String
+  serviceId           String
+  overrideState       ServiceStateEnum
+  reason              String
+  sequence            BigInt           @default(1)
+  idempotencyKey      String?          @unique
+  updatedByOperatorId String
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  service ServiceCatalog @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, serviceId])
+  @@index([organizationId])
+  @@map("control_plane_organization_service_overrides")
+}
+
+model ServiceStateTransitionLog {
+  id             String           @id @default(uuid())
+  scope          String
+  organizationId String?
+  serviceCode    String
+  previousState  ServiceStateEnum?
+  newState       ServiceStateEnum
+  reason         String
+  sequence       BigInt
+  idempotencyKey String?          @unique
+  operatorId     String
+  operatorRole   String
+  createdAt      DateTime         @default(now())
+
+  @@index([serviceCode])
+  @@index([organizationId])
+  @@index([sequence])
+  @@map("control_plane_service_state_transition_logs")
+}

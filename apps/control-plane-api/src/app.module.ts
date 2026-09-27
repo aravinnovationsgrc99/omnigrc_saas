@@ -8,6 +8,7 @@ import { DeploymentsModule } from './deployments/deployments.module';
 import { LicensesModule } from './licenses/licenses.module';
 import { EntitlementsModule } from './entitlements/entitlements.module';
 import { OrganizationControlModule } from './organization-control/organization-control.module';
+import { ServiceControlModule } from './service-control/service-control.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { OrganizationControlModule } from './organization-control/organization-c
     LicensesModule,
     EntitlementsModule,
     OrganizationControlModule,
+    ServiceControlModule,
   ],
 })
 export class AppModule {}

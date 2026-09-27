@@ -29,10 +29,12 @@ import {
   CreateAuditCapaDto,
   CreateAuditEvidenceDto,
 } from './dto/business-audits.dto';
+import { RequireCapability } from '../common/decorators/require-capability.decorator';
 
 @Controller('business-audits')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+@RequireCapability('BUSINESS_AUDITS')
 export class BusinessAuditsController {
   constructor(private readonly businessAuditsService: BusinessAuditsService) {}
 

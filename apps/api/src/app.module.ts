@@ -41,6 +41,8 @@ import { WorkflowModule } from './workflow/workflow.module';
 import { ProvisioningModule } from './provisioning/provisioning.module';
 import { OrganizationControlModule } from './organization-control/organization-control.module';
 import { OrganizationControlStateGuard } from './common/guards/organization-control-state.guard';
+import { ServiceControlModule } from './service-control/service-control.module';
+import { ServiceCapabilityGuard } from './common/guards/service-capability.guard';
 
 @Module({
   imports: [
@@ -92,6 +94,7 @@ import { OrganizationControlStateGuard } from './common/guards/organization-cont
     WorkflowModule,
     ProvisioningModule,
     OrganizationControlModule,
+    ServiceControlModule,
   ],
   providers: [
     {
@@ -106,6 +109,10 @@ import { OrganizationControlStateGuard } from './common/guards/organization-cont
     {
       provide: APP_GUARD,
       useClass: OrganizationControlStateGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: ServiceCapabilityGuard,
     },
     {
       provide: APP_GUARD,

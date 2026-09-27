@@ -1,12 +1,14 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PriorityLevel } from '../templates/email-templates';
 import { LicenseVerificationService } from '../../license-verification/license-verification.service';
+import { EffectiveServiceStateResolver } from '../../service-control/effective-service-state-resolver.service';
 
 export interface SendEmailParams {
   to: string;
   subject: string;
   html: string;
   text?: string;
+  organizationId?: string;
 }
 
 export interface BatchItemResult {
@@ -35,6 +37,7 @@ export class ResendMailerService {
 
   constructor(
     @Optional() private readonly licenseVerificationService?: LicenseVerificationService,
+    @Optional() private readonly effectiveServiceStateResolver?: EffectiveServiceStateResolver,
   ) {
     this.apiKey = process.env.RESEND_API_KEY;
     this.fromAddress =
@@ -80,7 +83,24 @@ export class ResendMailerService {
   }
 
   async sendEmail(params: SendEmailParams, priority: PriorityLevel = PriorityLevel.P0): Promise<boolean> {
-    const { to, subject, html, text } = params;
+    const { to, subject, html, text, organizationId } = params;
+
+    if (this.effectiveServiceStateResolver) {
+      try {
+        const capabilityResult = await this.effectiveServiceStateResolver.resolveEffectiveState(
+          organizationId || '',
+          'NOTIFICATIONS_EMAIL',
+        );
+        if (!capabilityResult.isAvailable) {
+          this.logger.debug(
+            `Suppressing email dispatch to "${to}" (Subject: "${subject}"): NOTIFICATIONS_EMAIL capability disabled (${capabilityResult.reason}).`,
+          );
+          return false;
+        }
+      } catch (err) {
+        // Fallback gracefully if check fails
+      }
+    }
 
     if (priority !== PriorityLevel.P0 && this.licenseVerificationService) {
       try {

@@ -239,6 +239,7 @@ model Organization {
   deployment          Deployment?
   systemLicenseState  SystemLicenseState?
   controlStateProjection OrganizationControlStateProjection?
+  serviceOverrideProjections OrganizationServiceOverrideProjection[]
 
   @@index([parentOrganizationId])
   @@map("organizations")
@@ -266,6 +267,45 @@ model OrganizationControlStateProjection {
   @@index([organizationId])
   @@index([state])
   @@map("organization_control_state_projections")
+}
+
+enum DataPlaneServiceStateEnum {
+  AVAILABLE
+  DISABLED
+  TECHNICAL_OUTAGE
+  COMMERCIAL_DISABLED
+}
+
+model GlobalServiceStateProjection {
+  id             String                    @id @default(uuid())
+  capabilityCode String                    @unique
+  state          DataPlaneServiceStateEnum @default(AVAILABLE)
+  sequence       BigInt                    @default(1)
+  reason         String?
+  receivedAt     DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+
+  @@index([capabilityCode])
+  @@index([state])
+  @@map("global_service_state_projections")
+}
+
+model OrganizationServiceOverrideProjection {
+  id             String                    @id @default(uuid())
+  organizationId String
+  capabilityCode String
+  overrideState  DataPlaneServiceStateEnum
+  sequence       BigInt                    @default(1)
+  reason         String?
+  receivedAt     DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, capabilityCode])
+  @@index([organizationId])
+  @@index([capabilityCode])
+  @@map("organization_service_override_projections")
 }
 
 model Asset {

@@ -29,10 +29,12 @@ import {
   EvidenceDto,
   Role,
 } from '@omnigrc/shared';
+import { RequireCapability } from '../common/decorators/require-capability.decorator';
 
 @Controller('evidence')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+@RequireCapability('EVIDENCE_VAULT')
 export class EvidenceController {
   constructor(private readonly evidenceService: EvidenceService) {}
 

@@ -14,9 +14,11 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { ResourceAuthContext } from '../auth/resource-authorization.service';
 import { DocumentIntelligenceService } from './document-intelligence.service';
 import { CreateAnalysisDto, ReviewFindingDto } from '@omnigrc/shared';
+import { RequireCapability } from '../common/decorators/require-capability.decorator';
 
 @Controller('api/v1')
 @UseGuards(JwtAuthGuard, ResourceAuthorizationGuard)
+@RequireCapability('AI_DOC_INTELLIGENCE')
 export class DocumentIntelligenceController {
   constructor(private readonly service: DocumentIntelligenceService) {}
 

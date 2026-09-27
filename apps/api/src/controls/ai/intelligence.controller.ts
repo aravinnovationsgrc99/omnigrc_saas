@@ -6,6 +6,7 @@ import { AiRouterService } from './ai-router.service';
 import { GrcIntelligenceChatService, GrcChatRequestDto } from './grc-intelligence-chat.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Role } from '@omnigrc/shared';
+import { RequireCapability } from '../../common/decorators/require-capability.decorator';
 
 export interface GrcIntelligenceAssistDto {
   prompt?: string;
@@ -15,6 +16,7 @@ export interface GrcIntelligenceAssistDto {
 
 @Controller('intelligence')
 @UseGuards(JwtAuthGuard, RolesGuard)
+@RequireCapability('AI_GRC_CHAT')
 export class GrcIntelligenceController {
   constructor(
     private readonly aiRouterService: AiRouterService,

@@ -7,8 +7,11 @@ import { DueDateReminderCron } from './cron/due-date-reminder.cron';
 import { WeeklyDigestCron } from './cron/weekly-digest.cron';
 import { RiskEscalationCron } from './cron/risk-escalation.cron';
 
+import { ServiceControlModule } from '../service-control/service-control.module';
+
 @Global()
 @Module({
+  imports: [ServiceControlModule],
   controllers: [NotificationsController],
   providers: [
     NotificationsService,

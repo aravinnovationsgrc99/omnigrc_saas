@@ -5,6 +5,7 @@ import { FrameworkEntitlementsService } from '../frameworks/framework-entitlemen
 import { DocumentExtractionService } from './document-extraction.service';
 import { AiRouterService } from '../controls/ai/ai-router.service';
 import { AnalysisStatus, ExtractionStatus, FindingConfidence, FindingType, DateCategory } from '@omnigrc/shared';
+import { EffectiveServiceStateResolver } from '../service-control/effective-service-state-resolver.service';
 import { Queue, Worker } from 'bullmq';
 import Redis from 'ioredis';
 import * as path from 'path';
@@ -31,6 +32,7 @@ export class AnalysisQueueService implements OnModuleInit, OnModuleDestroy {
     private readonly frameworkEntitlementsService: FrameworkEntitlementsService,
     private readonly extractionService: DocumentExtractionService,
     private readonly aiRouterService: AiRouterService,
+    private readonly effectiveServiceStateResolver: EffectiveServiceStateResolver,
   ) {}
 
   async onModuleInit() {
@@ -158,7 +160,28 @@ export class AnalysisQueueService implements OnModuleInit, OnModuleDestroy {
 
     this.logger.log(`Worker processing Document Analysis job "${analysisId}" (Org: ${organizationId}).`);
 
-    // 0. Authoritative Organization Control State Check
+    // 0a. Authoritative Service Capability Check (AI_DOC_INTELLIGENCE)
+    const capabilityResult = await this.effectiveServiceStateResolver.resolveEffectiveState(
+      organizationId,
+      'AI_DOC_INTELLIGENCE',
+    );
+    if (!capabilityResult.isAvailable) {
+      this.logger.warn(
+        `Background worker job skipped for DocumentAnalysis "${analysisId}": Service capability [AI_DOC_INTELLIGENCE] is not available for Org ${organizationId} (${capabilityResult.source}: ${capabilityResult.reason}).`,
+      );
+      await this.prisma.documentAnalysis
+        .update({
+          where: { id: analysisId },
+          data: {
+            status: 'FAILED',
+            errorMessage: `Service capability AI_DOC_INTELLIGENCE is not available (${capabilityResult.reason})`,
+          },
+        })
+        .catch(() => {});
+      return;
+    }
+
+    // 0b. Authoritative Organization Control State Check
     const controlProjection = await this.prisma.organizationControlStateProjection.findUnique({
       where: { organizationId },
     });

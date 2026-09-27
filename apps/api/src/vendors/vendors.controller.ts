@@ -20,10 +20,12 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Role } from '@omnigrc/shared';
 import { RequiresActiveLicense } from '../common/decorators/requires-active-license.decorator';
 import { ResourceAuthContext } from '../auth/resource-authorization.service';
+import { RequireCapability } from '../common/decorators/require-capability.decorator';
 
 @Controller('vendors')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+@RequireCapability('VENDOR_RISK')
 export class VendorsController {
   constructor(private readonly vendorsService: VendorsService) {}
 

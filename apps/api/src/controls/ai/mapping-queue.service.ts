@@ -21,6 +21,7 @@ export interface JobState {
 }
 
 import { LicenseVerificationService } from '../../license-verification/license-verification.service';
+import { EffectiveServiceStateResolver } from '../../service-control/effective-service-state-resolver.service';
 
 @Injectable()
 export class MappingQueueService implements OnModuleInit, OnModuleDestroy {
@@ -40,6 +41,7 @@ export class MappingQueueService implements OnModuleInit, OnModuleDestroy {
     private readonly aiRouterService: AiRouterService,
     private readonly licenseVerificationService: LicenseVerificationService,
     private readonly frameworkEntitlementsService: FrameworkEntitlementsService,
+    private readonly effectiveServiceStateResolver: EffectiveServiceStateResolver,
   ) {}
 
   /**
@@ -251,6 +253,21 @@ export class MappingQueueService implements OnModuleInit, OnModuleDestroy {
   private async processJob(data: { jobId: string; organizationId: string; userId: string; controlId: string }) {
     const { jobId, organizationId, userId, controlId } = data;
     const state = this.jobStore.get(jobId);
+
+    const capabilityResult = await this.effectiveServiceStateResolver.resolveEffectiveState(
+      organizationId,
+      'AI_CONTROL_MAPPING',
+    );
+    if (!capabilityResult.isAvailable) {
+      this.logger.warn(
+        `MappingQueueService: Capability [AI_CONTROL_MAPPING] is disabled for Org ${organizationId} (${capabilityResult.source}: ${capabilityResult.reason}). Skipping job "${jobId}".`,
+      );
+      if (state) {
+        state.status = 'failed';
+        state.error = `Job skipped: AI_CONTROL_MAPPING capability is disabled (${capabilityResult.reason})`;
+      }
+      return;
+    }
 
     const licenseState = await this.licenseVerificationService.getEvaluatedState();
     if (licenseState.state !== 'VALID') {

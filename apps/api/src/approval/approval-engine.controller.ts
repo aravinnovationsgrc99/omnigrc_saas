@@ -25,9 +25,11 @@ import {
   Role,
   JwtPayload,
 } from '@omnigrc/shared';
+import { RequireCapability } from '../common/decorators/require-capability.decorator';
 
 @Controller('approvals')
 @UseGuards(JwtAuthGuard, RolesGuard)
+@RequireCapability('APPROVAL_ENGINE')
 export class ApprovalEngineController {
   constructor(private readonly approvalService: ApprovalEngineService) {}
 

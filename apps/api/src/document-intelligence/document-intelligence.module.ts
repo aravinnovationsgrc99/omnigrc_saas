@@ -8,6 +8,7 @@ import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { FrameworksModule } from '../frameworks/frameworks.module';
 import { ControlsModule } from '../controls/controls.module';
 import { AuthModule } from '../auth/auth.module';
+import { ServiceControlModule } from '../service-control/service-control.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { AuthModule } from '../auth/auth.module';
     FrameworksModule,
     ControlsModule,
     AuthModule,
+    ServiceControlModule,
   ],
   controllers: [DocumentIntelligenceController],
   providers: [

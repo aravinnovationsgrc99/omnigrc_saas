@@ -8,10 +8,12 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Role } from '@omnigrc/shared';
 import { RequiresActiveLicense } from '../common/decorators/requires-active-license.decorator';
 import { ResourceAuthContext } from '../auth/resource-authorization.service';
+import { RequireCapability } from '../common/decorators/require-capability.decorator';
 
 @Controller('assets')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+@RequireCapability('GRC_CORE_ASSETS')
 export class AssetsController {
   constructor(private readonly assetsService: AssetsService) {}
 
