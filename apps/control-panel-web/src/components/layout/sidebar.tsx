@@ -57,7 +57,7 @@ const NAV_ITEMS: NavItem[] = [
     name: 'Deployments',
     href: '/deployments',
     icon: Server,
-    roles: ['PLATFORM_SUPER_ADMIN', 'COMMERCIAL_OPERATOR', 'OPERATIONS_ENGINEER', 'READ_ONLY_AUDITOR'],
+    roles: ['PLATFORM_SUPER_ADMIN', 'COMMERCIAL_OPERATOR', 'OPERATIONS_ENGINEER', 'SUPPORT_ENGINEER', 'SECURITY_AUDIT', 'READ_ONLY_AUDITOR'],
   },
   {
     name: 'Operations',

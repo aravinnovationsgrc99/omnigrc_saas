@@ -99,6 +99,7 @@ export interface DeploymentSummary {
   activationState: string;
   infrastructureOwner: string;
   lastCheckInAt?: string | null;
+  lastActivatedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }

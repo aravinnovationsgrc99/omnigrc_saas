@@ -132,4 +132,17 @@ export class DeploymentsController {
 
     return deployment;
   }
+
+  @Get(':id/history')
+  @UseGuards(OperatorJwtGuard, OperatorRbacGuard)
+  @RequireOperatorRoles(
+    OperatorRole.OPERATIONS_ENGINEER,
+    OperatorRole.SUPPORT_ENGINEER,
+    OperatorRole.SECURITY_AUDIT,
+    OperatorRole.READ_ONLY_AUDITOR,
+    OperatorRole.PLATFORM_SUPER_ADMIN,
+  )
+  async getDeploymentHistory(@Param('id') id: string) {
+    return this.deploymentsService.getDeploymentHistory(id);
+  }
 }

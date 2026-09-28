@@ -89,6 +89,7 @@ export class LicenseSigningService {
       id: string;
       organizationId: string;
       customerId?: string | null;
+      activationState?: string;
       lastActivatedAt?: Date | null;
       createdAt: Date;
     };
@@ -101,6 +102,19 @@ export class LicenseSigningService {
   }): SignedLicenseArtifact {
     const keyId = this.getKeyId();
     const privateKeyPem = this.getPrivateKeyPem();
+
+    if (!input.deployment.activationState) {
+      throw new InternalServerErrorException(
+        'Refusing to sign license artifact: deployment activationState is required.',
+      );
+    }
+
+    const validStates = ['PENDING', 'ACTIVE', 'SUSPENDED', 'DECOMMISSIONED'];
+    if (!validStates.includes(input.deployment.activationState)) {
+      throw new InternalServerErrorException(
+        `Refusing to sign license artifact: invalid deployment activationState "${input.deployment.activationState}".`,
+      );
+    }
 
     // Derive stable issuedAt timestamp from lastActivatedAt or createdAt
     const issuedAtDate = input.deployment.lastActivatedAt || input.deployment.createdAt;
@@ -115,6 +129,7 @@ export class LicenseSigningService {
       commercialAgreementId: input.license.commercialAgreementId,
       deploymentId: input.deployment.id,
       organizationId: input.deployment.organizationId,
+      deploymentState: input.deployment.activationState,
       startsAt: input.license.startsAt.toISOString(),
       expiresAt: input.license.expiresAt.toISOString(),
       maxDeployments: input.license.maxDeployments,

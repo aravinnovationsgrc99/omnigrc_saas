@@ -36,6 +36,7 @@ describe('LicenseSigningService', () => {
         id: 'dep_123',
         organizationId: 'org_123',
         customerId: 'cust_123',
+        activationState: 'ACTIVE',
         createdAt: new Date('2026-01-01T00:00:00Z'),
       },
       entitlements: [
@@ -49,6 +50,7 @@ describe('LicenseSigningService', () => {
     expect(artifact.algorithm).toEqual('Ed25519');
     expect(artifact.payload.deploymentId).toEqual('dep_123');
     expect(artifact.payload.organizationId).toEqual('org_123');
+    expect(artifact.payload.deploymentState).toEqual('ACTIVE');
     expect(artifact.signature).toBeDefined();
 
     // Verify signature using dev public key
@@ -79,6 +81,7 @@ describe('LicenseSigningService', () => {
         id: 'dep_123',
         organizationId: 'org_123',
         customerId: 'cust_123',
+        activationState: 'ACTIVE',
         createdAt: new Date('2026-01-01T00:00:00Z'),
       },
       entitlements: [],
@@ -100,7 +103,7 @@ describe('LicenseSigningService', () => {
     expect(isValid).toBe(false);
   });
 
-  describe('Phase 10 Security: Fail-Closed Signing Key in Production/Staging', () => {
+  describe('Phase 10 & CP-6.4.2 Security: Fail-Closed Signing Key and Activation State Validation', () => {
     const sampleInput = {
       license: {
         id: 'lic_123',
@@ -114,10 +117,39 @@ describe('LicenseSigningService', () => {
       deployment: {
         id: 'dep_123',
         organizationId: 'org_123',
+        activationState: 'ACTIVE',
         createdAt: new Date(),
       },
       entitlements: [],
     };
+
+    it('should throw InternalServerErrorException if deployment activationState is missing', () => {
+      const invalidInput = {
+        ...sampleInput,
+        deployment: {
+          ...sampleInput.deployment,
+          activationState: undefined as any,
+        },
+      };
+
+      expect(() => service.signLicenseArtifact(invalidInput)).toThrow(
+        InternalServerErrorException,
+      );
+    });
+
+    it('should throw InternalServerErrorException if deployment activationState is invalid', () => {
+      const invalidInput = {
+        ...sampleInput,
+        deployment: {
+          ...sampleInput.deployment,
+          activationState: 'CORRUPTED' as any,
+        },
+      };
+
+      expect(() => service.signLicenseArtifact(invalidInput)).toThrow(
+        InternalServerErrorException,
+      );
+    });
 
     it('should FAIL-CLOSED (throw InternalServerErrorException) in production when signing key is missing', () => {
       process.env.NODE_ENV = 'production';

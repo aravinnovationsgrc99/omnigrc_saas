@@ -217,9 +217,40 @@ export const controlPlaneApi = {
     });
   },
 
-  listDeployments: async (organizationId?: string): Promise<DeploymentSummary[]> => {
-    const query = organizationId ? `?organizationId=${encodeURIComponent(organizationId)}` : '';
-    return request<DeploymentSummary[]>(`v1/deployments${query}`, { method: 'GET' });
+  listDeployments: async (query?: string | {
+    organizationId?: string;
+    deploymentModel?: string;
+    activationState?: string;
+  }): Promise<DeploymentSummary[]> => {
+    const params = new URLSearchParams();
+    if (typeof query === 'string') {
+      if (query) params.append('organizationId', query);
+    } else if (query) {
+      if (query.organizationId) params.append('organizationId', query.organizationId);
+      if (query.deploymentModel) params.append('deploymentModel', query.deploymentModel);
+      if (query.activationState) params.append('activationState', query.activationState);
+    }
+    const queryString = params.toString() ? `?${params.toString()}` : '';
+    return request<DeploymentSummary[]>(`v1/deployments${queryString}`, { method: 'GET' });
+  },
+
+  getDeployment: async (id: string): Promise<DeploymentSummary> => {
+    return request<DeploymentSummary>(`v1/deployments/${encodeURIComponent(id)}`, { method: 'GET' });
+  },
+
+  getDeploymentHistory: async (id: string): Promise<CommercialAuditLog[]> => {
+    return request<CommercialAuditLog[]>(`v1/deployments/${encodeURIComponent(id)}/history`, { method: 'GET' });
+  },
+
+  updateDeploymentState: async (id: string, activationState: string, reason?: string): Promise<DeploymentSummary> => {
+    return request<DeploymentSummary>(`v1/deployments/${encodeURIComponent(id)}/state`, {
+      method: 'PATCH',
+      body: JSON.stringify({ activationState, reason }),
+    });
+  },
+
+  getDeploymentLicenseArtifact: async (id: string): Promise<SignedLicenseArtifact> => {
+    return request<SignedLicenseArtifact>(`v1/deployments/${encodeURIComponent(id)}/license-artifact`, { method: 'GET' });
   },
 
   // Commercial Licensing Operations

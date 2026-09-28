@@ -240,6 +240,7 @@ export class DeploymentsService {
         id: deployment.id,
         organizationId: deployment.organizationId,
         customerId: deployment.customerId,
+        activationState: ActivationState.ACTIVE,
         lastActivatedAt: nowActivationDate,
         createdAt: deployment.createdAt,
       },
@@ -316,6 +317,7 @@ export class DeploymentsService {
         id: deployment.id,
         organizationId: deployment.organizationId,
         customerId: deployment.customerId,
+        activationState: deployment.activationState as ActivationState,
         lastActivatedAt: deployment.lastActivatedAt,
         createdAt: deployment.createdAt,
       },
@@ -398,6 +400,7 @@ export class DeploymentsService {
             id: deployment.id,
             organizationId: deployment.organizationId,
             customerId: deployment.customerId,
+            activationState: updated.activationState as ActivationState,
             lastActivatedAt: deployment.lastActivatedAt,
             createdAt: deployment.createdAt,
           },
@@ -420,41 +423,98 @@ export class DeploymentsService {
    * Update activation state representation (PENDING, ACTIVE, SUSPENDED, DECOMMISSIONED).
    */
   async updateState(id: string, dto: UpdateDeploymentStateDto): Promise<DeploymentDto> {
-    const deployment = await this.prisma.deployment.findUnique({
-      where: { id },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      const deployment = await tx.deployment.findUnique({
+        where: { id },
+      });
 
-    if (!deployment) {
-      throw new NotFoundException(`Deployment with ID "${id}" not found.`);
+      if (!deployment) {
+        throw new NotFoundException(`Deployment with ID "${id}" not found.`);
+      }
+
+      if (deployment.activationState === (ActivationState.DECOMMISSIONED as any)) {
+        throw new BadRequestException('Cannot change state of a DECOMMISSIONED deployment. Decommissioning is a terminal state.');
+      }
+
+      const updated = await tx.deployment.update({
+        where: { id },
+        data: {
+          activationState: dto.activationState as any,
+        },
+      });
+
+      // Increment authoritative license sequence on deployment operational state change
+      if (deployment.licenseId) {
+        await tx.license.update({
+          where: { id: deployment.licenseId },
+          data: { sequence: { increment: 1 } },
+        });
+      }
+
+      await tx.controlPlaneAuditLog.create({
+        data: {
+          action: 'DEPLOYMENT_STATE_CHANGED',
+          entityType: 'Deployment',
+          entityId: updated.id,
+          metadata: {
+            organizationId: updated.organizationId,
+            previousState: deployment.activationState,
+            newState: updated.activationState,
+            licenseId: deployment.licenseId,
+            reason: dto.reason || 'Operational deployment state changed by operator',
+          },
+        },
+      });
+
+      return {
+        id: updated.id,
+        organizationId: updated.organizationId,
+        customerId: updated.customerId,
+        commercialAgreementId: updated.commercialAgreementId,
+        deploymentModel: updated.deploymentModel as DeploymentModel,
+        environment: updated.environment as DeploymentEnvironment,
+        version: updated.version,
+        activationState: updated.activationState as ActivationState,
+        infrastructureOwner: updated.infrastructureOwner as InfrastructureOwner,
+        licenseId: updated.licenseId,
+        lastCheckInAt: updated.lastCheckInAt ? updated.lastCheckInAt.toISOString() : null,
+        createdAt: updated.createdAt.toISOString(),
+        updatedAt: updated.updatedAt.toISOString(),
+      };
+    });
+  }
+
+  /**
+   * Fetch operational audit history for a deployment.
+   */
+  async getDeploymentHistory(deploymentId: string) {
+    const existing = await this.prisma.deployment.findUnique({ where: { id: deploymentId } });
+    if (!existing) {
+      throw new NotFoundException(`Deployment with ID "${deploymentId}" not found.`);
     }
 
-    const updated = await this.prisma.deployment.update({
-      where: { id },
-      data: {
-        activationState: dto.activationState as any,
+    const logs = await this.prisma.controlPlaneAuditLog.findMany({
+      where: {
+        OR: [
+          { entityId: deploymentId },
+          { entityType: 'Deployment', entityId: deploymentId },
+        ],
       },
+      orderBy: { createdAt: 'desc' },
     });
 
-    await this.audit.log('DEPLOYMENT_STATE_CHANGED', 'Deployment', updated.id, {
-      organizationId: updated.organizationId,
-      previousState: deployment.activationState,
-      newState: updated.activationState,
-    });
-
-    return {
-      id: updated.id,
-      organizationId: updated.organizationId,
-      customerId: updated.customerId,
-      commercialAgreementId: updated.commercialAgreementId,
-      deploymentModel: updated.deploymentModel as DeploymentModel,
-      environment: updated.environment as DeploymentEnvironment,
-      version: updated.version,
-      activationState: updated.activationState as ActivationState,
-      infrastructureOwner: updated.infrastructureOwner as InfrastructureOwner,
-      licenseId: updated.licenseId,
-      lastCheckInAt: updated.lastCheckInAt ? updated.lastCheckInAt.toISOString() : null,
-      createdAt: updated.createdAt.toISOString(),
-      updatedAt: updated.updatedAt.toISOString(),
-    };
+    return logs.map((l) => ({
+      id: l.id,
+      actorId: l.actorId,
+      actorRole: l.actorRole,
+      action: l.action,
+      entityType: l.entityType,
+      entityId: l.entityId,
+      ipAddress: l.ipAddress,
+      correlationId: l.correlationId,
+      result: l.result,
+      metadata: l.metadata,
+      createdAt: l.createdAt.toISOString(),
+    }));
   }
 }

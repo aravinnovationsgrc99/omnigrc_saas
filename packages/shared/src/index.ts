@@ -886,6 +886,7 @@ export interface CreateDeploymentDto {
 
 export interface UpdateDeploymentStateDto {
   activationState: ActivationState;
+  reason?: string;
 }
 
 export interface DeploymentCheckInDto {
@@ -1002,6 +1003,7 @@ export interface SignedLicensePayload {
   commercialAgreementId: string;
   deploymentId: string;
   organizationId: string;
+  deploymentState?: ActivationState | string;
   startsAt: string;
   expiresAt: string;
   maxDeployments: number;
@@ -1084,6 +1086,50 @@ export function evaluateLicenseStatus(
       expiresAt: payload.expiresAt,
       payload,
     };
+  }
+
+  // Check deployment operational state precedence FIRST
+  if (payload.deploymentState !== undefined && payload.deploymentState !== null) {
+    const depState = String(payload.deploymentState);
+    if (depState === 'SUSPENDED' || depState === ActivationState.SUSPENDED) {
+      return {
+        state: 'SUSPENDED',
+        reason: 'Deployment has been operationally suspended by Control Plane',
+        startsAt: payload.startsAt,
+        expiresAt: payload.expiresAt,
+        payload,
+      };
+    }
+
+    if (depState === 'DECOMMISSIONED' || depState === ActivationState.DECOMMISSIONED) {
+      return {
+        state: 'REVOKED',
+        reason: 'Deployment has been operationally decommissioned by Control Plane',
+        startsAt: payload.startsAt,
+        expiresAt: payload.expiresAt,
+        payload,
+      };
+    }
+
+    if (depState === 'PENDING' || depState === ActivationState.PENDING) {
+      return {
+        state: 'UNLICENSED',
+        reason: 'Deployment is in PENDING activation state',
+        startsAt: payload.startsAt,
+        expiresAt: payload.expiresAt,
+        payload,
+      };
+    }
+
+    if (depState !== 'ACTIVE' && depState !== ActivationState.ACTIVE) {
+      return {
+        state: 'INVALID_OR_UNAVAILABLE',
+        reason: `Unrecognized deployment operational state "${depState}"`,
+        startsAt: payload.startsAt,
+        expiresAt: payload.expiresAt,
+        payload,
+      };
+    }
   }
 
   if (payload.status === LicenseStatus.SUSPENDED || (payload.status as any) === 'SUSPENDED') {
