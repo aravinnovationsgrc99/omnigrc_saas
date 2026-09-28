@@ -700,4 +700,36 @@ export class LicensesService {
       return updated;
     });
   }
+
+  /**
+   * Get commercial audit history for a license.
+   */
+  async getLicenseHistory(licenseId: string) {
+    const existing = await this.prisma.license.findUnique({ where: { id: licenseId } });
+    if (!existing) throw new NotFoundException(`License with ID "${licenseId}" not found.`);
+
+    const logs = await this.prisma.controlPlaneAuditLog.findMany({
+      where: {
+        OR: [
+          { entityId: licenseId },
+          { entityType: 'License', entityId: licenseId },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return logs.map((l) => ({
+      id: l.id,
+      actorId: l.actorId,
+      actorRole: l.actorRole,
+      action: l.action,
+      entityType: l.entityType,
+      entityId: l.entityId,
+      ipAddress: l.ipAddress,
+      correlationId: l.correlationId,
+      result: l.result,
+      metadata: l.metadata,
+      createdAt: l.createdAt.toISOString(),
+    }));
+  }
 }

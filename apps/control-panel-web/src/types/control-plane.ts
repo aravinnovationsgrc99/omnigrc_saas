@@ -103,15 +103,93 @@ export interface DeploymentSummary {
   updatedAt: string;
 }
 
-export interface LicenseSummary {
+export type LicenseStatusType = 'TRIAL' | 'ACTIVE' | 'EXPIRED' | 'SUSPENDED' | 'REVOKED';
+
+export interface EntitlementDto {
+  id: string;
+  licenseId: string;
+  code: string;
+  name: string;
+  value?: any;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LicenseDto {
   id: string;
   commercialAgreementId: string;
   product: string;
-  status: string;
-  sequence: string;
+  status: LicenseStatusType;
+  sequence?: number | string;
+  issuedAt: string;
   startsAt: string;
   expiresAt: string;
   maxDeployments: number;
   createdAt: string;
   updatedAt: string;
+  entitlements: EntitlementDto[];
+  deployments?: DeploymentSummary[];
+  deploymentsCount?: number;
+}
+
+export type LicenseSummary = LicenseDto;
+
+export interface CreateLicensePayload {
+  commercialAgreementId: string;
+  product?: string;
+  status?: LicenseStatusType;
+  startsAt: string;
+  expiresAt: string;
+  maxDeployments: number;
+}
+
+export interface UpdateLicensePayload {
+  startsAt?: string;
+  expiresAt?: string;
+  maxDeployments?: number;
+  reason?: string;
+}
+
+export interface GrantEntitlementPayload {
+  code: string;
+  name: string;
+  enabled?: boolean;
+  value?: any;
+}
+
+export interface CustomerDto {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CommercialAgreementDto {
+  id: string;
+  customerId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SignedLicenseArtifact {
+  formatVersion: string;
+  keyId: string;
+  algorithm: string;
+  payload: any;
+  signature: string;
+}
+
+export interface CommercialAuditLog {
+  id: string;
+  actorId?: string;
+  actorRole?: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  ipAddress?: string;
+  correlationId?: string;
+  result?: string;
+  metadata?: any;
+  createdAt: string;
 }

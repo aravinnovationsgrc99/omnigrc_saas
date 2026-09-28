@@ -84,4 +84,30 @@ export class CustomersService {
       updatedAt: agreement.updatedAt.toISOString(),
     };
   }
+
+  async findAllCustomers(): Promise<CustomerDto[]> {
+    const customers = await this.prisma.customer.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+    return customers.map((c) => ({
+      id: c.id,
+      name: c.name,
+      createdAt: c.createdAt.toISOString(),
+      updatedAt: c.updatedAt.toISOString(),
+    }));
+  }
+
+  async findAllAgreements(customerId?: string): Promise<CommercialAgreementDto[]> {
+    const where = customerId ? { customerId } : {};
+    const agreements = await this.prisma.commercialAgreement.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+    });
+    return agreements.map((a) => ({
+      id: a.id,
+      customerId: a.customerId,
+      createdAt: a.createdAt.toISOString(),
+      updatedAt: a.updatedAt.toISOString(),
+    }));
+  }
 }

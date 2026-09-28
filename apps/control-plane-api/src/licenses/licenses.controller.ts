@@ -130,6 +130,26 @@ export class LicensesController {
     return this.licensesService.grantOrUpdateEntitlement(licenseId, dto);
   }
 
+  @Post(':id/entitlements/:code/suspend')
+  @RequireOperatorRoles(OperatorRole.COMMERCIAL_OPERATOR, OperatorRole.PLATFORM_SUPER_ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async suspendEntitlement(
+    @Param('id') licenseId: string,
+    @Param('code') entitlementCode: string,
+  ) {
+    return this.licensesService.suspendEntitlement(licenseId, entitlementCode);
+  }
+
+  @Post(':id/entitlements/:code/reactivate')
+  @RequireOperatorRoles(OperatorRole.COMMERCIAL_OPERATOR, OperatorRole.PLATFORM_SUPER_ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async reactivateEntitlement(
+    @Param('id') licenseId: string,
+    @Param('code') entitlementCode: string,
+  ) {
+    return this.licensesService.reactivateEntitlement(licenseId, entitlementCode);
+  }
+
   @Post(':id/entitlements/:code/revoke')
   @RequireOperatorRoles(OperatorRole.COMMERCIAL_OPERATOR, OperatorRole.PLATFORM_SUPER_ADMIN)
   @HttpCode(HttpStatus.OK)
@@ -138,5 +158,18 @@ export class LicensesController {
     @Param('code') entitlementCode: string,
   ) {
     return this.licensesService.revokeEntitlement(licenseId, entitlementCode);
+  }
+
+  @Get(':id/history')
+  @RequireOperatorRoles(
+    OperatorRole.COMMERCIAL_OPERATOR,
+    OperatorRole.OPERATIONS_ENGINEER,
+    OperatorRole.SUPPORT_ENGINEER,
+    OperatorRole.SECURITY_AUDIT,
+    OperatorRole.READ_ONLY_AUDITOR,
+    OperatorRole.PLATFORM_SUPER_ADMIN,
+  )
+  async getLicenseHistory(@Param('id') id: string) {
+    return this.licensesService.getLicenseHistory(id);
   }
 }

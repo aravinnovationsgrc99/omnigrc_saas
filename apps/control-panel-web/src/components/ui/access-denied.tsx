@@ -4,7 +4,9 @@ import { OperatorRoleType } from '../../types/control-plane';
 
 interface AccessDeniedProps {
   requiredRoles?: OperatorRoleType[];
+  requiredRole?: string;
   currentRole?: OperatorRoleType;
+  resource?: string;
   message?: string;
 }
 

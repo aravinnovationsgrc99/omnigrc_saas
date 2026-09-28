@@ -7,7 +7,15 @@ import {
   OrganizationTransitionPayload,
   TransitionResponse,
   DeploymentSummary,
-  LicenseSummary,
+  LicenseDto,
+  EntitlementDto,
+  CreateLicensePayload,
+  UpdateLicensePayload,
+  GrantEntitlementPayload,
+  CustomerDto,
+  CommercialAgreementDto,
+  SignedLicenseArtifact,
+  CommercialAuditLog,
 } from '../types/control-plane';
 
 export class ControlPlaneApiError extends Error {
@@ -214,8 +222,93 @@ export const controlPlaneApi = {
     return request<DeploymentSummary[]>(`v1/deployments${query}`, { method: 'GET' });
   },
 
-  listLicenses: async (): Promise<LicenseSummary[]> => {
-    return request<LicenseSummary[]>('v1/licenses', { method: 'GET' });
+  // Commercial Licensing Operations
+  listLicenses: async (query?: { commercialAgreementId?: string; status?: string }): Promise<LicenseDto[]> => {
+    const params = new URLSearchParams();
+    if (query?.commercialAgreementId) params.append('commercialAgreementId', query.commercialAgreementId);
+    if (query?.status) params.append('status', query.status);
+    const queryString = params.toString() ? `?${params.toString()}` : '';
+    return request<LicenseDto[]>(`v1/licenses${queryString}`, { method: 'GET' });
+  },
+
+  getLicense: async (id: string): Promise<LicenseDto> => {
+    return request<LicenseDto>(`v1/licenses/${encodeURIComponent(id)}`, { method: 'GET' });
+  },
+
+  createLicense: async (payload: CreateLicensePayload): Promise<LicenseDto> => {
+    return request<LicenseDto>('v1/licenses', { method: 'POST', body: JSON.stringify(payload) });
+  },
+
+  updateLicense: async (id: string, payload: UpdateLicensePayload): Promise<LicenseDto> => {
+    return request<LicenseDto>(`v1/licenses/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload) });
+  },
+
+  suspendLicense: async (id: string, reason?: string): Promise<LicenseDto> => {
+    return request<LicenseDto>(`v1/licenses/${encodeURIComponent(id)}/suspend`, { method: 'POST', body: JSON.stringify({ reason }) });
+  },
+
+  reactivateLicense: async (id: string, reason?: string): Promise<LicenseDto> => {
+    return request<LicenseDto>(`v1/licenses/${encodeURIComponent(id)}/reactivate`, { method: 'POST', body: JSON.stringify({ reason }) });
+  },
+
+  revokeLicense: async (id: string, reason?: string): Promise<LicenseDto> => {
+    return request<LicenseDto>(`v1/licenses/${encodeURIComponent(id)}/revoke`, { method: 'POST', body: JSON.stringify({ reason }) });
+  },
+
+  grantOrUpdateEntitlement: async (licenseId: string, payload: GrantEntitlementPayload): Promise<EntitlementDto> => {
+    return request<EntitlementDto>(`v1/licenses/${encodeURIComponent(licenseId)}/entitlements`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  suspendEntitlement: async (licenseId: string, code: string): Promise<EntitlementDto> => {
+    return request<EntitlementDto>(`v1/licenses/${encodeURIComponent(licenseId)}/entitlements/${encodeURIComponent(code)}/suspend`, { method: 'POST' });
+  },
+
+  reactivateEntitlement: async (licenseId: string, code: string): Promise<EntitlementDto> => {
+    return request<EntitlementDto>(`v1/licenses/${encodeURIComponent(licenseId)}/entitlements/${encodeURIComponent(code)}/reactivate`, { method: 'POST' });
+  },
+
+  revokeEntitlement: async (licenseId: string, code: string): Promise<EntitlementDto> => {
+    return request<EntitlementDto>(`v1/licenses/${encodeURIComponent(licenseId)}/entitlements/${encodeURIComponent(code)}/revoke`, { method: 'POST' });
+  },
+
+  associateDeployment: async (licenseId: string, deploymentId: string): Promise<DeploymentSummary> => {
+    return request<DeploymentSummary>(`v1/licenses/${encodeURIComponent(licenseId)}/deployments`, {
+      method: 'POST',
+      body: JSON.stringify({ deploymentId }),
+    });
+  },
+
+  disassociateDeployment: async (licenseId: string, deploymentId: string): Promise<DeploymentSummary> => {
+    return request<DeploymentSummary>(`v1/licenses/${encodeURIComponent(licenseId)}/deployments/${encodeURIComponent(deploymentId)}`, { method: 'DELETE' });
+  },
+
+  getSignedArtifact: async (licenseId: string, deploymentId?: string): Promise<SignedLicenseArtifact> => {
+    const query = deploymentId ? `?deploymentId=${encodeURIComponent(deploymentId)}` : '';
+    return request<SignedLicenseArtifact>(`v1/licenses/${encodeURIComponent(licenseId)}/artifact${query}`, { method: 'GET' });
+  },
+
+  getLicenseHistory: async (licenseId: string): Promise<CommercialAuditLog[]> => {
+    return request<CommercialAuditLog[]>(`v1/licenses/${encodeURIComponent(licenseId)}/history`, { method: 'GET' });
+  },
+
+  listCustomers: async (): Promise<CustomerDto[]> => {
+    return request<CustomerDto[]>('v1/customers', { method: 'GET' });
+  },
+
+  listCommercialAgreements: async (customerId?: string): Promise<CommercialAgreementDto[]> => {
+    const query = customerId ? `?customerId=${encodeURIComponent(customerId)}` : '';
+    return request<CommercialAgreementDto[]>(`v1/commercial-agreements${query}`, { method: 'GET' });
+  },
+
+  createCustomer: async (name: string): Promise<CustomerDto> => {
+    return request<CustomerDto>('v1/customers', { method: 'POST', body: JSON.stringify({ name }) });
+  },
+
+  createCommercialAgreement: async (customerId: string): Promise<CommercialAgreementDto> => {
+    return request<CommercialAgreementDto>('v1/commercial-agreements', { method: 'POST', body: JSON.stringify({ customerId }) });
   },
 
   // Generic typed API request method

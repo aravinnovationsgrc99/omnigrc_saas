@@ -4,6 +4,7 @@ import {
   Get,
   Body,
   Param,
+  Query,
   Req,
   UseGuards,
   HttpCode,
@@ -46,6 +47,19 @@ export class CustomersController {
     return customer;
   }
 
+  @Get('customers')
+  @RequireOperatorRoles(
+    OperatorRole.COMMERCIAL_OPERATOR,
+    OperatorRole.OPERATIONS_ENGINEER,
+    OperatorRole.SUPPORT_ENGINEER,
+    OperatorRole.SECURITY_AUDIT,
+    OperatorRole.READ_ONLY_AUDITOR,
+    OperatorRole.PLATFORM_SUPER_ADMIN,
+  )
+  async findAllCustomers() {
+    return this.customersService.findAllCustomers();
+  }
+
   @Get('customers/:id')
   @RequireOperatorRoles(
     OperatorRole.COMMERCIAL_OPERATOR,
@@ -77,6 +91,19 @@ export class CustomersController {
     });
 
     return agreement;
+  }
+
+  @Get('commercial-agreements')
+  @RequireOperatorRoles(
+    OperatorRole.COMMERCIAL_OPERATOR,
+    OperatorRole.OPERATIONS_ENGINEER,
+    OperatorRole.SUPPORT_ENGINEER,
+    OperatorRole.SECURITY_AUDIT,
+    OperatorRole.READ_ONLY_AUDITOR,
+    OperatorRole.PLATFORM_SUPER_ADMIN,
+  )
+  async findAllAgreements(@Query('customerId') customerId?: string) {
+    return this.customersService.findAllAgreements(customerId);
   }
 
   @Get('commercial-agreements/:id')

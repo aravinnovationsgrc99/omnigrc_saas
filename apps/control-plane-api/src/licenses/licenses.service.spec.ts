@@ -33,6 +33,9 @@ describe('LicensesService (CP-5 Commercial Control Lifecycle)', () => {
         create: jest.fn(),
         update: jest.fn(),
       },
+      controlPlaneAuditLog: {
+        findMany: jest.fn(),
+      },
     };
 
     audit = {
@@ -373,6 +376,27 @@ describe('LicensesService (CP-5 Commercial Control Lifecycle)', () => {
         }),
       );
       expect(audit.log).toHaveBeenCalledWith('ENTITLEMENT_REACTIVATED', 'Entitlement', 'ent-1', expect.anything());
+    });
+  });
+
+  describe('getLicenseHistory', () => {
+    it('should return audit logs associated with license', async () => {
+      prisma.license.findUnique.mockResolvedValueOnce({ id: 'lic-1' });
+      prisma.controlPlaneAuditLog.findMany.mockResolvedValueOnce([
+        {
+          id: 'log-1',
+          actorId: 'op-1',
+          actorRole: 'COMMERCIAL_OPERATOR',
+          action: 'LICENSE_CREATED',
+          entityType: 'License',
+          entityId: 'lic-1',
+          createdAt: new Date(),
+        },
+      ]);
+
+      const logs = await service.getLicenseHistory('lic-1');
+      expect(logs).toHaveLength(1);
+      expect(logs[0].action).toBe('LICENSE_CREATED');
     });
   });
 });
