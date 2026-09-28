@@ -1,4 +1,14 @@
-import { ApiErrorResponse, OperatorProfile, LoginSuccessResponse } from '../types/control-plane';
+import {
+  ApiErrorResponse,
+  OperatorProfile,
+  LoginSuccessResponse,
+  OrganizationControlState,
+  OrganizationStateTransitionLog,
+  OrganizationTransitionPayload,
+  TransitionResponse,
+  DeploymentSummary,
+  LicenseSummary,
+} from '../types/control-plane';
 
 export class ControlPlaneApiError extends Error {
   public readonly statusCode: number;
@@ -174,6 +184,38 @@ export const controlPlaneApi = {
 
   getMe: async (): Promise<OperatorProfile> => {
     return request<OperatorProfile>('v1/operator-auth/me', { method: 'GET' });
+  },
+
+  // Organization Control Operations
+  listOrganizations: async (): Promise<OrganizationControlState[]> => {
+    return request<OrganizationControlState[]>('v1/organizations', { method: 'GET' });
+  },
+
+  getOrganization: async (organizationId: string): Promise<OrganizationControlState> => {
+    return request<OrganizationControlState>(`v1/organizations/${encodeURIComponent(organizationId)}`, { method: 'GET' });
+  },
+
+  getOrganizationHistory: async (organizationId: string): Promise<OrganizationStateTransitionLog[]> => {
+    return request<OrganizationStateTransitionLog[]>(`v1/organizations/${encodeURIComponent(organizationId)}/history`, { method: 'GET' });
+  },
+
+  transitionOrganizationState: async (
+    organizationId: string,
+    payload: OrganizationTransitionPayload,
+  ): Promise<TransitionResponse> => {
+    return request<TransitionResponse>(`v1/organizations/${encodeURIComponent(organizationId)}/control-state/transition`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  listDeployments: async (organizationId?: string): Promise<DeploymentSummary[]> => {
+    const query = organizationId ? `?organizationId=${encodeURIComponent(organizationId)}` : '';
+    return request<DeploymentSummary[]>(`v1/deployments${query}`, { method: 'GET' });
+  },
+
+  listLicenses: async (): Promise<LicenseSummary[]> => {
+    return request<LicenseSummary[]>('v1/licenses', { method: 'GET' });
   },
 
   // Generic typed API request method

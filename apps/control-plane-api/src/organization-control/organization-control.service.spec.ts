@@ -19,6 +19,7 @@ describe('OrganizationControlService', () => {
     },
     organizationStateTransitionLog: {
       findUnique: jest.fn(),
+      findMany: jest.fn(),
       create: jest.fn(),
     },
     $transaction: jest.fn((callback) => callback(mockPrisma)),
@@ -237,6 +238,29 @@ describe('OrganizationControlService', () => {
           superAdminOperator,
         ),
       ).rejects.toThrow(ConflictException);
+    });
+  });
+
+  describe('getTransitionHistory', () => {
+    it('should return transition logs for organization ordered by sequence desc', async () => {
+      mockPrisma.organizationStateTransitionLog.findMany.mockResolvedValue([
+        {
+          id: 'log_2',
+          organizationId: 'org_1',
+          previousState: ControlState.PENDING,
+          newState: ControlState.ACTIVE,
+          reason: 'Initial activation',
+          sequence: 2n,
+          operatorId: 'op_1',
+          operatorRole: 'PLATFORM_SUPER_ADMIN',
+          createdAt: new Date(),
+        },
+      ]);
+
+      const logs = await service.getTransitionHistory('org_1');
+      expect(logs).toHaveLength(1);
+      expect(logs[0].sequence).toBe('2');
+      expect(logs[0].newState).toBe(ControlState.ACTIVE);
     });
   });
 });

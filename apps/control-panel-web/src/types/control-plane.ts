@@ -38,3 +38,80 @@ export interface MfaRequiredResponse {
   mfaRequired: true;
   message: string;
 }
+
+export type ControlState = 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'DISABLED' | 'DECOMMISSIONED';
+
+export interface OrganizationControlState {
+  id: string;
+  organizationId: string;
+  state: ControlState;
+  reason: string;
+  sequence: string;
+  updatedByOperatorId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OrganizationStateTransitionLog {
+  id: string;
+  organizationId: string;
+  previousState: ControlState;
+  newState: ControlState;
+  reason: string;
+  sequence: string;
+  idempotencyKey?: string | null;
+  operatorId: string;
+  operatorRole: string;
+  createdAt: string;
+}
+
+export interface OrganizationTransitionPayload {
+  targetState: ControlState;
+  reason: string;
+  idempotencyKey?: string;
+}
+
+export interface TransitionResponse {
+  idempotent: boolean;
+  organizationId: string;
+  state: ControlState;
+  previousState?: ControlState;
+  sequence: string;
+  reason: string;
+  updatedAt: string;
+  propagation?: {
+    status: string;
+    statusCode?: number;
+    error?: string;
+    dataPlaneResponse?: any;
+  };
+}
+
+export interface DeploymentSummary {
+  id: string;
+  organizationId: string;
+  customerId?: string | null;
+  commercialAgreementId?: string | null;
+  licenseId?: string | null;
+  deploymentModel: string;
+  environment: string;
+  version: string;
+  activationState: string;
+  infrastructureOwner: string;
+  lastCheckInAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LicenseSummary {
+  id: string;
+  commercialAgreementId: string;
+  product: string;
+  status: string;
+  sequence: string;
+  startsAt: string;
+  expiresAt: string;
+  maxDeployments: number;
+  createdAt: string;
+  updatedAt: string;
+}

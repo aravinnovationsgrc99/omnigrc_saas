@@ -27,8 +27,12 @@ export function StatusBadge({ status, label, size = 'md' }: StatusBadgeProps) {
       IconComponent = AlertTriangle;
       break;
     case 'DISABLED':
-      badgeStyle = 'bg-gray-800 text-gray-400 border-gray-700';
+      badgeStyle = 'bg-rose-950/40 text-rose-300 border-rose-900/60';
       IconComponent = MinusCircle;
+      break;
+    case 'DECOMMISSIONED':
+      badgeStyle = 'bg-slate-900 text-slate-400 border-slate-700/80';
+      IconComponent = XCircle;
       break;
     case 'REVOKED':
       badgeStyle = 'bg-rose-950/80 text-rose-300 border-rose-800/60';

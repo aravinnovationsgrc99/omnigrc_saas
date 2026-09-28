@@ -85,6 +85,21 @@ export class OrganizationControlService {
   }
 
   /**
+   * Get state transition history for an organization
+   */
+  async getTransitionHistory(organizationId: string) {
+    const records = await this.prisma.organizationStateTransitionLog.findMany({
+      where: { organizationId },
+      orderBy: { sequence: 'desc' },
+    });
+
+    return records.map((r) => ({
+      ...r,
+      sequence: r.sequence.toString(),
+    }));
+  }
+
+  /**
    * Server-side authoritative state machine transition
    */
   async transitionState(

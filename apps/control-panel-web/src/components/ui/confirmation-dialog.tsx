@@ -58,7 +58,7 @@ export function ConfirmationDialog({
   if (!isOpen) return null;
 
   const isPhraseValid = !confirmationPhrase || typedPhrase.trim().toUpperCase() === confirmationPhrase.toUpperCase();
-  const isReasonValid = !reasonRequired || reason.trim().length >= 5;
+  const isReasonValid = !reasonRequired || reason.trim().length >= 10;
   const canSubmit = isPhraseValid && isReasonValid && !isLoading;
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -136,8 +136,8 @@ export function ConfirmationDialog({
                 disabled={isLoading}
                 className="w-full rounded-md border border-cpDark-700 bg-cpDark-950 p-2.5 text-xs text-white placeholder-gray-500 focus-ring font-mono"
               />
-              {reasonRequired && reason.trim().length > 0 && reason.trim().length < 5 && (
-                <span className="text-[11px] text-amber-400">Reason must be at least 5 characters.</span>
+              {reasonRequired && reason.trim().length > 0 && reason.trim().length < 10 && (
+                <span className="text-[11px] text-amber-400">Reason must be at least 10 characters.</span>
               )}
             </div>
           )}

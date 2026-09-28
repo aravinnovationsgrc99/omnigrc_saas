@@ -60,6 +60,19 @@ export class OrganizationControlController {
     return this.organizationControlService.getControlState(id);
   }
 
+  @Get(':id/history')
+  @RequireOperatorRoles(
+    OperatorRole.PLATFORM_SUPER_ADMIN,
+    OperatorRole.OPERATIONS_ENGINEER,
+    OperatorRole.COMMERCIAL_OPERATOR,
+    OperatorRole.SUPPORT_ENGINEER,
+    OperatorRole.SECURITY_AUDIT,
+    OperatorRole.READ_ONLY_AUDITOR,
+  )
+  async getTransitionHistory(@Param('id') id: string) {
+    return this.organizationControlService.getTransitionHistory(id);
+  }
+
   @Post(':id/control-state/transition')
   @HttpCode(HttpStatus.OK)
   @RequireOperatorRoles(OperatorRole.PLATFORM_SUPER_ADMIN, OperatorRole.OPERATIONS_ENGINEER)
