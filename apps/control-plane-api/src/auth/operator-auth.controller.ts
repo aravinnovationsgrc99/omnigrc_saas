@@ -1,5 +1,6 @@
 import {
   Controller,
+  Get,
   Post,
   Body,
   Req,
@@ -67,6 +68,14 @@ export class OperatorAuthController {
   async verifyMfa(@Req() req: any, @Body() dto: VerifyMfaDto) {
     const operator = req.user;
     return this.authService.verifyAndEnableMfa(operator.id, dto.totpCode);
+  }
+
+  @Get('me')
+  @UseGuards(OperatorJwtGuard)
+  @HttpCode(HttpStatus.OK)
+  async getMe(@Req() req: any) {
+    const operator = req.user;
+    return this.authService.getMe(operator.id);
   }
 
   @Post('bootstrap')

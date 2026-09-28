@@ -543,4 +543,26 @@ export class OperatorAuthService {
       },
     };
   }
+
+  async getMe(operatorId: string) {
+    const operator = await this.prisma.operator.findUnique({
+      where: { id: operatorId },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        role: true,
+        status: true,
+        mfaEnabled: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!operator) {
+      throw new UnauthorizedException('Operator context not found');
+    }
+
+    return operator;
+  }
 }
