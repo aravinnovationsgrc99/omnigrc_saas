@@ -194,3 +194,77 @@ export interface CommercialAuditLog {
   metadata?: any;
   createdAt: string;
 }
+
+export type BreakGlassStatus =
+  | 'REQUESTED'
+  | 'APPROVED'
+  | 'EXECUTED'
+  | 'EXPIRED'
+  | 'REVOKED'
+  | 'REJECTED';
+
+export type BreakGlassOperation =
+  | 'EMERGENCY_ORG_SUSPEND'
+  | 'EMERGENCY_ORG_DISABLE'
+  | 'EMERGENCY_SERVICE_KILL_SWITCH'
+  | 'EMERGENCY_DEPLOYMENT_SUSPEND'
+  | 'EMERGENCY_LICENSE_RECONCILE';
+
+export interface BreakGlassSessionDto {
+  id: string;
+  requesterOperatorId: string;
+  requesterOperatorName?: string;
+  approverOperatorId?: string | null;
+  approverOperatorName?: string | null;
+  executorOperatorId?: string | null;
+  status: BreakGlassStatus;
+  operation: BreakGlassOperation;
+  reason: string;
+  targetOrganizationId?: string | null;
+  targetDeploymentId?: string | null;
+  targetServiceCode?: string | null;
+  scopeMetadata?: Record<string, any> | null;
+  idempotencyKey?: string | null;
+  expiresAt: string;
+  approvedAt?: string | null;
+  executedAt?: string | null;
+  revokedAt?: string | null;
+  revokedByOperatorId?: string | null;
+  isSingleOperatorEmergency: boolean;
+  postEventReviewStatus?: string | null;
+  postEventReviewedBy?: string | null;
+  postEventReviewedAt?: string | null;
+  postEventNotes?: string | null;
+  originatingIp?: string | null;
+  userAgent?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RequestBreakGlassPayload {
+  operation: BreakGlassOperation;
+  reason: string;
+  targetOrganizationId?: string;
+  targetDeploymentId?: string;
+  targetServiceCode?: string;
+  durationMinutes?: number;
+  isSingleOperatorEmergency?: boolean;
+  emergencyConfirmationText?: string;
+  totpCode: string;
+  idempotencyKey?: string;
+}
+
+export interface ApproveBreakGlassPayload {
+  totpCode: string;
+  reason?: string;
+}
+
+export interface ExecuteBreakGlassPayload {
+  totpCode?: string;
+  idempotencyKey?: string;
+}
+
+export interface ReviewBreakGlassPayload {
+  postEventReviewStatus: 'REVIEWED_APPROVED' | 'REVIEWED_FLAGGED';
+  notes: string;
+}

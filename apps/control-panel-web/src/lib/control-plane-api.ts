@@ -16,6 +16,11 @@ import {
   CommercialAgreementDto,
   SignedLicenseArtifact,
   CommercialAuditLog,
+  BreakGlassSessionDto,
+  RequestBreakGlassPayload,
+  ApproveBreakGlassPayload,
+  ExecuteBreakGlassPayload,
+  ReviewBreakGlassPayload,
 } from '../types/control-plane';
 
 export class ControlPlaneApiError extends Error {
@@ -340,6 +345,63 @@ export const controlPlaneApi = {
 
   createCommercialAgreement: async (customerId: string): Promise<CommercialAgreementDto> => {
     return request<CommercialAgreementDto>('v1/commercial-agreements', { method: 'POST', body: JSON.stringify({ customerId }) });
+  },
+
+  // Break-Glass Operational Endpoints
+  listBreakGlassSessions: async (query?: {
+    status?: string;
+    operation?: string;
+    targetOrganizationId?: string;
+    isSingleOperatorEmergency?: boolean;
+  }): Promise<BreakGlassSessionDto[]> => {
+    const params = new URLSearchParams();
+    if (query?.status) params.append('status', query.status);
+    if (query?.operation) params.append('operation', query.operation);
+    if (query?.targetOrganizationId) params.append('targetOrganizationId', query.targetOrganizationId);
+    if (query?.isSingleOperatorEmergency !== undefined) {
+      params.append('isSingleOperatorEmergency', String(query.isSingleOperatorEmergency));
+    }
+    const queryString = params.toString() ? `?${params.toString()}` : '';
+    return request<BreakGlassSessionDto[]>(`v1/operations/break-glass${queryString}`, { method: 'GET' });
+  },
+
+  getBreakGlassSession: async (id: string): Promise<BreakGlassSessionDto> => {
+    return request<BreakGlassSessionDto>(`v1/operations/break-glass/${encodeURIComponent(id)}`, { method: 'GET' });
+  },
+
+  requestBreakGlassSession: async (payload: RequestBreakGlassPayload): Promise<BreakGlassSessionDto> => {
+    return request<BreakGlassSessionDto>('v1/operations/break-glass/request', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  approveBreakGlassSession: async (id: string, payload: ApproveBreakGlassPayload): Promise<BreakGlassSessionDto> => {
+    return request<BreakGlassSessionDto>(`v1/operations/break-glass/${encodeURIComponent(id)}/approve`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  executeBreakGlassAction: async (id: string, payload: ExecuteBreakGlassPayload): Promise<{ success: boolean; session: BreakGlassSessionDto; result: any }> => {
+    return request<{ success: boolean; session: BreakGlassSessionDto; result: any }>(`v1/operations/break-glass/${encodeURIComponent(id)}/execute`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  revokeBreakGlassSession: async (id: string, reason?: string): Promise<BreakGlassSessionDto> => {
+    return request<BreakGlassSessionDto>(`v1/operations/break-glass/${encodeURIComponent(id)}/revoke`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  reviewEmergencyBreakGlassSession: async (id: string, payload: ReviewBreakGlassPayload): Promise<BreakGlassSessionDto> => {
+    return request<BreakGlassSessionDto>(`v1/operations/break-glass/${encodeURIComponent(id)}/review`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
   },
 
   // Generic typed API request method

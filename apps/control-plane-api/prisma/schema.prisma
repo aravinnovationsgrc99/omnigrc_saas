@@ -209,7 +209,65 @@ model Operator {
 
   sessions OperatorSession[]
 
+  breakGlassRequests BreakGlassSession[] @relation("BreakGlassRequester")
+  breakGlassApprovals BreakGlassSession[] @relation("BreakGlassApprover")
+
   @@map("operators")
+}
+
+enum BreakGlassStatus {
+  REQUESTED
+  APPROVED
+  EXECUTED
+  EXPIRED
+  REVOKED
+  REJECTED
+}
+
+enum BreakGlassOperation {
+  EMERGENCY_ORG_SUSPEND
+  EMERGENCY_ORG_DISABLE
+  EMERGENCY_SERVICE_KILL_SWITCH
+  EMERGENCY_DEPLOYMENT_SUSPEND
+  EMERGENCY_LICENSE_RECONCILE
+}
+
+model BreakGlassSession {
+  id                        String              @id @default(uuid())
+  requesterOperatorId       String
+  approverOperatorId        String?
+  executorOperatorId        String?
+  status                    BreakGlassStatus    @default(REQUESTED)
+  operation                 BreakGlassOperation
+  reason                    String
+  targetOrganizationId      String?
+  targetDeploymentId        String?
+  targetServiceCode         String?
+  scopeMetadata             Json?
+  idempotencyKey            String?             @unique
+  expiresAt                 DateTime
+  approvedAt                DateTime?
+  executedAt                DateTime?
+  revokedAt                 DateTime?
+  revokedByOperatorId       String?
+  isSingleOperatorEmergency Boolean             @default(false)
+  postEventReviewStatus     String?             @default("NOT_APPLICABLE")
+  postEventReviewedBy       String?
+  postEventReviewedAt       DateTime?
+  postEventNotes            String?
+  originatingIp             String?
+  userAgent                 String?
+  createdAt                 DateTime            @default(now())
+  updatedAt                 DateTime            @updatedAt
+
+  requesterOperator Operator  @relation("BreakGlassRequester", fields: [requesterOperatorId], references: [id], onDelete: Cascade)
+  approverOperator  Operator? @relation("BreakGlassApprover", fields: [approverOperatorId], references: [id], onDelete: SetNull)
+
+  @@index([targetOrganizationId])
+  @@index([targetDeploymentId])
+  @@index([status])
+  @@index([requesterOperatorId])
+  @@map("control_plane_break_glass_sessions")
 }
 
 model OperatorSession {

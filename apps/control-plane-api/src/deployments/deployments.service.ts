@@ -302,11 +302,22 @@ export class DeploymentsService {
 
     const license = deployment.license;
 
+    const now = new Date();
+    let effectiveStatus = license.status as LicenseStatus;
+    if (license.status === (LicenseStatus.REVOKED as any)) {
+      effectiveStatus = LicenseStatus.REVOKED;
+    } else if (license.status === (LicenseStatus.SUSPENDED as any)) {
+      effectiveStatus = LicenseStatus.SUSPENDED;
+    } else if (now.getTime() > license.expiresAt.getTime()) {
+      effectiveStatus = LicenseStatus.EXPIRED;
+    }
+
     const artifact = this.licenseSigningService.signLicenseArtifact({
       license: {
         id: license.id,
         product: license.product,
-        status: license.status,
+        status: effectiveStatus,
+        sequence: Number(license.sequence),
         customerId: deployment.customerId,
         commercialAgreementId: license.commercialAgreementId,
         startsAt: license.startsAt,

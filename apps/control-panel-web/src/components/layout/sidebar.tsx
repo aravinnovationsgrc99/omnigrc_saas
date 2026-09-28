@@ -11,6 +11,7 @@ import {
   Server,
   Activity,
   ShieldCheck,
+  ShieldAlert,
   MessageSquare,
   Settings,
   X,
@@ -58,6 +59,12 @@ const NAV_ITEMS: NavItem[] = [
     href: '/deployments',
     icon: Server,
     roles: ['PLATFORM_SUPER_ADMIN', 'COMMERCIAL_OPERATOR', 'OPERATIONS_ENGINEER', 'SUPPORT_ENGINEER', 'SECURITY_AUDIT', 'READ_ONLY_AUDITOR'],
+  },
+  {
+    name: 'Break-Glass Ops',
+    href: '/operations/break-glass',
+    icon: ShieldAlert,
+    roles: ['PLATFORM_SUPER_ADMIN', 'OPERATIONS_ENGINEER', 'SECURITY_AUDIT', 'READ_ONLY_AUDITOR', 'SUPPORT_ENGINEER', 'COMMERCIAL_OPERATOR'],
   },
   {
     name: 'Operations',

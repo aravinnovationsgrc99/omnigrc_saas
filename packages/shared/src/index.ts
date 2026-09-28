@@ -2717,5 +2717,85 @@ export interface FrameworkGapQueryDto {
   search?: string;
 }
 
+// --------------------------------------------------
+// CP-6.5 — BREAK-GLASS & ADVANCED OPERATIONS TYPES
+// --------------------------------------------------
+
+export enum BreakGlassStatus {
+  REQUESTED = "REQUESTED",
+  APPROVED = "APPROVED",
+  EXECUTED = "EXECUTED",
+  EXPIRED = "EXPIRED",
+  REVOKED = "REVOKED",
+  REJECTED = "REJECTED",
+}
+
+export enum BreakGlassOperation {
+  EMERGENCY_ORG_SUSPEND = "EMERGENCY_ORG_SUSPEND",
+  EMERGENCY_ORG_DISABLE = "EMERGENCY_ORG_DISABLE",
+  EMERGENCY_SERVICE_KILL_SWITCH = "EMERGENCY_SERVICE_KILL_SWITCH",
+  EMERGENCY_DEPLOYMENT_SUSPEND = "EMERGENCY_DEPLOYMENT_SUSPEND",
+  EMERGENCY_LICENSE_RECONCILE = "EMERGENCY_LICENSE_RECONCILE",
+}
+
+export interface BreakGlassSessionDto {
+  id: string;
+  requesterOperatorId: string;
+  requesterOperatorName?: string;
+  approverOperatorId?: string | null;
+  approverOperatorName?: string | null;
+  executorOperatorId?: string | null;
+  status: BreakGlassStatus;
+  operation: BreakGlassOperation;
+  reason: string;
+  targetOrganizationId?: string | null;
+  targetDeploymentId?: string | null;
+  targetServiceCode?: string | null;
+  scopeMetadata?: Record<string, any> | null;
+  idempotencyKey?: string | null;
+  expiresAt: string;
+  approvedAt?: string | null;
+  executedAt?: string | null;
+  revokedAt?: string | null;
+  revokedByOperatorId?: string | null;
+  isSingleOperatorEmergency: boolean;
+  postEventReviewStatus?: string | null;
+  postEventReviewedBy?: string | null;
+  postEventReviewedAt?: string | null;
+  postEventNotes?: string | null;
+  originatingIp?: string | null;
+  userAgent?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RequestBreakGlassSessionDto {
+  operation: BreakGlassOperation;
+  reason: string;
+  targetOrganizationId?: string;
+  targetDeploymentId?: string;
+  targetServiceCode?: string;
+  durationMinutes?: number;
+  isSingleOperatorEmergency?: boolean;
+  emergencyConfirmationText?: string;
+  totpCode: string;
+  idempotencyKey?: string;
+}
+
+export interface ApproveBreakGlassSessionDto {
+  totpCode: string;
+  reason?: string;
+}
+
+export interface ExecuteBreakGlassActionDto {
+  totpCode?: string;
+  idempotencyKey?: string;
+}
+
+export interface ReviewBreakGlassSessionDto {
+  postEventReviewStatus: 'REVIEWED_APPROVED' | 'REVIEWED_FLAGGED';
+  notes: string;
+}
+
 
 
