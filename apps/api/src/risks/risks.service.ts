@@ -79,7 +79,11 @@ export class RisksService {
         skip,
         take: limit,
         orderBy: { score: 'desc' },
-        include: { asset: { select: { name: true } } },
+        include: {
+          asset: { select: { name: true } },
+          framework: { select: { code: true, name: true } },
+          frameworkReference: { select: { identifier: true, title: true } },
+        },
       }),
       this.prisma.risk.count({ where }),
     ]);
@@ -145,7 +149,11 @@ export class RisksService {
     const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const risk = await this.prisma.risk.findFirst({
       where: { id, ...scopeWhere, deletedAt: null },
-      include: { asset: { select: { name: true } } },
+      include: {
+        asset: { select: { name: true } },
+        framework: { select: { code: true, name: true } },
+        frameworkReference: { select: { identifier: true, title: true } },
+      },
     });
 
     if (!risk) {
@@ -197,10 +205,16 @@ export class RisksService {
         status: dto.status || RiskStatus.OPEN,
         owner: dto.owner,
         assetId: dto.assetId || null,
+        frameworkId: dto.frameworkId || null,
+        frameworkReferenceId: dto.frameworkReferenceId || null,
         treatmentPlan: dto.treatmentPlan || null,
         createdById: authCtx.userId,
       },
-      include: { asset: { select: { name: true } } },
+      include: {
+        asset: { select: { name: true } },
+        framework: { select: { code: true, name: true } },
+        frameworkReference: { select: { identifier: true, title: true } },
+      },
     });
 
     await this.auditLogsService.log({
@@ -215,6 +229,8 @@ export class RisksService {
         status: risk.status,
         departmentId: risk.departmentId,
         projectId: risk.projectId,
+        frameworkId: risk.frameworkId,
+        frameworkReferenceId: risk.frameworkReferenceId,
       },
     });
 
@@ -252,6 +268,8 @@ export class RisksService {
     if (dto.assetId !== undefined && dto.assetId !== existing.assetId) changedFields.push('assetId');
     if (dto.departmentId !== undefined && dto.departmentId !== existing.departmentId) changedFields.push('departmentId');
     if (dto.projectId !== undefined && dto.projectId !== existing.projectId) changedFields.push('projectId');
+    if (dto.frameworkId !== undefined && dto.frameworkId !== existing.frameworkId) changedFields.push('frameworkId');
+    if (dto.frameworkReferenceId !== undefined && dto.frameworkReferenceId !== existing.frameworkReferenceId) changedFields.push('frameworkReferenceId');
     if (dto.treatmentPlan !== undefined && dto.treatmentPlan !== existing.treatmentPlan) changedFields.push('treatmentPlan');
 
     const updated = await this.prisma.risk.update({
@@ -267,9 +285,15 @@ export class RisksService {
         ...(dto.assetId !== undefined && { assetId: dto.assetId || null }),
         ...(dto.departmentId !== undefined && { departmentId: dto.departmentId || null }),
         ...(dto.projectId !== undefined && { projectId: dto.projectId || null }),
+        ...(dto.frameworkId !== undefined && { frameworkId: dto.frameworkId || null }),
+        ...(dto.frameworkReferenceId !== undefined && { frameworkReferenceId: dto.frameworkReferenceId || null }),
         ...(dto.treatmentPlan !== undefined && { treatmentPlan: dto.treatmentPlan }),
       },
-      include: { asset: { select: { name: true } } },
+      include: {
+        asset: { select: { name: true } },
+        framework: { select: { code: true, name: true } },
+        frameworkReference: { select: { identifier: true, title: true } },
+      },
     });
 
     if (changedFields.length > 0) {
@@ -337,6 +361,11 @@ export class RisksService {
       owner: risk.owner,
       assetId: risk.assetId,
       assetName: risk.asset?.name || null,
+      frameworkId: risk.frameworkId || null,
+      frameworkCode: risk.framework?.code || null,
+      frameworkReferenceId: risk.frameworkReferenceId || null,
+      referenceIdentifier: risk.frameworkReference?.identifier || null,
+      referenceTitle: risk.frameworkReference?.title || null,
       treatmentPlan: risk.treatmentPlan,
       createdAt: risk.createdAt.toISOString(),
       updatedAt: risk.updatedAt.toISOString(),

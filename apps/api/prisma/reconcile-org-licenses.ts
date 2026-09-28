@@ -56,8 +56,8 @@ export async function reconcileOrgs() {
   // 1. Ensure Org A and Deployment exist
   await prisma.organization.upsert({
     where: { id: ORG_A_ID },
-    update: { name: 'Org A (Alpha Enterprises)' },
-    create: { id: ORG_A_ID, name: 'Org A (Alpha Enterprises)', primaryRegion: 'India' },
+    update: { name: 'ARAV INNOVATIONS' },
+    create: { id: ORG_A_ID, name: 'ARAV INNOVATIONS', primaryRegion: 'India' },
   });
 
   await prisma.deployment.upsert({
@@ -79,8 +79,8 @@ export async function reconcileOrgs() {
   // 3. Ensure Org B and Deployment exist
   await prisma.organization.upsert({
     where: { id: ORG_B_ID },
-    update: { name: 'Org B (Beta Solutions)' },
-    create: { id: ORG_B_ID, name: 'Org B (Beta Solutions)', primaryRegion: 'India' },
+    update: { name: 'Arav Innovations' },
+    create: { id: ORG_B_ID, name: 'Arav Innovations', primaryRegion: 'India' },
   });
 
   await prisma.deployment.upsert({

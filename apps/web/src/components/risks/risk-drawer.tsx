@@ -43,9 +43,13 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess }: RiskDrawerProps
   const [status, setStatus] = useState<RiskStatus>(RiskStatus.OPEN);
   const [owner, setOwner] = useState('');
   const [assetId, setAssetId] = useState<string>('');
+  const [frameworkId, setFrameworkId] = useState<string>('');
+  const [frameworkReferenceId, setFrameworkReferenceId] = useState<string>('');
   const [treatmentPlan, setTreatmentPlan] = useState('');
 
   const [availableAssets, setAvailableAssets] = useState<AssetDto[]>([]);
+  const [availableFrameworks, setAvailableFrameworks] = useState<{ id: string; code: string; name: string }[]>([]);
+  const [availableReferences, setAvailableReferences] = useState<{ id: string; identifier: string; title: string }[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntryDto[]>([]);
   const [loadingAudit, setLoadingAudit] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -56,14 +60,37 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess }: RiskDrawerProps
   const [titleTouched, setTitleTouched] = useState(false);
   const [ownerTouched, setOwnerTouched] = useState(false);
 
-  // Fetch available assets for dropdown selection
+  // Fetch available assets and entitled frameworks for dropdown selection
   useEffect(() => {
     if (isOpen) {
       apiRequest<PaginatedAssetsDto>('/assets?limit=100')
         .then((res) => setAvailableAssets(res.items))
         .catch(() => setAvailableAssets([]));
+
+      apiRequest<{ id: string; code: string; name: string }[]>('/frameworks')
+        .then((res) => setAvailableFrameworks(res))
+        .catch(() => setAvailableFrameworks([]));
     }
   }, [isOpen]);
+
+  // Fetch references when frameworkId changes
+  useEffect(() => {
+    if (frameworkId) {
+      apiRequest<{ id: string }[]>(`/frameworks/${frameworkId}/versions`)
+        .then(async (versions) => {
+          if (versions && versions.length > 0) {
+            const refs = await apiRequest<{ id: string; identifier: string; title: string }[]>(`/frameworks/versions/${versions[0].id}/references`);
+            setAvailableReferences(refs);
+          } else {
+            setAvailableReferences([]);
+          }
+        })
+        .catch(() => setAvailableReferences([]));
+    } else {
+      setAvailableReferences([]);
+      setFrameworkReferenceId('');
+    }
+  }, [frameworkId]);
 
   useEffect(() => {
     if (risk) {
@@ -74,6 +101,8 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess }: RiskDrawerProps
       setStatus(risk.status || RiskStatus.OPEN);
       setOwner(risk.owner || '');
       setAssetId(risk.assetId || '');
+      setFrameworkId(risk.frameworkId || '');
+      setFrameworkReferenceId(risk.frameworkReferenceId || '');
       setTreatmentPlan(risk.treatmentPlan || '');
 
       setLoadingAudit(true);
@@ -89,6 +118,8 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess }: RiskDrawerProps
       setStatus(RiskStatus.OPEN);
       setOwner('');
       setAssetId('');
+      setFrameworkId('');
+      setFrameworkReferenceId('');
       setTreatmentPlan('');
       setAuditLogs([]);
     }
@@ -130,6 +161,8 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess }: RiskDrawerProps
           status,
           owner: owner.trim(),
           assetId: assetId || null,
+          frameworkId: frameworkId || null,
+          frameworkReferenceId: frameworkReferenceId || null,
           treatmentPlan: treatmentPlan.trim() || undefined,
         };
         await apiRequest(`/risks/${risk.id}`, {
@@ -146,6 +179,8 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess }: RiskDrawerProps
           status,
           owner: owner.trim(),
           assetId: assetId || undefined,
+          frameworkId: frameworkId || undefined,
+          frameworkReferenceId: frameworkReferenceId || undefined,
           treatmentPlan: treatmentPlan.trim() || undefined,
         };
         await apiRequest('/risks', {
@@ -345,6 +380,45 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess }: RiskDrawerProps
                 </option>
               ))}
             </select>
+
+            <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
+                  Target Framework
+                </label>
+                <select
+                  className="omni-input"
+                  value={frameworkId}
+                  onChange={(e) => setFrameworkId(e.target.value)}
+                >
+                  <option value="">-- Select Framework --</option>
+                  {availableFrameworks.map((fw) => (
+                    <option key={fw.id} value={fw.id}>
+                      {fw.code} ({fw.name})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
+                  Framework Reference / Clause
+                </label>
+                <select
+                  className="omni-input"
+                  value={frameworkReferenceId}
+                  onChange={(e) => setFrameworkReferenceId(e.target.value)}
+                  disabled={!frameworkId || availableReferences.length === 0}
+                >
+                  <option value="">-- Select Reference / Clause --</option>
+                  {availableReferences.map((ref) => (
+                    <option key={ref.id} value={ref.id}>
+                      {ref.identifier} — {ref.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
             <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
               Description

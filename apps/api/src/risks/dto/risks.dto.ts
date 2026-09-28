@@ -45,6 +45,14 @@ export class CreateRiskDto {
 
   @IsString()
   @IsOptional()
+  frameworkId?: string;
+
+  @IsString()
+  @IsOptional()
+  frameworkReferenceId?: string;
+
+  @IsString()
+  @IsOptional()
   treatmentPlan?: string;
 }
 
@@ -90,6 +98,14 @@ export class UpdateRiskDto {
   @IsString()
   @IsOptional()
   projectId?: string;
+
+  @IsString()
+  @IsOptional()
+  frameworkId?: string;
+
+  @IsString()
+  @IsOptional()
+  frameworkReferenceId?: string;
 
   @IsString()
   @IsOptional()

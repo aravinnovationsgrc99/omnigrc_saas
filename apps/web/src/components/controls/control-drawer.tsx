@@ -21,7 +21,11 @@ export function ControlDrawer({ control, isOpen, onClose, onSuccess }: ControlDr
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('');
+  const [frameworkId, setFrameworkId] = useState<string>('');
+  const [frameworkClauseId, setFrameworkClauseId] = useState<string>('');
 
+  const [availableFrameworks, setAvailableFrameworks] = useState<{ id: string; code: string; name: string }[]>([]);
+  const [availableClauses, setAvailableClauses] = useState<{ id: string; frameworkId: string; code: string; title: string }[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntryDto[]>([]);
   const [loadingAudit, setLoadingAudit] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -33,10 +37,24 @@ export function ControlDrawer({ control, isOpen, onClose, onSuccess }: ControlDr
   const [descTouched, setDescTouched] = useState(false);
 
   useEffect(() => {
+    if (isOpen) {
+      apiRequest<{ id: string; code: string; name: string }[]>('/frameworks')
+        .then((res) => setAvailableFrameworks(res))
+        .catch(() => setAvailableFrameworks([]));
+
+      apiRequest<{ id: string; frameworkId: string; code: string; title: string }[]>('/controls/framework-clauses')
+        .then((res) => setAvailableClauses(res))
+        .catch(() => setAvailableClauses([]));
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
     if (control) {
       setName(control.name || '');
       setDescription(control.description || '');
       setCategory(control.category || '');
+      const firstMapping = control.mappings && control.mappings[0];
+      setFrameworkClauseId(firstMapping?.frameworkClauseId || '');
 
       setLoadingAudit(true);
       apiRequest<AuditLogEntryDto[]>(`/controls/${control.id}/audit-log`)
@@ -47,6 +65,8 @@ export function ControlDrawer({ control, isOpen, onClose, onSuccess }: ControlDr
       setName('');
       setDescription('');
       setCategory('');
+      setFrameworkId('');
+      setFrameworkClauseId('');
       setAuditLogs([]);
     }
     setErrorMsg(null);
@@ -192,6 +212,49 @@ export function ControlDrawer({ control, isOpen, onClose, onSuccess }: ControlDr
               onChange={(e) => setCategory(e.target.value)}
               style={{ marginBottom: 16 }}
             />
+
+            <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
+                  Target Framework
+                </label>
+                <select
+                  className="omni-input"
+                  value={frameworkId}
+                  onChange={(e) => {
+                    setFrameworkId(e.target.value);
+                    setFrameworkClauseId('');
+                  }}
+                >
+                  <option value="">-- All Entitled Frameworks --</option>
+                  {availableFrameworks.map((fw) => (
+                    <option key={fw.id} value={fw.id}>
+                      {fw.code} ({fw.name})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
+                  Initial Framework Clause / Reference
+                </label>
+                <select
+                  className="omni-input"
+                  value={frameworkClauseId}
+                  onChange={(e) => setFrameworkClauseId(e.target.value)}
+                >
+                  <option value="">-- Select Specific Clause / Reference --</option>
+                  {availableClauses
+                    .filter((c) => !frameworkId || c.frameworkId === frameworkId)
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.code} — {c.title}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            </div>
 
             <div style={{ marginBottom: 20 }}>
               <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>

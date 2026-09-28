@@ -318,6 +318,11 @@ export interface RiskDto {
   owner: string;
   assetId?: string | null;
   assetName?: string | null;
+  frameworkId?: string | null;
+  frameworkCode?: string | null;
+  frameworkReferenceId?: string | null;
+  referenceIdentifier?: string | null;
+  referenceTitle?: string | null;
   treatmentPlan?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -335,6 +340,8 @@ export interface CreateRiskDto {
   assetId?: string;
   departmentId?: string;
   projectId?: string;
+  frameworkId?: string;
+  frameworkReferenceId?: string;
   treatmentPlan?: string;
 }
 
@@ -348,6 +355,8 @@ export interface UpdateRiskDto {
   assetId?: string | null;
   departmentId?: string;
   projectId?: string;
+  frameworkId?: string | null;
+  frameworkReferenceId?: string | null;
   treatmentPlan?: string;
 }
 
@@ -571,6 +580,9 @@ export interface CreateControlDto {
   category?: string;
   departmentId?: string;
   projectId?: string;
+  frameworkId?: string;
+  frameworkReferenceId?: string;
+  frameworkClauseId?: string;
 }
 
 export interface UpdateControlDto {
@@ -579,6 +591,9 @@ export interface UpdateControlDto {
   category?: string;
   departmentId?: string;
   projectId?: string;
+  frameworkId?: string;
+  frameworkReferenceId?: string;
+  frameworkClauseId?: string;
 }
 
 export interface ControlQueryDto {

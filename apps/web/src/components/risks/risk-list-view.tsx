@@ -261,6 +261,7 @@ export function RiskListView() {
                 <th style={{ padding: '12px 16px', fontWeight: 600 }}>Score</th>
                 <th style={{ padding: '12px 16px', fontWeight: 600 }}>Status</th>
                 <th style={{ padding: '12px 16px', fontWeight: 600 }}>Owner</th>
+                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Framework / Reference</th>
                 <th style={{ padding: '12px 16px', fontWeight: 600 }}>Linked Asset</th>
                 <th style={{ padding: '12px 16px', fontWeight: 600 }}>Updated</th>
               </tr>
@@ -301,6 +302,15 @@ export function RiskListView() {
                       </span>
                     </td>
                     <td style={{ padding: '14px 16px', color: '#1B2430' }}>{risk.owner}</td>
+                    <td style={{ padding: '14px 16px', color: '#0F6E6A', fontWeight: 600 }}>
+                      {risk.frameworkCode ? (
+                        <span style={{ background: '#E4F1F0', padding: '2px 8px', borderRadius: 4, fontSize: 11.5 }}>
+                          {risk.frameworkCode} {risk.referenceIdentifier ? `(${risk.referenceIdentifier})` : ''}
+                        </span>
+                      ) : (
+                        <span style={{ color: '#8B95A1' }}>—</span>
+                      )}
+                    </td>
                     <td style={{ padding: '14px 16px', color: '#5B6672' }}>{risk.assetName || '—'}</td>
                     <td style={{ padding: '14px 16px', color: '#8B95A1', fontSize: 12 }}>
                       {new Date(risk.updatedAt).toLocaleDateString()}
