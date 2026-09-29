@@ -13,6 +13,8 @@ import {
   ShieldCheck,
   ShieldAlert,
   MessageSquare,
+  UserCheck,
+  Users,
   Settings,
   X,
 } from 'lucide-react';
@@ -41,6 +43,12 @@ const NAV_ITEMS: NavItem[] = [
     name: 'Organizations',
     href: '/organizations',
     icon: Building2,
+  },
+  {
+    name: 'Operators',
+    href: '/operators',
+    icon: Users,
+    roles: ['PLATFORM_SUPER_ADMIN', 'SECURITY_AUDIT', 'READ_ONLY_AUDITOR'],
   },
   {
     name: 'Licensing',

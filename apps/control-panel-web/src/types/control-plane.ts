@@ -19,6 +19,18 @@ export interface OperatorProfile {
   updatedAt?: string;
 }
 
+export interface CreateOperatorPayload {
+  email: string;
+  fullName: string;
+  password?: string; // Optional if auto-generated or initial password
+  role: OperatorRoleType;
+}
+
+export interface UpdateOperatorRolePayload {
+  role: OperatorRoleType;
+}
+
+
 export interface ApiErrorResponse {
   statusCode: number;
   message: string;

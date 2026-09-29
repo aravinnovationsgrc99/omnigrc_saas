@@ -21,6 +21,8 @@ import {
   ApproveBreakGlassPayload,
   ExecuteBreakGlassPayload,
   ReviewBreakGlassPayload,
+  CreateOperatorPayload,
+  UpdateOperatorRolePayload,
 } from '../types/control-plane';
 
 export class ControlPlaneApiError extends Error {
@@ -197,6 +199,41 @@ export const controlPlaneApi = {
 
   getMe: async (): Promise<OperatorProfile> => {
     return request<OperatorProfile>('v1/operator-auth/me', { method: 'GET' });
+  },
+
+  // Operator Administration Operations
+  listOperators: async (): Promise<OperatorProfile[]> => {
+    return request<OperatorProfile[]>('v1/operators', { method: 'GET' });
+  },
+
+  getOperator: async (id: string): Promise<OperatorProfile> => {
+    return request<OperatorProfile>(`v1/operators/${encodeURIComponent(id)}`, { method: 'GET' });
+  },
+
+  createOperator: async (payload: CreateOperatorPayload): Promise<OperatorProfile> => {
+    return request<OperatorProfile>('v1/operators', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  updateOperatorRole: async (id: string, payload: UpdateOperatorRolePayload): Promise<OperatorProfile> => {
+    return request<OperatorProfile>(`v1/operators/${encodeURIComponent(id)}/role`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  suspendOperator: async (id: string): Promise<OperatorProfile> => {
+    return request<OperatorProfile>(`v1/operators/${encodeURIComponent(id)}/suspend`, { method: 'POST' });
+  },
+
+  reactivateOperator: async (id: string): Promise<OperatorProfile> => {
+    return request<OperatorProfile>(`v1/operators/${encodeURIComponent(id)}/reactivate`, { method: 'POST' });
+  },
+
+  revokeOperatorSessions: async (id: string): Promise<{ success: boolean; revokedSessionsCount: number }> => {
+    return request<{ success: boolean; revokedSessionsCount: number }>(`v1/operators/${encodeURIComponent(id)}/revoke-sessions`, { method: 'POST' });
   },
 
   // Organization Control Operations
