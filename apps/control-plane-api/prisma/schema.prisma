@@ -304,6 +304,8 @@ model ControlPlaneAuditLog {
 
   @@index([actorId])
   @@index([action])
+  @@index([createdAt])
+  @@index([entityType])
   @@map("control_plane_audit_logs")
 }
 

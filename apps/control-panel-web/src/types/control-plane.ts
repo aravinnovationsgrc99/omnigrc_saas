@@ -335,3 +335,44 @@ export interface ServiceStateMutationResponse {
     dataPlaneResponse?: any;
   };
 }
+
+export interface ControlPlaneAuditLogEntry {
+  id: string;
+  actorId?: string | null;
+  actorRole?: string | null;
+  action: string;
+  entityType: string;
+  entityId: string;
+  ipAddress?: string | null;
+  correlationId?: string | null;
+  result?: string | null;
+  metadata?: any | null;
+  createdAt: string;
+}
+
+export interface QueryAuditLogsParams {
+  actorId?: string;
+  actorRole?: string;
+  action?: string;
+  entityType?: string;
+  entityId?: string;
+  organizationId?: string;
+  result?: string;
+  search?: string;
+  startDate?: string;
+  endDate?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface AuditLogsResponse {
+  data: ControlPlaneAuditLogEntry[];
+  meta: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    hasNextPage: boolean;
+    hasPreviousPage: boolean;
+  };
+}

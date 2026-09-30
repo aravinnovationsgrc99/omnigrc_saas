@@ -27,6 +27,9 @@ import {
   UpdateGlobalServiceStatePayload,
   UpdateOrganizationServiceOverridePayload,
   ServiceStateMutationResponse,
+  ControlPlaneAuditLogEntry,
+  QueryAuditLogsParams,
+  AuditLogsResponse,
 } from '../types/control-plane';
 
 export class ControlPlaneApiError extends Error {
@@ -472,6 +475,30 @@ export const controlPlaneApi = {
     return request<ServiceStateMutationResponse>(`v1/organizations/${encodeURIComponent(organizationId)}/services/${encodeURIComponent(code)}/override`, {
       method: 'DELETE',
     });
+  },
+
+  // Audit Log Explorer Endpoints
+  listAuditLogs: async (query?: QueryAuditLogsParams): Promise<AuditLogsResponse> => {
+    const params = new URLSearchParams();
+    if (query?.actorId) params.append('actorId', query.actorId);
+    if (query?.actorRole) params.append('actorRole', query.actorRole);
+    if (query?.action) params.append('action', query.action);
+    if (query?.entityType) params.append('entityType', query.entityType);
+    if (query?.entityId) params.append('entityId', query.entityId);
+    if (query?.organizationId) params.append('organizationId', query.organizationId);
+    if (query?.result) params.append('result', query.result);
+    if (query?.search) params.append('search', query.search);
+    if (query?.startDate) params.append('startDate', query.startDate);
+    if (query?.endDate) params.append('endDate', query.endDate);
+    if (query?.page) params.append('page', String(query.page));
+    if (query?.limit) params.append('limit', String(query.limit));
+
+    const queryString = params.toString() ? `?${params.toString()}` : '';
+    return request<AuditLogsResponse>(`v1/audit${queryString}`, { method: 'GET' });
+  },
+
+  getAuditLog: async (id: string): Promise<ControlPlaneAuditLogEntry> => {
+    return request<ControlPlaneAuditLogEntry>(`v1/audit/${encodeURIComponent(id)}`, { method: 'GET' });
   },
 
   // Generic typed API request method
