@@ -280,3 +280,58 @@ export interface ReviewBreakGlassPayload {
   postEventReviewStatus: 'REVIEWED_APPROVED' | 'REVIEWED_FLAGGED';
   notes: string;
 }
+
+export type ServiceStateEnum = 'AVAILABLE' | 'DISABLED' | 'MAINTENANCE' | 'COMMERCIAL_DISABLED';
+
+export interface ServiceCatalogItem {
+  id: string;
+  code: string;
+  name: string;
+  category: string;
+  hasBackgroundProcessing: boolean;
+  isCatalogActive: boolean;
+  isCommerciallyControllable: boolean;
+  isOrgOverridePermitted: boolean;
+  createdAt: string;
+  updatedAt: string;
+  globalState?: {
+    id: string;
+    serviceId: string;
+    state: ServiceStateEnum;
+    reason: string;
+    sequence: string;
+    updatedByOperatorId?: string | null;
+    createdAt: string;
+    updatedAt: string;
+  } | null;
+}
+
+export interface UpdateGlobalServiceStatePayload {
+  state: ServiceStateEnum;
+  reason: string;
+  idempotencyKey?: string;
+}
+
+export interface UpdateOrganizationServiceOverridePayload {
+  overrideState: ServiceStateEnum;
+  reason: string;
+  idempotencyKey?: string;
+}
+
+export interface ServiceStateMutationResponse {
+  idempotent?: boolean;
+  cleared?: boolean;
+  capabilityCode: string;
+  state?: ServiceStateEnum;
+  overrideState?: ServiceStateEnum;
+  previousState?: ServiceStateEnum | null;
+  sequence?: string;
+  reason?: string;
+  updatedAt?: string;
+  propagation?: {
+    status: string;
+    statusCode?: number;
+    error?: string;
+    dataPlaneResponse?: any;
+  };
+}

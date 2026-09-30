@@ -23,6 +23,10 @@ import {
   ReviewBreakGlassPayload,
   CreateOperatorPayload,
   UpdateOperatorRolePayload,
+  ServiceCatalogItem,
+  UpdateGlobalServiceStatePayload,
+  UpdateOrganizationServiceOverridePayload,
+  ServiceStateMutationResponse,
 } from '../types/control-plane';
 
 export class ControlPlaneApiError extends Error {
@@ -438,6 +442,35 @@ export const controlPlaneApi = {
     return request<BreakGlassSessionDto>(`v1/operations/break-glass/${encodeURIComponent(id)}/review`, {
       method: 'POST',
       body: JSON.stringify(payload),
+    });
+  },
+
+  // Service Capability Control Endpoints
+  listServices: async (): Promise<ServiceCatalogItem[]> => {
+    return request<ServiceCatalogItem[]>('v1/services', { method: 'GET' });
+  },
+
+  getServiceByCode: async (code: string): Promise<ServiceCatalogItem> => {
+    return request<ServiceCatalogItem>(`v1/services/${encodeURIComponent(code)}`, { method: 'GET' });
+  },
+
+  updateGlobalServiceState: async (code: string, payload: UpdateGlobalServiceStatePayload): Promise<ServiceStateMutationResponse> => {
+    return request<ServiceStateMutationResponse>(`v1/services/${encodeURIComponent(code)}/global-state`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  setOrganizationServiceOverride: async (organizationId: string, code: string, payload: UpdateOrganizationServiceOverridePayload): Promise<ServiceStateMutationResponse> => {
+    return request<ServiceStateMutationResponse>(`v1/organizations/${encodeURIComponent(organizationId)}/services/${encodeURIComponent(code)}/override`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  clearOrganizationServiceOverride: async (organizationId: string, code: string): Promise<ServiceStateMutationResponse> => {
+    return request<ServiceStateMutationResponse>(`v1/organizations/${encodeURIComponent(organizationId)}/services/${encodeURIComponent(code)}/override`, {
+      method: 'DELETE',
     });
   },
 

@@ -35,6 +35,8 @@ export function StatusBadge({ status, label, size = 'md' }: StatusBadgeProps) {
       IconComponent = XCircle;
       break;
     case 'REVOKED':
+    case 'COMMERCIAL_DISABLED':
+    case 'COMMERCIAL DISABLED':
       badgeStyle = 'bg-rose-950/80 text-rose-300 border-rose-800/60';
       IconComponent = XCircle;
       break;
