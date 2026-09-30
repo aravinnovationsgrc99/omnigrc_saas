@@ -10,6 +10,7 @@ import { EntitlementsModule } from './entitlements/entitlements.module';
 import { OrganizationControlModule } from './organization-control/organization-control.module';
 import { ServiceControlModule } from './service-control/service-control.module';
 import { BreakGlassModule } from './break-glass/break-glass.module';
+import { CommunicationsModule } from './communications/communications.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { BreakGlassModule } from './break-glass/break-glass.module';
     OrganizationControlModule,
     ServiceControlModule,
     BreakGlassModule,
+    CommunicationsModule,
   ],
 })
 export class AppModule {}

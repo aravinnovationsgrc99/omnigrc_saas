@@ -376,3 +376,80 @@ export interface AuditLogsResponse {
     hasPreviousPage: boolean;
   };
 }
+
+export type AnnouncementSeverity = 'INFO' | 'NOTICE' | 'WARNING' | 'CRITICAL';
+export type AnnouncementStatus = 'DRAFT' | 'SCHEDULED' | 'PUBLISHED' | 'CANCELLED' | 'EXPIRED';
+export type AnnouncementAudience = 'ALL_OPERATORS' | 'ALL_ORGANIZATIONS' | 'SPECIFIC_ORGANIZATION';
+export type EmailDeliveryStatus = 'NOT_REQUESTED' | 'QUEUED' | 'SENT' | 'FAILED';
+
+export interface PlatformAnnouncement {
+  id: string;
+  title: string;
+  body: string;
+  severity: AnnouncementSeverity;
+  status: AnnouncementStatus;
+  audience: AnnouncementAudience;
+  targetOrganizationId?: string | null;
+  createdByOperatorId: string;
+  scheduledAt?: string | null;
+  publishedAt?: string | null;
+  cancelledAt?: string | null;
+  expiresAt?: string | null;
+  sendEmail: boolean;
+  emailDeliveryStatus: EmailDeliveryStatus;
+  emailSentAt?: string | null;
+  emailRecipientCount: number;
+  emailErrorDetails?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  creator?: {
+    id: string;
+    fullName: string;
+    email: string;
+    role: string;
+  } | null;
+}
+
+export interface QueryAnnouncementsParams {
+  status?: AnnouncementStatus;
+  severity?: AnnouncementSeverity;
+  audience?: AnnouncementAudience;
+  organizationId?: string;
+  search?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface AnnouncementsResponse {
+  data: PlatformAnnouncement[];
+  meta: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    hasNextPage: boolean;
+    hasPreviousPage: boolean;
+  };
+}
+
+export interface CreateAnnouncementDto {
+  title: string;
+  body: string;
+  severity?: AnnouncementSeverity;
+  audience?: AnnouncementAudience;
+  targetOrganizationId?: string;
+  scheduledAt?: string;
+  expiresAt?: string;
+  sendEmail?: boolean;
+}
+
+export interface UpdateAnnouncementDto {
+  title?: string;
+  body?: string;
+  severity?: AnnouncementSeverity;
+  audience?: AnnouncementAudience;
+  targetOrganizationId?: string;
+  scheduledAt?: string;
+  expiresAt?: string;
+  sendEmail?: boolean;
+}

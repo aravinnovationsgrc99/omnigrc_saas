@@ -30,6 +30,11 @@ import {
   ControlPlaneAuditLogEntry,
   QueryAuditLogsParams,
   AuditLogsResponse,
+  PlatformAnnouncement,
+  QueryAnnouncementsParams,
+  AnnouncementsResponse,
+  CreateAnnouncementDto,
+  UpdateAnnouncementDto,
 } from '../types/control-plane';
 
 export class ControlPlaneApiError extends Error {
@@ -499,6 +504,51 @@ export const controlPlaneApi = {
 
   getAuditLog: async (id: string): Promise<ControlPlaneAuditLogEntry> => {
     return request<ControlPlaneAuditLogEntry>(`v1/audit/${encodeURIComponent(id)}`, { method: 'GET' });
+  },
+
+  // Platform Communications Endpoints
+  listAnnouncements: async (query?: QueryAnnouncementsParams): Promise<AnnouncementsResponse> => {
+    const params = new URLSearchParams();
+    if (query?.status) params.append('status', query.status);
+    if (query?.severity) params.append('severity', query.severity);
+    if (query?.audience) params.append('audience', query.audience);
+    if (query?.organizationId) params.append('organizationId', query.organizationId);
+    if (query?.search) params.append('search', query.search);
+    if (query?.page) params.append('page', String(query.page));
+    if (query?.limit) params.append('limit', String(query.limit));
+
+    const queryString = params.toString() ? `?${params.toString()}` : '';
+    return request<AnnouncementsResponse>(`v1/communications${queryString}`, { method: 'GET' });
+  },
+
+  getAnnouncement: async (id: string): Promise<PlatformAnnouncement> => {
+    return request<PlatformAnnouncement>(`v1/communications/${encodeURIComponent(id)}`, { method: 'GET' });
+  },
+
+  createAnnouncement: async (dto: CreateAnnouncementDto): Promise<PlatformAnnouncement> => {
+    return request<PlatformAnnouncement>('v1/communications', {
+      method: 'POST',
+      body: JSON.stringify(dto),
+    });
+  },
+
+  updateAnnouncement: async (id: string, dto: UpdateAnnouncementDto): Promise<PlatformAnnouncement> => {
+    return request<PlatformAnnouncement>(`v1/communications/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(dto),
+    });
+  },
+
+  publishAnnouncement: async (id: string): Promise<PlatformAnnouncement> => {
+    return request<PlatformAnnouncement>(`v1/communications/${encodeURIComponent(id)}/publish`, {
+      method: 'POST',
+    });
+  },
+
+  cancelAnnouncement: async (id: string): Promise<PlatformAnnouncement> => {
+    return request<PlatformAnnouncement>(`v1/communications/${encodeURIComponent(id)}/cancel`, {
+      method: 'POST',
+    });
   },
 
   // Generic typed API request method

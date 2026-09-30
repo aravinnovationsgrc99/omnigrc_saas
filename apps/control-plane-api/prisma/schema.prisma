@@ -211,6 +211,7 @@ model Operator {
 
   breakGlassRequests BreakGlassSession[] @relation("BreakGlassRequester")
   breakGlassApprovals BreakGlassSession[] @relation("BreakGlassApprover")
+  announcements PlatformAnnouncement[] @relation("AnnouncementCreator")
 
   @@map("operators")
 }
@@ -386,4 +387,66 @@ model ServiceStateTransitionLog {
   @@index([organizationId])
   @@index([sequence])
   @@map("control_plane_service_state_transition_logs")
+}
+
+enum AnnouncementSeverity {
+  INFO
+  NOTICE
+  WARNING
+  CRITICAL
+}
+
+enum AnnouncementStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+  CANCELLED
+  EXPIRED
+}
+
+enum AnnouncementAudience {
+  ALL_OPERATORS
+  ALL_ORGANIZATIONS
+  SPECIFIC_ORGANIZATION
+}
+
+enum EmailDeliveryStatus {
+  NOT_REQUESTED
+  QUEUED
+  SENT
+  FAILED
+}
+
+model PlatformAnnouncement {
+  id                    String                @id @default(uuid())
+  title                 String
+  body                  String
+  severity              AnnouncementSeverity  @default(INFO)
+  status                AnnouncementStatus    @default(DRAFT)
+  audience              AnnouncementAudience  @default(ALL_ORGANIZATIONS)
+  targetOrganizationId  String?
+  createdByOperatorId   String
+  scheduledAt           DateTime?
+  publishedAt           DateTime?
+  cancelledAt           DateTime?
+  expiresAt             DateTime?
+
+  sendEmail             Boolean               @default(false)
+  emailDeliveryStatus   EmailDeliveryStatus   @default(NOT_REQUESTED)
+  emailSentAt           DateTime?
+  emailRecipientCount   Int                   @default(0)
+  emailErrorDetails     String?
+
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  creator               Operator              @relation("AnnouncementCreator", fields: [createdByOperatorId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([severity])
+  @@index([audience])
+  @@index([targetOrganizationId])
+  @@index([createdByOperatorId])
+  @@index([createdAt])
+  @@map("platform_announcements")
 }
