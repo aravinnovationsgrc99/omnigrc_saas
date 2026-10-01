@@ -77,7 +77,7 @@ export function ControlMappingView() {
   useEffect(() => {
     async function fetchFrameworks() {
       try {
-        const data = await apiRequest<FrameworkApiDto[]>('/controls/frameworks');
+        const data = await apiRequest<FrameworkApiDto[]>('/frameworks');
         setFrameworks(data);
       } catch {
         // Fallback default framework set if API is building or offline

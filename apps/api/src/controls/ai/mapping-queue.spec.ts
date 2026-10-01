@@ -40,6 +40,7 @@ describe('MappingQueueService Bounded Memory Cleanup', () => {
           useValue: {
             control: { findFirst: jest.fn().mockResolvedValue(null) },
             frameworkClause: { findMany: jest.fn().mockResolvedValue([]) },
+            frameworkReference: { findMany: jest.fn().mockResolvedValue([]) },
             controlFrameworkMapping: { upsert: jest.fn().mockResolvedValue({}) },
             organizationControlStateProjection: { findUnique: jest.fn().mockResolvedValue(null) },
           },

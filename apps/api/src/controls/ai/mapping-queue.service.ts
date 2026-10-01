@@ -166,7 +166,12 @@ export class MappingQueueService implements OnModuleInit, OnModuleDestroy {
     this.logger.log('MappingQueueService: BullMQ Worker and Queue closed cleanly.');
   }
 
-  async enqueueMappingJob(organizationId: string, userId: string, controlId: string): Promise<string> {
+  async enqueueMappingJob(
+    organizationId: string,
+    userId: string,
+    controlId: string,
+    dto?: { frameworkId?: string; frameworkVersionId?: string; frameworkReferenceId?: string },
+  ): Promise<string> {
     const isProduction = process.env.NODE_ENV === 'production';
     const jobId = `job_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
@@ -180,7 +185,15 @@ export class MappingQueueService implements OnModuleInit, OnModuleDestroy {
       createdAt: new Date(),
     };
 
-    const jobPayload = { jobId, organizationId, userId, controlId };
+    const jobPayload = {
+      jobId,
+      organizationId,
+      userId,
+      controlId,
+      frameworkId: dto?.frameworkId,
+      frameworkVersionId: dto?.frameworkVersionId,
+      frameworkReferenceId: dto?.frameworkReferenceId,
+    };
 
     if (!this.isRedisConnected || !this.bullQueue) {
       if (isProduction) {
@@ -222,7 +235,15 @@ export class MappingQueueService implements OnModuleInit, OnModuleDestroy {
     return this.jobStore.get(jobId);
   }
 
-  private executeInMemoryJob(data: { jobId: string; organizationId: string; userId: string; controlId: string }) {
+  private executeInMemoryJob(data: {
+    jobId: string;
+    organizationId: string;
+    userId: string;
+    controlId: string;
+    frameworkId?: string;
+    frameworkVersionId?: string;
+    frameworkReferenceId?: string;
+  }) {
     setImmediate(async () => {
       await this.processJob(data);
     });
@@ -250,8 +271,16 @@ export class MappingQueueService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async processJob(data: { jobId: string; organizationId: string; userId: string; controlId: string }) {
-    const { jobId, organizationId, userId, controlId } = data;
+  private async processJob(data: {
+    jobId: string;
+    organizationId: string;
+    userId: string;
+    controlId: string;
+    frameworkId?: string;
+    frameworkVersionId?: string;
+    frameworkReferenceId?: string;
+  }) {
+    const { jobId, organizationId, userId, controlId, frameworkId, frameworkVersionId, frameworkReferenceId } = data;
     const state = this.jobStore.get(jobId);
 
     const capabilityResult = await this.effectiveServiceStateResolver.resolveEffectiveState(
@@ -302,23 +331,45 @@ export class MappingQueueService implements OnModuleInit, OnModuleDestroy {
 
       if (state) state.progress = 40;
 
-      // 2. Fetch Candidate Framework Clauses (Filtered to entitled frameworks)
+      // 2. Fetch Candidate Framework References (Filtered to entitled frameworks & optional version/framework context)
       const entitledFrameworkIds = await this.frameworkEntitlementsService.getEntitledFrameworkIds(organizationId);
 
-      const clauses = await this.prisma.frameworkClause.findMany({
-        where: entitledFrameworkIds.length > 0 ? { frameworkId: { in: entitledFrameworkIds } } : {},
-        include: { framework: { select: { code: true } } },
+      const whereRef: any = {};
+      if (entitledFrameworkIds.length > 0) {
+        whereRef.frameworkVersion = { frameworkId: { in: entitledFrameworkIds } };
+      }
+
+      if (frameworkId) {
+        await this.frameworkEntitlementsService.assertEntitled(organizationId, frameworkId, frameworkVersionId);
+        whereRef.frameworkVersion = { frameworkId };
+      }
+
+      if (frameworkVersionId) {
+        whereRef.frameworkVersionId = frameworkVersionId;
+      }
+
+      if (frameworkReferenceId) {
+        whereRef.id = frameworkReferenceId;
+      }
+
+      const references = await this.prisma.frameworkReference.findMany({
+        where: whereRef,
+        include: {
+          frameworkVersion: {
+            include: { framework: { select: { code: true } } },
+          },
+        },
       });
 
-      const candidates: CandidateClause[] = clauses.map((c) => ({
-        id: c.id,
-        frameworkCode: c.framework.code,
-        code: c.code,
-        title: c.title,
+      const candidates: CandidateClause[] = references.map((r) => ({
+        id: r.id,
+        frameworkCode: r.frameworkVersion.framework.code,
+        code: r.identifier,
+        title: r.title,
       }));
 
       // STAGE 2a: REDACTION
-      // Payload contains ONLY control's name + description and candidate FrameworkClause text.
+      // Payload contains ONLY control's name + description and candidate FrameworkReference text.
       // NEVER includes organizationId, user identities, or any risk/asset data.
       const redactedPayload = {
         organizationId,
@@ -356,9 +407,9 @@ export class MappingQueueService implements OnModuleInit, OnModuleDestroy {
       for (const sug of acceptedSuggestions) {
         await this.prisma.controlFrameworkMapping.upsert({
           where: {
-            controlId_frameworkClauseId: {
+            controlId_frameworkReferenceId: {
               controlId: control.id,
-              frameworkClauseId: sug.clauseId,
+              frameworkReferenceId: sug.clauseId,
             },
           },
           update: {
@@ -368,7 +419,7 @@ export class MappingQueueService implements OnModuleInit, OnModuleDestroy {
           },
           create: {
             controlId: control.id,
-            frameworkClauseId: sug.clauseId,
+            frameworkReferenceId: sug.clauseId,
             status: MappingStatus.SUGGESTED,
             confidenceScore: sug.confidenceScore,
             modelTier: tierUsed,
@@ -385,7 +436,7 @@ export class MappingQueueService implements OnModuleInit, OnModuleDestroy {
           metadata: {
             controlId: control.id,
             frameworkCode: sug.frameworkCode,
-            clauseCode: sug.clauseCode,
+            referenceIdentifier: sug.clauseCode,
             confidenceScore: sug.confidenceScore,
             modelTier: tierUsed,
           },

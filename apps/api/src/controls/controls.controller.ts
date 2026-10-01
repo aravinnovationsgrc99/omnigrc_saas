@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards, NotFoundException } from '@nestjs/common';
 import { ControlsService } from './controls.service';
 import { MappingQueueService } from './ai/mapping-queue.service';
-import { CreateControlDto, UpdateControlDto, ControlQueryDto, SignOffMappingDto } from './dto/controls.dto';
+import { CreateControlDto, UpdateControlDto, ControlQueryDto, SignOffMappingDto, CreateControlMappingDto, SuggestMappingsDto } from './dto/controls.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -107,10 +107,30 @@ export class ControlsController {
     return this.controlsService.softDelete(authCtx, id);
   }
 
+  @Post(':id/mappings')
+  @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async createMapping(
+    @CurrentUser() user: any,
+    @Param('id') controlId: string,
+    @Body() dto: CreateControlMappingDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id || user.sub,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.controlsService.createMapping(authCtx, controlId, dto);
+  }
+
   @Post(':id/suggest-mappings')
   @RequiresActiveLicense()
   @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
-  async suggestMappings(@CurrentUser() user: any, @Param('id') id: string) {
+  async suggestMappings(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() dto?: SuggestMappingsDto,
+  ) {
     const authCtx: ResourceAuthContext = {
       userId: user.userId || user.id || user.sub,
       organizationId: user.organizationId,
@@ -118,7 +138,12 @@ export class ControlsController {
     };
     await this.controlsService.findOne(authCtx, id);
 
-    const jobId = await this.mappingQueueService.enqueueMappingJob(user.organizationId, user.sub || user.userId, id);
+    const jobId = await this.mappingQueueService.enqueueMappingJob(
+      user.organizationId,
+      user.sub || user.userId,
+      id,
+      dto,
+    );
 
     return {
       jobId,
@@ -144,6 +169,23 @@ export class ControlsController {
   @RequiresActiveLicense()
   @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
   async signOffMapping(
+    @CurrentUser() user: any,
+    @Param('id') controlId: string,
+    @Param('mappingId') mappingId: string,
+    @Body() dto: SignOffMappingDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id || user.sub,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.controlsService.signOffMapping(authCtx, controlId, mappingId, dto);
+  }
+
+  @Patch(':id/mappings/:mappingId')
+  @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async patchSignOffMapping(
     @CurrentUser() user: any,
     @Param('id') controlId: string,
     @Param('mappingId') mappingId: string,

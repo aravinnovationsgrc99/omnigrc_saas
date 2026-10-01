@@ -625,8 +625,19 @@ export interface MappingJobStatusDto {
   error?: string;
 }
 
+export interface CreateControlMappingDto {
+  frameworkReferenceId: string;
+}
+
+export interface SuggestMappingsDto {
+  frameworkId?: string;
+  frameworkVersionId?: string;
+  frameworkReferenceId?: string;
+}
+
 export interface SignOffMappingDto {
   decision: 'APPROVE' | 'OVERRIDE';
+  overrideReferenceId?: string;
   overrideClauseId?: string;
   note?: string;
 }

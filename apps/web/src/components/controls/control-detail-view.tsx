@@ -1,37 +1,55 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { FrameworkCode, ControlDto, ControlFrameworkMappingDto, MappingJobStatusDto, MappingStatus, ModelTier } from '@omnigrc/shared';
+import {
+  ControlDto,
+  ControlFrameworkMappingDto,
+  MappingJobStatusDto,
+  MappingStatus,
+  ModelTier,
+  FrameworkItemDto,
+  FrameworkVersionDto,
+  FrameworkReferenceDto,
+} from '@omnigrc/shared';
 
 import { apiRequest } from '@/lib/api-client';
 import { useToast } from '@/context/toast-context';
 import { InlineErrorState } from '@/components/ui/inline-error-state';
-import { ArrowLeft, Sparkles, RotateCw, CheckCircle2, AlertTriangle, ShieldAlert, Edit3 } from 'lucide-react';
+import {
+  ArrowLeft,
+  Sparkles,
+  RotateCw,
+  CheckCircle2,
+  GitMerge,
+  Layers,
+  ChevronRight,
+  ShieldCheck,
+  Search,
+} from 'lucide-react';
 import { OverrideClauseModal } from './override-clause-modal';
-
-
-
-
 
 interface ControlDetailViewProps {
   controlId: string;
   onBack: () => void;
 }
 
-const FRAMEWORK_DISPLAY: Record<FrameworkCode, { name: string; subtitle: string; iconBg: string }> = {
-  [FrameworkCode.ISO27001]: { name: 'ISO/IEC 27001:2022', subtitle: 'Information Security Management System', iconBg: '#0F6E6A' },
-  [FrameworkCode.ISO42001]: { name: 'ISO/IEC 42001:2023', subtitle: 'Artificial Intelligence Management System (AIMS)', iconBg: '#6B21A8' },
-  [FrameworkCode.SOC2]: { name: 'SOC 2 Type II', subtitle: 'Trust Services Criteria (Security & Confidentiality)', iconBg: '#1E40AF' },
-  [FrameworkCode.GDPR]: { name: 'EU GDPR', subtitle: 'General Data Protection Regulation', iconBg: '#0369A1' },
-  [FrameworkCode.DPDP]: { name: 'India DPDP 2023', subtitle: 'Digital Personal Data Protection Act', iconBg: '#B45309' },
-  [FrameworkCode.HIPAA]: { name: 'HIPAA Security Rule', subtitle: 'Health Insurance Portability & Accountability Act', iconBg: '#047857' },
-};
-
 export function ControlDetailView({ controlId, onBack }: ControlDetailViewProps) {
   const { showToast } = useToast();
   const [control, setControl] = useState<ControlDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Cascading Selector State
+  const [frameworks, setFrameworks] = useState<FrameworkItemDto[]>([]);
+  const [selectedFrameworkId, setSelectedFrameworkId] = useState<string>('');
+  const [versions, setVersions] = useState<FrameworkVersionDto[]>([]);
+  const [selectedVersionId, setSelectedVersionId] = useState<string>('');
+  const [references, setReferences] = useState<FrameworkReferenceDto[]>([]);
+  const [selectedReferenceId, setSelectedReferenceId] = useState<string>('');
+  const [referenceSearch, setReferenceSearch] = useState<string>('');
+  const [loadingVersions, setLoadingVersions] = useState(false);
+  const [loadingReferences, setLoadingReferences] = useState(false);
+  const [mappingSubmitting, setMappingSubmitting] = useState(false);
 
   // Job Polling State
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
@@ -40,9 +58,10 @@ export function ControlDetailView({ controlId, onBack }: ControlDetailViewProps)
 
   // Override Modal State
   const [overrideModalOpen, setOverrideModalOpen] = useState(false);
-  const [overrideTargetFw, setOverrideTargetFw] = useState<FrameworkCode>(FrameworkCode.ISO27001);
+  const [overrideTargetFw, setOverrideTargetFw] = useState<string>('');
   const [overrideMappingId, setOverrideMappingId] = useState<string | null>(null);
 
+  // Fetch Control Details
   const fetchControl = useCallback(async () => {
     setErrorMsg(null);
     try {
@@ -59,6 +78,61 @@ export function ControlDetailView({ controlId, onBack }: ControlDetailViewProps)
   useEffect(() => {
     fetchControl();
   }, [fetchControl]);
+
+  // Fetch Frameworks for Step 1
+  useEffect(() => {
+    apiRequest<FrameworkItemDto[]>('/frameworks')
+      .then((data) => setFrameworks(data))
+      .catch(() => setFrameworks([]));
+  }, []);
+
+  // Fetch Versions when Framework selected for Step 2
+  useEffect(() => {
+    if (selectedFrameworkId) {
+      setLoadingVersions(true);
+      setVersions([]);
+      setSelectedVersionId('');
+      setReferences([]);
+      setSelectedReferenceId('');
+
+      apiRequest<FrameworkVersionDto[]>(`/frameworks/${selectedFrameworkId}/versions`)
+        .then((data) => {
+          setVersions(data);
+          const active = data.find((v) => v.status === 'ACTIVE') || data[0];
+          if (active) setSelectedVersionId(active.id);
+        })
+        .catch((err: any) => {
+          setVersions([]);
+          setErrorMsg(err?.message || 'Failed to load framework versions.');
+        })
+        .finally(() => setLoadingVersions(false));
+    } else {
+      setVersions([]);
+      setSelectedVersionId('');
+      setReferences([]);
+      setSelectedReferenceId('');
+    }
+  }, [selectedFrameworkId]);
+
+  // Fetch References when Version selected for Step 3
+  useEffect(() => {
+    if (selectedVersionId) {
+      setLoadingReferences(true);
+      setReferences([]);
+      setSelectedReferenceId('');
+
+      apiRequest<FrameworkReferenceDto[]>(`/frameworks/versions/${selectedVersionId}/references`)
+        .then((data) => setReferences(data))
+        .catch((err: any) => {
+          setReferences([]);
+          setErrorMsg(err?.message || 'Failed to load framework references.');
+        })
+        .finally(() => setLoadingReferences(false));
+    } else {
+      setReferences([]);
+      setSelectedReferenceId('');
+    }
+  }, [selectedVersionId]);
 
   // Polling for async AI job
   useEffect(() => {
@@ -89,12 +163,42 @@ export function ControlDetailView({ controlId, onBack }: ControlDetailViewProps)
     return () => clearInterval(interval);
   }, [activeJobId, controlId, fetchControl, showToast]);
 
+  // Direct Manual Mapping Submission
+  const handleMapControl = async () => {
+    if (!selectedReferenceId) {
+      setErrorMsg('Please select a specific Framework Reference before mapping.');
+      return;
+    }
+    setMappingSubmitting(true);
+    setErrorMsg(null);
+    try {
+      await apiRequest(`/controls/${controlId}/mappings`, {
+        method: 'POST',
+        body: JSON.stringify({ frameworkReferenceId: selectedReferenceId }),
+      });
+      showToast('Successfully mapped control to framework reference');
+      setSelectedReferenceId('');
+      fetchControl();
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Failed to map control to framework reference');
+    } finally {
+      setMappingSubmitting(false);
+    }
+  };
+
+  // AI Suggestion Trigger
   const handleTriggerSuggestMappings = async () => {
     if (activeJobId) return;
     setErrorMsg(null);
     try {
+      const payload: any = {};
+      if (selectedFrameworkId) payload.frameworkId = selectedFrameworkId;
+      if (selectedVersionId) payload.frameworkVersionId = selectedVersionId;
+      if (selectedReferenceId) payload.frameworkReferenceId = selectedReferenceId;
+
       const res = await apiRequest<{ jobId: string }>(`/controls/${controlId}/suggest-mappings`, {
         method: 'POST',
+        body: JSON.stringify(payload),
       });
       setActiveJobId(res.jobId);
       setJobStatus('queued');
@@ -104,10 +208,12 @@ export function ControlDetailView({ controlId, onBack }: ControlDetailViewProps)
     }
   };
 
+  // Approve Mapping Action
   const handleApproveMapping = async (mappingId: string) => {
+    setErrorMsg(null);
     try {
-      await apiRequest(`/controls/${controlId}/mappings/${mappingId}`, {
-        method: 'PATCH',
+      await apiRequest(`/controls/${controlId}/mappings/${mappingId}/sign-off`, {
+        method: 'POST',
         body: JSON.stringify({ decision: 'APPROVE' }),
       });
       showToast('Approved control mapping');
@@ -117,25 +223,27 @@ export function ControlDetailView({ controlId, onBack }: ControlDetailViewProps)
     }
   };
 
+  // Open Override Modal
   const handleOpenOverride = (mapping: ControlFrameworkMappingDto) => {
-    if (mapping.frameworkCode) {
-      setOverrideTargetFw(mapping.frameworkCode);
-    }
+    const code = mapping.frameworkCode || 'ISO27001';
+    setOverrideTargetFw(code);
     setOverrideMappingId(mapping.id);
     setOverrideModalOpen(true);
   };
 
-  const handleConfirmOverrideClause = async (clauseId: string) => {
+  // Confirm Human Override with selected FrameworkReference ID
+  const handleConfirmOverrideReference = async (referenceId: string) => {
     if (!overrideMappingId) return;
+    setErrorMsg(null);
     try {
-      await apiRequest(`/controls/${controlId}/mappings/${overrideMappingId}`, {
-        method: 'PATCH',
+      await apiRequest(`/controls/${controlId}/mappings/${overrideMappingId}/sign-off`, {
+        method: 'POST',
         body: JSON.stringify({
           decision: 'OVERRIDE',
-          overrideClauseId: clauseId,
+          overrideReferenceId: referenceId,
         }),
       });
-      showToast('Mapping overridden');
+      showToast('Mapping overridden to authoritative reference');
       setOverrideModalOpen(false);
       setOverrideMappingId(null);
       fetchControl();
@@ -146,7 +254,7 @@ export function ControlDetailView({ controlId, onBack }: ControlDetailViewProps)
 
   const getConfidenceBadgeClass = (score?: number | null) => {
     if (score === null || score === undefined) {
-      return { className: 'omni-badge-teal', text: 'Human Override' };
+      return { className: 'omni-badge-teal', text: 'Human Authoritative' };
     }
     const percent = Math.round(score * 100);
     if (percent >= 85) {
@@ -157,7 +265,6 @@ export function ControlDetailView({ controlId, onBack }: ControlDetailViewProps)
       return { className: 'omni-badge-rose', text: `${percent}% Confidence` };
     }
   };
-
 
   if (loading) {
     return (
@@ -178,24 +285,16 @@ export function ControlDetailView({ controlId, onBack }: ControlDetailViewProps)
     );
   }
 
-  // Map candidates to all 6 framework cards
-  const mappingsByFw = new Map<FrameworkCode, ControlFrameworkMappingDto>();
-  if (control.mappings) {
-    for (const m of control.mappings) {
-      if (m.frameworkCode) {
-        mappingsByFw.set(m.frameworkCode, m);
-      }
-    }
-  }
-
-  const allFrameworks: FrameworkCode[] = [
-    FrameworkCode.ISO27001,
-    FrameworkCode.ISO42001,
-    FrameworkCode.SOC2,
-    FrameworkCode.GDPR,
-    FrameworkCode.DPDP,
-    FrameworkCode.HIPAA,
-  ];
+  const activeMappings = control.mappings || [];
+  const filteredReferences = references.filter((r) => {
+    if (!referenceSearch.trim()) return true;
+    const s = referenceSearch.toLowerCase().trim();
+    return (
+      r.identifier.toLowerCase().includes(s) ||
+      r.title.toLowerCase().includes(s) ||
+      (r.type && r.type.toLowerCase().includes(s))
+    );
+  });
 
   return (
     <div className="omni-fade-in" style={{ padding: '28px 32px', maxWidth: 1140, margin: '0 auto' }}>
@@ -264,126 +363,274 @@ export function ControlDetailView({ controlId, onBack }: ControlDetailViewProps)
         )}
       </div>
 
-      {/* Candidate Framework Cards (6 Framework Cards) */}
-      <div style={{ marginBottom: 16 }}>
-        <h2 style={{ fontSize: 16, fontWeight: 600, color: '#1B2430', marginBottom: 4 }}>
-          Framework Compliance Mapping Cards
-        </h2>
+      {/* Inline Error State */}
+      {errorMsg && (
+        <div style={{ marginBottom: 20 }}>
+          <InlineErrorState
+            title="Mapping Action Failed"
+            message={errorMsg}
+            onRetry={fetchControl}
+          />
+        </div>
+      )}
+
+      {/* Dynamic Framework -> Version -> Reference Cascading Selector */}
+      <div style={{
+        background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10,
+        padding: '24px 28px', marginBottom: 24, boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+          <GitMerge size={18} color="#0F6E6A" />
+          <h2 style={{ fontSize: 16, fontWeight: 600, color: '#1B2430' }}>
+            Authoritative Framework Reference Mapping
+          </h2>
+        </div>
         <p style={{ fontSize: 13, color: '#5B6672', marginBottom: 20 }}>
-          AI-suggested clause matches across pilot-scope standards. Review and approve or override.
+          Select a Framework, its Framework Version, and exact Framework Reference to map this operational control.
         </p>
-      </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(500px, 1fr))', gap: 20 }}>
-        {allFrameworks.map((fwCode) => {
-          const info = FRAMEWORK_DISPLAY[fwCode];
-          const mapping = mappingsByFw.get(fwCode);
-          const badge = getConfidenceBadgeClass(mapping?.confidenceScore);
-
-
-          return (
-            <div
-              key={fwCode}
-              style={{
-                background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10,
-                padding: '20px 22px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-              }}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 20 }}>
+          {/* STEP 1: Framework Dropdown */}
+          <div>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#5B6672', marginBottom: 6 }}>
+              STEP 1 — Select Framework
+            </label>
+            <select
+              className="omni-input w-full"
+              value={selectedFrameworkId}
+              onChange={(e) => setSelectedFrameworkId(e.target.value)}
             >
-              <div>
-                {/* Framework Card Header */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{
-                      width: 32, height: 32, borderRadius: 8, background: info.iconBg, color: '#FFFFFF',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 11,
-                    }}>
-                      {fwCode.substring(0, 3)}
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 14.5, fontWeight: 600, color: '#1B2430' }}>{info.name}</div>
-                      <div style={{ fontSize: 11.5, color: '#8B95A1' }}>{info.subtitle}</div>
-                    </div>
-                  </div>
+              <option value="">-- Choose Framework --</option>
+              {frameworks.map((fw) => (
+                <option key={fw.id} value={fw.id}>
+                  {fw.name} ({fw.code})
+                </option>
+              ))}
+            </select>
+          </div>
 
-                  {mapping && (
-                    <span className={`omni-badge ${badge.className}`}>
-                      {badge.text}
-                    </span>
-                  )}
+          {/* STEP 2: Framework Version Dropdown */}
+          <div>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#5B6672', marginBottom: 6 }}>
+              STEP 2 — Select Framework Version
+            </label>
+            <select
+              className="omni-input w-full"
+              value={selectedVersionId}
+              disabled={!selectedFrameworkId || loadingVersions}
+              onChange={(e) => setSelectedVersionId(e.target.value)}
+            >
+              <option value="">
+                {loadingVersions ? 'Loading versions...' : '-- Choose Version --'}
+              </option>
+              {versions.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.name || `v${v.version}`} ({v.status})
+                </option>
+              ))}
+            </select>
+          </div>
 
+          {/* STEP 3: Reference Filter / Selector */}
+          <div>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#5B6672', marginBottom: 6 }}>
+              STEP 3 — Filter Reference
+            </label>
+            <div style={{ position: 'relative' }}>
+              <Search size={14} color="#8B95A1" style={{ position: 'absolute', left: 10, top: 10 }} />
+              <input
+                className="omni-input w-full"
+                placeholder={!selectedVersionId ? 'Select version first...' : 'Filter reference code or title...'}
+                disabled={!selectedVersionId || loadingReferences}
+                value={referenceSearch}
+                onChange={(e) => setReferenceSearch(e.target.value)}
+                style={{ paddingLeft: 30 }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* STEP 3: Reference Selection List */}
+        {selectedVersionId && (
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#5B6672', marginBottom: 8 }}>
+              Select Specific Reference ({filteredReferences.length} available):
+            </label>
+            <div style={{
+              maxHeight: 220, overflowY: 'auto', border: '1px solid #E2E6E4', borderRadius: 8, padding: 8, background: '#FAFAFA',
+            }} className="omni-scroll">
+              {loadingReferences ? (
+                <div style={{ padding: '16px 0', textAlign: 'center', color: '#8B95A1', fontSize: 12.5 }}>
+                  Loading framework references...
                 </div>
-
-                {/* Suggested Clause Content */}
-                {mapping ? (
-                  <div style={{
-                    background: '#F6F7F6', border: '1px solid #E2E6E4', borderRadius: 8, padding: '14px 16px', marginBottom: 16,
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                      <span className="omni-mono" style={{ fontSize: 13, fontWeight: 700, color: '#0F6E6A' }}>
-                        {mapping.clauseCode}
-                      </span>
-                      <span style={{ fontSize: 10.5, color: '#8B95A1', background: '#FFFFFF', padding: '2px 7px', borderRadius: 4, border: '1px solid #E2E6E4' }}>
-                        {mapping.modelTier === ModelTier.TIER_2 ? 'Tier 2 Escalated' : 'Tier 1 Routine'}
-                      </span>
-                    </div>
-
-                    <div style={{ fontSize: 13.5, fontWeight: 600, color: '#1B2430', marginBottom: 6 }}>
-                      {mapping.clauseTitle}
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5 }}>
-                      <span style={{ color: '#5B6672' }}>Status:</span>
-                      <span style={{
-                        fontWeight: 700,
-                        color: mapping.status === MappingStatus.APPROVED ? '#0F6E6A' : mapping.status === MappingStatus.OVERRIDDEN ? '#B5750A' : '#5B6672',
-                      }}>
-                        {mapping.status}
-                      </span>
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{
-                    background: '#FAFAFA', border: '1px dashed #D2D7D5', borderRadius: 8, padding: '20px 16px',
-                    textAlign: 'center', color: '#8B95A1', fontSize: 12.5, marginBottom: 16,
-                  }}>
-                    No mapping generated for this framework yet. Click "Suggest Mappings" above to analyze.
-                  </div>
-                )}
-              </div>
-
-              {/* Action Buttons */}
-              {mapping && (
-                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 10, borderTop: '1px solid #EDEFED' }}>
-                  <button
-                    onClick={() => handleOpenOverride(mapping)}
-                    className="omni-btn-ghost"
-                    style={{ fontSize: 12, padding: '6px 12px' }}
-                  >
-                    Override Clause
-                  </button>
-                  {mapping.status !== MappingStatus.APPROVED && (
-                    <button
-                      onClick={() => handleApproveMapping(mapping.id)}
-                      className="omni-btn-primary"
-                      style={{ fontSize: 12, padding: '6px 14px', display: 'flex', alignItems: 'center', gap: 4 }}
-                    >
-                      <CheckCircle2 size={13} /> Approve
-                    </button>
-                  )}
+              ) : filteredReferences.length === 0 ? (
+                <div style={{ padding: '16px 0', textAlign: 'center', color: '#8B95A1', fontSize: 12.5 }}>
+                  No references match criteria.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {filteredReferences.map((ref) => {
+                    const isSelected = selectedReferenceId === ref.id;
+                    return (
+                      <div
+                        key={ref.id}
+                        onClick={() => setSelectedReferenceId(ref.id)}
+                        style={{
+                          padding: '8px 12px', borderRadius: 6, border: isSelected ? '1px solid #0F6E6A' : '1px solid #E2E6E4',
+                          background: isSelected ? '#E4F1F0' : '#FFFFFF', cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                          transition: 'all 0.12s ease',
+                        }}
+                      >
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span className="omni-mono" style={{ fontSize: 12, fontWeight: 700, color: '#0F6E6A' }}>
+                              {ref.identifier}
+                            </span>
+                            {ref.type && (
+                              <span style={{ fontSize: 10, background: '#EDEFED', color: '#5B6672', padding: '1px 6px', borderRadius: 4 }}>
+                                {ref.type}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 12.5, fontWeight: 500, color: '#1B2430', marginTop: 2 }}>
+                            {ref.title}
+                          </div>
+                        </div>
+                        {isSelected && <CheckCircle2 size={16} color="#0F6E6A" />}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
-          );
-        })}
+          </div>
+        )}
+
+        {/* Map Button */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            onClick={handleMapControl}
+            disabled={!selectedReferenceId || mappingSubmitting}
+            className="omni-btn-primary"
+            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+          >
+            <ShieldCheck size={15} />
+            {mappingSubmitting ? 'Mapping Control...' : 'Map Control to Selected Reference'}
+          </button>
+        </div>
       </div>
 
-      {/* Override Clause Modal */}
+      {/* Active Framework Compliance Mappings List */}
+      <div style={{ marginBottom: 16 }}>
+        <h2 style={{ fontSize: 16, fontWeight: 600, color: '#1B2430', marginBottom: 4 }}>
+          Mapped Framework Compliance References
+        </h2>
+        <p style={{ fontSize: 13, color: '#5B6672', marginBottom: 20 }}>
+          Authoritative framework references linked to this control. Human review (Approve / Override) governs Phase C coverage.
+        </p>
+      </div>
+
+      {activeMappings.length === 0 ? (
+        <div style={{
+          background: '#FFFFFF', border: '1px dashed #D2D7D5', borderRadius: 10,
+          padding: '32px 24px', textAlign: 'center', color: '#8B95A1', fontSize: 13, marginBottom: 32,
+        }}>
+          No framework references mapped to this control yet. Use the cascading selector above or click "Suggest Mappings (AI)".
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 32 }}>
+          {activeMappings.map((mapping) => {
+            const badge = getConfidenceBadgeClass(mapping.confidenceScore);
+            const refCode = mapping.referenceIdentifier || mapping.clauseCode || 'N/A';
+            const refTitle = mapping.referenceTitle || mapping.clauseTitle || 'Framework Reference';
+            const fwCode = mapping.frameworkCode || 'FRAMEWORK';
+
+            return (
+              <div
+                key={mapping.id}
+                style={{
+                  background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10,
+                  padding: '20px 22px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+                  display: 'flex', flexDirection: 'column', gap: 12,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{
+                      background: '#0F6E6A', color: '#FFFFFF', padding: '4px 10px', borderRadius: 6,
+                      fontSize: 11.5, fontWeight: 700,
+                    }}>
+                      {fwCode}
+                    </div>
+                    <div>
+                      <span className="omni-mono" style={{ fontSize: 13, fontWeight: 700, color: '#0F6E6A', marginRight: 8 }}>
+                        {refCode}
+                      </span>
+                      {mapping.referenceType && (
+                        <span style={{ fontSize: 10.5, background: '#EDEFED', color: '#5B6672', padding: '2px 7px', borderRadius: 4 }}>
+                          {mapping.referenceType}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <span className={`omni-badge ${badge.className}`}>
+                    {badge.text}
+                  </span>
+                </div>
+
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#1B2430' }}>
+                  {refTitle}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 10, borderTop: '1px solid #EDEFED' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#5B6672' }}>
+                    <span>Status:</span>
+                    <span className="omni-mono" style={{
+                      fontWeight: 700,
+                      color: mapping.status === MappingStatus.APPROVED ? '#0F6E6A' : mapping.status === MappingStatus.OVERRIDDEN ? '#B5750A' : '#5B6672',
+                    }}>
+                      {mapping.status}
+                    </span>
+                    {mapping.modelTier && (
+                      <span style={{ fontSize: 10.5, color: '#8B95A1', background: '#F6F7F6', padding: '2px 6px', borderRadius: 4 }}>
+                        {mapping.modelTier === ModelTier.TIER_2 ? 'Tier 2 AI' : 'Tier 1 AI'}
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      onClick={() => handleOpenOverride(mapping)}
+                      className="omni-btn-ghost"
+                      style={{ fontSize: 12, padding: '5px 12px' }}
+                    >
+                      Override Reference
+                    </button>
+                    {mapping.status !== MappingStatus.APPROVED && (
+                      <button
+                        onClick={() => handleApproveMapping(mapping.id)}
+                        className="omni-btn-primary"
+                        style={{ fontSize: 12, padding: '5px 12px', display: 'flex', alignItems: 'center', gap: 4 }}
+                      >
+                        <CheckCircle2 size={13} /> Approve
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Override Framework Reference Modal */}
       <OverrideClauseModal
         isOpen={overrideModalOpen}
         targetFrameworkCode={overrideTargetFw}
         onClose={() => setOverrideModalOpen(false)}
-        onSelectClause={handleConfirmOverrideClause}
+        onSelectReference={handleConfirmOverrideReference}
       />
     </div>
   );

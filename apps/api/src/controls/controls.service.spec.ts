@@ -131,4 +131,100 @@ describe('ControlsService', () => {
       }),
     );
   });
+
+  it('should create a direct manual mapping to a FrameworkReference', async () => {
+    const mockControl = {
+      id: 'ctrl-1',
+      organizationId: 'org-1',
+      name: 'Access Control',
+      description: 'MFA',
+      category: 'Access',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      createdById: 'user-1',
+    };
+
+    const mockRef = {
+      id: 'ref-a51',
+      frameworkVersionId: 'ver-2022',
+      identifier: 'A.5.1',
+      title: 'Policies for information security',
+      type: 'CONTROL',
+      frameworkVersion: {
+        id: 'ver-2022',
+        frameworkId: 'fw-iso27001',
+        version: '2022',
+        framework: { id: 'fw-iso27001', code: 'ISO27001', name: 'ISO 27001' },
+      },
+    };
+
+    const mockCreatedMapping = {
+      id: 'map-1',
+      controlId: 'ctrl-1',
+      frameworkReferenceId: 'ref-a51',
+      status: 'APPROVED',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      frameworkReference: mockRef,
+    };
+
+    prisma.control.findFirst.mockResolvedValue(mockControl);
+    prisma.frameworkReference = { findUnique: jest.fn().mockResolvedValue(mockRef) };
+    prisma.controlFrameworkMapping.upsert = jest.fn().mockResolvedValue(mockCreatedMapping);
+
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    const res = await service.createMapping(authCtx, 'ctrl-1', { frameworkReferenceId: 'ref-a51' });
+
+    expect(res.referenceIdentifier).toBe('A.5.1');
+    expect(res.status).toBe('APPROVED');
+    expect(auditLogsService.log).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'MAPPING_CREATED', organizationId: 'org-1' }),
+    );
+  });
+
+  it('should override a mapping to a FrameworkReference', async () => {
+    const mockControl = { id: 'ctrl-1', organizationId: 'org-1' };
+    const mockExistingMapping = {
+      id: 'map-1',
+      controlId: 'ctrl-1',
+      status: 'SUGGESTED',
+    };
+    const mockTargetRef = {
+      id: 'ref-a52',
+      frameworkVersionId: 'ver-2022',
+      identifier: 'A.5.2',
+      title: 'Information security roles',
+      frameworkVersion: {
+        id: 'ver-2022',
+        frameworkId: 'fw-iso27001',
+        framework: { id: 'fw-iso27001', code: 'ISO27001' },
+      },
+    };
+    const mockUpdatedMapping = {
+      id: 'map-1',
+      controlId: 'ctrl-1',
+      frameworkReferenceId: 'ref-a52',
+      status: 'OVERRIDDEN',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      frameworkReference: mockTargetRef,
+    };
+
+    prisma.control.findFirst.mockResolvedValue(mockControl);
+    prisma.controlFrameworkMapping.findFirst.mockResolvedValue(mockExistingMapping);
+    prisma.frameworkReference = { findUnique: jest.fn().mockResolvedValue(mockTargetRef) };
+    prisma.controlFrameworkMapping.update.mockResolvedValue(mockUpdatedMapping);
+
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    const res = await service.signOffMapping(authCtx, 'ctrl-1', 'map-1', {
+      decision: 'OVERRIDE',
+      overrideReferenceId: 'ref-a52',
+    });
+
+    expect(res.status).toBe('OVERRIDDEN');
+    expect(res.referenceIdentifier).toBe('A.5.2');
+    expect(auditLogsService.log).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'MAPPING_OVERRIDDEN' }),
+    );
+  });
 });

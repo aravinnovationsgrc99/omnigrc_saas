@@ -85,10 +85,34 @@ export class ControlQueryDto {
   status?: MappingStatus;
 }
 
+export class CreateControlMappingDto {
+  @IsString()
+  @IsNotEmpty()
+  frameworkReferenceId: string;
+}
+
+export class SuggestMappingsDto {
+  @IsString()
+  @IsOptional()
+  frameworkId?: string;
+
+  @IsString()
+  @IsOptional()
+  frameworkVersionId?: string;
+
+  @IsString()
+  @IsOptional()
+  frameworkReferenceId?: string;
+}
+
 export class SignOffMappingDto {
   @IsString()
   @IsNotEmpty()
   decision: 'APPROVE' | 'OVERRIDE';
+
+  @IsString()
+  @IsOptional()
+  overrideReferenceId?: string;
 
   @IsString()
   @IsOptional()

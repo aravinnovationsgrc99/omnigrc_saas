@@ -4,7 +4,7 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { FrameworkEntitlementsService } from '../frameworks/framework-entitlements.service';
 import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
-import { CreateControlDto, UpdateControlDto, ControlQueryDto, SignOffMappingDto } from './dto/controls.dto';
+import { CreateControlDto, UpdateControlDto, ControlQueryDto, SignOffMappingDto, CreateControlMappingDto } from './dto/controls.dto';
 import { ControlDto, PaginatedControlsDto, MappingStatus, ControlFrameworkMappingDto, FrameworkCode, NotificationType } from '@omnigrc/shared';
 
 @Injectable()
@@ -321,7 +321,89 @@ export class ControlsService {
   }
 
   /**
-   * Human sign-off: body is { decision: 'APPROVE' | 'OVERRIDE', overrideClauseId?, note? }
+   * Direct manual mapping of a control to an authoritative FrameworkReference
+   */
+  async createMapping(
+    authCtx: ResourceAuthContext,
+    controlId: string,
+    dto: CreateControlMappingDto,
+  ): Promise<ControlFrameworkMappingDto> {
+    const { userId, organizationId } = authCtx;
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+
+    const control = await this.prisma.control.findFirst({
+      where: { id: controlId, ...scopeWhere, deletedAt: null },
+    });
+
+    if (!control) {
+      throw new NotFoundException(`Control with ID "${controlId}" not found`);
+    }
+
+    const ref = await this.prisma.frameworkReference.findUnique({
+      where: { id: dto.frameworkReferenceId },
+      include: { frameworkVersion: { include: { framework: { select: { id: true, code: true, name: true } } } } },
+    });
+
+    if (!ref) {
+      throw new NotFoundException(`Framework reference with ID "${dto.frameworkReferenceId}" not found`);
+    }
+
+    await this.frameworkEntitlementsService.assertEntitled(
+      organizationId,
+      ref.frameworkVersion.frameworkId,
+      ref.frameworkVersionId,
+    );
+
+    const mapping = await this.prisma.controlFrameworkMapping.upsert({
+      where: {
+        controlId_frameworkReferenceId: {
+          controlId,
+          frameworkReferenceId: dto.frameworkReferenceId,
+        },
+      },
+      create: {
+        controlId,
+        frameworkReferenceId: dto.frameworkReferenceId,
+        status: MappingStatus.APPROVED,
+        reviewedById: userId,
+        reviewedAt: new Date(),
+      },
+      update: {
+        status: MappingStatus.APPROVED,
+        reviewedById: userId,
+        reviewedAt: new Date(),
+      },
+      include: {
+        frameworkClause: {
+          include: { framework: { select: { code: true } } },
+        },
+        frameworkReference: {
+          include: { frameworkVersion: { include: { framework: { select: { code: true } } } } },
+        },
+      },
+    });
+
+    await this.auditLogsService.log({
+      organizationId,
+      actorId: userId,
+      action: 'MAPPING_CREATED',
+      entityType: 'Control',
+      entityId: controlId,
+      metadata: {
+        controlId,
+        mappingId: mapping.id,
+        frameworkReferenceId: dto.frameworkReferenceId,
+        referenceIdentifier: ref.identifier,
+        frameworkCode: ref.frameworkVersion.framework.code,
+        version: ref.frameworkVersion.version,
+      },
+    });
+
+    return this.mapMappingToDto(mapping);
+  }
+
+  /**
+   * Human sign-off: body is { decision: 'APPROVE' | 'OVERRIDE', overrideReferenceId?, overrideClauseId?, note? }
    */
   async signOffMapping(
     authCtx: ResourceAuthContext,
@@ -392,63 +474,128 @@ export class ControlsService {
 
       return this.mapMappingToDto(updated);
     } else if (dto.decision === 'OVERRIDE') {
-      if (!dto.overrideClauseId) {
-        throw new BadRequestException('overrideClauseId is required when overriding a mapping');
-      }
+      if (dto.overrideReferenceId) {
+        const ref = await this.prisma.frameworkReference.findUnique({
+          where: { id: dto.overrideReferenceId },
+          include: { frameworkVersion: { include: { framework: { select: { id: true, code: true } } } } },
+        });
 
-      const newClause = await this.prisma.frameworkClause.findUnique({
-        where: { id: dto.overrideClauseId },
-        include: { framework: { select: { id: true, code: true } } },
-      });
+        if (!ref) {
+          throw new NotFoundException(`Framework reference with ID "${dto.overrideReferenceId}" not found`);
+        }
 
-      if (!newClause) {
-        throw new NotFoundException(`Framework clause with ID "${dto.overrideClauseId}" not found`);
-      }
+        await this.frameworkEntitlementsService.assertEntitled(
+          organizationId,
+          ref.frameworkVersion.frameworkId,
+          ref.frameworkVersionId,
+        );
 
-      await this.frameworkEntitlementsService.assertEntitled(organizationId, newClause.frameworkId);
-
-      const updated = await this.prisma.controlFrameworkMapping.update({
-        where: { id: mappingId },
-        data: {
-          frameworkClauseId: dto.overrideClauseId,
-          status: MappingStatus.OVERRIDDEN,
-          confidenceScore: null, // Cleared because it is now a human decision
-          reviewedById: userId,
-          reviewedAt: new Date(),
-        },
-        include: {
-          frameworkClause: {
-            include: { framework: { select: { code: true } } },
+        const updated = await this.prisma.controlFrameworkMapping.update({
+          where: { id: mappingId },
+          data: {
+            frameworkReferenceId: dto.overrideReferenceId,
+            frameworkClauseId: null,
+            status: MappingStatus.OVERRIDDEN,
+            confidenceScore: null, // Cleared because it is now a human decision
+            reviewedById: userId,
+            reviewedAt: new Date(),
           },
-        },
-      });
+          include: {
+            frameworkClause: {
+              include: { framework: { select: { code: true } } },
+            },
+            frameworkReference: {
+              include: { frameworkVersion: { include: { framework: { select: { code: true } } } } },
+            },
+          },
+        });
 
-      await this.auditLogsService.log({
-        organizationId,
-        actorId: userId,
-        action: 'MAPPING_OVERRIDDEN',
-        entityType: 'Control',
-        entityId: controlId,
-        metadata: {
-          controlId,
-          mappingId,
-          reviewedById: userId,
-          overrideClauseId: dto.overrideClauseId,
-          newClauseCode: newClause.code,
-          frameworkCode: newClause.framework.code,
-          note: dto.note || null,
-        },
-      });
+        await this.auditLogsService.log({
+          organizationId,
+          actorId: userId,
+          action: 'MAPPING_OVERRIDDEN',
+          entityType: 'Control',
+          entityId: controlId,
+          metadata: {
+            controlId,
+            mappingId,
+            reviewedById: userId,
+            overrideReferenceId: dto.overrideReferenceId,
+            referenceIdentifier: ref.identifier,
+            frameworkCode: ref.frameworkVersion.framework.code,
+            note: dto.note || null,
+          },
+        });
 
-      await this.notificationsService.notify({
-        organizationId,
-        type: NotificationType.MAPPING_OVERRIDDEN,
-        message: `Framework clause mapping for control "${control.name}" was manually overridden (Clause: ${newClause.code}).`,
-        entityType: 'CONTROL_MAPPING',
-        entityId: mappingId,
-      });
+        await this.notificationsService.notify({
+          organizationId,
+          type: NotificationType.MAPPING_OVERRIDDEN,
+          message: `Framework reference mapping for control "${control.name}" was manually overridden (Reference: ${ref.identifier}).`,
+          entityType: 'CONTROL_MAPPING',
+          entityId: mappingId,
+        });
 
-      return this.mapMappingToDto(updated);
+        return this.mapMappingToDto(updated);
+      } else if (dto.overrideClauseId) {
+        const newClause = await this.prisma.frameworkClause.findUnique({
+          where: { id: dto.overrideClauseId },
+          include: { framework: { select: { id: true, code: true } } },
+        });
+
+        if (!newClause) {
+          throw new NotFoundException(`Framework clause with ID "${dto.overrideClauseId}" not found`);
+        }
+
+        await this.frameworkEntitlementsService.assertEntitled(organizationId, newClause.frameworkId);
+
+        const updated = await this.prisma.controlFrameworkMapping.update({
+          where: { id: mappingId },
+          data: {
+            frameworkClauseId: dto.overrideClauseId,
+            status: MappingStatus.OVERRIDDEN,
+            confidenceScore: null, // Cleared because it is now a human decision
+            reviewedById: userId,
+            reviewedAt: new Date(),
+          },
+          include: {
+            frameworkClause: {
+              include: { framework: { select: { code: true } } },
+            },
+            frameworkReference: {
+              include: { frameworkVersion: { include: { framework: { select: { code: true } } } } },
+            },
+          },
+        });
+
+        await this.auditLogsService.log({
+          organizationId,
+          actorId: userId,
+          action: 'MAPPING_OVERRIDDEN',
+          entityType: 'Control',
+          entityId: controlId,
+          metadata: {
+            controlId,
+            mappingId,
+            reviewedById: userId,
+            overrideClauseId: dto.overrideClauseId,
+            newClauseCode: newClause.code,
+            frameworkCode: newClause.framework.code,
+            note: dto.note || null,
+          },
+        });
+
+        await this.notificationsService.notify({
+          organizationId,
+          type: NotificationType.MAPPING_OVERRIDDEN,
+          message: `Framework clause mapping for control "${control.name}" was manually overridden (Clause: ${newClause.code}).`,
+          entityType: 'CONTROL_MAPPING',
+          entityId: mappingId,
+        });
+
+        return this.mapMappingToDto(updated);
+      } else {
+        throw new BadRequestException('Either overrideReferenceId or overrideClauseId is required when overriding a mapping');
+      }
     } else {
       throw new BadRequestException(`Invalid decision: ${dto.decision}`);
     }
