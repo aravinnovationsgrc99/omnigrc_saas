@@ -453,3 +453,37 @@ export interface UpdateAnnouncementDto {
   expiresAt?: string;
   sendEmail?: boolean;
 }
+
+export interface SystemOverview {
+  version: string;
+  environment: string;
+  databaseMigrationCount: number;
+  latestMigration: string;
+  health: {
+    database: {
+      status: 'healthy' | 'unhealthy' | 'unknown';
+      latencyMs?: number;
+    };
+    redis: {
+      status: 'configured' | 'unconfigured';
+    };
+    resend: {
+      status: 'configured' | 'unconfigured';
+    };
+    aiProviders: {
+      gemini: 'configured' | 'unconfigured';
+      anthropic: 'configured' | 'unconfigured';
+    };
+  };
+}
+
+export interface KeyRegistryMetadata {
+  keyId: string;
+  algorithm: string;
+  purpose: string;
+  status: 'ACTIVE' | 'RETIRED' | 'REVOKED';
+  publicKeyFingerprint: string;
+  canonicalization: string;
+  formatVersion: string;
+  securityNotes: string;
+}

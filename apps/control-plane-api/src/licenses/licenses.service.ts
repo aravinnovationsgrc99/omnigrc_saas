@@ -516,6 +516,7 @@ export class LicensesService {
         id: deployment.id,
         organizationId: deployment.organizationId,
         customerId: deployment.customerId,
+        activationState: deployment.activationState || 'ACTIVE',
         lastActivatedAt: deployment.lastActivatedAt,
         createdAt: deployment.createdAt,
       },

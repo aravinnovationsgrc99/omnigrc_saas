@@ -122,4 +122,59 @@ describe('LicenseVerificationService (Data Plane)', () => {
     expect(service.hasEntitlement(artifact, 'SOC2_FRAMEWORK')).toBe(true);
     expect(service.hasEntitlement(artifact, 'HIPAA_FRAMEWORK')).toBe(false);
   });
+
+  describe('CP-7 Production Trust-Anchor Security Tests', () => {
+    const origEnv = process.env.NODE_ENV;
+    const origPubKey = process.env.LICENSE_VERIFICATION_PUBLIC_KEY;
+
+    afterEach(() => {
+      process.env.NODE_ENV = origEnv;
+      if (origPubKey !== undefined) {
+        process.env.LICENSE_VERIFICATION_PUBLIC_KEY = origPubKey;
+      } else {
+        delete process.env.LICENSE_VERIFICATION_PUBLIC_KEY;
+      }
+    });
+
+    it('A. valid explicit production public key -> verification succeeds', () => {
+      process.env.NODE_ENV = 'production';
+      process.env.LICENSE_VERIFICATION_PUBLIC_KEY = TEST_KEYPAIR.publicKey;
+      const prodService = new LicenseVerificationService(prisma, service['frameworkEntitlementsService']);
+      const artifact = createValidArtifact({ keyId: 'arav-license-v1-2026' });
+      artifact.keyId = 'arav-license-v1-2026';
+      const result = prodService.verifyArtifact(artifact);
+      expect(result.valid).toBe(true);
+    });
+
+    it('B. missing LICENSE_VERIFICATION_PUBLIC_KEY in production -> fails closed', () => {
+      process.env.NODE_ENV = 'production';
+      delete process.env.LICENSE_VERIFICATION_PUBLIC_KEY;
+      const prodService = new LicenseVerificationService(prisma, service['frameworkEntitlementsService']);
+      const artifact = createValidArtifact();
+      expect(() => prodService.verifyArtifact(artifact)).toThrow(/Unknown or untrusted Key ID/i);
+    });
+
+    it('C. invalid public key -> fails closed', () => {
+      process.env.NODE_ENV = 'production';
+      process.env.LICENSE_VERIFICATION_PUBLIC_KEY = '-----BEGIN PUBLIC KEY-----\nINVALID_DATA\n-----END PUBLIC KEY-----';
+      const prodService = new LicenseVerificationService(prisma, service['frameworkEntitlementsService']);
+      const artifact = createValidArtifact({ keyId: 'arav-license-v1-2026' });
+      artifact.keyId = 'arav-license-v1-2026';
+      expect(() => prodService.verifyArtifact(artifact)).toThrow(/Signature verification error/i);
+    });
+
+    it('D. DEV_LICENSE_PUBLIC_KEY is not registered as a production trust anchor', () => {
+      process.env.NODE_ENV = 'production';
+      delete process.env.LICENSE_VERIFICATION_PUBLIC_KEY;
+      const prodService = new LicenseVerificationService(prisma, service['frameworkEntitlementsService']);
+      expect(prodService.getTrustedPublicKey('arav-license-v1-2026')).toBeUndefined();
+    });
+
+    it('E. non-production development/test fixture still works when intentionally supported', () => {
+      process.env.NODE_ENV = 'development';
+      delete process.env.LICENSE_VERIFICATION_PUBLIC_KEY;
+      const devService = new LicenseVerificationService(prisma, service['frameworkEntitlementsService']);
+      expect(devService.getTrustedPublicKey('arav-license-v1-2026')).toBeDefined();
+    });
+  });
 });

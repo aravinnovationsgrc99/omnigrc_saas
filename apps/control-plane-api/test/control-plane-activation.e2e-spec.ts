@@ -41,6 +41,7 @@ describe('Phase 5 — Control Plane Activation & Verification E2E Test Suite', (
     app = moduleRef.createNestApplication();
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
     await app.init();
+    process.env.LICENSE_VERIFICATION_PUBLIC_KEY = DEV_LICENSE_PUBLIC_KEY;
 
     prisma = moduleRef.get<ControlPlanePrismaService>(ControlPlanePrismaService);
 
@@ -203,7 +204,7 @@ describe('Phase 5 — Control Plane Activation & Verification E2E Test Suite', (
       const isValid = crypto.verify(
         null,
         Buffer.from(canonicalJson, 'utf-8'),
-        DEV_LICENSE_PUBLIC_KEY,
+        (process.env.LICENSE_VERIFICATION_PUBLIC_KEY?.replace(/\\n/g, '\n')),
         Buffer.from(res.body.artifact.signature, 'base64'),
       );
       expect(isValid).toBe(true);

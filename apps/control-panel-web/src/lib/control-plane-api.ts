@@ -35,6 +35,8 @@ import {
   AnnouncementsResponse,
   CreateAnnouncementDto,
   UpdateAnnouncementDto,
+  SystemOverview,
+  KeyRegistryMetadata,
 } from '../types/control-plane';
 
 export class ControlPlaneApiError extends Error {
@@ -549,6 +551,15 @@ export const controlPlaneApi = {
     return request<PlatformAnnouncement>(`v1/communications/${encodeURIComponent(id)}/cancel`, {
       method: 'POST',
     });
+  },
+
+  // System Observatory Endpoints
+  getSystemOverview: async (): Promise<SystemOverview> => {
+    return request<SystemOverview>('v1/system/overview', { method: 'GET' });
+  },
+
+  getKeyRegistry: async (): Promise<KeyRegistryMetadata> => {
+    return request<KeyRegistryMetadata>('v1/system/key-registry', { method: 'GET' });
   },
 
   // Generic typed API request method

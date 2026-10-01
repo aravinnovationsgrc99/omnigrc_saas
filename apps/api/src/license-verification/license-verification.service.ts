@@ -51,7 +51,11 @@ export class LicenseVerificationService {
    * Incoming artifacts can NEVER introduce new public keys into this registry.
    */
   private initializeTrustedKeyRegistry() {
-    this.trustedPublicKeyRegistry.set(DEFAULT_KEY_ID, DEV_LICENSE_PUBLIC_KEY);
+    // Register development fallback only in non-production environments (test or development).
+    const isProd = process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
+    if (!isProd) {
+      this.trustedPublicKeyRegistry.set(DEFAULT_KEY_ID, DEV_LICENSE_PUBLIC_KEY);
+    }
 
     const envPublicKey = process.env.LICENSE_VERIFICATION_PUBLIC_KEY;
     const envKeyId = process.env.LICENSE_VERIFICATION_KEY_ID || DEFAULT_KEY_ID;

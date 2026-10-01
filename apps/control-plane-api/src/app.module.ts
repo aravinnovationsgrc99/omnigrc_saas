@@ -11,6 +11,7 @@ import { OrganizationControlModule } from './organization-control/organization-c
 import { ServiceControlModule } from './service-control/service-control.module';
 import { BreakGlassModule } from './break-glass/break-glass.module';
 import { CommunicationsModule } from './communications/communications.module';
+import { SystemModule } from './system/system.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { CommunicationsModule } from './communications/communications.module';
     ServiceControlModule,
     BreakGlassModule,
     CommunicationsModule,
+    SystemModule,
   ],
 })
 export class AppModule {}
