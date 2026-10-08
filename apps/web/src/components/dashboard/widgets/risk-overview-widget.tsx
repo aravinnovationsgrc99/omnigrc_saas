@@ -2,23 +2,26 @@
 
 import React from 'react';
 import { RiskMetricsDto } from '@omnigrc/shared';
-import { ShieldAlert, AlertTriangle, ShieldCheck, Activity } from 'lucide-react';
+import { ShieldAlert, AlertTriangle, ShieldCheck, Activity, ChevronRight } from 'lucide-react';
 import { AnimatedCountUp } from '@/components/ui/animated-count-up';
 import { DonutChart, ChartSegment } from '../charts/donut-chart';
 
-export function RiskOverviewWidget({ metrics }: { metrics: RiskMetricsDto }) {
+interface RiskOverviewWidgetProps {
+  metrics: RiskMetricsDto;
+  onNavigateToView?: (view: string) => void;
+}
+
+export function RiskOverviewWidget({ metrics, onNavigateToView }: RiskOverviewWidgetProps) {
   const highCount = metrics.byScoreBand?.HIGH || 0;
   const mediumCount = metrics.byScoreBand?.MEDIUM || 0;
   const lowCount = metrics.byScoreBand?.LOW || 0;
-  const total = metrics.totalOpen || (highCount + mediumCount + lowCount);
+  const total = metrics.totalOpen || highCount + mediumCount + lowCount;
 
   const byStatus = metrics.byStatus || {};
   const openCount = byStatus.OPEN || 0;
   const inTreatmentCount = byStatus.IN_TREATMENT || 0;
   const acceptedCount = byStatus.ACCEPTED || 0;
   const closedCount = byStatus.CLOSED || 0;
-  const totalStatus = openCount + inTreatmentCount + acceptedCount + closedCount;
-  const displayTotal = totalStatus || total;
 
   const segments: ChartSegment[] = [
     { key: 'open', label: 'Open', value: openCount, color: '#f43f5e' },
@@ -28,37 +31,47 @@ export function RiskOverviewWidget({ metrics }: { metrics: RiskMetricsDto }) {
   ];
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2.5">
-          <div className="p-2 bg-rose-50 border border-rose-100 rounded-lg text-rose-600">
-            <ShieldAlert size={18} />
+    <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-2xs hover:shadow-md transition-shadow flex flex-col justify-between h-full">
+      <div>
+        <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-rose-50 border border-rose-100 rounded-lg text-rose-600 shrink-0">
+              <ShieldAlert size={18} />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">Risk Overview</h3>
+              <p className="text-xs text-slate-500">Open enterprise risk posture</p>
+            </div>
           </div>
-          <div>
-            <h3 className="text-sm font-semibold text-slate-900">Risk Overview</h3>
-            <p className="text-xs text-slate-500">Open enterprise risk posture</p>
-          </div>
+          <button
+            onClick={() => onNavigateToView?.('risk')}
+            className="text-xs font-semibold text-teal-700 hover:text-teal-800 flex items-center gap-1 hover:underline shrink-0"
+            title="Open Risk Register"
+          >
+            <span>Register</span>
+            <ChevronRight size={14} />
+          </button>
         </div>
-        <span className="text-xs font-medium px-2.5 py-1 bg-slate-100 text-slate-700 rounded-full border border-slate-200">
-          <AnimatedCountUp value={metrics.totalOpen} /> Total Open
-        </span>
-      </div>
 
-      {/* Donut Chart Visualization */}
-      <div className="mb-4 pt-1">
-        <DonutChart
-          segments={segments}
-          centerLabel="Open Risks"
-          centerValue={total}
-          size={120}
-          thickness={18}
-          emptyMessage="No open risks registered"
-        />
+        {/* Donut Chart Visualization */}
+        <div className="mb-4 pt-1 flex justify-center">
+          <DonutChart
+            segments={segments}
+            centerLabel="Open Risks"
+            centerValue={total}
+            size={120}
+            thickness={18}
+            emptyMessage="No open risks registered"
+          />
+        </div>
       </div>
 
       {/* KPI Cards Strip */}
       <div className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-100">
-        <div className="bg-rose-50/50 p-2.5 rounded-lg border border-rose-100/60">
+        <div
+          onClick={() => onNavigateToView?.('risk')}
+          className="bg-rose-50/50 p-2.5 rounded-lg border border-rose-100/60 hover:bg-rose-100/50 transition-colors cursor-pointer"
+        >
           <div className="flex items-center gap-1 text-[11px] font-medium text-rose-700">
             <AlertTriangle size={12} /> High
           </div>
@@ -67,7 +80,10 @@ export function RiskOverviewWidget({ metrics }: { metrics: RiskMetricsDto }) {
           </div>
         </div>
 
-        <div className="bg-amber-50/50 p-2.5 rounded-lg border border-amber-100/60">
+        <div
+          onClick={() => onNavigateToView?.('risk')}
+          className="bg-amber-50/50 p-2.5 rounded-lg border border-amber-100/60 hover:bg-amber-100/50 transition-colors cursor-pointer"
+        >
           <div className="flex items-center gap-1 text-[11px] font-medium text-amber-700">
             <Activity size={12} /> Medium
           </div>
@@ -76,7 +92,10 @@ export function RiskOverviewWidget({ metrics }: { metrics: RiskMetricsDto }) {
           </div>
         </div>
 
-        <div className="bg-emerald-50/50 p-2.5 rounded-lg border border-emerald-100/60">
+        <div
+          onClick={() => onNavigateToView?.('risk')}
+          className="bg-emerald-50/50 p-2.5 rounded-lg border border-emerald-100/60 hover:bg-emerald-100/50 transition-colors cursor-pointer"
+        >
           <div className="flex items-center gap-1 text-[11px] font-medium text-emerald-700">
             <ShieldCheck size={12} /> Low
           </div>

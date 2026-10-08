@@ -14,6 +14,9 @@ import {
   RiskMetricsDto,
   ControlCoverageMetricsDto,
   EntitledFrameworkCoverageSummaryDto,
+  HeatmapCellDto,
+  HeatmapCellDetailsDto,
+  RiskScoreBand,
   ObligationCadence,
   TaskStatus,
   VulnerabilityStatus,
@@ -110,6 +113,12 @@ export class MetricsService {
       overdueCapaList,
       overduePolicyList,
       overdueVendorAssessmentList,
+
+      // Authoritative Risk Heatmap database-level groupBy & High-Severity Risk drill-down
+      riskHeatmapGroup,
+      highSeverityRisksList,
+      activeAssessmentsForAudit,
+      pendingPolicyExceptionsCount,
     ] = await Promise.all([
       // Assets
       this.prisma.asset.count({ where: { ...scopeWhere, deletedAt: null } }),
@@ -267,6 +276,48 @@ export class MetricsService {
         take: 2,
         orderBy: { createdAt: 'asc' },
       }),
+
+      // Authoritative Risk Heatmap Database-Level 5x5 GroupBy Aggregation (ZERO Truncation)
+      this.prisma.risk.groupBy({
+        by: ['likelihood', 'impact'],
+        where: { ...scopeWhere, deletedAt: null, status: { in: ['OPEN', 'IN_TREATMENT'] } },
+        _count: true,
+      }),
+
+      // Top High-Severity Risks Query (for KPI drill-down card)
+      this.prisma.risk.findMany({
+        where: { ...scopeWhere, deletedAt: null, status: { in: ['OPEN', 'IN_TREATMENT'] }, score: { gte: 15 } },
+        select: {
+          id: true,
+          title: true,
+          likelihood: true,
+          impact: true,
+          score: true,
+          status: true,
+          owner: true,
+          asset: { select: { name: true } },
+        },
+        take: 10,
+        orderBy: { score: 'desc' },
+      }),
+
+      // Active Audit Assessments Query
+      this.prisma.auditAssessment.findMany({
+        where: { organizationId: authCtx.organizationId },
+        select: {
+          id: true,
+          status: true,
+          score: true,
+          auditPlan: { select: { title: true } },
+        },
+        take: 5,
+        orderBy: { createdAt: 'desc' },
+      }),
+
+      // Pending Policy Exceptions Query
+      this.prisma.policyException.count({
+        where: { organizationId: authCtx.organizationId, status: 'PENDING' },
+      }),
     ]);
 
     // Fetch Entitled Frameworks and compute Phase C Coverage without N+1 frontend requests
@@ -347,6 +398,7 @@ export class MetricsService {
       byStatus: Object.fromEntries(policyByStatus.map((g) => [g.status, g._count])),
       publishedCount: policyPublished,
       overdueReviewCount: policyOverdueReview,
+      pendingExceptionsCount: pendingPolicyExceptionsCount,
     };
 
     const vendors: VendorMetricsDto = {
@@ -366,6 +418,13 @@ export class MetricsService {
       completionRate,
     };
 
+    const activeAssessments = activeAssessmentsForAudit.map((a) => ({
+      id: a.id,
+      planTitle: a.auditPlan?.title || 'Audit Plan',
+      status: a.status,
+      score: a.score || 0,
+    }));
+
     const audits: AuditMetricsDto = {
       totalPlans: auditPlansTotal,
       byPlanStatus: Object.fromEntries(auditPlansByStatus.map((g) => [g.status, g._count])),
@@ -377,7 +436,37 @@ export class MetricsService {
       findingsBySeverity: Object.fromEntries(auditFindingsBySeverity.map((g) => [g.severity, g._count])),
       capaOpenCount: auditCapaOpen,
       byCapaStatus: Object.fromEntries(auditCapaByStatus.map((g) => [g.status, g._count])),
+      activeAssessments,
     };
+
+    // Authoritative 5x5 Heatmap Matrix construction via database-level GroupBy counts
+    const matrix: HeatmapCellDto[] = [];
+    for (let l = 1; l <= 5; l++) {
+      for (let i = 1; i <= 5; i++) {
+        const groupEntry = riskHeatmapGroup.find((g) => g.likelihood === l && g.impact === i);
+        const count = groupEntry ? groupEntry._count : 0;
+        const score = l * i;
+        const scoreBand = score >= 15 ? RiskScoreBand.HIGH : score >= 8 ? RiskScoreBand.MEDIUM : RiskScoreBand.LOW;
+        matrix.push({
+          likelihood: l,
+          impact: i,
+          count,
+          score,
+          scoreBand,
+        });
+      }
+    }
+
+    const highSeverityRisks = highSeverityRisksList.map((r) => ({
+      id: r.id,
+      title: r.title,
+      score: r.score,
+      likelihood: r.likelihood,
+      impact: r.impact,
+      status: r.status,
+      owner: r.owner,
+      assetName: r.asset?.name || undefined,
+    }));
 
     const risks: RiskMetricsDto = {
       totalOpen: riskTotalOpen,
@@ -387,6 +476,11 @@ export class MetricsService {
         LOW: riskLowBand,
       },
       byStatus: Object.fromEntries(riskByStatus.map((g) => [g.status, g._count])),
+      heatmap: {
+        matrix,
+        totalOpenCount: riskTotalOpen,
+      },
+      highSeverityRisks,
     };
 
     const attentionRequired = [
@@ -452,6 +546,67 @@ export class MetricsService {
       controls,
       frameworkCoverage,
       attentionRequired,
+    };
+  }
+
+  /**
+   * Authoritative On-Demand Heatmap Cell Drill-down Detail Query.
+   * Returns paginated/bounded risk items for a specific cell ONLY when explicitly requested by user.
+   */
+  async getHeatmapCellDetails(
+    authCtx: ResourceAuthContext,
+    likelihood: number,
+    impact: number,
+  ): Promise<HeatmapCellDetailsDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+
+    const [total, items] = await Promise.all([
+      this.prisma.risk.count({
+        where: {
+          ...scopeWhere,
+          deletedAt: null,
+          status: { in: ['OPEN', 'IN_TREATMENT'] },
+          likelihood,
+          impact,
+        },
+      }),
+      this.prisma.risk.findMany({
+        where: {
+          ...scopeWhere,
+          deletedAt: null,
+          status: { in: ['OPEN', 'IN_TREATMENT'] },
+          likelihood,
+          impact,
+        },
+        select: {
+          id: true,
+          title: true,
+          score: true,
+          likelihood: true,
+          impact: true,
+          status: true,
+          owner: true,
+          asset: { select: { name: true } },
+        },
+        take: 20,
+        orderBy: { score: 'desc' },
+      }),
+    ]);
+
+    return {
+      likelihood,
+      impact,
+      total,
+      items: items.map((r) => ({
+        id: r.id,
+        title: r.title,
+        score: r.score,
+        likelihood: r.likelihood,
+        impact: r.impact,
+        status: r.status,
+        owner: r.owner,
+        assetName: r.asset?.name || undefined,
+      })),
     };
   }
 }

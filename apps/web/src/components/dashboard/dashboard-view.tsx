@@ -11,6 +11,7 @@ import {
 } from '@omnigrc/shared';
 import { reconcileLayout } from './widget-registry';
 import { RiskOverviewWidget } from './widgets/risk-overview-widget';
+import { RiskHeatmapWidget } from './widgets/risk-heatmap-widget';
 import { ComplianceObligationsWidget } from './widgets/compliance-obligations-widget';
 import { AuditReadinessWidget } from './widgets/audit-readiness-widget';
 import { VulnerabilityPostureWidget } from './widgets/vulnerability-posture-widget';
@@ -22,7 +23,6 @@ import { SlidersHorizontal, RefreshCw, AlertCircle, Sparkles } from 'lucide-reac
 import { ExecutivePostureBanner } from './widgets/executive-posture-banner';
 import { ExecutiveKpiStrip } from './widgets/executive-kpi-strip';
 import { AttentionRequiredWidget } from './widgets/attention-required-widget';
-
 import { EntitledFrameworkCoverageWidget } from './widgets/entitled-framework-coverage-widget';
 
 interface DashboardViewProps {
@@ -84,21 +84,30 @@ export function DashboardView({ onNavigateToView }: DashboardViewProps) {
     if (!metrics) return null;
     switch (id) {
       case 'risk_overview':
-        return <RiskOverviewWidget key={id} metrics={metrics.risks} />;
+        return <RiskOverviewWidget key={id} metrics={metrics.risks} onNavigateToView={onNavigateToView} />;
+      case 'risk_heatmap':
+        return <RiskHeatmapWidget key={id} metrics={metrics} onNavigateToView={onNavigateToView} />;
       case 'entitled_framework_coverage':
-        return <EntitledFrameworkCoverageWidget key={id} metrics={metrics.frameworkCoverage} controls={metrics.controls} />;
+        return (
+          <EntitledFrameworkCoverageWidget
+            key={id}
+            metrics={metrics.frameworkCoverage}
+            controls={metrics.controls}
+            onNavigateToView={onNavigateToView}
+          />
+        );
       case 'compliance_obligations':
-        return <ComplianceObligationsWidget key={id} metrics={metrics.obligations} />;
+        return <ComplianceObligationsWidget key={id} metrics={metrics.obligations} onNavigateToView={onNavigateToView} />;
       case 'audit_readiness':
-        return <AuditReadinessWidget key={id} metrics={metrics.audits} />;
+        return <AuditReadinessWidget key={id} metrics={metrics.audits} onNavigateToView={onNavigateToView} />;
       case 'vulnerability_posture':
-        return <VulnerabilityPostureWidget key={id} metrics={metrics.vulnerabilities} />;
+        return <VulnerabilityPostureWidget key={id} metrics={metrics.vulnerabilities} onNavigateToView={onNavigateToView} />;
       case 'policy_governance':
-        return <PolicyGovernanceWidget key={id} metrics={metrics.policies} />;
+        return <PolicyGovernanceWidget key={id} metrics={metrics.policies} onNavigateToView={onNavigateToView} />;
       case 'vendor_risk':
-        return <VendorRiskWidget key={id} metrics={metrics.vendors} />;
+        return <VendorRiskWidget key={id} metrics={metrics.vendors} onNavigateToView={onNavigateToView} />;
       case 'asset_inventory':
-        return <AssetInventoryWidget key={id} metrics={metrics.assets} />;
+        return <AssetInventoryWidget key={id} metrics={metrics.assets} onNavigateToView={onNavigateToView} />;
       default:
         return null;
     }
@@ -169,7 +178,7 @@ export function DashboardView({ onNavigateToView }: DashboardViewProps) {
       {metrics && <ExecutivePostureBanner metrics={metrics} onNavigateToView={onNavigateToView} />}
 
       {/* 2. Executive KPI Overview Strip */}
-      {metrics && <ExecutiveKpiStrip metrics={metrics} />}
+      {metrics && <ExecutiveKpiStrip metrics={metrics} onNavigateToView={onNavigateToView} />}
 
       {/* 3. Bounded Attention Required / Critical Exceptions Section */}
       {metrics && metrics.attentionRequired && metrics.attentionRequired.length > 0 && (
@@ -178,9 +187,9 @@ export function DashboardView({ onNavigateToView }: DashboardViewProps) {
 
       {/* 4. Domain Widget Grid */}
       {metrics && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 items-start">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 items-stretch">
           {visibleWidgets.map((w) => (
-            <div key={w.id} className="w-full">
+            <div key={w.id} className="w-full flex">
               {renderWidget(w.id)}
             </div>
           ))}

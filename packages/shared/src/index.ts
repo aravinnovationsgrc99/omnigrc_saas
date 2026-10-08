@@ -377,17 +377,36 @@ export interface PaginatedRisksDto {
   limit: number;
 }
 
+export interface RiskHeatmapItemDto {
+  id: string;
+  title: string;
+  score: number;
+  likelihood: number;
+  impact: number;
+  status: string;
+  owner: string;
+  assetName?: string;
+}
+
 export interface HeatmapCellDto {
   likelihood: number;
   impact: number;
   count: number;
   score: number;
   scoreBand: RiskScoreBand;
+  risks?: RiskHeatmapItemDto[];
 }
 
 export interface HeatmapSummaryDto {
   matrix: HeatmapCellDto[];
   totalOpenCount: number;
+}
+
+export interface HeatmapCellDetailsDto {
+  likelihood: number;
+  impact: number;
+  total: number;
+  items: RiskHeatmapItemDto[];
 }
 
 export interface AuthTokens {
@@ -1587,6 +1606,7 @@ export interface PolicyMetricsDto {
   total: number;
   publishedCount: number;
   overdueReviewCount: number;
+  pendingExceptionsCount?: number;
   byStatus: Record<string, number>;
 }
 
@@ -1606,6 +1626,13 @@ export interface ObligationMetricsDto {
   completionRate: number;
 }
 
+export interface ActiveAuditAssessmentDto {
+  id: string;
+  planTitle: string;
+  status: string;
+  score: number;
+}
+
 export interface AuditMetricsDto {
   totalPlans: number;
   assessmentCount: number;
@@ -1617,6 +1644,7 @@ export interface AuditMetricsDto {
   byPlanStatus: Record<string, number>;
   findingsBySeverity: Record<string, number>;
   byCapaStatus?: Record<string, number>;
+  activeAssessments?: ActiveAuditAssessmentDto[];
 }
 
 export interface RiskMetricsDto {
@@ -1627,6 +1655,8 @@ export interface RiskMetricsDto {
     LOW: number;
   };
   byStatus: Record<string, number>;
+  heatmap?: HeatmapSummaryDto;
+  highSeverityRisks?: RiskHeatmapItemDto[];
 }
 
 export interface ControlCoverageMetricsDto {
@@ -1698,13 +1728,14 @@ export interface UpdateDashboardPreferenceDto {
 
 export const DEFAULT_WIDGET_LAYOUT: WidgetLayoutItem[] = [
   { id: 'risk_overview', visible: true, position: 0 },
-  { id: 'entitled_framework_coverage', visible: true, position: 1 },
-  { id: 'compliance_obligations', visible: true, position: 2 },
-  { id: 'audit_readiness', visible: true, position: 3 },
-  { id: 'vulnerability_posture', visible: true, position: 4 },
-  { id: 'policy_governance', visible: true, position: 5 },
-  { id: 'vendor_risk', visible: true, position: 6 },
-  { id: 'asset_inventory', visible: true, position: 7 },
+  { id: 'risk_heatmap', visible: true, position: 1 },
+  { id: 'entitled_framework_coverage', visible: true, position: 2 },
+  { id: 'compliance_obligations', visible: true, position: 3 },
+  { id: 'audit_readiness', visible: true, position: 4 },
+  { id: 'vulnerability_posture', visible: true, position: 5 },
+  { id: 'policy_governance', visible: true, position: 6 },
+  { id: 'vendor_risk', visible: true, position: 7 },
+  { id: 'asset_inventory', visible: true, position: 8 },
 ];
 
 // Phase 15: Reporting & Exports Enums & DTOs

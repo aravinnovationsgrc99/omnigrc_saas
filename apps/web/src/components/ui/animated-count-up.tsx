@@ -5,6 +5,8 @@ import React, { useState, useEffect, useRef } from 'react';
 interface AnimatedCountUpProps {
   value: number | string;
   duration?: number;
+  prefix?: string;
+  suffix?: string;
   className?: string;
   style?: React.CSSProperties;
 }
@@ -12,6 +14,8 @@ interface AnimatedCountUpProps {
 export function AnimatedCountUp({
   value,
   duration = 500,
+  prefix = '',
+  suffix = '',
   className = '',
   style = {},
 }: AnimatedCountUpProps) {
@@ -68,7 +72,7 @@ export function AnimatedCountUp({
 
   return (
     <span className={className} style={style}>
-      {displayValue}
+      {prefix}{displayValue}{suffix}
     </span>
   );
 }

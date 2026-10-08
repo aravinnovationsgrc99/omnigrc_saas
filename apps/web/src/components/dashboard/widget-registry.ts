@@ -26,6 +26,13 @@ export const WIDGET_METADATA: Record<string, WidgetMeta> = {
     description: 'Open risks breakdown by score band (High, Medium, Low) and treatment status',
     icon: ShieldAlert,
   },
+  risk_heatmap: {
+    id: 'risk_heatmap',
+    title: 'Risk Heatmap',
+    category: 'Risk Management',
+    description: 'Interactive 5x5 Likelihood vs Impact risk scoring matrix with cell drill-down',
+    icon: ShieldAlert,
+  },
   entitled_framework_coverage: {
     id: 'entitled_framework_coverage',
     title: 'Entitled Framework Coverage',

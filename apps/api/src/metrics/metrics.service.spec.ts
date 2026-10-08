@@ -45,6 +45,10 @@ describe('MetricsService', () => {
       auditAssessment: {
         count: jest.fn().mockResolvedValue(0),
         aggregate: jest.fn().mockResolvedValue({ _avg: { score: 85.5 } }),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      policyException: {
+        count: jest.fn().mockResolvedValue(0),
       },
       auditFinding: {
         count: jest.fn().mockResolvedValue(0),
@@ -59,6 +63,7 @@ describe('MetricsService', () => {
       risk: {
         count: jest.fn().mockResolvedValue(0),
         groupBy: jest.fn().mockResolvedValue([]),
+        findMany: jest.fn().mockResolvedValue([]),
       },
       framework: {
         findMany: jest.fn().mockResolvedValue([]),
@@ -181,6 +186,88 @@ describe('MetricsService', () => {
     await service.getOverviewMetrics(authCtxB);
     expect(prisma.asset.count).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ organizationId: 'client-tenant-b' }) }),
+    );
+  });
+
+  it('should generate a 25-cell 5x5 risk heatmap matrix with 100% reconciliation for datasets >100 risks', async () => {
+    prisma.risk.count.mockResolvedValueOnce(120); // totalOpen
+    prisma.risk.count.mockResolvedValueOnce(70);  // HIGH band
+    prisma.risk.count.mockResolvedValueOnce(50);  // MEDIUM band
+    prisma.risk.count.mockResolvedValueOnce(0);   // LOW band
+
+    // First risk.groupBy: status breakdown
+    prisma.risk.groupBy.mockResolvedValueOnce([
+      { status: 'OPEN', _count: 120 },
+    ]);
+
+    // Second risk.groupBy: 5x5 heatmap matrix
+    prisma.risk.groupBy.mockResolvedValueOnce([
+      { likelihood: 5, impact: 4, _count: 70 },
+      { likelihood: 3, impact: 3, _count: 50 },
+    ]);
+
+    prisma.risk.findMany.mockResolvedValueOnce([
+      { id: 'r1', title: 'Critical DB Vulnerability', likelihood: 5, impact: 4, score: 20, status: 'OPEN', owner: 'Alice', asset: { name: 'DB-Cluster' } },
+    ]);
+
+    const authCtx = { userId: 'user-1', organizationId: 'org-test-heatmap', role: Role.ADMIN };
+    const result = await service.getOverviewMetrics(authCtx);
+
+    expect(result.risks.heatmap).toBeDefined();
+    expect(result.risks.heatmap?.matrix).toHaveLength(25); // 5x5 = 25 cells
+    expect(result.risks.totalOpen).toBe(120);
+
+    const sumCellCounts = result.risks.heatmap?.matrix.reduce((acc, cell) => acc + cell.count, 0);
+    expect(sumCellCounts).toBe(120);
+
+    const cell5_4 = result.risks.heatmap?.matrix.find((c) => c.likelihood === 5 && c.impact === 4);
+    expect(cell5_4).toBeDefined();
+    expect(cell5_4?.count).toBe(70);
+
+    const cell1_1 = result.risks.heatmap?.matrix.find((c) => c.likelihood === 1 && c.impact === 1);
+    expect(cell1_1).toBeDefined();
+    expect(cell1_1?.count).toBe(0);
+
+    expect(result.risks.highSeverityRisks).toHaveLength(1);
+  });
+
+  it('should fetch on-demand cell details scoped to likelihood, impact, and tenant', async () => {
+    prisma.risk.count.mockResolvedValueOnce(7);
+    prisma.risk.findMany.mockResolvedValueOnce([
+      { id: 'r10', title: 'Data Center Fire Risk', likelihood: 5, impact: 4, score: 20, status: 'OPEN', owner: 'Charlie', asset: { name: 'DC-Primary' } },
+    ]);
+
+    const authCtx = { userId: 'user-1', organizationId: 'org-tenant-cell', role: Role.ADMIN };
+    const result = await service.getHeatmapCellDetails(authCtx, 5, 4);
+
+    expect(result.likelihood).toBe(5);
+    expect(result.impact).toBe(4);
+    expect(result.total).toBe(7);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].title).toBe('Data Center Fire Risk');
+
+    expect(prisma.risk.count).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          organizationId: 'org-tenant-cell',
+          likelihood: 5,
+          impact: 4,
+          deletedAt: null,
+          status: { in: ['OPEN', 'IN_TREATMENT'] },
+        }),
+      }),
+    );
+    expect(prisma.risk.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          organizationId: 'org-tenant-cell',
+          likelihood: 5,
+          impact: 4,
+          deletedAt: null,
+          status: { in: ['OPEN', 'IN_TREATMENT'] },
+        }),
+        take: 20,
+      }),
     );
   });
 });

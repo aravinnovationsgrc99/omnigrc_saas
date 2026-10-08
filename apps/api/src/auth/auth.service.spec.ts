@@ -46,6 +46,9 @@ describe('AuthService', () => {
       asset: {
         createMany: jest.fn(),
       },
+      organizationControlStateProjection: {
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
     };
 
     auditLogsService = {
