@@ -4,6 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { MsspClientSummaryDto } from '@omnigrc/shared';
 import { Users, ShieldAlert, CheckCircle2, ArrowRightLeft, Building2, RefreshCw } from 'lucide-react';
 
+import { apiRequest, setStoredTokens } from '@/lib/api-client';
+
 export function MsspPartnerPortalView() {
   const [clients, setClients] = useState<MsspClientSummaryDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -14,15 +16,7 @@ export function MsspPartnerPortalView() {
     setLoading(true);
     setError(null);
     try {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-      const res = await fetch('/api/mssp-admin/clients', {
-        headers: {
-          Authorization: token ? `Bearer ${token}` : '',
-        },
-      });
-
-      if (!res.ok) throw new Error('Failed to fetch managed client tenants.');
-      const data: MsspClientSummaryDto[] = await res.json();
+      const data = await apiRequest<MsspClientSummaryDto[]>('/mssp-admin/clients');
       setClients(data);
     } catch (err: any) {
       setError(err.message || 'Error loading MSSP partner portal.');
@@ -38,21 +32,13 @@ export function MsspPartnerPortalView() {
   const handleContextSwitch = async (targetOrganizationId: string) => {
     setSwitchingId(targetOrganizationId);
     try {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-      const res = await fetch('/api/auth/switch-context', {
+      const result = await apiRequest<{ accessToken: string; refreshToken?: string }>('/auth/switch-context', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: token ? `Bearer ${token}` : '',
-        },
         body: JSON.stringify({ targetOrganizationId }),
       });
 
-      if (!res.ok) throw new Error('Failed to switch tenant context.');
-      const result = await res.json();
-
       if (result.accessToken && typeof window !== 'undefined') {
-        localStorage.setItem('token', result.accessToken);
+        setStoredTokens(result.accessToken, result.refreshToken || '');
         window.location.reload();
       }
     } catch (err: any) {

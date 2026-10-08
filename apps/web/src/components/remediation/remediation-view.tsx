@@ -8,6 +8,8 @@ import {
 } from '@omnigrc/shared';
 import { Search, AlertTriangle, CheckCircle2, Clock, ExternalLink, RefreshCw, CheckSquare } from 'lucide-react';
 
+import { apiRequest } from '@/lib/api-client';
+
 export function RemediationView() {
   const [data, setData] = useState<PaginatedRemediationActionsDto | null>(null);
   const [loading, setLoading] = useState(true);
@@ -23,7 +25,6 @@ export function RemediationView() {
     setLoading(true);
     setError(null);
     try {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
       const params = new URLSearchParams();
       params.append('page', page.toString());
       params.append('limit', '15');
@@ -31,14 +32,7 @@ export function RemediationView() {
       if (sourceType) params.append('sourceType', sourceType);
       if (overdueOnly) params.append('overdueOnly', 'true');
 
-      const res = await fetch(`/api/remediation/actions?${params.toString()}`, {
-        headers: {
-          Authorization: token ? `Bearer ${token}` : '',
-        },
-      });
-
-      if (!res.ok) throw new Error('Failed to fetch remediation action items.');
-      const result = await res.json();
+      const result = await apiRequest<PaginatedRemediationActionsDto>(`/remediation/actions?${params.toString()}`);
       setData(result);
     } catch (err: any) {
       setError(err.message || 'An error occurred loading remediation actions.');

@@ -158,7 +158,7 @@ export function Topbar({ onToggleMobileSidebar }: TopbarProps) {
 
           {/* Notifications Dropdown Popover */}
           {notifOpen && (
-            <div className="omni-fade-in -right-10 sm:right-0 w-[300px] sm:w-[340px] max-w-[calc(100vw-24px)]" style={{
+            <div className="omni-fade-in right-0 w-[300px] sm:w-[340px] max-w-[calc(100vw-24px)]" style={{
               position: 'absolute', top: 44, background: '#FFFFFF', border: '1px solid #E2E6E4',
               borderRadius: 10, boxShadow: '0 12px 30px rgba(15,23,42,0.15)', overflow: 'hidden', zIndex: 100,
             }}>

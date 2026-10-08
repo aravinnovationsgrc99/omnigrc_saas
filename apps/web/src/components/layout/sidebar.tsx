@@ -6,7 +6,7 @@ import { Role, hasRole, OMNIGRC_VERSION } from '@omnigrc/shared';
 import {
   LayoutDashboard, ShieldAlert, Boxes, GitMerge, KanbanSquare,
   Settings, Globe2, FileText, Lock, FileCheck, Building2, Bug, ClipboardList, FileSpreadsheet,
-  CheckSquare, FileArchive, ShieldCheck, Library, Layers, Sparkles, Building, CheckCircle2, type LucideIcon
+  CheckSquare, FileArchive, ShieldCheck, Library, Layers, Sparkles, Building, CheckCircle2, X, type LucideIcon
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -138,6 +138,15 @@ export function Sidebar({ view, setView, mobileOpen = false, onCloseMobile }: Si
             </div>
             <span style={{ fontSize: 15, fontWeight: 600 }}>OMNiGRC</span>
           </div>
+          {mobileOpen && (
+            <button
+              onClick={onCloseMobile}
+              className="lg:hidden text-slate-400 hover:text-white p-1 rounded-md transition-colors"
+              aria-label="Close navigation menu"
+            >
+              <X size={18} />
+            </button>
+          )}
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto' }} className="omni-scroll">

@@ -5,6 +5,8 @@ import { FrameworkItemDto, CustomFrameworkImportDto } from '@omnigrc/shared';
 import { Library, Search, Shield, X, Upload, ShieldCheck } from 'lucide-react';
 import { FrameworkCoverageView } from './framework-coverage-view';
 
+import { apiRequest } from '@/lib/api-client';
+
 export function FrameworkLibraryView() {
   const [activeTab, setActiveTab] = useState<'catalog' | 'coverage'>('catalog');
   const [frameworks, setFrameworks] = useState<FrameworkItemDto[]>([]);
@@ -22,15 +24,7 @@ export function FrameworkLibraryView() {
     setLoading(true);
     setError(null);
     try {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-      const res = await fetch('/api/frameworks', {
-        headers: {
-          Authorization: token ? `Bearer ${token}` : '',
-        },
-      });
-
-      if (!res.ok) throw new Error('Failed to fetch framework library.');
-      const list: FrameworkItemDto[] = await res.json();
+      const list = await apiRequest<FrameworkItemDto[]>('/frameworks');
       setFrameworks(list);
 
       if (list.length > 0 && !selectedFramework) {
@@ -45,18 +39,10 @@ export function FrameworkLibraryView() {
 
   const fetchFrameworkDetails = async (idOrCode: string) => {
     try {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-      const res = await fetch(`/api/frameworks/${idOrCode}`, {
-        headers: {
-          Authorization: token ? `Bearer ${token}` : '',
-        },
-      });
-      if (res.ok) {
-        const fw: FrameworkItemDto = await res.json();
-        setSelectedFramework(fw);
-      }
+      const fw = await apiRequest<FrameworkItemDto>(`/frameworks/${idOrCode}`);
+      setSelectedFramework(fw);
     } catch (err) {
-      console.error(err);
+      console.error('Failed to fetch framework details:', err);
     }
   };
 
@@ -71,21 +57,11 @@ export function FrameworkLibraryView() {
     setImporting(true);
     try {
       const parsed: CustomFrameworkImportDto = JSON.parse(importJson);
-      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
 
-      const res = await fetch('/api/frameworks/import', {
+      await apiRequest('/frameworks/import', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: token ? `Bearer ${token}` : '',
-        },
         body: JSON.stringify(parsed),
       });
-
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.message || 'Failed to import framework.');
-      }
 
       setIsImportOpen(false);
       setImportJson('');
@@ -125,7 +101,7 @@ export function FrameworkLibraryView() {
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex border-b border-slate-200 gap-6">
+      <div className="flex border-b border-slate-200 gap-4 sm:gap-6 overflow-x-auto omni-scroll no-scrollbar">
         <button
           onClick={() => setActiveTab('catalog')}
           className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${

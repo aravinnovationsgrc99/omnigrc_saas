@@ -10,6 +10,8 @@ import {
 } from '@omnigrc/shared';
 import { Plus, Search, ShieldAlert, Clock, RefreshCw, X } from 'lucide-react';
 
+import { apiRequest } from '@/lib/api-client';
+
 export function IncidentListView() {
   const [data, setData] = useState<PaginatedIncidentsDto | null>(null);
   const [loading, setLoading] = useState(true);
@@ -32,7 +34,6 @@ export function IncidentListView() {
     setLoading(true);
     setError(null);
     try {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
       const params = new URLSearchParams();
       params.append('page', page.toString());
       params.append('limit', '15');
@@ -40,14 +41,7 @@ export function IncidentListView() {
       if (severityFilter) params.append('severity', severityFilter);
       if (statusFilter) params.append('status', statusFilter);
 
-      const res = await fetch(`/api/incidents?${params.toString()}`, {
-        headers: {
-          Authorization: token ? `Bearer ${token}` : '',
-        },
-      });
-
-      if (!res.ok) throw new Error('Failed to fetch incidents.');
-      const result = await res.json();
+      const result = await apiRequest<PaginatedIncidentsDto>(`/incidents?${params.toString()}`);
       setData(result);
     } catch (err: any) {
       setError(err.message || 'An error occurred loading incidents.');
@@ -66,7 +60,6 @@ export function IncidentListView() {
 
     setSubmitting(true);
     try {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
       const body: CreateIncidentDto = {
         title: newTitle.trim(),
         description: newDesc.trim() || undefined,
@@ -74,16 +67,10 @@ export function IncidentListView() {
         owner: newOwner.trim() || undefined,
       };
 
-      const res = await fetch('/api/incidents', {
+      await apiRequest('/incidents', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: token ? `Bearer ${token}` : '',
-        },
         body: JSON.stringify(body),
       });
-
-      if (!res.ok) throw new Error('Failed to log new incident.');
 
       setIsCreateOpen(false);
       setNewTitle('');
@@ -99,17 +86,10 @@ export function IncidentListView() {
 
   const handleStatusTransition = async (incidentId: string, nextStatus: IncidentStatus) => {
     try {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-      const res = await fetch(`/api/incidents/${incidentId}`, {
+      await apiRequest(`/incidents/${incidentId}`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: token ? `Bearer ${token}` : '',
-        },
         body: JSON.stringify({ status: nextStatus }),
       });
-
-      if (!res.ok) throw new Error('Failed to update incident status.');
       fetchIncidents();
     } catch (err: any) {
       alert(err.message || 'Error updating status');
@@ -370,7 +350,7 @@ export function IncidentListView() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Severity</label>
                   <select

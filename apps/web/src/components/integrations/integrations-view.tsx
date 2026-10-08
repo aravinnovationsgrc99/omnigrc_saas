@@ -4,6 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { IntegrationConnectorDto } from '@omnigrc/shared';
 import { Layers, CheckCircle2, Cpu, Mail, MessageSquare, RefreshCw, Lock } from 'lucide-react';
 
+import { apiRequest } from '@/lib/api-client';
+
 export function IntegrationsView() {
   const [connectors, setConnectors] = useState<IntegrationConnectorDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -13,15 +15,7 @@ export function IntegrationsView() {
     setLoading(true);
     setError(null);
     try {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-      const res = await fetch('/api/integrations/connectors', {
-        headers: {
-          Authorization: token ? `Bearer ${token}` : '',
-        },
-      });
-
-      if (!res.ok) throw new Error('Failed to fetch integration status.');
-      const data: IntegrationConnectorDto[] = await res.json();
+      const data = await apiRequest<IntegrationConnectorDto[]>('/integrations/connectors');
       setConnectors(data);
     } catch (err: any) {
       setError(err.message || 'Error loading integrations.');

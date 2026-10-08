@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { apiRequest } from '@/lib/api-client';
 import {
   GrcLifecycleDto,
   GrcLifecycleStageDto,
@@ -40,14 +41,7 @@ export function WorkflowLifecyclePanel({
     setLoading(true);
     setError(null);
     try {
-      const token = localStorage.getItem('omnigrc_token') || '';
-      const res = await fetch(`/api/v1/workflow/lifecycle/${resourceType}/${resourceId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        throw new Error(`Failed to load lifecycle status (${res.status})`);
-      }
-      const data = await res.json();
+      const data = await apiRequest<GrcLifecycleDto>(`/api/v1/workflow/lifecycle/${resourceType}/${resourceId}`);
       setLifecycle(data);
     } catch (err: any) {
       setError(err.message || 'Error fetching lifecycle');

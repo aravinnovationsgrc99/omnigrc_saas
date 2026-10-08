@@ -46,7 +46,7 @@ export function ControlPanelShell({ children }: { children: React.ReactNode }) {
       <div className="flex flex-1 flex-col min-w-0">
         <Header onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
 
-        <main className="flex-1 p-6 overflow-y-auto">
+        <main className="flex-1 p-3.5 sm:p-6 overflow-y-auto">
           <div className="mx-auto max-w-7xl">{children}</div>
         </main>
       </div>

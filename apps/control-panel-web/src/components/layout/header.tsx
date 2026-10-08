@@ -38,17 +38,17 @@ export function Header({ onToggleSidebar }: HeaderProps) {
               <User className="h-4 w-4" aria-hidden="true" />
             </div>
 
-            <div className="flex flex-col text-left">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-white">{operator.fullName || operator.email}</span>
+            <div className="flex flex-col text-left min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-xs font-semibold text-white truncate max-w-[100px] sm:max-w-none">{operator.fullName || operator.email}</span>
                 {operator.mfaEnabled && (
-                  <span className="inline-flex items-center text-emerald-400" title="MFA Protection Active">
+                  <span className="inline-flex items-center text-emerald-400 shrink-0" title="MFA Protection Active">
                     <ShieldCheck className="h-3.5 w-3.5" aria-label="MFA Active" />
                   </span>
                 )}
               </div>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className="font-mono text-[10px] text-gray-400">{operator.email}</span>
+              <div className="flex items-center gap-2 mt-0.5 min-w-0">
+                <span className="font-mono text-[10px] text-gray-400 truncate max-w-[100px] sm:max-w-none">{operator.email}</span>
                 <StatusBadge status={operator.role} size="sm" />
               </div>
             </div>

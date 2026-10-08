@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { EvidenceDto, PaginatedEvidenceDto, EvidenceType, EvidenceStatus } from '@omnigrc/shared';
 import { Search, FileText, Download, Info, RefreshCw, FileArchive, Upload, ShieldCheck, Tag, Trash2, Link } from 'lucide-react';
-import { apiRequest } from '@/lib/api-client';
+import { apiRequest, getStoredTokens } from '@/lib/api-client';
 import { useToast } from '@/context/toast-context';
 
 export function EvidenceVaultView() {
@@ -75,11 +75,12 @@ export function EvidenceVaultView() {
       if (targetResourceType) formData.append('targetResourceType', targetResourceType);
       if (targetResourceId.trim()) formData.append('targetResourceId', targetResourceId.trim());
 
-      const token = localStorage.getItem('token');
-      const res = await fetch('/api/v1/evidence/upload', {
+      const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/+$/, '');
+      const { accessToken } = getStoredTokens();
+      const res = await fetch(`${API_BASE_URL}/evidence/upload`, {
         method: 'POST',
         headers: {
-          Authorization: token ? `Bearer ${token}` : '',
+          Authorization: accessToken ? `Bearer ${accessToken}` : '',
         },
         body: formData,
       });
@@ -106,9 +107,10 @@ export function EvidenceVaultView() {
 
   const handleDownload = async (evidence: EvidenceDto) => {
     try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`/api/v1/evidence/${evidence.id}/download`, {
-        headers: { Authorization: token ? `Bearer ${token}` : '' },
+      const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/+$/, '');
+      const { accessToken } = getStoredTokens();
+      const res = await fetch(`${API_BASE_URL}/evidence/${evidence.id}/download`, {
+        headers: { Authorization: accessToken ? `Bearer ${accessToken}` : '' },
       });
 
       if (!res.ok) throw new Error('Download unauthorized or evidence unavailable.');
@@ -147,16 +149,16 @@ export function EvidenceVaultView() {
             Production proof repository for PDF, spreadsheets, images, and config exports with cryptographic SHA-256 verification and GRC resource attachment.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0 sm:self-center">
           <button
             onClick={() => setShowUploadModal(true)}
-            className="omni-btn-primary text-xs h-9 px-3.5 flex items-center gap-1.5"
+            className="omni-btn-primary text-xs h-9 px-4 flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 min-w-max"
           >
-            <Upload size={14} /> Upload Proof Evidence
+            <Upload size={14} /> Upload Evidence
           </button>
           <button
             onClick={fetchVault}
-            className="inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 transition shadow-sm"
+            className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 transition shadow-sm whitespace-nowrap shrink-0"
           >
             <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
             Refresh
@@ -300,7 +302,7 @@ export function EvidenceVaultView() {
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl w-full max-w-lg p-6 shadow-2xl border border-slate-200 space-y-4">
             <h3 className="text-base font-bold text-slate-900 m-0 flex items-center gap-2">
-              <Upload size={18} className="text-teal-700" /> Upload Proof Evidence
+              <Upload size={18} className="text-teal-700" /> Upload Evidence
             </h3>
 
             <form onSubmit={handleUploadSubmit} className="space-y-3">
@@ -337,7 +339,7 @@ export function EvidenceVaultView() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-semibold text-slate-700">Target GRC Resource</label>
                   <select

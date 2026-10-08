@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { apiRequest } from '@/lib/api-client';
 import {
   FrameworkItemDto,
   FrameworkCoverageResultDto,
@@ -47,19 +48,12 @@ export function FrameworkCoverageView() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [expandedRefId, setExpandedRefId] = useState<string | null>(null);
 
-  const getAuthHeader = () => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    return { Authorization: token ? `Bearer ${token}` : '' };
-  };
-
   // 1. Fetch Entitled Frameworks
   const fetchEntitledFrameworks = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/frameworks', { headers: getAuthHeader() });
-      if (!res.ok) throw new Error('Failed to fetch entitled framework catalog.');
-      const list: FrameworkItemDto[] = await res.json();
+      const list = await apiRequest<FrameworkItemDto[]>('/frameworks');
       setFrameworks(list);
 
       if (list.length > 0) {
@@ -77,17 +71,11 @@ export function FrameworkCoverageView() {
   const fetchVersions = useCallback(async (fwId: string) => {
     if (!fwId) return;
     try {
-      const res = await fetch(`/api/frameworks/${fwId}/versions`, { headers: getAuthHeader() });
-      if (res.ok) {
-        const vList: VersionItem[] = await res.json();
-        setVersions(vList);
-        if (vList.length > 0) {
-          setSelectedVersionId(vList[0].id);
-        } else {
-          setSelectedVersionId('');
-        }
+      const vList = await apiRequest<VersionItem[]>(`/frameworks/${fwId}/versions`);
+      setVersions(vList);
+      if (vList.length > 0) {
+        setSelectedVersionId(vList[0].id);
       } else {
-        setVersions([]);
         setSelectedVersionId('');
       }
     } catch (err) {
@@ -103,18 +91,12 @@ export function FrameworkCoverageView() {
     setLoading(true);
     setError(null);
     try {
-      let url = `/api/frameworks/${fwId}/coverage`;
+      let url = `/frameworks/${fwId}/coverage`;
       if (verId) {
         url += `?versionId=${encodeURIComponent(verId)}`;
       }
 
-      const res = await fetch(url, { headers: getAuthHeader() });
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.message || 'Failed to calculate framework coverage.');
-      }
-
-      const data: FrameworkCoverageResultDto = await res.json();
+      const data = await apiRequest<FrameworkCoverageResultDto>(url);
       setCoverageData(data);
     } catch (err: any) {
       setError(err.message || 'Error fetching coverage analysis.');

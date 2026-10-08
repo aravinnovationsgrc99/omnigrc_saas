@@ -292,7 +292,7 @@ export function ApprovalCenterView() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* List Table */}
           <div className={`${selectedApproval ? 'lg:col-span-6' : 'lg:col-span-12'} transition-all`}>
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
               <table className="w-full text-left text-sm text-slate-600">
                 <thead className="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">
                   <tr>

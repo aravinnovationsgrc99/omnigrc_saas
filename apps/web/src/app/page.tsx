@@ -92,7 +92,7 @@ export default function MainPage() {
             </div>
           )}
           <Topbar onToggleMobileSidebar={() => setMobileSidebarOpen((v) => !v)} />
-          <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }} className="omni-scroll w-full max-w-full p-6">
+          <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }} className="omni-scroll w-full max-w-full p-3.5 sm:p-6">
             {view === 'dashboard' && <DashboardView onNavigateToView={(v) => setView(v)} />}
             {view === 'reports' && <ReportsView />}
             {view === 'risk' && <RiskListView />}
