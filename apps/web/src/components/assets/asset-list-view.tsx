@@ -11,7 +11,11 @@ import { AssetDrawer } from './asset-drawer';
 import { Plus, Search, Filter, Boxes } from 'lucide-react';
 
 
-export function AssetListView() {
+interface AssetListViewProps {
+  onNavigateToRisk?: (assetId: string) => void;
+}
+
+export function AssetListView({ onNavigateToRisk }: AssetListViewProps = {}) {
   const { showToast } = useToast();
   const [assets, setAssets] = useState<AssetDto[]>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -240,6 +244,7 @@ export function AssetListView() {
         asset={selectedAsset}
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
+        onNavigateToRisk={onNavigateToRisk}
         onSuccess={() => {
           fetchAssets();
         }}

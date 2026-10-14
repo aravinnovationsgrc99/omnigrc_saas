@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
 import { FrameworkEntitlementsService } from '../frameworks/framework-entitlements.service';
 import { FrameworkCoverageService } from '../frameworks/framework-coverage.service';
+import { EffectiveServiceStateResolver } from '../service-control/effective-service-state-resolver.service';
 import {
   OverviewMetricsDto,
   AssetMetricsDto,
@@ -35,13 +36,36 @@ export class MetricsService {
     private readonly resourceAuthService: ResourceAuthorizationService,
     private readonly frameworkEntitlementsService: FrameworkEntitlementsService,
     private readonly frameworkCoverageService: FrameworkCoverageService,
+    private readonly effectiveResolver: EffectiveServiceStateResolver,
   ) {}
 
   /**
    * Authoritative Single Source of Truth for Overview Metrics across all 7 GRC Domains.
    * All database calls are aggregated database-side and scoped by department/project context.
+   * Entitlement-Aware: Optional module metrics are included ONLY when organization is entitled.
    */
   async getOverviewMetrics(authCtx: ResourceAuthContext): Promise<OverviewMetricsDto> {
+    // Evaluate active capability entitlements for optional modules in parallel
+    const [
+      riskState,
+      controlsState,
+      coverageState,
+      tasksState,
+      auditsState,
+      policiesState,
+      vendorsState,
+      vulnsState,
+    ] = await Promise.all([
+      this.effectiveResolver.resolveEffectiveState(authCtx.organizationId, 'GRC_CORE_RISKS'),
+      this.effectiveResolver.resolveEffectiveState(authCtx.organizationId, 'GRC_CORE_CONTROLS'),
+      this.effectiveResolver.resolveEffectiveState(authCtx.organizationId, 'FRAMEWORK_COVERAGE'),
+      this.effectiveResolver.resolveEffectiveState(authCtx.organizationId, 'GRC_CORE_TASKS'),
+      this.effectiveResolver.resolveEffectiveState(authCtx.organizationId, 'BUSINESS_AUDITS'),
+      this.effectiveResolver.resolveEffectiveState(authCtx.organizationId, 'POLICIES_MODULE'),
+      this.effectiveResolver.resolveEffectiveState(authCtx.organizationId, 'VENDOR_RISK'),
+      this.effectiveResolver.resolveEffectiveState(authCtx.organizationId, 'VULNERABILITY_MGMT'),
+    ]);
+
     const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const now = new Date();
     const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
@@ -129,199 +153,165 @@ export class MetricsService {
       this.prisma.asset.groupBy({ by: ['type'], where: { ...scopeWhere, deletedAt: null }, _count: true }),
 
       // Vulnerabilities
-      this.prisma.vulnerability.count({ where: { ...scopeWhere, deletedAt: null } }),
-      this.prisma.vulnerability.count({
-        where: { ...scopeWhere, deletedAt: null, status: { in: [VulnerabilityStatus.OPEN, VulnerabilityStatus.IN_REMEDIATION] } },
-      }),
-      this.prisma.vulnerability.count({
-        where: {
-          ...scopeWhere,
-          deletedAt: null,
-          status: { in: [VulnerabilityStatus.OPEN, VulnerabilityStatus.IN_REMEDIATION] },
-          dueDate: { lt: now },
-        },
-      }),
-      this.prisma.vulnerability.count({ where: { ...scopeWhere, deletedAt: null, status: VulnerabilityStatus.RESOLVED } }),
-      this.prisma.vulnerability.count({ where: { ...scopeWhere, deletedAt: null, status: VulnerabilityStatus.RISK_ACCEPTED } }),
-      this.prisma.vulnerability.groupBy({ by: ['severity'], where: { ...scopeWhere, deletedAt: null }, _count: true }),
+      vulnsState.isAvailable ? this.prisma.vulnerability.count({ where: { ...scopeWhere, deletedAt: null } }) : Promise.resolve(0),
+      vulnsState.isAvailable ? this.prisma.vulnerability.count({ where: { ...scopeWhere, deletedAt: null, status: { in: [VulnerabilityStatus.OPEN, VulnerabilityStatus.IN_REMEDIATION] } } }) : Promise.resolve(0),
+      vulnsState.isAvailable ? this.prisma.vulnerability.count({ where: { ...scopeWhere, deletedAt: null, status: { in: [VulnerabilityStatus.OPEN, VulnerabilityStatus.IN_REMEDIATION] }, dueDate: { lt: now } } }) : Promise.resolve(0),
+      vulnsState.isAvailable ? this.prisma.vulnerability.count({ where: { ...scopeWhere, deletedAt: null, status: VulnerabilityStatus.RESOLVED } }) : Promise.resolve(0),
+      vulnsState.isAvailable ? this.prisma.vulnerability.count({ where: { ...scopeWhere, deletedAt: null, status: VulnerabilityStatus.RISK_ACCEPTED } }) : Promise.resolve(0),
+      vulnsState.isAvailable ? this.prisma.vulnerability.groupBy({ by: ['severity'], where: { ...scopeWhere, deletedAt: null }, _count: true }) : Promise.resolve([]),
 
       // Policies
-      this.prisma.policy.count({ where: { ...scopeWhere, deletedAt: null } }),
-      this.prisma.policy.groupBy({ by: ['status'], where: { ...scopeWhere, deletedAt: null }, _count: true }),
-      this.prisma.policy.count({ where: { ...scopeWhere, deletedAt: null, status: PolicyStatus.PUBLISHED } }),
-      this.prisma.policy.count({
-        where: {
-          ...scopeWhere,
-          deletedAt: null,
-          status: PolicyStatus.PUBLISHED,
-          reviewDate: { lt: now },
-        },
-      }),
+      policiesState.isAvailable ? this.prisma.policy.count({ where: { ...scopeWhere, deletedAt: null } }) : Promise.resolve(0),
+      policiesState.isAvailable ? this.prisma.policy.groupBy({ by: ['status'], where: { ...scopeWhere, deletedAt: null }, _count: true }) : Promise.resolve([]),
+      policiesState.isAvailable ? this.prisma.policy.count({ where: { ...scopeWhere, deletedAt: null, status: PolicyStatus.PUBLISHED } }) : Promise.resolve(0),
+      policiesState.isAvailable ? this.prisma.policy.count({ where: { ...scopeWhere, deletedAt: null, status: PolicyStatus.PUBLISHED, reviewDate: { lt: now } } }) : Promise.resolve(0),
 
       // Vendors
-      this.prisma.vendor.count({ where: { ...scopeWhere, deletedAt: null } }),
-      this.prisma.vendor.groupBy({ by: ['criticality'], where: { ...scopeWhere, deletedAt: null }, _count: true }),
-      this.prisma.vendor.groupBy({ by: ['status'], where: { ...scopeWhere, deletedAt: null }, _count: true }),
-      this.prisma.vendor.count({
-        where: {
-          ...scopeWhere,
-          deletedAt: null,
-          status: VendorStatus.ACTIVE,
-          nextReviewDate: { lt: now },
-        },
-      }),
-      this.prisma.vendorAssessment.count({
-        where: {
-          organizationId: authCtx.organizationId,
-          status: VendorAssessmentStatus.OVERDUE,
-        },
-      }),
+      vendorsState.isAvailable ? this.prisma.vendor.count({ where: { ...scopeWhere, deletedAt: null } }) : Promise.resolve(0),
+      vendorsState.isAvailable ? this.prisma.vendor.groupBy({ by: ['criticality'], where: { ...scopeWhere, deletedAt: null }, _count: true }) : Promise.resolve([]),
+      vendorsState.isAvailable ? this.prisma.vendor.groupBy({ by: ['status'], where: { ...scopeWhere, deletedAt: null }, _count: true }) : Promise.resolve([]),
+      vendorsState.isAvailable ? this.prisma.vendor.count({ where: { ...scopeWhere, deletedAt: null, status: VendorStatus.ACTIVE, nextReviewDate: { lt: now } } }) : Promise.resolve(0),
+      vendorsState.isAvailable ? this.prisma.vendorAssessment.count({ where: { organizationId: authCtx.organizationId, status: VendorAssessmentStatus.OVERDUE } }) : Promise.resolve(0),
 
-      // Obligations
-      this.prisma.complianceTask.count({ where: obligationWhere }),
-      this.prisma.complianceTask.count({
-        where: {
-          ...obligationWhere,
-          status: { not: TaskStatus.COMPLETE },
-          dueDate: { gte: now, lte: in30Days },
-        },
-      }),
-      this.prisma.complianceTask.count({
-        where: {
-          ...obligationWhere,
-          status: { not: TaskStatus.COMPLETE },
-          dueDate: { lt: now },
-        },
-      }),
-      this.prisma.complianceTask.count({
-        where: {
-          ...obligationWhere,
-          status: TaskStatus.COMPLETE,
-        },
-      }),
+      // Obligations / Tasks
+      tasksState.isAvailable ? this.prisma.complianceTask.count({ where: obligationWhere }) : Promise.resolve(0),
+      tasksState.isAvailable ? this.prisma.complianceTask.count({ where: { ...obligationWhere, status: { not: TaskStatus.COMPLETE }, dueDate: { gte: now, lte: in30Days } } }) : Promise.resolve(0),
+      tasksState.isAvailable ? this.prisma.complianceTask.count({ where: { ...obligationWhere, status: { not: TaskStatus.COMPLETE }, dueDate: { lt: now } } }) : Promise.resolve(0),
+      tasksState.isAvailable ? this.prisma.complianceTask.count({ where: { ...obligationWhere, status: TaskStatus.COMPLETE } }) : Promise.resolve(0),
 
       // Audits
-      this.prisma.auditPlan.count({ where: { ...scopeWhere } }),
-      this.prisma.auditPlan.groupBy({ by: ['status'], where: { ...scopeWhere }, _count: true }),
-      this.prisma.auditAssessment.count({ where: { organizationId: authCtx.organizationId } }),
-      this.prisma.auditAssessment.aggregate({ where: { organizationId: authCtx.organizationId }, _avg: { score: true } }),
-      this.prisma.auditFinding.count({ where: { organizationId: authCtx.organizationId } }),
-      this.prisma.auditFinding.count({
-        where: { organizationId: authCtx.organizationId, status: { in: [FindingStatus.OPEN, FindingStatus.IN_REMEDIATION, FindingStatus.READY_FOR_VERIFICATION] } },
-      }),
-      this.prisma.auditFinding.count({
-        where: { organizationId: authCtx.organizationId, status: { in: [FindingStatus.OPEN, FindingStatus.IN_REMEDIATION] }, dueDate: { lt: now } },
-      }),
-      this.prisma.auditFinding.groupBy({ by: ['severity'], where: { organizationId: authCtx.organizationId }, _count: true }),
-      this.prisma.auditCapa.count({ where: { organizationId: authCtx.organizationId, status: { in: [CapaStatus.OPEN, CapaStatus.IN_PROGRESS] } } }),
-      this.prisma.auditCapa.groupBy({ by: ['status'], where: { organizationId: authCtx.organizationId }, _count: true }),
+      auditsState.isAvailable ? this.prisma.auditPlan.count({ where: { ...scopeWhere } }) : Promise.resolve(0),
+      auditsState.isAvailable ? this.prisma.auditPlan.groupBy({ by: ['status'], where: { ...scopeWhere }, _count: true }) : Promise.resolve([]),
+      auditsState.isAvailable ? this.prisma.auditAssessment.count({ where: { organizationId: authCtx.organizationId } }) : Promise.resolve(0),
+      auditsState.isAvailable ? this.prisma.auditAssessment.aggregate({ where: { organizationId: authCtx.organizationId }, _avg: { score: true } }) : Promise.resolve({ _avg: { score: null } }),
+      auditsState.isAvailable ? this.prisma.auditFinding.count({ where: { organizationId: authCtx.organizationId } }) : Promise.resolve(0),
+      auditsState.isAvailable ? this.prisma.auditFinding.count({ where: { organizationId: authCtx.organizationId, status: { in: [FindingStatus.OPEN, FindingStatus.IN_REMEDIATION, FindingStatus.READY_FOR_VERIFICATION] } } }) : Promise.resolve(0),
+      auditsState.isAvailable ? this.prisma.auditFinding.count({ where: { organizationId: authCtx.organizationId, status: { in: [FindingStatus.OPEN, FindingStatus.IN_REMEDIATION] }, dueDate: { lt: now } } }) : Promise.resolve(0),
+      auditsState.isAvailable ? this.prisma.auditFinding.groupBy({ by: ['severity'], where: { organizationId: authCtx.organizationId }, _count: true }) : Promise.resolve([]),
+      auditsState.isAvailable ? this.prisma.auditCapa.count({ where: { organizationId: authCtx.organizationId, status: { in: [CapaStatus.OPEN, CapaStatus.IN_PROGRESS] } } }) : Promise.resolve(0),
+      auditsState.isAvailable ? this.prisma.auditCapa.groupBy({ by: ['status'], where: { organizationId: authCtx.organizationId }, _count: true }) : Promise.resolve([]),
 
       // Risks
-      this.prisma.risk.count({
-        where: { ...scopeWhere, deletedAt: null, status: { in: ['OPEN', 'IN_TREATMENT'] } },
-      }),
-      this.prisma.risk.count({
-        where: { ...scopeWhere, deletedAt: null, status: { in: ['OPEN', 'IN_TREATMENT'] }, score: { gte: 15 } },
-      }),
-      this.prisma.risk.count({
-        where: { ...scopeWhere, deletedAt: null, status: { in: ['OPEN', 'IN_TREATMENT'] }, score: { gte: 8, lt: 15 } },
-      }),
-      this.prisma.risk.count({
-        where: { ...scopeWhere, deletedAt: null, status: { in: ['OPEN', 'IN_TREATMENT'] }, score: { lt: 8 } },
-      }),
-      this.prisma.risk.groupBy({ by: ['status'], where: { ...scopeWhere, deletedAt: null }, _count: true }),
+      riskState.isAvailable ? this.prisma.risk.count({ where: { ...scopeWhere, deletedAt: null, status: { in: ['OPEN', 'IN_TREATMENT'] } } }) : Promise.resolve(0),
+      riskState.isAvailable ? this.prisma.risk.count({ where: { ...scopeWhere, deletedAt: null, status: { in: ['OPEN', 'IN_TREATMENT'] }, score: { gte: 15 } } }) : Promise.resolve(0),
+      riskState.isAvailable ? this.prisma.risk.count({ where: { ...scopeWhere, deletedAt: null, status: { in: ['OPEN', 'IN_TREATMENT'] }, score: { gte: 8, lt: 15 } } }) : Promise.resolve(0),
+      riskState.isAvailable ? this.prisma.risk.count({ where: { ...scopeWhere, deletedAt: null, status: { in: ['OPEN', 'IN_TREATMENT'] }, score: { lt: 8 } } }) : Promise.resolve(0),
+      riskState.isAvailable ? this.prisma.risk.groupBy({ by: ['status'], where: { ...scopeWhere, deletedAt: null }, _count: true }) : Promise.resolve([]),
 
-      // Attention Bounded Queries (2 per domain max)
-      this.prisma.vulnerability.findMany({
-        where: { ...scopeWhere, deletedAt: null, status: { in: [VulnerabilityStatus.OPEN, VulnerabilityStatus.IN_REMEDIATION] }, dueDate: { lt: now } },
-        select: { id: true, title: true, severity: true, dueDate: true },
-        take: 2,
-        orderBy: { dueDate: 'asc' },
-      }),
-      this.prisma.complianceTask.findMany({
-        where: { ...obligationWhere, status: { not: TaskStatus.COMPLETE }, dueDate: { lt: now } },
-        select: { id: true, title: true, dueDate: true },
-        take: 2,
-        orderBy: { dueDate: 'asc' },
-      }),
-      this.prisma.auditFinding.findMany({
-        where: { organizationId: authCtx.organizationId, status: { in: [FindingStatus.OPEN, FindingStatus.IN_REMEDIATION] }, dueDate: { lt: now } },
-        select: { id: true, title: true, severity: true, dueDate: true },
-        take: 2,
-        orderBy: { dueDate: 'asc' },
-      }),
-      this.prisma.auditCapa.findMany({
-        where: { organizationId: authCtx.organizationId, status: { in: [CapaStatus.OPEN, CapaStatus.IN_PROGRESS] }, dueDate: { lt: now } },
-        select: { id: true, title: true, dueDate: true },
-        take: 2,
-        orderBy: { dueDate: 'asc' },
-      }),
-      this.prisma.policy.findMany({
-        where: {
-          ...scopeWhere,
-          deletedAt: null,
-          status: PolicyStatus.PUBLISHED,
-          reviewDate: { lt: now },
-        },
-        select: { id: true, title: true, reviewDate: true },
-        take: 2,
-        orderBy: { reviewDate: 'asc' },
-      }),
-      this.prisma.vendorAssessment.findMany({
-        where: {
-          organizationId: authCtx.organizationId,
-          status: VendorAssessmentStatus.OVERDUE,
-        },
-        select: { id: true, title: true, vendor: { select: { name: true } } },
-        take: 2,
-        orderBy: { createdAt: 'asc' },
-      }),
+      // Attention Bounded Queries
+      vulnsState.isAvailable
+        ? this.prisma.vulnerability.findMany({
+            where: { ...scopeWhere, deletedAt: null, status: { in: [VulnerabilityStatus.OPEN, VulnerabilityStatus.IN_REMEDIATION] }, dueDate: { lt: now } },
+            select: { id: true, title: true, severity: true, dueDate: true },
+            take: 2,
+            orderBy: { dueDate: 'asc' },
+          })
+        : Promise.resolve([]),
+      tasksState.isAvailable
+        ? this.prisma.complianceTask.findMany({
+            where: { ...obligationWhere, status: { not: TaskStatus.COMPLETE }, dueDate: { lt: now } },
+            select: { id: true, title: true, dueDate: true },
+            take: 2,
+            orderBy: { dueDate: 'asc' },
+          })
+        : Promise.resolve([]),
+      auditsState.isAvailable
+        ? this.prisma.auditFinding.findMany({
+            where: { organizationId: authCtx.organizationId, status: { in: [FindingStatus.OPEN, FindingStatus.IN_REMEDIATION] }, dueDate: { lt: now } },
+            select: { id: true, title: true, severity: true, dueDate: true },
+            take: 2,
+            orderBy: { dueDate: 'asc' },
+          })
+        : Promise.resolve([]),
+      auditsState.isAvailable
+        ? this.prisma.auditCapa.findMany({
+            where: { organizationId: authCtx.organizationId, status: { in: [CapaStatus.OPEN, CapaStatus.IN_PROGRESS] }, dueDate: { lt: now } },
+            select: { id: true, title: true, dueDate: true },
+            take: 2,
+            orderBy: { dueDate: 'asc' },
+          })
+        : Promise.resolve([]),
+      policiesState.isAvailable
+        ? this.prisma.policy.findMany({
+            where: {
+              ...scopeWhere,
+              deletedAt: null,
+              status: PolicyStatus.PUBLISHED,
+              reviewDate: { lt: now },
+            },
+            select: { id: true, title: true, reviewDate: true },
+            take: 2,
+            orderBy: { reviewDate: 'asc' },
+          })
+        : Promise.resolve([]),
+      vendorsState.isAvailable
+        ? this.prisma.vendorAssessment.findMany({
+            where: {
+              organizationId: authCtx.organizationId,
+              status: VendorAssessmentStatus.OVERDUE,
+            },
+            select: { id: true, title: true, vendor: { select: { name: true } } },
+            take: 2,
+            orderBy: { createdAt: 'asc' },
+          })
+        : Promise.resolve([]),
 
-      // Authoritative Risk Heatmap Database-Level 5x5 GroupBy Aggregation (ZERO Truncation)
-      this.prisma.risk.groupBy({
-        by: ['likelihood', 'impact'],
-        where: { ...scopeWhere, deletedAt: null, status: { in: ['OPEN', 'IN_TREATMENT'] } },
-        _count: true,
-      }),
+      // Authoritative Risk Heatmap Database-Level 5x5 GroupBy Aggregation
+      riskState.isAvailable
+        ? this.prisma.risk.groupBy({
+            by: ['likelihood', 'impact'],
+            where: { ...scopeWhere, deletedAt: null, status: { in: ['OPEN', 'IN_TREATMENT'] } },
+            _count: true,
+          })
+        : Promise.resolve([] as Array<{ likelihood: number; impact: number; _count: number }>),
 
-      // Top High-Severity Risks Query (for KPI drill-down card)
-      this.prisma.risk.findMany({
-        where: { ...scopeWhere, deletedAt: null, status: { in: ['OPEN', 'IN_TREATMENT'] }, score: { gte: 15 } },
-        select: {
-          id: true,
-          title: true,
-          likelihood: true,
-          impact: true,
-          score: true,
-          status: true,
-          owner: true,
-          asset: { select: { name: true } },
-        },
-        take: 10,
-        orderBy: { score: 'desc' },
-      }),
+      // Top High-Severity Risks Query
+      riskState.isAvailable
+        ? this.prisma.risk.findMany({
+            where: { ...scopeWhere, deletedAt: null, status: { in: ['OPEN', 'IN_TREATMENT'] }, score: { gte: 15 } },
+            select: {
+              id: true,
+              title: true,
+              likelihood: true,
+              impact: true,
+              score: true,
+              status: true,
+              owner: true,
+              asset: { select: { name: true } },
+            },
+            take: 10,
+            orderBy: { score: 'desc' },
+          })
+        : Promise.resolve([]),
 
       // Active Audit Assessments Query
-      this.prisma.auditAssessment.findMany({
-        where: { organizationId: authCtx.organizationId },
-        select: {
-          id: true,
-          status: true,
-          score: true,
-          auditPlan: { select: { title: true } },
-        },
-        take: 5,
-        orderBy: { createdAt: 'desc' },
-      }),
+      auditsState.isAvailable
+        ? this.prisma.auditAssessment.findMany({
+            where: { organizationId: authCtx.organizationId },
+            select: {
+              id: true,
+              status: true,
+              score: true,
+              auditPlan: { select: { title: true } },
+            },
+            take: 5,
+            orderBy: { createdAt: 'desc' },
+          })
+        : Promise.resolve([]),
 
       // Pending Policy Exceptions Query
-      this.prisma.policyException.count({
-        where: { organizationId: authCtx.organizationId, status: 'PENDING' },
-      }),
+      policiesState.isAvailable
+        ? this.prisma.policyException.count({
+            where: { organizationId: authCtx.organizationId, status: 'PENDING' },
+          })
+        : Promise.resolve(0),
     ]);
 
-    // Fetch Entitled Frameworks and compute Phase C Coverage without N+1 frontend requests
-    const entitledFrameworkIds = await this.frameworkEntitlementsService.getEntitledFrameworkIds(authCtx.organizationId);
+    // Fetch Entitled Frameworks ONLY if FRAMEWORK_COVERAGE & GRC_CORE_CONTROLS capabilities are active
+    const isCoverageEntitled = coverageState.isAvailable && controlsState.isAvailable;
+    const entitledFrameworkIds = isCoverageEntitled
+      ? await this.frameworkEntitlementsService.getEntitledFrameworkIds(authCtx.organizationId)
+      : [];
     const entitledFrameworks = entitledFrameworkIds.length > 0
       ? await this.prisma.framework.findMany({
           where: { id: { in: entitledFrameworkIds } },
@@ -373,6 +363,7 @@ export class MetricsService {
       partial: partialRefSummary,
       notCovered: notCoveredRefSummary,
       coveragePercentage: overallCoveragePercentage,
+      isAvailable: controlsState.isAvailable && coverageState.isAvailable,
     };
 
     const assets: AssetMetricsDto = {
@@ -391,6 +382,7 @@ export class MetricsService {
       resolvedCount: vulnResolved,
       riskAcceptedCount: vulnRiskAccepted,
       bySeverity: Object.fromEntries(vulnBySeverity.map((g) => [g.severity, g._count])),
+      isAvailable: vulnsState.isAvailable,
     };
 
     const policies: PolicyMetricsDto = {
@@ -399,6 +391,7 @@ export class MetricsService {
       publishedCount: policyPublished,
       overdueReviewCount: policyOverdueReview,
       pendingExceptionsCount: pendingPolicyExceptionsCount,
+      isAvailable: policiesState.isAvailable,
     };
 
     const vendors: VendorMetricsDto = {
@@ -407,15 +400,25 @@ export class MetricsService {
       byStatus: Object.fromEntries(vendorByStatus.map((g) => [g.status, g._count])),
       requiringReviewCount: vendorRequiringReview,
       assessmentsOverdueCount: vendorAssessmentsOverdue,
+      isAvailable: vendorsState.isAvailable,
     };
 
-    const completionRate = obTotal > 0 ? Math.round((obCompleted / obTotal) * 100) : 100;
+    let completionRate: number;
+    if (!tasksState.isAvailable) {
+      completionRate = 0;
+    } else if (obTotal === 0) {
+      completionRate = 100;
+    } else {
+      completionRate = Math.round((obCompleted / obTotal) * 100);
+    }
+
     const obligations: ObligationMetricsDto = {
       total: obTotal,
       upcomingCount: obUpcoming,
       overdueCount: obOverdue,
       completedCount: obCompleted,
       completionRate,
+      isAvailable: tasksState.isAvailable,
     };
 
     const activeAssessments = activeAssessmentsForAudit.map((a) => ({
@@ -437,6 +440,7 @@ export class MetricsService {
       capaOpenCount: auditCapaOpen,
       byCapaStatus: Object.fromEntries(auditCapaByStatus.map((g) => [g.status, g._count])),
       activeAssessments,
+      isAvailable: auditsState.isAvailable,
     };
 
     // Authoritative 5x5 Heatmap Matrix construction via database-level GroupBy counts
@@ -481,6 +485,7 @@ export class MetricsService {
         totalOpenCount: riskTotalOpen,
       },
       highSeverityRisks,
+      isAvailable: riskState.isAvailable,
     };
 
     const attentionRequired = [
@@ -490,7 +495,7 @@ export class MetricsService {
         title: v.title,
         severityOrPriority: v.severity,
         dueDate: v.dueDate ? v.dueDate.toISOString() : undefined,
-        targetView: '/vulnerabilities',
+        targetView: 'vulnerabilities',
       })),
       ...overdueTaskList.map((t) => ({
         id: t.id,
@@ -498,7 +503,7 @@ export class MetricsService {
         title: t.title,
         severityOrPriority: 'MEDIUM',
         dueDate: t.dueDate ? t.dueDate.toISOString() : undefined,
-        targetView: '/compliance-tasks',
+        targetView: 'board',
       })),
       ...overdueFindingList.map((f) => ({
         id: f.id,
@@ -506,7 +511,7 @@ export class MetricsService {
         title: f.title,
         severityOrPriority: f.severity,
         dueDate: f.dueDate ? f.dueDate.toISOString() : undefined,
-        targetView: '/business-audits',
+        targetView: 'audits',
       })),
       ...overdueCapaList.map((c) => ({
         id: c.id,
@@ -514,7 +519,7 @@ export class MetricsService {
         title: c.title,
         severityOrPriority: 'HIGH',
         dueDate: c.dueDate ? c.dueDate.toISOString() : undefined,
-        targetView: '/business-audits',
+        targetView: 'remediation',
       })),
       ...overduePolicyList.map((p) => ({
         id: p.id,
@@ -522,14 +527,14 @@ export class MetricsService {
         title: p.title,
         severityOrPriority: 'MEDIUM',
         dueDate: p.reviewDate ? p.reviewDate.toISOString() : undefined,
-        targetView: '/policies',
+        targetView: 'policies',
       })),
       ...overdueVendorAssessmentList.map((va) => ({
         id: va.id,
         domain: 'VENDOR' as const,
         title: `${va.vendor.name}: ${va.title}`,
         severityOrPriority: 'HIGH',
-        targetView: '/vendors',
+        targetView: 'vendors',
       })),
     ];
 
@@ -558,6 +563,11 @@ export class MetricsService {
     likelihood: number,
     impact: number,
   ): Promise<HeatmapCellDetailsDto> {
+    const riskState = await this.effectiveResolver.resolveEffectiveState(authCtx.organizationId, 'GRC_CORE_RISKS');
+    if (!riskState.isAvailable) {
+      return { likelihood, impact, total: 0, items: [] };
+    }
+
     const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
 
     const [total, items] = await Promise.all([

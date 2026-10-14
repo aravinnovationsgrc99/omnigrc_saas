@@ -5,10 +5,15 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotFoundException } from '@nestjs/common';
 import { AssetType, AssetCriticality, Role } from '@omnigrc/shared';
 
+import { ResourceAuthorizationService } from '../auth/resource-authorization.service';
+import { RisksService } from '../risks/risks.service';
+
 describe('AssetsService', () => {
   let service: AssetsService;
   let prisma: jest.Mocked<any>;
   let auditLogsService: jest.Mocked<any>;
+  let resourceAuthService: jest.Mocked<any>;
+  let risksService: jest.Mocked<any>;
 
   beforeEach(async () => {
     prisma = {
@@ -28,11 +33,25 @@ describe('AssetsService', () => {
       log: jest.fn().mockResolvedValue({}),
     };
 
+    resourceAuthService = {
+      getScopeWhereClause: jest.fn().mockImplementation(async (ctx: any) => ({
+        organizationId: ctx.organizationId,
+      })),
+      authorize: jest.fn().mockResolvedValue(undefined),
+      validateHierarchyInvariants: jest.fn().mockResolvedValue(undefined),
+    };
+
+    risksService = {
+      findAll: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AssetsService,
         { provide: PrismaService, useValue: prisma },
         { provide: AuditLogsService, useValue: auditLogsService },
+        { provide: ResourceAuthorizationService, useValue: resourceAuthService },
+        { provide: RisksService, useValue: risksService },
       ],
     }).compile();
 
@@ -116,5 +135,73 @@ describe('AssetsService', () => {
         actorId: 'user-1',
       }),
     );
+  });
+
+  describe('getRisksForAsset', () => {
+    it('should return risks associated with the asset when asset belongs to organization', async () => {
+      const mockAsset = {
+        id: 'asset-1',
+        organizationId: 'org-1',
+        name: 'Web Server',
+        type: AssetType.HARDWARE,
+        owner: 'SecOps',
+        criticality: AssetCriticality.HIGH,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        createdById: 'user-1',
+        deletedAt: null,
+      };
+
+      const mockRisksResult = {
+        items: [
+          {
+            id: 'risk-1',
+            organizationId: 'org-1',
+            title: 'Unpatched vulnerability',
+            score: 16,
+            scoreBand: 'HIGH',
+            status: 'OPEN',
+            owner: 'RiskLead',
+            assetId: 'asset-1',
+          },
+        ],
+        total: 1,
+        page: 1,
+        limit: 20,
+      };
+
+      prisma.asset.findFirst.mockResolvedValue(mockAsset);
+      risksService.findAll.mockResolvedValue(mockRisksResult);
+
+      const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+      const result = await service.getRisksForAsset(authCtx, 'asset-1', { page: 1, limit: 20 });
+
+      expect(prisma.asset.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            id: 'asset-1',
+            organizationId: 'org-1',
+            deletedAt: null,
+          }),
+        }),
+      );
+      expect(risksService.findAll).toHaveBeenCalledWith(
+        authCtx,
+        expect.objectContaining({
+          assetId: 'asset-1',
+          page: 1,
+          limit: 20,
+        }),
+      );
+      expect(result).toEqual(mockRisksResult);
+    });
+
+    it('should throw NotFoundException if asset belongs to another organization', async () => {
+      prisma.asset.findFirst.mockResolvedValue(null);
+
+      const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+      await expect(service.getRisksForAsset(authCtx, 'asset-other-org', {})).rejects.toThrow(NotFoundException);
+      expect(risksService.findAll).not.toHaveBeenCalled();
+    });
   });
 });

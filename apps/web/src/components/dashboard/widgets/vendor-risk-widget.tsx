@@ -6,12 +6,24 @@ import { Building2, ChevronRight } from 'lucide-react';
 import { AnimatedCountUp } from '@/components/ui/animated-count-up';
 import { DonutChart, ChartSegment } from '../charts/donut-chart';
 
+import { ModuleNotLicensedCard } from '@/components/ui/module-not-licensed-card';
+
 interface VendorRiskWidgetProps {
   metrics: VendorMetricsDto;
   onNavigateToView?: (view: string) => void;
 }
 
 export function VendorRiskWidget({ metrics, onNavigateToView }: VendorRiskWidgetProps) {
+  if (metrics?.isAvailable === false) {
+    return (
+      <ModuleNotLicensedCard
+        title="Vendor Risk"
+        description="Third-party risk management"
+        icon={<Building2 size={18} />}
+      />
+    );
+  }
+
   const critical = metrics.byCriticality?.CRITICAL || 0;
   const high = metrics.byCriticality?.HIGH || 0;
   const medium = metrics.byCriticality?.MEDIUM || 0;

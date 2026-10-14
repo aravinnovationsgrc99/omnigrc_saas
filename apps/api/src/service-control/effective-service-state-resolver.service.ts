@@ -21,6 +21,8 @@ export const KNOWN_CAPABILITY_CODES = new Set([
   'AI_CONTROL_MAPPING',
   'NOTIFICATIONS_EMAIL',
   'MSSP_PORTAL',
+  'REPORTING_MODULE',
+  'INTEGRATIONS_HUB',
 ]);
 
 export interface EffectiveServiceStateResult {
@@ -90,18 +92,61 @@ export class EffectiveServiceStateResolver {
         const sysLicense = await this.prisma.systemLicenseState.findFirst({
           where: { OR: [{ organizationId }, { id: 'current' }] },
         });
+
         if (sysLicense && sysLicense.signedArtifactJson) {
           const artifact = sysLicense.signedArtifactJson as any;
           const entitlements: any[] = artifact.payload?.entitlements || [];
+          const version = artifact.payload?.licenseFormatVersion || artifact.formatVersion || '1.0';
           const serviceEntitlement = entitlements.find((e: any) => e.code === `service:${capabilityCode}`);
-          if (serviceEntitlement && serviceEntitlement.enabled === false) {
-            return {
-              capabilityCode,
-              effectiveState: 'COMMERCIAL_DISABLED',
-              isAvailable: false,
-              reason: `Service capability [${capabilityCode}] is explicitly excluded by commercial license.`,
-              source: 'COMMERCIAL_LICENSE',
-            };
+
+          if (serviceEntitlement) {
+            if (serviceEntitlement.enabled === false) {
+              return {
+                capabilityCode,
+                effectiveState: 'COMMERCIAL_DISABLED',
+                isAvailable: false,
+                reason: `Service capability [${capabilityCode}] is explicitly excluded by commercial license.`,
+                source: 'COMMERCIAL_LICENSE',
+              };
+            }
+          } else {
+            // Omitted capability claim in signed artifact
+            if (capabilityCode === 'GRC_CORE_ASSETS') {
+              // Base module is always allowed under valid commercial license
+            } else if (version === '2.0' || version === 'v2' || Number(version) >= 2) {
+              // Version 2.0+ Artifact: Granular entitlement model requires explicit capability claim
+              return {
+                capabilityCode,
+                effectiveState: 'COMMERCIAL_DISABLED',
+                isAvailable: false,
+                reason: `Service capability [${capabilityCode}] is omitted from v2.0 commercial license artifact.`,
+                source: 'COMMERCIAL_LICENSE',
+              };
+            } else {
+              // Version 1.0 Legacy Artifact Compatibility:
+              // Historical core capabilities remain grandfathered; newly introduced optional paid capabilities require explicit claims.
+              const LEGACY_1_0_GRANDFATHERED = new Set([
+                'GRC_CORE_ASSETS',
+                'GRC_CORE_RISKS',
+                'GRC_CORE_CONTROLS',
+                'GRC_CORE_TASKS',
+                'POLICIES_MODULE',
+                'EVIDENCE_VAULT',
+                'APPROVAL_ENGINE',
+                'REPORTING_MODULE',
+                'NOTIFICATIONS_EMAIL',
+              ]);
+
+              if (!LEGACY_1_0_GRANDFATHERED.has(capabilityCode)) {
+                return {
+                  capabilityCode,
+                  effectiveState: 'COMMERCIAL_DISABLED',
+                  isAvailable: false,
+                  reason: `Service capability [${capabilityCode}] is an optional paid module not granted in legacy v1.0 artifact.`,
+                  source: 'COMMERCIAL_LICENSE',
+                };
+              }
+            }
           }
         }
       }
@@ -186,5 +231,24 @@ export class EffectiveServiceStateResolver {
         source: 'FAIL_SAFE_ERROR',
       };
     }
+  }
+
+  /**
+   * Resolve authoritative effective capability map for an organization across all known capabilities.
+   * Evaluates all cataloged capabilities concurrently and returns a dictionary indexed by capabilityCode.
+   */
+  async resolveAllEffectiveStates(
+    organizationId: string,
+  ): Promise<Record<string, EffectiveServiceStateResult>> {
+    const codes = Array.from(KNOWN_CAPABILITY_CODES);
+    const resolved = await Promise.all(
+      codes.map((code) => this.resolveEffectiveState(organizationId, code)),
+    );
+
+    const map: Record<string, EffectiveServiceStateResult> = {};
+    for (let i = 0; i < codes.length; i++) {
+      map[codes[i]] = resolved[i];
+    }
+    return map;
   }
 }

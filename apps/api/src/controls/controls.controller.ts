@@ -1,7 +1,22 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ControlsService } from './controls.service';
 import { MappingQueueService } from './ai/mapping-queue.service';
-import { CreateControlDto, UpdateControlDto, ControlQueryDto, SignOffMappingDto, CreateControlMappingDto, SuggestMappingsDto } from './dto/controls.dto';
+import { RiskControlsService } from '../risk-controls/risk-controls.service';
+import { EvidenceService } from '../evidence/evidence.service';
+import { BusinessAuditsService } from '../business-audits/business-audits.service';
+import { AssociateRiskControlDto, RiskControlQueryDto } from '../risk-controls/dto/risk-controls.dto';
+import {
+  CreateControlDto,
+  UpdateControlDto,
+  ControlQueryDto,
+  SignOffMappingDto,
+  CreateControlMappingDto,
+  SuggestMappingsDto,
+  AttachControlEvidenceDto,
+  ControlEvidenceQueryDto,
+  CreateControlTestDto,
+  ControlTestQueryDto,
+} from './dto/controls.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -19,6 +34,9 @@ export class ControlsController {
   constructor(
     private readonly controlsService: ControlsService,
     private readonly mappingQueueService: MappingQueueService,
+    private readonly riskControlsService: RiskControlsService,
+    private readonly evidenceService: EvidenceService,
+    private readonly businessAuditsService: BusinessAuditsService,
   ) {}
 
   @Get()
@@ -126,6 +144,7 @@ export class ControlsController {
   @Post(':id/suggest-mappings')
   @RequiresActiveLicense()
   @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  @RequireCapability('AI_CONTROL_MAPPING')
   async suggestMappings(
     @CurrentUser() user: any,
     @Param('id') id: string,
@@ -197,5 +216,142 @@ export class ControlsController {
       role: user.role,
     };
     return this.controlsService.signOffMapping(authCtx, controlId, mappingId, dto);
+  }
+
+  @Get(':id/risks')
+  @Roles(Role.ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async getRisks(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Query() query: RiskControlQueryDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id || user.sub,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.riskControlsService.getRisksForControl(authCtx, id, query);
+  }
+
+  @Post(':id/risks')
+  @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  @RequireCapability(['GRC_CORE_CONTROLS', 'GRC_CORE_RISKS'])
+  async associateRisk(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() dto: AssociateRiskControlDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id || user.sub,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    const riskId = dto.riskId;
+    if (!riskId) {
+      throw new BadRequestException('riskId is required in request body');
+    }
+    return this.riskControlsService.associate(authCtx, riskId, id, dto);
+  }
+
+  @Delete(':id/risks/:riskId')
+  @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  @RequireCapability(['GRC_CORE_CONTROLS', 'GRC_CORE_RISKS'])
+  async disassociateRisk(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Param('riskId') riskId: string,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id || user.sub,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.riskControlsService.disassociate(authCtx, riskId, id);
+  }
+
+  @Get(':id/evidence')
+  @Roles(Role.ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async getEvidence(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Query() query: ControlEvidenceQueryDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id || user.sub,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.evidenceService.getEvidenceForControl(authCtx, id, query);
+  }
+
+  @Post(':id/evidence')
+  @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  @RequireCapability(['GRC_CORE_CONTROLS', 'EVIDENCE_VAULT'])
+  async attachEvidence(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() dto: AttachControlEvidenceDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id || user.sub,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    if (!dto.evidenceId) {
+      throw new BadRequestException('evidenceId is required in request body');
+    }
+    return this.evidenceService.attachEvidence(authCtx, dto.evidenceId, 'CONTROL', id);
+  }
+
+  @Delete(':id/evidence/:evidenceId')
+  @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  @RequireCapability(['GRC_CORE_CONTROLS', 'EVIDENCE_VAULT'])
+  async detachEvidence(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Param('evidenceId') evidenceId: string,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id || user.sub,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.evidenceService.detachEvidence(authCtx, evidenceId, 'CONTROL', id);
+  }
+
+  @Get(':id/tests')
+  @Roles(Role.ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async getTests(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Query() query: ControlTestQueryDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id || user.sub,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.businessAuditsService.getTestsForControl(authCtx, id, query);
+  }
+
+  @Post(':id/tests')
+  @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  @RequireCapability(['GRC_CORE_CONTROLS', 'BUSINESS_AUDITS'])
+  async createTest(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() dto: CreateControlTestDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id || user.sub,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.businessAuditsService.createCheckItemForControl(authCtx, id, dto);
   }
 }

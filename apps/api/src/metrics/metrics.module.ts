@@ -4,9 +4,10 @@ import { MetricsService } from './metrics.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
 import { FrameworksModule } from '../frameworks/frameworks.module';
+import { ServiceControlModule } from '../service-control/service-control.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, FrameworksModule],
+  imports: [PrismaModule, AuthModule, FrameworksModule, ServiceControlModule],
   controllers: [MetricsController],
   providers: [MetricsService],
   exports: [MetricsService],

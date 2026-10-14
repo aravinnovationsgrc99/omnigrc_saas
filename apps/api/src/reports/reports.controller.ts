@@ -5,6 +5,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Role } from '@omnigrc/shared';
+import { RequireCapability } from '../common/decorators/require-capability.decorator';
 import { RequiresActiveLicense } from '../common/decorators/requires-active-license.decorator';
 import { ResourceAuthContext } from '../auth/resource-authorization.service';
 import { ReportsService } from './reports.service';
@@ -13,6 +14,7 @@ import { ReportQueryDto, ReportResponseDto, ReportType } from '@omnigrc/shared';
 @Controller('reports')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+@RequireCapability('REPORTING_MODULE')
 export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}
 

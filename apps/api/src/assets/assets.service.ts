@@ -3,7 +3,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
 import { CreateAssetDto, UpdateAssetDto, AssetQueryDto } from './dto/assets.dto';
-import { AssetDto, PaginatedAssetsDto, AssetType, AssetCriticality } from '@omnigrc/shared';
+import { AssetDto, PaginatedAssetsDto, PaginatedRisksDto, AssetType, AssetCriticality } from '@omnigrc/shared';
+import { RisksService } from '../risks/risks.service';
+import { RiskQueryDto } from '../risks/dto/risks.dto';
 
 @Injectable()
 export class AssetsService {
@@ -11,6 +13,7 @@ export class AssetsService {
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
     private readonly resourceAuthService: ResourceAuthorizationService,
+    private readonly risksService: RisksService,
   ) {}
 
   async findAll(authCtx: ResourceAuthContext, query: AssetQueryDto): Promise<PaginatedAssetsDto> {
@@ -117,6 +120,16 @@ export class AssetsService {
       },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  async getRisksForAsset(
+    authCtx: ResourceAuthContext,
+    assetId: string,
+    query: RiskQueryDto,
+  ): Promise<PaginatedRisksDto> {
+    // Validate asset belongs to organization and scope; throws NotFoundException if missing or cross-tenant
+    await this.findOne(authCtx, assetId);
+    return this.risksService.findAll(authCtx, { ...query, assetId });
   }
 
   async create(authCtx: ResourceAuthContext, dto: CreateAssetDto): Promise<AssetDto> {

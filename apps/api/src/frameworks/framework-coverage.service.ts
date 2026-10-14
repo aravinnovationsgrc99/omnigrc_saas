@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FrameworkEntitlementsService } from './framework-entitlements.service';
 import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
+import { EffectiveServiceStateResolver } from '../service-control/effective-service-state-resolver.service';
 import {
   FrameworkCoverageResultDto,
   FrameworkReferenceCoverageDto,
@@ -9,6 +10,11 @@ import {
   CoverageStatus,
   MappingStatus,
   FrameworkCode,
+  AuditCheckResult,
+  ControlEffectivenessStatus,
+  FindingStatus,
+  ReferenceTestingSummaryDto,
+  MappedControlSummaryDto,
 } from '@omnigrc/shared';
 
 @Injectable()
@@ -19,6 +25,8 @@ export class FrameworkCoverageService {
     private readonly prisma: PrismaService,
     private readonly frameworkEntitlementsService: FrameworkEntitlementsService,
     private readonly resourceAuthService: ResourceAuthorizationService,
+    @Optional()
+    private readonly effectiveResolver?: EffectiveServiceStateResolver,
   ) {}
 
   /**
@@ -176,6 +184,97 @@ export class FrameworkCoverageService {
       select: { id: true, title: true, status: true, purpose: true, frameworkReferenceId: true },
     });
 
+    // 10. Query Batched Control Testing Outcomes (Respects BUSINESS_AUDITS Capability & Tenant Isolation)
+    const allMappedControlIds = Array.from(
+      new Set(
+        controlMappings
+          .filter((m) => m.status !== MappingStatus.REJECTED)
+          .map((m) => m.control.id),
+      ),
+    );
+
+    let isTestingAvailable = true;
+    if (this.effectiveResolver) {
+      try {
+        const auditCap = await this.effectiveResolver.resolveEffectiveState(organizationId, 'BUSINESS_AUDITS');
+        isTestingAvailable = auditCap.isAvailable;
+      } catch (err) {
+        this.logger.warn(`Failed to resolve BUSINESS_AUDITS capability for org ${organizationId}: ${err}`);
+        isTestingAvailable = false;
+      }
+    }
+
+    const controlTestMap = new Map<
+      string,
+      {
+        latestTestResult: AuditCheckResult | null;
+        effectivenessStatus: ControlEffectivenessStatus;
+        hasUnresolvedFinding: boolean;
+        hasFailedTest: boolean;
+        hasPartialTest: boolean;
+      }
+    >();
+
+    if (isTestingAvailable && allMappedControlIds.length > 0 && this.prisma.auditCheckItem) {
+      const checkItems = await this.prisma.auditCheckItem.findMany({
+        where: {
+          controlId: { in: allMappedControlIds },
+          organizationId,
+        },
+        orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+        select: {
+          id: true,
+          controlId: true,
+          result: true,
+          updatedAt: true,
+          findings: {
+            select: { id: true, status: true },
+          },
+        },
+      });
+
+      const checkItemsByControl = new Map<string, typeof checkItems>();
+      for (const item of checkItems) {
+        if (!item.controlId) continue;
+        const list = checkItemsByControl.get(item.controlId) || [];
+        list.push(item);
+        checkItemsByControl.set(item.controlId, list);
+      }
+
+      for (const controlId of allMappedControlIds) {
+        const items = checkItemsByControl.get(controlId) || [];
+        const latestEvaluated = items.find((i) => i.result !== AuditCheckResult.NOT_EVALUATED);
+        const latestItem = items[0] || null;
+        const latestTestResult = (latestEvaluated?.result || latestItem?.result || null) as AuditCheckResult | null;
+
+        let effectivenessStatus: ControlEffectivenessStatus = 'NOT_TESTED';
+        if (latestTestResult === AuditCheckResult.COMPLIANT) {
+          effectivenessStatus = 'EFFECTIVE';
+        } else if (latestTestResult === AuditCheckResult.PARTIALLY_COMPLIANT) {
+          effectivenessStatus = 'PARTIALLY_EFFECTIVE';
+        } else if (latestTestResult === AuditCheckResult.NON_COMPLIANT) {
+          effectivenessStatus = 'INEFFECTIVE';
+        } else if (latestTestResult === AuditCheckResult.NOT_APPLICABLE) {
+          effectivenessStatus = 'NOT_APPLICABLE';
+        }
+
+        const unresolvedFindings = items
+          .flatMap((i) => i.findings || [])
+          .filter((f) => f.status !== FindingStatus.CLOSED && f.status !== FindingStatus.VERIFIED);
+        const hasUnresolvedFinding = unresolvedFindings.length > 0;
+        const hasFailedTest = latestEvaluated?.result === AuditCheckResult.NON_COMPLIANT;
+        const hasPartialTest = latestEvaluated?.result === AuditCheckResult.PARTIALLY_COMPLIANT;
+
+        controlTestMap.set(controlId, {
+          latestTestResult,
+          effectivenessStatus,
+          hasUnresolvedFinding,
+          hasFailedTest,
+          hasPartialTest,
+        });
+      }
+    }
+
     // Map data to references
     const referenceResults: FrameworkReferenceCoverageDto[] = references.map((ref) => {
       // Find matching control mappings
@@ -191,16 +290,22 @@ export class FrameworkCoverageService {
         (m) => m.status === MappingStatus.APPROVED || m.status === MappingStatus.OVERRIDDEN,
       );
 
-      // Collect mapped controls
-      const mappedControls = activeMappings.map((m) => ({
-        controlId: m.control.id,
-        name: m.control.name,
-        description: m.control.description,
-        category: m.control.category,
-        mappingStatus: m.status,
-        departmentId: m.control.departmentId,
-        projectId: m.control.projectId,
-      }));
+      // Collect mapped controls with operational testing posture
+      const mappedControls: MappedControlSummaryDto[] = activeMappings.map((m) => {
+        const t = controlTestMap.get(m.control.id);
+        return {
+          controlId: m.control.id,
+          name: m.control.name,
+          description: m.control.description,
+          category: m.control.category,
+          mappingStatus: m.status,
+          departmentId: m.control.departmentId,
+          projectId: m.control.projectId,
+          latestTestResult: t?.latestTestResult || null,
+          effectivenessStatus: t?.effectivenessStatus || 'NOT_TESTED',
+          hasUnresolvedFinding: t?.hasUnresolvedFinding || false,
+        };
+      });
 
       // Collect evidence
       const controlEvidenceList = activeMappings.flatMap((m) =>
@@ -285,18 +390,35 @@ export class FrameworkCoverageService {
         })),
       };
 
-      // Calculate Coverage Status deterministically
+      // Calculate Operational Testing Impact on Coverage
+      const refControlIds = activeMappings.map((m) => m.control.id);
+      const isAnyControlFailed = refControlIds.some((cid) => controlTestMap.get(cid)?.hasFailedTest);
+      const isAnyControlPartial = refControlIds.some((cid) => controlTestMap.get(cid)?.hasPartialTest);
+      const isAnyControlFindingUnresolved = refControlIds.some((cid) => controlTestMap.get(cid)?.hasUnresolvedFinding);
+
+      const refTestingList = refControlIds.map((cid) => controlTestMap.get(cid)).filter(Boolean);
+      const testingSummary: ReferenceTestingSummaryDto = {
+        totalTests: refTestingList.length,
+        isTestingAvailable,
+        hasFailures: isAnyControlFailed,
+        hasUnresolvedFindings: isAnyControlFindingUnresolved,
+        latestTestResult: refTestingList[0]?.latestTestResult || null,
+      };
+
+      // Calculate Coverage Status deterministically:
+      // Must have valid human sign-off mapping, clean active evidence, satisfied approval,
+      // and NO operational test failures, partial compliance blockers, or unresolved findings.
       let status: CoverageStatus = 'NOT_COVERED';
 
       if (activeMappings.length === 0) {
         status = 'NOT_COVERED';
       } else {
-        // Must have valid human sign-off mapping, clean active evidence, and no rejected/pending approval block
         const isMappingValid = validHumanMappings.length > 0;
         const hasCleanEvidence = cleanActiveEvidenceCount > 0;
         const isApprovalSatisfied = overallApprovalStatus === null || overallApprovalStatus === 'APPROVED';
+        const hasTestingBlocker = isTestingAvailable && (isAnyControlFailed || isAnyControlPartial || isAnyControlFindingUnresolved);
 
-        if (isMappingValid && hasCleanEvidence && isApprovalSatisfied) {
+        if (isMappingValid && hasCleanEvidence && isApprovalSatisfied && !hasTestingBlocker) {
           status = 'COVERED';
         } else {
           status = 'PARTIAL';
@@ -314,6 +436,7 @@ export class FrameworkCoverageService {
         mappedControls,
         evidenceSummary,
         approvalSummary,
+        testingSummary,
       };
     });
 

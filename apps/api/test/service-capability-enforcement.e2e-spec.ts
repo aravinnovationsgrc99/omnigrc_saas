@@ -233,10 +233,18 @@ describe('CP-3 — Data Plane Service Capability Enforcement E2E', () => {
   });
 
   describe('2. Runtime Capability Enforcement via ServiceCapabilityGuard', () => {
-    it('2a. Org A with VENDOR_RISK override DISABLED -> GET /vendors blocked with 403 CAPABILITY_DISABLED', async () => {
-      const res = await request(app.getHttpServer())
+    it('2a. Org A with VENDOR_RISK override DISABLED -> POST /vendors blocked with 403 CAPABILITY_DISABLED, historical GET /vendors permitted', async () => {
+      // Historical read is permitted after revocation
+      await request(app.getHttpServer())
         .get('/vendors')
         .set('Authorization', `Bearer ${userTokenOrgA}`)
+        .expect(200);
+
+      // Mutating operation is strictly blocked with 403
+      const res = await request(app.getHttpServer())
+        .post('/vendors')
+        .set('Authorization', `Bearer ${userTokenOrgA}`)
+        .send({ name: 'Blocked Vendor', criticality: 'HIGH' })
         .expect(403);
 
       expect(res.body.code).toBe('CAPABILITY_DISABLED');

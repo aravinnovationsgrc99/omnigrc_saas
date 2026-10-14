@@ -6,12 +6,24 @@ import { ShieldAlert, AlertTriangle, ShieldCheck, Activity, ChevronRight } from 
 import { AnimatedCountUp } from '@/components/ui/animated-count-up';
 import { DonutChart, ChartSegment } from '../charts/donut-chart';
 
+import { ModuleNotLicensedCard } from '@/components/ui/module-not-licensed-card';
+
 interface RiskOverviewWidgetProps {
   metrics: RiskMetricsDto;
   onNavigateToView?: (view: string) => void;
 }
 
 export function RiskOverviewWidget({ metrics, onNavigateToView }: RiskOverviewWidgetProps) {
+  if (metrics?.isAvailable === false) {
+    return (
+      <ModuleNotLicensedCard
+        title="Risk Overview"
+        description="Open enterprise risk posture"
+        icon={<ShieldAlert size={18} />}
+      />
+    );
+  }
+
   const highCount = metrics.byScoreBand?.HIGH || 0;
   const mediumCount = metrics.byScoreBand?.MEDIUM || 0;
   const lowCount = metrics.byScoreBand?.LOW || 0;

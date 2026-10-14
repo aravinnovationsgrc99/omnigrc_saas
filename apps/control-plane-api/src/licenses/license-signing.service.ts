@@ -121,7 +121,7 @@ export class LicenseSigningService {
 
     const payload: SignedLicensePayload = {
       licenseId: input.license.id,
-      licenseFormatVersion: '1.0',
+      licenseFormatVersion: '2.0',
       product: input.license.product as LicenseProduct,
       status: input.license.status as LicenseStatus,
       sequence: input.license.sequence != null ? Number(input.license.sequence) : 1,
@@ -150,7 +150,7 @@ export class LicenseSigningService {
       const signature = signatureBuffer.toString('base64');
 
       return {
-        formatVersion: '1.0',
+        formatVersion: '2.0',
         keyId,
         algorithm: 'Ed25519',
         payload,

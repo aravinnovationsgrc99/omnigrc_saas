@@ -4,6 +4,8 @@ export interface TenantStore {
   organizationId?: string;
   userId?: string;
   role?: string;
+  actingViaMsspId?: string;
+  isDisplayNameLookup?: boolean;
 }
 
 export class TenantContext {
@@ -27,5 +29,18 @@ export class TenantContext {
 
   static getRole(): string | undefined {
     return this.getStore()?.role;
+  }
+
+  static getActingViaMsspId(): string | undefined {
+    return this.getStore()?.actingViaMsspId;
+  }
+
+  static isDisplayNameLookup(): boolean {
+    return !!this.getStore()?.isDisplayNameLookup;
+  }
+
+  static runWithDisplayNameLookup<T>(callback: () => Promise<T> | T): Promise<T> | T {
+    const currentStore = this.getStore() || {};
+    return this.storage.run({ ...currentStore, isDisplayNameLookup: true }, callback as any);
   }
 }

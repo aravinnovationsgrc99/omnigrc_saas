@@ -34,12 +34,12 @@ import { RequireCapability } from '../common/decorators/require-capability.decor
 @Controller('evidence')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
-@RequireCapability('EVIDENCE_VAULT')
 export class EvidenceController {
   constructor(private readonly evidenceService: EvidenceService) {}
 
   @Post('upload')
   @RequiresActiveLicense()
+  @RequireCapability('EVIDENCE_VAULT')
   @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
   @UseInterceptors(FileInterceptor('file'))
   async uploadEvidence(
@@ -97,6 +97,7 @@ export class EvidenceController {
 
   @Post(':id/attach')
   @RequiresActiveLicense()
+  @RequireCapability('EVIDENCE_VAULT')
   @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
   async attachEvidence(
     @CurrentUser() user: any,
@@ -118,6 +119,7 @@ export class EvidenceController {
 
   @Delete(':id/detach')
   @RequiresActiveLicense()
+  @RequireCapability('EVIDENCE_VAULT')
   @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
   async detachEvidence(
     @CurrentUser() user: any,
@@ -139,6 +141,7 @@ export class EvidenceController {
 
   @Delete(':id')
   @RequiresActiveLicense()
+  @RequireCapability('EVIDENCE_VAULT')
   @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
   async archiveEvidence(
     @CurrentUser() user: any,

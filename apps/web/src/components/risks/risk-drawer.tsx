@@ -1,19 +1,52 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { RiskDto, RiskStatus, RiskScoreBand, AssetDto, PaginatedAssetsDto, AuditLogEntryDto, CreateRiskDto, UpdateRiskDto } from '@omnigrc/shared';
-
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  RiskDto,
+  RiskStatus,
+  RiskScoreBand,
+  AssetDto,
+  PaginatedAssetsDto,
+  AuditLogEntryDto,
+  CreateRiskDto,
+  UpdateRiskDto,
+  RiskControlAssociationDto,
+  PaginatedRiskControlAssociationsDto,
+  RiskControlMitigationType,
+  ControlDto,
+  PaginatedControlsDto,
+  Role,
+} from '@omnigrc/shared';
 
 import { apiRequest } from '@/lib/api-client';
 import { useToast } from '@/context/toast-context';
-import { ShieldAlert, X, Trash2, History, Clock } from 'lucide-react';
+import { useAuth } from '@/context/auth-context';
+import { ShieldAlert, X, Trash2, History, Clock, GitMerge, Plus, Lock, ShieldCheck } from 'lucide-react';
+import { WorkflowLifecyclePanel } from '@/components/workflow/workflow-lifecycle-panel';
 
+export const getMitigationBadgeStyle = (type: RiskControlMitigationType) => {
+  switch (type) {
+    case RiskControlMitigationType.PREVENTATIVE:
+      return { bg: '#E6F4EA', color: '#137333', border: '#CEEAD6', label: 'Preventative' };
+    case RiskControlMitigationType.DETECTIVE:
+      return { bg: '#E8F0FE', color: '#1A73E8', border: '#D2E3FC', label: 'Detective' };
+    case RiskControlMitigationType.CORRECTIVE:
+      return { bg: '#FEF7E0', color: '#B06000', border: '#FEEFC3', label: 'Corrective' };
+    case RiskControlMitigationType.COMPENSATING:
+      return { bg: '#F3E8FD', color: '#7B1FA2', border: '#E9D2FD', label: 'Compensating' };
+    default:
+      return { bg: '#F1F3F4', color: '#5F6368', border: '#DADCE0', label: type };
+  }
+};
 
 interface RiskDrawerProps {
   risk: RiskDto | null; // null = Create Mode, RiskDto = Edit/Detail Mode
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  defaultAssetId?: string;
+  zIndex?: number;
+  onNavigateToView?: (view: string) => void;
 }
 
 export const LIKELIHOOD_LABELS: Record<number, string> = {
@@ -32,9 +65,19 @@ export const IMPACT_LABELS: Record<number, string> = {
   5: '5 - Severe',
 };
 
-export function RiskDrawer({ risk, isOpen, onClose, onSuccess }: RiskDrawerProps) {
+export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, zIndex = 50, onNavigateToView }: RiskDrawerProps) {
   const { showToast } = useToast();
+  const { user, organization, hasCapability } = useAuth();
   const isEdit = Boolean(risk);
+
+  const canAccessControls = hasCapability('GRC_CORE_CONTROLS');
+  const canMutateRiskControls = Boolean(
+    canAccessControls &&
+    hasCapability('GRC_CORE_RISKS') &&
+    !organization?.isReadOnly &&
+    user?.role &&
+    [Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST].includes(user.role as Role)
+  );
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -56,9 +99,97 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess }: RiskDrawerProps
   const [deleting, setDeleting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Associated Controls State
+  const [associatedControls, setAssociatedControls] = useState<RiskControlAssociationDto[]>([]);
+  const [loadingControls, setLoadingControls] = useState(false);
+  const [controlsError, setControlsError] = useState<string | null>(null);
+  const [availableControls, setAvailableControls] = useState<ControlDto[]>([]);
+  const [selectedControlId, setSelectedControlId] = useState<string>('');
+  const [selectedMitigationType, setSelectedMitigationType] = useState<RiskControlMitigationType>(RiskControlMitigationType.PREVENTATIVE);
+  const [mitigationNotes, setMitigationNotes] = useState<string>('');
+  const [isLinking, setIsLinking] = useState(false);
+  const [unlinkingControlId, setUnlinkingControlId] = useState<string | null>(null);
+  const [linkError, setLinkError] = useState<string | null>(null);
+
   // Form Validation State
   const [titleTouched, setTitleTouched] = useState(false);
   const [ownerTouched, setOwnerTouched] = useState(false);
+
+  // Fetch associated controls
+  const fetchAssociatedControls = useCallback(async () => {
+    if (!risk?.id || !canAccessControls) return;
+    setLoadingControls(true);
+    setControlsError(null);
+    try {
+      const res = await apiRequest<PaginatedRiskControlAssociationsDto>(`/risks/${risk.id}/controls?limit=50`);
+      setAssociatedControls(res.items || []);
+    } catch (err: any) {
+      setControlsError(err.message || 'Failed to load associated controls');
+    } finally {
+      setLoadingControls(false);
+    }
+  }, [risk?.id, canAccessControls]);
+
+  // Fetch controls when drawer is open in edit mode
+  useEffect(() => {
+    if (risk && isOpen && canAccessControls) {
+      fetchAssociatedControls();
+    } else {
+      setAssociatedControls([]);
+      setControlsError(null);
+    }
+  }, [risk, isOpen, canAccessControls, fetchAssociatedControls]);
+
+  useEffect(() => {
+    if (isOpen && isEdit && canAccessControls) {
+      apiRequest<PaginatedControlsDto>('/controls?limit=100')
+        .then((res) => setAvailableControls(res.items || []))
+        .catch(() => setAvailableControls([]));
+    }
+  }, [isOpen, isEdit, canAccessControls]);
+
+  const handleLinkControl = async (e?: React.FormEvent | React.MouseEvent) => {
+    if (e) e.preventDefault();
+    if (!risk || !selectedControlId || isLinking) return;
+    setIsLinking(true);
+    setLinkError(null);
+    try {
+      await apiRequest(`/risks/${risk.id}/controls`, {
+        method: 'POST',
+        body: JSON.stringify({
+          controlId: selectedControlId,
+          mitigationType: selectedMitigationType,
+          notes: mitigationNotes.trim() || undefined,
+        }),
+      });
+      showToast('Control associated with risk');
+      setSelectedControlId('');
+      setMitigationNotes('');
+      setSelectedMitigationType(RiskControlMitigationType.PREVENTATIVE);
+      await fetchAssociatedControls();
+    } catch (err: any) {
+      setLinkError(err.message || 'Failed to associate control');
+    } finally {
+      setIsLinking(false);
+    }
+  };
+
+  const handleUnlinkControl = async (controlId: string, controlName: string) => {
+    if (!risk || unlinkingControlId) return;
+    if (!confirm(`Are you sure you want to disassociate control "${controlName}" from this risk?`)) return;
+    setUnlinkingControlId(controlId);
+    try {
+      await apiRequest(`/risks/${risk.id}/controls/${controlId}`, {
+        method: 'DELETE',
+      });
+      showToast('Control disassociated');
+      await fetchAssociatedControls();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to disassociate control', 'error');
+    } finally {
+      setUnlinkingControlId(null);
+    }
+  };
 
   // Fetch available assets and entitled frameworks for dropdown selection
   useEffect(() => {
@@ -117,7 +248,7 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess }: RiskDrawerProps
       setImpact(3);
       setStatus(RiskStatus.OPEN);
       setOwner('');
-      setAssetId('');
+      setAssetId(defaultAssetId || '');
       setFrameworkId('');
       setFrameworkReferenceId('');
       setTreatmentPlan('');
@@ -126,7 +257,7 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess }: RiskDrawerProps
     setErrorMsg(null);
     setTitleTouched(false);
     setOwnerTouched(false);
-  }, [risk, isOpen]);
+  }, [risk, isOpen, defaultAssetId]);
 
   if (!isOpen) return null;
 
@@ -219,7 +350,7 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess }: RiskDrawerProps
 
   return (
     <div style={{
-      position: 'fixed', inset: 0, zIndex: 50, display: 'flex', justifyContent: 'flex-end',
+      position: 'fixed', inset: 0, zIndex: zIndex || 50, display: 'flex', justifyContent: 'flex-end',
       background: 'rgba(15, 26, 46, 0.4)', backdropFilter: 'blur(2px)',
     }}>
       <div className="omni-fade-in w-full sm:max-w-xl h-full bg-white flex flex-col shadow-2xl">
@@ -444,6 +575,230 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess }: RiskDrawerProps
               style={{ marginBottom: 20, resize: 'vertical' }}
             />
           </form>
+
+          {/* Workflow Lifecycle, Next Actions & Prerequisites (Edit mode only) */}
+          {isEdit && risk && (
+            <div style={{ borderTop: '1px solid #E2E6E4', paddingTop: 16, marginTop: 10, marginBottom: 16 }}>
+              <WorkflowLifecyclePanel
+                resourceType="RISK"
+                resourceId={risk.id}
+                collapsible={true}
+                defaultExpanded={false}
+                onNavigateToView={(v) => {
+                  if (onNavigateToView) {
+                    onClose();
+                    onNavigateToView(v);
+                  }
+                }}
+              />
+            </div>
+          )}
+
+          {/* Associated Controls (Edit mode only) */}
+          {isEdit && (
+            <div style={{ borderTop: '1px solid #E2E6E4', paddingTop: 20, marginTop: 10, marginBottom: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <ShieldCheck size={16} color="#0F6E6A" />
+                  <h3 style={{ fontSize: 13.5, fontWeight: 600, color: '#1B2430' }}>Associated Controls</h3>
+                  {canAccessControls && (
+                    <span style={{
+                      fontSize: 11, background: '#EDEFED', color: '#5B6672',
+                      padding: '1px 7px', borderRadius: 10, fontWeight: 600,
+                    }}>
+                      {associatedControls.length}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {!canAccessControls ? (
+                <div style={{
+                  padding: '12px 14px', background: '#F8F9FA', border: '1px solid #E2E6E4', borderRadius: 8,
+                  display: 'flex', alignItems: 'center', gap: 10, color: '#5B6672', fontSize: 12,
+                }}>
+                  <Lock size={15} color="#8B95A1" />
+                  <div>
+                    <span style={{ fontWeight: 600, color: '#1B2430' }}>Controls Module Not Licensed</span>
+                    <p style={{ margin: 0, fontSize: 11.5, color: '#8B95A1' }}>
+                      Viewing and linking controls requires the <code>GRC_CORE_CONTROLS</code> capability.
+                    </p>
+                  </div>
+                </div>
+              ) : loadingControls ? (
+                <div style={{ fontSize: 12, color: '#8B95A1', padding: '12px 0' }}>Loading associated controls...</div>
+              ) : controlsError ? (
+                <div style={{
+                  padding: '10px 12px', background: '#F8E6E8', border: '1px solid #B23A48',
+                  borderRadius: 6, color: '#801F2B', fontSize: 12, marginBottom: 12,
+                }}>
+                  {controlsError}
+                  <button
+                    onClick={fetchAssociatedControls}
+                    type="button"
+                    style={{ marginLeft: 8, textDecoration: 'underline', background: 'none', border: 'none', color: '#801F2B', cursor: 'pointer', fontSize: 12 }}
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {associatedControls.length === 0 ? (
+                    <div style={{
+                      padding: '16px', background: '#FAFAFA', border: '1px dashed #D2D7D5', borderRadius: 8,
+                      textAlign: 'center', color: '#8B95A1', fontSize: 12,
+                    }}>
+                      No controls associated with this risk yet.
+                    </div>
+                  ) : (
+                    associatedControls.map((ac) => {
+                      const badge = getMitigationBadgeStyle(ac.mitigationType);
+                      return (
+                        <div
+                          key={ac.id}
+                          style={{
+                            padding: '12px', background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 8,
+                            boxShadow: '0 1px 2px rgba(0,0,0,0.02)', display: 'flex', flexDirection: 'column', gap: 6,
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span style={{ fontSize: 13, fontWeight: 600, color: '#1B2430' }}>
+                                  {ac.controlName}
+                                </span>
+                                {ac.controlCategory && (
+                                  <span style={{ fontSize: 10, background: '#EDEFED', color: '#5B6672', padding: '1px 5px', borderRadius: 4 }}>
+                                    {ac.controlCategory}
+                                  </span>
+                                )}
+                              </div>
+                              {ac.controlDescription && (
+                                <p style={{ fontSize: 11.5, color: '#5B6672', margin: '3px 0 0', lineHeight: 1.4 }}>
+                                  {ac.controlDescription}
+                                </p>
+                              )}
+                            </div>
+                            {canMutateRiskControls && (
+                              <button
+                                type="button"
+                                onClick={() => handleUnlinkControl(ac.controlId, ac.controlName)}
+                                disabled={unlinkingControlId === ac.controlId}
+                                aria-label={`Unlink control ${ac.controlName}`}
+                                title="Disassociate control"
+                                style={{
+                                  background: 'none', border: 'none', color: '#B23A48', cursor: 'pointer',
+                                  padding: 4, borderRadius: 4, display: 'flex', alignItems: 'center',
+                                }}
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4, paddingTop: 6, borderTop: '1px solid #F0F2F1' }}>
+                            <span style={{
+                              fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 4,
+                              background: badge.bg, color: badge.color, border: `1px solid ${badge.border}`,
+                            }}>
+                              {badge.label}
+                            </span>
+                            {ac.notes && (
+                              <span style={{ fontSize: 11, color: '#717D8A', fontStyle: 'italic', maxWidth: '60%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={ac.notes}>
+                                Note: {ac.notes}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+
+                  {/* Associate New Control Form */}
+                  {canMutateRiskControls ? (
+                    <div style={{
+                      marginTop: 8, padding: '12px', background: '#F8F9FA', borderRadius: 8,
+                      border: '1px solid #E2E6E4',
+                    }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: '#1B2430', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <Plus size={13} color="#0F6E6A" /> Link a Control
+                      </div>
+
+                      {linkError && (
+                        <div style={{
+                          padding: '6px 8px', background: '#F8E6E8', border: '1px solid #B23A48',
+                          borderRadius: 4, color: '#801F2B', fontSize: 11.5, marginBottom: 8,
+                        }}>
+                          {linkError}
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <select
+                          className="omni-input"
+                          style={{ fontSize: 12, padding: '6px 8px', height: 'auto' }}
+                          value={selectedControlId}
+                          onChange={(e) => setSelectedControlId(e.target.value)}
+                        >
+                          <option value="">-- Select Control to Associate --</option>
+                          {availableControls
+                            .filter((c) => !associatedControls.some((ac) => ac.controlId === c.id))
+                            .map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name} {c.category ? `(${c.category})` : ''}
+                              </option>
+                            ))}
+                        </select>
+
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <div style={{ flex: 1 }}>
+                            <select
+                              className="omni-input"
+                              style={{ fontSize: 12, padding: '6px 8px', height: 'auto' }}
+                              value={selectedMitigationType}
+                              onChange={(e) => setSelectedMitigationType(e.target.value as RiskControlMitigationType)}
+                            >
+                              <option value={RiskControlMitigationType.PREVENTATIVE}>Preventative</option>
+                              <option value={RiskControlMitigationType.DETECTIVE}>Detective</option>
+                              <option value={RiskControlMitigationType.CORRECTIVE}>Corrective</option>
+                              <option value={RiskControlMitigationType.COMPENSATING}>Compensating</option>
+                            </select>
+                          </div>
+                          <div style={{ flex: 1.5 }}>
+                            <input
+                              className="omni-input"
+                              style={{ fontSize: 12, padding: '6px 8px', height: 'auto' }}
+                              placeholder="Mitigation notes (optional)..."
+                              value={mitigationNotes}
+                              onChange={(e) => setMitigationNotes(e.target.value)}
+                            />
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={handleLinkControl}
+                          disabled={!selectedControlId || isLinking}
+                          className="omni-btn-primary"
+                          style={{
+                            fontSize: 12, padding: '6px 12px', alignSelf: 'flex-end',
+                            display: 'flex', alignItems: 'center', gap: 5,
+                          }}
+                        >
+                          <ShieldCheck size={13} />
+                          {isLinking ? 'Linking...' : 'Link Control'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 11, color: '#8B95A1', fontStyle: 'italic', marginTop: 4 }}>
+                      Control associations are view-only under your current role or license.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Audit History (Edit mode only) */}
           {isEdit && (

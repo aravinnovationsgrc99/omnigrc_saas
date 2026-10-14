@@ -6,12 +6,24 @@ import { CheckSquare, Clock, AlertCircle, CheckCircle2, ChevronRight } from 'luc
 import { AnimatedCountUp } from '@/components/ui/animated-count-up';
 import { HorizontalBarChart, BarItem } from '../charts/horizontal-bar-chart';
 
+import { ModuleNotLicensedCard } from '@/components/ui/module-not-licensed-card';
+
 interface ComplianceObligationsWidgetProps {
   metrics: ObligationMetricsDto;
   onNavigateToView?: (view: string) => void;
 }
 
 export function ComplianceObligationsWidget({ metrics, onNavigateToView }: ComplianceObligationsWidgetProps) {
+  if (metrics?.isAvailable === false) {
+    return (
+      <ModuleNotLicensedCard
+        title="Compliance & Obligations"
+        description="Task fulfillment & cadence"
+        icon={<CheckSquare size={18} />}
+      />
+    );
+  }
+
   const completionRate = Math.round(metrics.completionRate || 0);
   const completed = metrics.completedCount || 0;
   const upcoming = metrics.upcomingCount || 0;

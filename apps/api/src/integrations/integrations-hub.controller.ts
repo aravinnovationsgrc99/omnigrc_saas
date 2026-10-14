@@ -3,10 +3,12 @@ import { IntegrationsHubService } from './integrations-hub.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { RequireCapability } from '../common/decorators/require-capability.decorator';
 import { IntegrationConnectorDto } from '@omnigrc/shared';
 
 @Controller('integrations')
 @UseGuards(JwtAuthGuard, RolesGuard)
+@RequireCapability('INTEGRATIONS_HUB')
 export class IntegrationsHubController {
   constructor(private readonly integrationsHubService: IntegrationsHubService) {}
 

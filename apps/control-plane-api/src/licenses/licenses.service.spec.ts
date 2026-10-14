@@ -399,5 +399,74 @@ describe('LicensesService (CP-5 Commercial Control Lifecycle)', () => {
       expect(logs[0].action).toBe('LICENSE_CREATED');
     });
   });
+
+  describe('Phase 1.3.3 Safe Provisioning & Baseline Reconciliation', () => {
+    it('1. should reconcile baseline core entitlements for a legacy license with no existing capability claims', async () => {
+      prisma.entitlement.findMany = jest.fn().mockResolvedValue([]);
+      prisma.entitlement.create = jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: `ent-${data.code}`, ...data }));
+
+      const result = await service.reconcileBaselineEntitlements(prisma, 'lic-1');
+
+      // Should create all 9 baseline core capabilities
+      expect(result.length).toBe(9);
+      expect(result.some((e) => e.code === 'service:GRC_CORE_ASSETS')).toBe(true);
+      expect(result.some((e) => e.code === 'service:POLICIES_MODULE')).toBe(true);
+      expect(result.some((e) => e.code === 'service:EVIDENCE_VAULT')).toBe(true);
+
+      // Should NOT grant optional paid modules
+      expect(result.some((e) => e.code === 'service:AI_DOC_INTELLIGENCE')).toBe(false);
+      expect(result.some((e) => e.code === 'service:VENDOR_RISK')).toBe(false);
+    });
+
+    it('2. should preserve explicit operator disabled entitlements (enabled: false)', async () => {
+      const existing = [
+        { id: 'ent-1', licenseId: 'lic-1', code: 'service:POLICIES_MODULE', name: 'Policy Mgmt', enabled: false, value: null },
+      ];
+      prisma.entitlement.findMany = jest.fn().mockResolvedValue(existing);
+      prisma.entitlement.create = jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: `ent-${data.code}`, ...data }));
+
+      const result = await service.reconcileBaselineEntitlements(prisma, 'lic-1');
+
+      const policiesEnt = result.find((e) => e.code === 'service:POLICIES_MODULE');
+      expect(policiesEnt).toBeDefined();
+      expect(policiesEnt?.enabled).toBe(false); // Preserved!
+    });
+
+    it('3. should be idempotent and not create duplicate entitlement records on repeated execution', async () => {
+      const existing = [
+        { id: 'ent-1', licenseId: 'lic-1', code: 'service:GRC_CORE_ASSETS', name: 'Asset Mgmt', enabled: true, value: null },
+        { id: 'ent-2', licenseId: 'lic-1', code: 'service:GRC_CORE_RISKS', name: 'Risk Mgmt', enabled: true, value: null },
+        { id: 'ent-3', licenseId: 'lic-1', code: 'service:GRC_CORE_CONTROLS', name: 'Controls', enabled: true, value: null },
+        { id: 'ent-4', licenseId: 'lic-1', code: 'service:GRC_CORE_TASKS', name: 'Tasks', enabled: true, value: null },
+        { id: 'ent-5', licenseId: 'lic-1', code: 'service:POLICIES_MODULE', name: 'Policies', enabled: true, value: null },
+        { id: 'ent-6', licenseId: 'lic-1', code: 'service:EVIDENCE_VAULT', name: 'Evidence Vault', enabled: true, value: null },
+        { id: 'ent-7', licenseId: 'lic-1', code: 'service:APPROVAL_ENGINE', name: 'Approvals', enabled: true, value: null },
+        { id: 'ent-8', licenseId: 'lic-1', code: 'service:REPORTING_MODULE', name: 'Reporting', enabled: true, value: null },
+        { id: 'ent-9', licenseId: 'lic-1', code: 'service:NOTIFICATIONS_EMAIL', name: 'Email Notifications', enabled: true, value: null },
+      ];
+      prisma.entitlement.findMany = jest.fn().mockResolvedValue(existing);
+      prisma.entitlement.create = jest.fn();
+
+      const result = await service.reconcileBaselineEntitlements(prisma, 'lic-1');
+
+      expect(result.length).toBe(9);
+      expect(prisma.entitlement.create).not.toHaveBeenCalled(); // Zero new DB insertions!
+    });
+
+    it('4. should fail safely and throw BadRequestException when attempting to issue artifact for a REVOKED license', async () => {
+      prisma.license.findUnique.mockResolvedValue({
+        id: 'lic-revoked',
+        status: 'REVOKED',
+        product: 'OMNIGRC',
+        sequence: BigInt(1),
+        commercialAgreement: { customerId: 'cust-1' },
+        deployments: [{ id: 'dep-1', organizationId: 'org-1', activationState: 'ACTIVE' }],
+      });
+
+      await expect(service.getSignedArtifactForLicense('lic-revoked')).rejects.toThrow(
+        /Cannot issue license artifact for REVOKED license/i,
+      );
+    });
+  });
 });
 

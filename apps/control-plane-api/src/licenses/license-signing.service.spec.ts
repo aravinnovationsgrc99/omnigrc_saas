@@ -46,7 +46,7 @@ describe('LicenseSigningService', () => {
 
     const artifact = service.signLicenseArtifact(input);
 
-    expect(artifact.formatVersion).toEqual('1.0');
+    expect(artifact.formatVersion).toEqual('2.0');
     expect(artifact.algorithm).toEqual('Ed25519');
     expect(artifact.payload.deploymentId).toEqual('dep_123');
     expect(artifact.payload.organizationId).toEqual('org_123');

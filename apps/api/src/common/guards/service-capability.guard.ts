@@ -39,63 +39,71 @@ export class ServiceCapabilityGuard implements CanActivate {
       request.headers['x-organization-id'] ||
       process.env.ORGANIZATION_ID;
 
+    const capabilityCodes = Array.isArray(requirement.capabilityCode)
+      ? requirement.capabilityCode
+      : [requirement.capabilityCode];
+
     if (!organizationId) {
       // System routes or routes without organization context are checked against global state
+      for (const code of capabilityCodes) {
+        const resolved = await this.effectiveServiceStateResolver.resolveEffectiveState(
+          '',
+          code,
+        );
+
+        if (!resolved.isAvailable) {
+          this.logger.warn(
+            `ServiceCapabilityGuard BLOCKED request for capability [${code}] (Global Reason: ${resolved.reason})`,
+          );
+          throw new ForbiddenException({
+            statusCode: HttpStatus.FORBIDDEN,
+            error: 'Forbidden',
+            message: `Service capability [${code}] is not available.`,
+            code: 'CAPABILITY_DISABLED',
+            capability: code,
+            state: resolved.effectiveState,
+            reason: resolved.reason,
+            source: resolved.source,
+          });
+        }
+      }
+      return true;
+    }
+
+    for (const code of capabilityCodes) {
       const resolved = await this.effectiveServiceStateResolver.resolveEffectiveState(
-        '',
-        requirement.capabilityCode,
+        organizationId,
+        code,
       );
 
       if (!resolved.isAvailable) {
+        if (resolved.reason?.includes('INVALID_OR_UNAVAILABLE')) {
+          throw new HttpException(
+            {
+              statusCode: HttpStatus.SERVICE_UNAVAILABLE,
+              error: 'Service Unavailable',
+              message: 'License verification state is currently unavailable or invalid.',
+              code: 'LICENSE_UNAVAILABLE',
+              reason: resolved.reason,
+            },
+            HttpStatus.SERVICE_UNAVAILABLE,
+          );
+        }
+
         this.logger.warn(
-          `ServiceCapabilityGuard BLOCKED request for capability [${requirement.capabilityCode}] (Global Reason: ${resolved.reason})`,
+          `ServiceCapabilityGuard BLOCKED request for org "${organizationId}" on capability [${code}] (${resolved.source}: ${resolved.reason})`,
         );
         throw new ForbiddenException({
           statusCode: HttpStatus.FORBIDDEN,
           error: 'Forbidden',
-          message: `Service capability [${requirement.capabilityCode}] is not available.`,
+          message: `Service capability [${code}] is not available for this organization.`,
           code: 'CAPABILITY_DISABLED',
-          capability: requirement.capabilityCode,
+          capability: code,
           state: resolved.effectiveState,
           reason: resolved.reason,
           source: resolved.source,
         });
       }
-      return true;
-    }
-
-    const resolved = await this.effectiveServiceStateResolver.resolveEffectiveState(
-      organizationId,
-      requirement.capabilityCode,
-    );
-
-    if (!resolved.isAvailable) {
-      if (resolved.reason?.includes('INVALID_OR_UNAVAILABLE')) {
-        throw new HttpException(
-          {
-            statusCode: HttpStatus.SERVICE_UNAVAILABLE,
-            error: 'Service Unavailable',
-            message: 'License verification state is currently unavailable or invalid.',
-            code: 'LICENSE_UNAVAILABLE',
-            reason: resolved.reason,
-          },
-          HttpStatus.SERVICE_UNAVAILABLE,
-        );
-      }
-
-      this.logger.warn(
-        `ServiceCapabilityGuard BLOCKED request for org "${organizationId}" on capability [${requirement.capabilityCode}] (${resolved.source}: ${resolved.reason})`,
-      );
-      throw new ForbiddenException({
-        statusCode: HttpStatus.FORBIDDEN,
-        error: 'Forbidden',
-        message: `Service capability [${requirement.capabilityCode}] is not available for this organization.`,
-        code: 'CAPABILITY_DISABLED',
-        capability: requirement.capabilityCode,
-        state: resolved.effectiveState,
-        reason: resolved.reason,
-        source: resolved.source,
-      });
     }
 
     return true;

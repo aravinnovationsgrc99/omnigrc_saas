@@ -12,7 +12,13 @@ import { RiskDrawer } from './risk-drawer';
 import { Plus, List, LayoutGrid, Search, X, ShieldAlert } from 'lucide-react';
 
 
-export function RiskListView() {
+interface RiskListViewProps {
+  initialAssetId?: string;
+  onClearAssetFilter?: () => void;
+  onNavigateToView?: (view: string) => void;
+}
+
+export function RiskListView({ initialAssetId, onClearAssetFilter, onNavigateToView }: RiskListViewProps = {}) {
   const { showToast } = useToast();
   const [risks, setRisks] = useState<RiskDto[]>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -28,6 +34,13 @@ export function RiskListView() {
   const [scoreBandFilter, setScoreBandFilter] = useState<string>('');
   const [cellLikelihood, setCellLikelihood] = useState<number | null>(null);
   const [cellImpact, setCellImpact] = useState<number | null>(null);
+  const [assetIdFilter, setAssetIdFilter] = useState<string | null>(initialAssetId || null);
+
+  useEffect(() => {
+    if (initialAssetId !== undefined) {
+      setAssetIdFilter(initialAssetId || null);
+    }
+  }, [initialAssetId]);
 
   // Drawer state
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -43,6 +56,7 @@ export function RiskListView() {
       if (scoreBandFilter) params.set('scoreBand', scoreBandFilter);
       if (cellLikelihood) params.set('likelihood', cellLikelihood.toString());
       if (cellImpact) params.set('impact', cellImpact.toString());
+      if (assetIdFilter) params.set('assetId', assetIdFilter);
 
       const queryString = params.toString() ? `?${params.toString()}` : '';
       const data = await apiRequest<PaginatedRisksDto>(`/risks${queryString}`);
@@ -55,7 +69,7 @@ export function RiskListView() {
     } finally {
       setLoading(false);
     }
-  }, [search, statusFilter, scoreBandFilter, cellLikelihood, cellImpact]);
+  }, [search, statusFilter, scoreBandFilter, cellLikelihood, cellImpact, assetIdFilter]);
 
   useEffect(() => {
     fetchRisks();
@@ -225,6 +239,25 @@ export function RiskListView() {
         </div>
       )}
 
+      {/* Asset Filter Pill Indicator */}
+      {assetIdFilter && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, padding: '8px 14px',
+          background: '#E0F2FE', border: '1px solid #BAE6FD', borderRadius: 6, fontSize: 12.5, color: '#0369A1',
+        }}>
+          <span>Filtered by Asset: <strong>{risks.find((r) => r.assetId === assetIdFilter)?.assetName || assetIdFilter}</strong></span>
+          <button
+            onClick={() => {
+              setAssetIdFilter(null);
+              if (onClearAssetFilter) onClearAssetFilter();
+            }}
+            style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#0369A1', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}
+          >
+            <X size={14} /> Clear asset filter
+          </button>
+        </div>
+      )}
+
       {/* Error State */}
       {error && (
         <InlineErrorState
@@ -334,10 +367,12 @@ export function RiskListView() {
       <RiskDrawer
         risk={selectedRisk}
         isOpen={isDrawerOpen}
+        defaultAssetId={assetIdFilter || undefined}
         onClose={() => setIsDrawerOpen(false)}
         onSuccess={() => {
           fetchRisks();
         }}
+        onNavigateToView={onNavigateToView}
       />
     </div>
   );

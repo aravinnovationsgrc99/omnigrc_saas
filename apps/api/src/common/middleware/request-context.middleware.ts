@@ -20,7 +20,7 @@ export class RequestContextMiddleware implements NestMiddleware {
     if (authHeader && authHeader.startsWith('Bearer ')) {
       try {
         const token = authHeader.split(' ')[1];
-        const secret = process.env.JWT_SECRET || 'super-secret-jwt-key';
+        const secret = process.env.JWT_SECRET || 'omnigrc-dev-secret-key-change-in-prod';
         const verified = jwt.verify(token, secret) as any;
         (req as any).user = verified;
       } catch {

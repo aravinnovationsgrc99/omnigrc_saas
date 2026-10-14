@@ -9,6 +9,14 @@ interface AttentionRequiredWidgetProps {
   onNavigateToView?: (view: string) => void;
 }
 
+function normalizeTargetView(rawView?: string): string {
+  if (!rawView) return 'dashboard';
+  const clean = rawView.replace(/^\//, '');
+  if (clean === 'compliance-tasks') return 'board';
+  if (clean === 'business-audits') return 'audits';
+  return clean;
+}
+
 export function AttentionRequiredWidget({ items = [], onNavigateToView }: AttentionRequiredWidgetProps) {
   if (items.length === 0) {
     return (
@@ -66,6 +74,7 @@ export function AttentionRequiredWidget({ items = [], onNavigateToView }: Attent
           const badge = getDomainBadge(item.domain);
           const Icon = badge.icon;
           const dueStr = item.dueDate ? new Date(item.dueDate).toLocaleDateString() : 'Overdue';
+          const resolvedView = normalizeTargetView(item.targetView);
 
           return (
             <div key={item.id} className="py-3 flex items-center justify-between gap-3 hover:bg-slate-50/50 px-2 rounded-lg transition-colors">
@@ -85,9 +94,9 @@ export function AttentionRequiredWidget({ items = [], onNavigateToView }: Attent
 
               {onNavigateToView && (
                 <button
-                  onClick={() => onNavigateToView(item.targetView)}
+                  onClick={() => onNavigateToView(resolvedView)}
                   className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors shrink-0"
-                  title={`Open in ${item.targetView}`}
+                  title={`Open in ${resolvedView}`}
                 >
                   <ArrowUpRight size={16} />
                 </button>

@@ -34,6 +34,7 @@ export class AuthController {
 
 
   @Post('switch-context')
+  @SkipThrottle({ global: true, auth: true })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.MSSP_ADMIN, Role.MSSP_ANALYST)
   @HttpCode(HttpStatus.OK)
@@ -79,6 +80,12 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   async getMe(@CurrentUser('userId') userId: string) {
     return this.authService.getMe(userId);
+  }
+
+  @Get('capabilities')
+  @UseGuards(JwtAuthGuard)
+  async getCapabilities(@CurrentUser('organizationId') organizationId: string) {
+    return this.authService.getCapabilities(organizationId);
   }
 
   @Patch('me/preferences')

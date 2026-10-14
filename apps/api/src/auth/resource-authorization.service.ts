@@ -6,11 +6,13 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Role, ProductAccessStatus, ResourceScopeType } from '@omnigrc/shared';
+import { TenantContext } from '../tenant/tenant.context';
 
 export interface ResourceAuthContext {
   userId: string;
   organizationId: string;
   role: Role | string;
+  actingViaMsspId?: string;
 }
 
 export interface ResourceAuthOptions {
@@ -64,27 +66,48 @@ export class ResourceAuthorizationService {
     });
 
     if (!membership) {
-      const user = await this.prisma.user.findUnique({ where: { id: ctx.userId } });
-      if (!user) {
-        throw new ForbiddenException({
-          statusCode: 403,
-          error: 'Forbidden',
-          message: 'User does not belong to target organization tenant.',
-          code: 'INVALID_MEMBERSHIP',
+      // 1. Check if user is acting via authorized MSSP delegation
+      const actingViaMsspId = ctx.actingViaMsspId || TenantContext.getActingViaMsspId();
+      if (actingViaMsspId) {
+        const targetOrg = await this.prisma.organization.findUnique({
+          where: { id: ctx.organizationId },
+          select: { parentOrganizationId: true },
         });
+
+        if (targetOrg && targetOrg.parentOrganizationId === actingViaMsspId) {
+          // Authorized MSSP delegation: full organization-wide access without mutating DB
+          return {
+            userId: ctx.userId,
+            organizationId: ctx.organizationId,
+            role: ctx.role || Role.MSSP_ADMIN,
+            membershipId: `mssp-delegated-${ctx.userId}`,
+            isOrganizationWideAccess: true,
+            assignedDepartmentIds: [],
+            assignedProjectIds: [],
+          };
+        }
       }
 
-      membership = await this.prisma.organizationMembership.create({
-        data: {
-          organizationId: ctx.organizationId,
+      // 2. Check if user is an implicit member of their home organization
+      const user = await this.prisma.user.findUnique({ where: { id: ctx.userId } });
+      if (user && user.organizationId === ctx.organizationId) {
+        return {
           userId: ctx.userId,
+          organizationId: ctx.organizationId,
           role: (user.role as Role) || Role.ANALYST,
-          status: ProductAccessStatus.ACTIVE,
-        },
-        include: {
-          departments: { select: { departmentId: true } },
-          projects: { select: { projectId: true } },
-        },
+          membershipId: `home-implicit-${ctx.userId}`,
+          isOrganizationWideAccess: true,
+          assignedDepartmentIds: [],
+          assignedProjectIds: [],
+        };
+      }
+
+      // 3. Reject: missing membership must not silently create authorization
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: 'Forbidden',
+        message: 'User does not belong to target organization tenant.',
+        code: 'INVALID_MEMBERSHIP',
       });
     }
 

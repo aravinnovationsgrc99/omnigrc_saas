@@ -5,10 +5,16 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotFoundException } from '@nestjs/common';
 import { RiskStatus, Role } from '@omnigrc/shared';
 
+import { ResourceAuthorizationService } from '../auth/resource-authorization.service';
+import { validate } from 'class-validator';
+import { plainToInstance } from 'class-transformer';
+import { RiskQueryDto } from './dto/risks.dto';
+
 describe('RisksService', () => {
   let service: RisksService;
   let prisma: jest.Mocked<any>;
   let auditLogsService: jest.Mocked<any>;
+  let resourceAuthService: jest.Mocked<any>;
 
   beforeEach(async () => {
     prisma = {
@@ -25,11 +31,19 @@ describe('RisksService', () => {
       log: jest.fn().mockResolvedValue({}),
     };
 
+    resourceAuthService = {
+      getScopeWhereClause: jest.fn().mockImplementation(async (ctx: any) => ({
+        organizationId: ctx.organizationId,
+      })),
+      authorize: jest.fn().mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         RisksService,
         { provide: PrismaService, useValue: prisma },
         { provide: AuditLogsService, useValue: auditLogsService },
+        { provide: ResourceAuthorizationService, useValue: resourceAuthService },
       ],
     }).compile();
 
@@ -107,5 +121,84 @@ describe('RisksService', () => {
         organizationId: 'org-1',
       }),
     );
+  });
+
+  it('should filter risks by assetId while maintaining organization scoping in findAll', async () => {
+    const mockRisk = {
+      id: 'risk-asset-1',
+      organizationId: 'org-1',
+      title: 'Database Data Leak Risk',
+      likelihood: 4,
+      impact: 4,
+      score: 16,
+      scoreBand: 'HIGH',
+      status: RiskStatus.OPEN,
+      owner: 'DBA',
+      assetId: 'asset-123',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      createdById: 'user-1',
+    };
+
+    prisma.risk.findMany.mockResolvedValue([mockRisk]);
+    prisma.risk.count.mockResolvedValue(1);
+
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    const result = await service.findAll(authCtx, { assetId: 'asset-123' });
+
+    expect(prisma.risk.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          organizationId: 'org-1',
+          deletedAt: null,
+          assetId: 'asset-123',
+        }),
+      }),
+    );
+    expect(result.items.length).toBe(1);
+    expect(result.items[0].assetId).toBe('asset-123');
+  });
+
+  it('should return empty list when no risks match the specified assetId', async () => {
+    prisma.risk.findMany.mockResolvedValue([]);
+    prisma.risk.count.mockResolvedValue(0);
+
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    const result = await service.findAll(authCtx, { assetId: 'non-existent-asset' });
+
+    expect(prisma.risk.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          organizationId: 'org-1',
+          deletedAt: null,
+          assetId: 'non-existent-asset',
+        }),
+      }),
+    );
+    expect(result.items.length).toBe(0);
+    expect(result.total).toBe(0);
+  });
+});
+
+describe('RiskQueryDto validation', () => {
+  it('accepts a valid optional assetId', async () => {
+    const dto = plainToInstance(RiskQueryDto, { assetId: 'asset-123' });
+    const errors = await validate(dto);
+    expect(errors.length).toBe(0);
+  });
+
+  it('accepts query without assetId (existing queries continue to work)', async () => {
+    const dto = plainToInstance(RiskQueryDto, { page: 1, limit: 10 });
+    const errors = await validate(dto);
+    expect(errors.length).toBe(0);
+  });
+
+  it('rejects invalid non-string assetId', async () => {
+    const dto = plainToInstance(RiskQueryDto, { assetId: 12345 });
+    const errors = await validate(dto);
+    expect(errors.length).toBeGreaterThan(0);
+    const assetIdError = errors.find((e) => e.property === 'assetId');
+    expect(assetIdError).toBeDefined();
+    expect(assetIdError?.constraints?.isString).toBeDefined();
   });
 });

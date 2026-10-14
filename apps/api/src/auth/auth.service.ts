@@ -12,6 +12,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { ResendMailerService } from '../notifications/mailer/resend-mailer.service';
 import { LicenseVerificationService } from '../license-verification/license-verification.service';
+import { EffectiveServiceStateResolver } from '../service-control/effective-service-state-resolver.service';
 import { renderInvitationEmailHtml, PriorityLevel } from '../notifications/templates/email-templates';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
@@ -48,6 +49,7 @@ export class AuthService {
     private readonly auditLogsService: AuditLogsService,
     private readonly resendMailerService: ResendMailerService,
     private readonly licenseVerificationService: LicenseVerificationService,
+    private readonly effectiveResolver: EffectiveServiceStateResolver,
   ) {}
 
   async register(dto: RegisterDto): Promise<AuthResponseDto> {
@@ -152,6 +154,7 @@ export class AuthService {
     });
 
     const tokens = this.generateTokens(user.id, user.email, user.organizationId, effectiveRole);
+    const capabilities = await this.effectiveResolver.resolveAllEffectiveStates(user.organizationId);
 
     return {
       user: {
@@ -175,6 +178,7 @@ export class AuthService {
         isReadOnly,
       } as any,
       tokens,
+      capabilities,
     };
   }
 
@@ -231,6 +235,7 @@ export class AuthService {
 
     const isReadOnly = evalLicense.state === 'EXPIRED';
     const tokens = this.generateTokens(user.id, user.email, user.organizationId, user.role);
+    const capabilities = await this.effectiveResolver.resolveAllEffectiveStates(user.organizationId);
 
     return {
       user: {
@@ -254,6 +259,7 @@ export class AuthService {
         isReadOnly,
       } as any,
       tokens,
+      capabilities,
     };
   }
 
@@ -1047,7 +1053,40 @@ export class AuthService {
       throw new UnauthorizedException('User not found.');
     }
 
-    // 7. Issue short-lived context token (15 minutes) with actingViaMsspId claim derived from homeOrgId
+    // 7. Validate existing OrganizationMembership in target organization (if present)
+    if (this.prisma.organizationMembership) {
+      const existingMembership = await this.prisma.organizationMembership.findUnique({
+        where: {
+          organizationId_userId: {
+            organizationId: targetOrg.id,
+            userId: user.id,
+          },
+        },
+      });
+
+      if (existingMembership && existingMembership.status !== ProductAccessStatus.ACTIVE) {
+        await this.auditLogsService.log({
+          organizationId: homeOrgId,
+          actorId: userId,
+          action: 'MSSP_CONTEXT_SWITCH_FAILED',
+          entityType: 'Organization',
+          entityId: targetOrg.id,
+          metadata: {
+            reason: `User membership in target organization is ${existingMembership.status.toLowerCase()}`,
+            membershipStatus: existingMembership.status,
+          },
+        });
+        throw new ForbiddenException({
+          statusCode: 403,
+          error: 'Forbidden',
+          message: `User membership in target organization has been ${existingMembership.status.toLowerCase()}.`,
+          code: 'PRODUCT_ACCESS_REVOKED',
+          productAccessStatus: existingMembership.status,
+        });
+      }
+    }
+
+    // 8. Issue short-lived context token (15 minutes) with actingViaMsspId claim derived from homeOrgId
     const payload = {
       sub: user.id,
       email: user.email,
@@ -1061,7 +1100,7 @@ export class AuthService {
       expiresIn: '15m',
     });
 
-    // 8. Log successful audit event with source/home MSSP org and target org
+    // 9. Log successful audit event with source/home MSSP org and target org
     await this.auditLogsService.log({
       organizationId: homeOrgId,
       actorId: userId,
@@ -1075,6 +1114,8 @@ export class AuthService {
         actorRole: user.role,
       },
     });
+
+    const capabilities = await this.effectiveResolver.resolveAllEffectiveStates(targetOrg.id);
 
     return {
       accessToken,
@@ -1090,7 +1131,12 @@ export class AuthService {
         createdAt: targetOrg.createdAt.toISOString(),
       },
       actingViaMsspId: homeOrgId,
+      capabilities,
     };
+  }
+
+  async getCapabilities(organizationId: string) {
+    return this.effectiveResolver.resolveAllEffectiveStates(organizationId);
   }
 
   private generateTokens(userId: string, email: string, organizationId: string, role: string) {

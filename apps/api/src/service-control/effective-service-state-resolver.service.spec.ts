@@ -30,6 +30,11 @@ describe('EffectiveServiceStateResolver (Precedence Test Matrix A-L)', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
 
+    mockPrisma.organizationControlStateProjection.findUnique.mockResolvedValue({ organizationId: 'org-1', state: 'ACTIVE' });
+    mockPrisma.globalServiceStateProjection.findUnique.mockResolvedValue({ state: 'AVAILABLE' });
+    mockPrisma.organizationServiceOverrideProjection.findUnique.mockResolvedValue(null);
+    mockPrisma.systemLicenseState.findFirst.mockResolvedValue(null);
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         EffectiveServiceStateResolver,
@@ -207,5 +212,85 @@ describe('EffectiveServiceStateResolver (Precedence Test Matrix A-L)', () => {
     const res = await resolver.resolveEffectiveState('org-1', 'UNKNOWN_CAPABILITY_FLAG');
     expect(res.isAvailable).toBe(false);
     expect(res.effectiveState).toBe('DISABLED');
+  });
+
+  describe('Versioned Entitlement Contract (v1.0 Legacy vs v2.0 Artifacts)', () => {
+    it('Base module GRC_CORE_ASSETS is always AVAILABLE under valid license', async () => {
+      mockLicenseVerificationService.getEvaluatedStateForOrganization.mockResolvedValue({ state: 'VALID' });
+      mockPrisma.systemLicenseState.findFirst.mockResolvedValue({
+        signedArtifactJson: { formatVersion: '2.0', payload: { licenseFormatVersion: '2.0', entitlements: [] } },
+      });
+
+      const res = await resolver.resolveEffectiveState('org-1', 'GRC_CORE_ASSETS');
+      expect(res.isAvailable).toBe(true);
+      expect(res.effectiveState).toBe('AVAILABLE');
+    });
+
+    it('v1.0 Legacy Artifact: grandfathered historical core capability (POLICIES_MODULE) is AVAILABLE when omitted', async () => {
+      mockLicenseVerificationService.getEvaluatedStateForOrganization.mockResolvedValue({ state: 'VALID' });
+      mockPrisma.systemLicenseState.findFirst.mockResolvedValue({
+        signedArtifactJson: { formatVersion: '1.0', payload: { licenseFormatVersion: '1.0', entitlements: [] } },
+      });
+
+      const res = await resolver.resolveEffectiveState('org-1', 'POLICIES_MODULE');
+      expect(res.isAvailable).toBe(true);
+      expect(res.effectiveState).toBe('AVAILABLE');
+    });
+
+    it('v1.0 Legacy Artifact: newly introduced optional paid module (AI_DOC_INTELLIGENCE) is COMMERCIAL_DISABLED when omitted', async () => {
+      mockLicenseVerificationService.getEvaluatedStateForOrganization.mockResolvedValue({ state: 'VALID' });
+      mockPrisma.systemLicenseState.findFirst.mockResolvedValue({
+        signedArtifactJson: { formatVersion: '1.0', payload: { licenseFormatVersion: '1.0', entitlements: [] } },
+      });
+
+      const res = await resolver.resolveEffectiveState('org-1', 'AI_DOC_INTELLIGENCE');
+      expect(res.isAvailable).toBe(false);
+      expect(res.effectiveState).toBe('COMMERCIAL_DISABLED');
+    });
+
+    it('v2.0 Artifact: omitted capability claim is COMMERCIAL_DISABLED', async () => {
+      mockLicenseVerificationService.getEvaluatedStateForOrganization.mockResolvedValue({ state: 'VALID' });
+      mockPrisma.systemLicenseState.findFirst.mockResolvedValue({
+        signedArtifactJson: { formatVersion: '2.0', payload: { licenseFormatVersion: '2.0', entitlements: [] } },
+      });
+
+      const res = await resolver.resolveEffectiveState('org-1', 'AI_DOC_INTELLIGENCE');
+      expect(res.isAvailable).toBe(false);
+      expect(res.effectiveState).toBe('COMMERCIAL_DISABLED');
+    });
+
+    it('v2.0 Artifact: explicit granted capability claim is AVAILABLE', async () => {
+      mockLicenseVerificationService.getEvaluatedStateForOrganization.mockResolvedValue({ state: 'VALID' });
+      mockPrisma.systemLicenseState.findFirst.mockResolvedValue({
+        signedArtifactJson: {
+          formatVersion: '2.0',
+          payload: {
+            licenseFormatVersion: '2.0',
+            entitlements: [{ code: 'service:AI_DOC_INTELLIGENCE', name: 'AI Doc Intel', enabled: true }],
+          },
+        },
+      });
+
+      const res = await resolver.resolveEffectiveState('org-1', 'AI_DOC_INTELLIGENCE');
+      expect(res.isAvailable).toBe(true);
+      expect(res.effectiveState).toBe('AVAILABLE');
+    });
+
+    it('Explicitly disabled capability claim (enabled: false) is COMMERCIAL_DISABLED across all versions', async () => {
+      mockLicenseVerificationService.getEvaluatedStateForOrganization.mockResolvedValue({ state: 'VALID' });
+      mockPrisma.systemLicenseState.findFirst.mockResolvedValue({
+        signedArtifactJson: {
+          formatVersion: '1.0',
+          payload: {
+            licenseFormatVersion: '1.0',
+            entitlements: [{ code: 'service:POLICIES_MODULE', name: 'Policies', enabled: false }],
+          },
+        },
+      });
+
+      const res = await resolver.resolveEffectiveState('org-1', 'POLICIES_MODULE');
+      expect(res.isAvailable).toBe(false);
+      expect(res.effectiveState).toBe('COMMERCIAL_DISABLED');
+    });
   });
 });

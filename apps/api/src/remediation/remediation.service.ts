@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { EffectiveServiceStateResolver } from '../service-control/effective-service-state-resolver.service';
 import {
   RemediationActionDto,
   RemediationQueryDto,
@@ -8,7 +9,10 @@ import {
 
 @Injectable()
 export class RemediationService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly effectiveResolver: EffectiveServiceStateResolver,
+  ) {}
 
   async findAll(
     organizationId: string,
@@ -22,11 +26,18 @@ export class RemediationService {
     const overdueOnly = query.overdueOnly === true || String(query.overdueOnly) === 'true';
     const sourceTypeFilter = query.sourceType;
 
+    // Check optional module capabilities in parallel
+    const [auditState, vulnState, riskState] = await Promise.all([
+      this.effectiveResolver.resolveEffectiveState(organizationId, 'BUSINESS_AUDITS'),
+      this.effectiveResolver.resolveEffectiveState(organizationId, 'VULNERABILITY_MGMT'),
+      this.effectiveResolver.resolveEffectiveState(organizationId, 'GRC_CORE_RISKS'),
+    ]);
+
     const now = new Date();
     const actions: RemediationActionDto[] = [];
 
     // 1. Audit CAPAs
-    if (!sourceTypeFilter || sourceTypeFilter === 'AUDIT_CAPA') {
+    if (auditState.isAvailable && (!sourceTypeFilter || sourceTypeFilter === 'AUDIT_CAPA')) {
       const capas = await this.prisma.auditCapa.findMany({
         where: {
           organizationId,
@@ -61,7 +72,7 @@ export class RemediationService {
     }
 
     // 2. Vulnerability Remediations
-    if (!sourceTypeFilter || sourceTypeFilter === 'VULNERABILITY') {
+    if (vulnState.isAvailable && (!sourceTypeFilter || sourceTypeFilter === 'VULNERABILITY')) {
       const vulns = await this.prisma.vulnerability.findMany({
         where: {
           organizationId,
@@ -92,7 +103,7 @@ export class RemediationService {
     }
 
     // 3. Risk Treatments
-    if (!sourceTypeFilter || sourceTypeFilter === 'RISK_TREATMENT') {
+    if (riskState.isAvailable && (!sourceTypeFilter || sourceTypeFilter === 'RISK_TREATMENT')) {
       const risks = await this.prisma.risk.findMany({
         where: {
           organizationId,

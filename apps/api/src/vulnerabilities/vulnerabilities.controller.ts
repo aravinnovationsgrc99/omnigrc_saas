@@ -25,7 +25,6 @@ import { RequireCapability } from '../common/decorators/require-capability.decor
 @Controller('vulnerabilities')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
-@RequireCapability('VULNERABILITY_MGMT')
 export class VulnerabilitiesController {
   constructor(private readonly vulnerabilitiesService: VulnerabilitiesService) {}
 
@@ -57,6 +56,7 @@ export class VulnerabilitiesController {
 
   @Post()
   @RequiresActiveLicense()
+  @RequireCapability('VULNERABILITY_MGMT')
   @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
   async create(
     @CurrentUser() user: any,
@@ -72,6 +72,7 @@ export class VulnerabilitiesController {
 
   @Patch(':id')
   @RequiresActiveLicense()
+  @RequireCapability('VULNERABILITY_MGMT')
   @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
   async update(
     @CurrentUser() user: any,
@@ -89,6 +90,7 @@ export class VulnerabilitiesController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @RequiresActiveLicense()
+  @RequireCapability('VULNERABILITY_MGMT')
   @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
   async remove(
     @CurrentUser() user: any,

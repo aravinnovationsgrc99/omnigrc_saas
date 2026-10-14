@@ -31,6 +31,10 @@ export class RisksService {
       deletedAt: null,
     };
 
+    if (query.assetId) {
+      where.assetId = query.assetId;
+    }
+
     if (query.status) {
       where.status = query.status;
     }

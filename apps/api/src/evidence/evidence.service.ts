@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
+import { TenantContext } from '../tenant/tenant.context';
 import { EvidenceStorageService } from './evidence-storage.service';
 import { EvidenceScannerService } from './evidence-scanner.service';
 import {
@@ -19,6 +20,9 @@ import {
   EvidenceScanStatus,
   ResourceAssociationDto,
   Role,
+  ControlEvidenceAssociationDto,
+  PaginatedControlEvidenceAssociationsDto,
+  ControlEvidenceQueryDto,
 } from '@omnigrc/shared';
 import { Response } from 'express';
 
@@ -153,10 +157,12 @@ export class EvidenceService {
     });
 
     const uploaderIds = Array.from(new Set(evidences.map((e) => e.uploadedById)));
-    const users = await this.prisma.user.findMany({
-      where: { id: { in: uploaderIds } },
-      select: { id: true, name: true, email: true },
-    });
+    const users = await TenantContext.runWithDisplayNameLookup(() =>
+      this.prisma.user.findMany({
+        where: { id: { in: uploaderIds } },
+        select: { id: true, name: true, email: true },
+      }),
+    );
     const userMap = new Map(users.map((u) => [u.id, u.name || u.email]));
 
     let dtos: EvidenceDto[] = evidences.map((e) => {
@@ -351,6 +357,7 @@ export class EvidenceService {
     });
     if (!evidence) throw new NotFoundException(`Evidence "${evidenceId}" not found.`);
 
+    await this.verifyResourceBelongsToOrg(authCtx, resourceType, resourceId);
     await this.removeAssociationRecord(evidenceId, resourceType, resourceId);
 
     await this.auditLogsService.log({
@@ -364,6 +371,89 @@ export class EvidenceService {
 
     return this.mapToDto(evidenceId);
   }
+
+  async getEvidenceForControl(
+    authCtx: ResourceAuthContext,
+    controlId: string,
+    query?: ControlEvidenceQueryDto,
+  ): Promise<PaginatedControlEvidenceAssociationsDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+    const control = await this.prisma.control.findFirst({
+      where: { id: controlId, ...scopeWhere, deletedAt: null },
+    });
+    if (!control) {
+      throw new NotFoundException(`Control "${controlId}" not found or out of scope.`);
+    }
+
+    const page = Math.max(1, Number(query?.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(query?.limit) || 20));
+    const search = query?.search?.trim().toLowerCase();
+
+    const joins = await this.prisma.controlEvidence.findMany({
+      where: {
+        controlId,
+        organizationId: authCtx.organizationId,
+        evidence: {
+          deletedAt: null,
+        },
+      },
+      include: {
+        evidence: true,
+      },
+      orderBy: { attachedAt: 'desc' },
+    });
+
+    const uploaderIds = Array.from(new Set(joins.map((j) => j.evidence.uploadedById)));
+    const users = await TenantContext.runWithDisplayNameLookup(() =>
+      this.prisma.user.findMany({
+        where: { id: { in: uploaderIds } },
+        select: { id: true, name: true, email: true },
+      }),
+    );
+    const userMap = new Map(users.map((u) => [u.id, u.name || u.email]));
+
+    let items: ControlEvidenceAssociationDto[] = joins.map((j) => ({
+      id: j.id,
+      controlId: j.controlId,
+      evidenceId: j.evidenceId,
+      attachedAt: j.attachedAt.toISOString(),
+      title: j.evidence.title,
+      description: j.evidence.description,
+      evidenceType: j.evidence.evidenceType as EvidenceType,
+      fileName: j.evidence.fileName,
+      fileSize: j.evidence.fileSize,
+      mimeType: j.evidence.mimeType,
+      status: j.evidence.status as EvidenceStatus,
+      scanStatus: j.evidence.scanStatus as EvidenceScanStatus,
+      checksum: j.evidence.checksum,
+      uploadedById: j.evidence.uploadedById,
+      uploaderName: userMap.get(j.evidence.uploadedById) || 'Unknown User',
+      isValidComplianceEvidence:
+        j.evidence.status === EvidenceStatus.ACTIVE &&
+        j.evidence.scanStatus === EvidenceScanStatus.CLEAN,
+    }));
+
+    if (search) {
+      items = items.filter(
+        (i) =>
+          i.title.toLowerCase().includes(search) ||
+          i.fileName.toLowerCase().includes(search) ||
+          (i.description && i.description.toLowerCase().includes(search)),
+      );
+    }
+
+    const total = items.length;
+    const startIndex = (page - 1) * limit;
+    const paginatedItems = items.slice(startIndex, startIndex + limit);
+
+    return {
+      items: paginatedItems,
+      total,
+      page,
+      limit,
+    };
+  }
+
 
   async archiveEvidence(authCtx: ResourceAuthContext, evidenceId: string): Promise<EvidenceDto> {
     const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
@@ -517,7 +607,12 @@ export class EvidenceService {
 
     if (!e) throw new NotFoundException(`Evidence record "${evidenceId}" not found.`);
 
-    const user = await this.prisma.user.findUnique({ where: { id: e.uploadedById } });
+    const user = await TenantContext.runWithDisplayNameLookup(() =>
+      this.prisma.user.findUnique({
+        where: { id: e.uploadedById },
+        select: { id: true, name: true, email: true },
+      }),
+    );
 
     const associations: ResourceAssociationDto[] = [];
     e.controlAssociations.forEach((ca) => associations.push({ resourceType: 'CONTROL', resourceId: ca.controlId, resourceTitle: ca.control.name }));

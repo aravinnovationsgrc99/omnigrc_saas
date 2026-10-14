@@ -38,6 +38,8 @@ export const CANONICAL_CAPABILITIES = [
   { code: 'AI_CONTROL_MAPPING', name: 'AI Control Auto-Mapping', category: 'AI_SERVICES', hasBg: true },
   { code: 'NOTIFICATIONS_EMAIL', name: 'Email Notifications & Digests', category: 'INTEGRATIONS', hasBg: true },
   { code: 'MSSP_PORTAL', name: 'MSSP Provider Portal', category: 'MSSP', hasBg: false },
+  { code: 'REPORTING_MODULE', name: 'Reporting & Exports', category: 'GOVERNANCE', hasBg: false },
+  { code: 'INTEGRATIONS_HUB', name: 'Integrations Hub', category: 'INTEGRATIONS', hasBg: false },
 ];
 
 const TRIVIAL_REASONS = [

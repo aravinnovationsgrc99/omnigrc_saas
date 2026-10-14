@@ -21,7 +21,8 @@ export interface NavItem {
   key: string;
   label: string;
   icon: LucideIcon;
-  enabled: boolean;
+  enabled?: boolean;
+  capabilityCode?: string;
   phase?: string;
   roles?: Role[];
 }
@@ -36,38 +37,38 @@ export const NAV_SECTIONS: NavSection[] = [
     label: 'Overview',
     items: [
       { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, enabled: true },
-      { key: 'reports', label: 'Reports & Exports', icon: FileSpreadsheet, enabled: true },
+      { key: 'reports', label: 'Reports & Exports', icon: FileSpreadsheet, capabilityCode: 'REPORTING_MODULE', enabled: true },
     ],
   },
   {
     label: 'Risk & Operations',
     items: [
-      { key: 'risk', label: 'Risk Register', icon: ShieldAlert, enabled: true },
-      { key: 'assets', label: 'Asset & Inventory', icon: Boxes, enabled: true },
-      { key: 'vulnerabilities', label: 'Vulnerabilities', icon: Bug, enabled: true },
-      { key: 'incidents', label: 'Incidents', icon: ShieldCheck, enabled: true },
-      { key: 'remediation', label: 'Remediation & Actions', icon: CheckSquare, enabled: true },
+      { key: 'risk', label: 'Risk Register', icon: ShieldAlert, capabilityCode: 'GRC_CORE_RISKS', enabled: true },
+      { key: 'assets', label: 'Asset & Inventory', icon: Boxes, capabilityCode: 'GRC_CORE_ASSETS', enabled: true },
+      { key: 'vulnerabilities', label: 'Vulnerabilities', icon: Bug, capabilityCode: 'VULNERABILITY_MGMT', enabled: true },
+      { key: 'incidents', label: 'Incidents', icon: ShieldCheck, capabilityCode: 'INCIDENT_MGMT', enabled: true },
+      { key: 'remediation', label: 'Remediation & Actions', icon: CheckSquare, capabilityCode: 'GRC_CORE_TASKS', enabled: true },
     ],
   },
   {
     label: 'Governance & Audits',
     items: [
-      { key: 'controls', label: 'Control Mapping', icon: GitMerge, enabled: true },
-      { key: 'frameworks', label: 'Framework Library', icon: Library, enabled: true },
-      { key: 'policies', label: 'Policy Mgmt', icon: FileCheck, enabled: true },
-      { key: 'approvals', label: 'Approval Center', icon: CheckCircle2, enabled: true },
-      { key: 'audits', label: 'Business Audits', icon: ClipboardList, enabled: true },
-      { key: 'vendors', label: 'Vendor Risk', icon: Building2, enabled: true },
-      { key: 'evidence', label: 'Evidence Vault', icon: FileArchive, enabled: true },
-      { key: 'board', label: 'Compliance Board', icon: KanbanSquare, enabled: true },
+      { key: 'controls', label: 'Control Mapping', icon: GitMerge, capabilityCode: 'GRC_CORE_CONTROLS', enabled: true },
+      { key: 'frameworks', label: 'Framework Library', icon: Library, capabilityCode: 'FRAMEWORK_LIBRARY', enabled: true },
+      { key: 'policies', label: 'Policy Mgmt', icon: FileCheck, capabilityCode: 'POLICIES_MODULE', enabled: true },
+      { key: 'approvals', label: 'Approval Center', icon: CheckCircle2, capabilityCode: 'APPROVAL_ENGINE', enabled: true },
+      { key: 'audits', label: 'Business Audits', icon: ClipboardList, capabilityCode: 'BUSINESS_AUDITS', enabled: true },
+      { key: 'vendors', label: 'Vendor Risk', icon: Building2, capabilityCode: 'VENDOR_RISK', enabled: true },
+      { key: 'evidence', label: 'Evidence Vault', icon: FileArchive, capabilityCode: 'EVIDENCE_VAULT', enabled: true },
+      { key: 'board', label: 'Compliance Board', icon: KanbanSquare, capabilityCode: 'GRC_CORE_TASKS', enabled: true },
     ],
   },
   {
     label: 'Intelligence & MSSP',
     items: [
-      { key: 'intelligence', label: 'GRC Intelligence', icon: Sparkles, enabled: true },
-      { key: 'integrations', label: 'Integrations Hub', icon: Layers, enabled: true },
-      { key: 'mssp', label: 'MSSP Partner Portal', icon: Building, enabled: true, roles: [Role.MSSP_ADMIN, Role.MSSP_ANALYST, Role.ADMIN] },
+      { key: 'intelligence', label: 'GRC Intelligence', icon: Sparkles, capabilityCode: 'AI_GRC_CHAT', enabled: true },
+      { key: 'integrations', label: 'Integrations Hub', icon: Layers, capabilityCode: 'INTEGRATIONS_HUB', enabled: true },
+      { key: 'mssp', label: 'MSSP Partner Portal', icon: Building, capabilityCode: 'MSSP_PORTAL', enabled: true, roles: [Role.MSSP_ADMIN, Role.MSSP_ANALYST, Role.ADMIN] },
     ],
   },
   {
@@ -80,7 +81,7 @@ export const NAV_SECTIONS: NavSection[] = [
 ];
 
 export function Sidebar({ view, setView, mobileOpen = false, onCloseMobile }: SidebarProps) {
-  const { user } = useAuth();
+  const { user, hasCapability, capabilities, capabilitiesStatus, loading } = useAuth();
   const userRole = user?.role || Role.ANALYST;
 
   return (
@@ -174,26 +175,45 @@ export function Sidebar({ view, setView, mobileOpen = false, onCloseMobile }: Si
                   const Icon = item.icon;
                   const isActive = view === item.key;
                   const isPermitted = !item.roles || hasRole(userRole, item.roles);
+
+                  // Finding 4: Distinguish loading, error/unavailable, confirmed licensed, confirmed unlicensed states
+                  const isCapabilityRequired = !!item.capabilityCode;
+                  const isCapabilityLoading =
+                    isCapabilityRequired &&
+                    (loading || capabilitiesStatus === 'loading' || (capabilities === null && capabilitiesStatus !== 'error'));
+                  const isCapabilityError =
+                    isCapabilityRequired && !loading && (capabilitiesStatus === 'error' || capabilities === null);
+                  const isConfirmedLicensed =
+                    item.capabilityCode ? (capabilities ? hasCapability(item.capabilityCode) : false) : true;
+                  const isConfirmedUnlicensed =
+                    isCapabilityRequired && !isCapabilityLoading && !isCapabilityError && !isConfirmedLicensed;
+
+                  // Fail closed: Unknown or null capabilities are NEVER treated as licensed.
+                  const isLicensed = !isCapabilityRequired || isConfirmedLicensed;
                   const isDisabled = !item.enabled || !isPermitted;
 
                   return (
                     <button
                       key={item.key}
                       type="button"
-                      className={`omni-navitem w-full text-left ${isActive ? 'active' : ''} ${isDisabled ? 'disabled' : ''}`}
-                      onClick={() => item.enabled && isPermitted && setView(item.key)}
+                      className={`omni-navitem w-full text-left ${isActive ? 'active' : ''} ${isDisabled ? 'disabled' : ''} ${!isLicensed && !isCapabilityLoading ? 'unlicensed' : ''}`}
+                      onClick={() => {
+                        if (isPermitted && item.enabled !== false) {
+                          setView(item.key);
+                        }
+                      }}
                       disabled={isDisabled}
                       aria-current={isActive ? 'page' : undefined}
-                      aria-label={`${item.label}${!isPermitted ? ' (Restricted)' : !item.enabled ? ` (${item.phase})` : ''}`}
-                      title={!isPermitted ? 'Restricted role' : !item.enabled ? `Opens in ${item.phase}` : undefined}
+                      aria-label={`${item.label}${!isPermitted ? ' (Restricted)' : isCapabilityLoading ? ' (Verifying license)' : isCapabilityError ? ' (Unavailable)' : !isLicensed ? ' (Unlicensed)' : !item.enabled ? ` (${item.phase})` : ''}`}
+                      title={!isPermitted ? 'Restricted role' : isCapabilityLoading ? 'Verifying module license...' : isCapabilityError ? 'Service capability unavailable' : !isLicensed ? 'Commercial module not licensed' : !item.enabled ? `Opens in ${item.phase}` : undefined}
                       style={{
-                        opacity: !isPermitted ? 0.55 : 1,
+                        opacity: !isPermitted ? 0.55 : !isLicensed && !isCapabilityLoading ? 0.75 : 1,
                         cursor: isDisabled ? 'not-allowed' : 'pointer',
                       }}
                     >
                       <Icon size={16} strokeWidth={2} />
                       <span style={{ flex: 1 }}>{item.label}</span>
-                      {!isPermitted && (
+                      {!isPermitted ? (
                         <span
                           style={{
                             display: 'flex',
@@ -208,7 +228,56 @@ export function Sidebar({ view, setView, mobileOpen = false, onCloseMobile }: Si
                         >
                           <Lock size={10} /> RESTRICTED
                         </span>
-                      )}
+                      ) : isCapabilityLoading ? (
+                        <span
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 3,
+                            fontSize: 9.5,
+                            color: '#8493A5',
+                            padding: '2px 5px',
+                            borderRadius: 4,
+                            opacity: 0.7,
+                          }}
+                        >
+                          ...
+                        </span>
+                      ) : isCapabilityError ? (
+                        <span
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 3,
+                            fontSize: 9.5,
+                            color: '#EF4444',
+                            background: 'rgba(239,68,68,0.12)',
+                            border: '1px solid rgba(239,68,68,0.3)',
+                            padding: '2px 5px',
+                            borderRadius: 4,
+                            fontWeight: 600,
+                          }}
+                        >
+                          <Lock size={10} /> UNAVAILABLE
+                        </span>
+                      ) : isConfirmedUnlicensed ? (
+                        <span
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 3,
+                            fontSize: 9.5,
+                            color: '#F59E0B',
+                            background: 'rgba(245,158,11,0.12)',
+                            border: '1px solid rgba(245,158,11,0.3)',
+                            padding: '2px 5px',
+                            borderRadius: 4,
+                            fontWeight: 600,
+                          }}
+                        >
+                          <Lock size={10} /> UNLICENSED
+                        </span>
+                      ) : null}
                     </button>
                   );
                 })}

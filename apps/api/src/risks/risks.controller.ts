@@ -1,6 +1,8 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards, BadRequestException } from '@nestjs/common';
 import { RisksService } from './risks.service';
 import { CreateRiskDto, UpdateRiskDto, RiskQueryDto } from './dto/risks.dto';
+import { RiskControlsService } from '../risk-controls/risk-controls.service';
+import { AssociateRiskControlDto, RiskControlQueryDto } from '../risk-controls/dto/risk-controls.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -15,7 +17,10 @@ import { RequireCapability } from '../common/decorators/require-capability.decor
 @Roles(Role.ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
 @RequireCapability('GRC_CORE_RISKS')
 export class RisksController {
-  constructor(private readonly risksService: RisksService) {}
+  constructor(
+    private readonly risksService: RisksService,
+    private readonly riskControlsService: RiskControlsService,
+  ) {}
 
   @Get()
   async findAll(
@@ -120,5 +125,58 @@ export class RisksController {
       role: user.role,
     };
     return this.risksService.softDelete(authCtx, id);
+  }
+
+  @Get(':id/controls')
+  @Roles(Role.ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async getControls(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Query() query: RiskControlQueryDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.riskControlsService.getControlsForRisk(authCtx, id, query);
+  }
+
+  @Post(':id/controls')
+  @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  @RequireCapability(['GRC_CORE_RISKS', 'GRC_CORE_CONTROLS'])
+  async associateControl(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() dto: AssociateRiskControlDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    const controlId = dto.controlId;
+    if (!controlId) {
+      throw new BadRequestException('controlId is required in request body');
+    }
+    return this.riskControlsService.associate(authCtx, id, controlId, dto);
+  }
+
+  @Delete(':id/controls/:controlId')
+  @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  @RequireCapability(['GRC_CORE_RISKS', 'GRC_CORE_CONTROLS'])
+  async disassociateControl(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Param('controlId') controlId: string,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.riskControlsService.disassociate(authCtx, id, controlId);
   }
 }

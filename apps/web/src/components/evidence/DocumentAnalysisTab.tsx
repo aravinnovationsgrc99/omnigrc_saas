@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { apiRequest } from '@/lib/api-client';
 import { useToast } from '@/context/toast-context';
+import { useAuth } from '@/context/auth-context';
 
 interface DocumentAnalysisTabProps {
   evidenceId: string;
@@ -37,6 +38,8 @@ interface DocumentAnalysisTabProps {
 
 export function DocumentAnalysisTab({ evidenceId, evidenceTitle, fileName }: DocumentAnalysisTabProps) {
   const { addToast } = useToast();
+  const { hasCapability } = useAuth();
+  const canRunAiAnalysis = hasCapability('AI_DOC_INTELLIGENCE');
   const [analyses, setAnalyses] = useState<DocumentAnalysisDto[]>([]);
   const [selectedAnalysis, setSelectedAnalysis] = useState<DocumentAnalysisDto | null>(null);
   const [loading, setLoading] = useState(true);
@@ -213,13 +216,22 @@ export function DocumentAnalysisTab({ evidenceId, evidenceTitle, fileName }: Doc
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowTriggerModal(true)}
-            disabled={analyzing}
-            className="px-4 py-2 text-xs font-semibold rounded-lg bg-teal-500 hover:bg-teal-400 text-slate-950 transition shadow flex items-center gap-1.5 disabled:opacity-50"
-          >
-            <Sparkles size={14} /> {analyzing ? 'Queuing Analysis...' : 'Run AI Analysis'}
-          </button>
+          {canRunAiAnalysis ? (
+            <button
+              onClick={() => setShowTriggerModal(true)}
+              disabled={analyzing}
+              className="px-4 py-2 text-xs font-semibold rounded-lg bg-teal-500 hover:bg-teal-400 text-slate-950 transition shadow flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+            >
+              <Sparkles size={14} /> {analyzing ? 'Queuing Analysis...' : 'Run AI Analysis'}
+            </button>
+          ) : (
+            <div
+              title="AI Document Intelligence capability is not licensed for this organization"
+              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-800 text-slate-400 border border-slate-700 flex items-center gap-1.5 cursor-not-allowed"
+            >
+              <Sparkles size={14} className="text-slate-500" /> Run AI Analysis (Unlicensed)
+            </div>
+          )}
           <button
             onClick={fetchAnalyses}
             className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"

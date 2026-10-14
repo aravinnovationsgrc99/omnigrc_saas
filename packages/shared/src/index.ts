@@ -368,10 +368,73 @@ export interface RiskQueryDto {
   scoreBand?: RiskScoreBand;
   likelihood?: number;
   impact?: number;
+  assetId?: string;
 }
 
 export interface PaginatedRisksDto {
   items: RiskDto[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export enum RiskControlMitigationType {
+  PREVENTATIVE = 'PREVENTATIVE',
+  DETECTIVE = 'DETECTIVE',
+  CORRECTIVE = 'CORRECTIVE',
+  COMPENSATING = 'COMPENSATING',
+}
+
+export interface RiskControlDto {
+  id: string;
+  organizationId: string;
+  riskId: string;
+  controlId: string;
+  mitigationType: RiskControlMitigationType;
+  notes?: string | null;
+  createdAt: Date | string;
+}
+
+export interface AssociateRiskControlDto {
+  controlId?: string;
+  riskId?: string;
+  mitigationType?: RiskControlMitigationType;
+  notes?: string;
+}
+
+export interface RiskControlAssociationDto {
+  id: string;
+  controlId: string;
+  controlName: string;
+  controlDescription?: string;
+  controlCategory?: string | null;
+  mitigationType: RiskControlMitigationType;
+  notes?: string | null;
+  createdAt: Date | string;
+}
+
+export interface ControlRiskAssociationDto {
+  id: string;
+  riskId: string;
+  riskTitle: string;
+  riskScore: number;
+  riskScoreBand: RiskScoreBand;
+  riskStatus: RiskStatus;
+  riskOwner: string;
+  mitigationType: RiskControlMitigationType;
+  notes?: string | null;
+  createdAt: Date | string;
+}
+
+export interface PaginatedRiskControlAssociationsDto {
+  items: RiskControlAssociationDto[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface PaginatedControlRiskAssociationsDto {
+  items: ControlRiskAssociationDto[];
   total: number;
   page: number;
   limit: number;
@@ -414,10 +477,21 @@ export interface AuthTokens {
   refreshToken: string;
 }
 
+export interface EffectiveCapabilityDto {
+  capabilityCode: string;
+  effectiveState: 'AVAILABLE' | 'DISABLED' | 'COMMERCIAL_DISABLED';
+  isAvailable: boolean;
+  reason?: string;
+  source?: string;
+}
+
+export type EffectiveCapabilityMap = Record<string, EffectiveCapabilityDto>;
+
 export interface AuthResponseDto {
   user: UserDto;
   organization: OrganizationDto;
   tokens: AuthTokens;
+  capabilities?: EffectiveCapabilityMap;
 }
 
 export interface RegisterDto {
@@ -454,6 +528,7 @@ export interface SwitchContextResponseDto {
   expiresIn: string;
   targetOrganization: OrganizationDto;
   actingViaMsspId: string;
+  capabilities?: EffectiveCapabilityMap;
 }
 
 export enum EntitlementStatus {
@@ -1600,6 +1675,7 @@ export interface VulnerabilityMetricsDto {
   resolvedCount: number;
   riskAcceptedCount: number;
   bySeverity: Record<string, number>;
+  isAvailable?: boolean;
 }
 
 export interface PolicyMetricsDto {
@@ -1608,6 +1684,7 @@ export interface PolicyMetricsDto {
   overdueReviewCount: number;
   pendingExceptionsCount?: number;
   byStatus: Record<string, number>;
+  isAvailable?: boolean;
 }
 
 export interface VendorMetricsDto {
@@ -1616,6 +1693,7 @@ export interface VendorMetricsDto {
   assessmentsOverdueCount: number;
   byCriticality: Record<string, number>;
   byStatus: Record<string, number>;
+  isAvailable?: boolean;
 }
 
 export interface ObligationMetricsDto {
@@ -1624,6 +1702,7 @@ export interface ObligationMetricsDto {
   overdueCount: number;
   completedCount: number;
   completionRate: number;
+  isAvailable?: boolean;
 }
 
 export interface ActiveAuditAssessmentDto {
@@ -1645,6 +1724,7 @@ export interface AuditMetricsDto {
   findingsBySeverity: Record<string, number>;
   byCapaStatus?: Record<string, number>;
   activeAssessments?: ActiveAuditAssessmentDto[];
+  isAvailable?: boolean;
 }
 
 export interface RiskMetricsDto {
@@ -1657,6 +1737,7 @@ export interface RiskMetricsDto {
   byStatus: Record<string, number>;
   heatmap?: HeatmapSummaryDto;
   highSeverityRisks?: RiskHeatmapItemDto[];
+  isAvailable?: boolean;
 }
 
 export interface ControlCoverageMetricsDto {
@@ -1665,6 +1746,7 @@ export interface ControlCoverageMetricsDto {
   partial: number;
   notCovered: number;
   coveragePercentage: number;
+  isAvailable?: boolean;
 }
 
 export interface EntitledFrameworkCoverageSummaryDto {
@@ -2207,6 +2289,131 @@ export interface PaginatedEvidenceDto {
   limit: number;
 }
 
+export interface ControlEvidenceAssociationDto {
+  id: string;
+  controlId: string;
+  evidenceId: string;
+  attachedAt: string;
+  title: string;
+  description?: string | null;
+  evidenceType: EvidenceType;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  status: EvidenceStatus;
+  scanStatus: EvidenceScanStatus;
+  checksum?: string | null;
+  uploadedById: string;
+  uploaderName?: string;
+  isValidComplianceEvidence: boolean;
+}
+
+export interface PaginatedControlEvidenceAssociationsDto {
+  items: ControlEvidenceAssociationDto[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface AttachControlEvidenceDto {
+  evidenceId: string;
+}
+
+export interface ControlEvidenceQueryDto {
+  page?: number;
+  limit?: number;
+  search?: string;
+}
+
+// --------------------------------------------------
+// PHASE 3 INCREMENT 4 — CONTROL TESTING TYPES
+// --------------------------------------------------
+
+export type ControlEffectivenessStatus =
+  | 'EFFECTIVE'
+  | 'PARTIALLY_EFFECTIVE'
+  | 'INEFFECTIVE'
+  | 'NOT_TESTED'
+  | 'NOT_APPLICABLE';
+
+export interface ControlTestFindingSummaryDto {
+  id: string;
+  title: string;
+  severity: VulnerabilitySeverity;
+  status: FindingStatus;
+}
+
+export interface ControlTestEvidenceSummaryDto {
+  id: string;
+  title: string;
+  fileName: string;
+  scanStatus: EvidenceScanStatus;
+  status: EvidenceStatus;
+}
+
+export interface ControlTestExecutionDto {
+  id: string;
+  organizationId: string;
+  controlId: string;
+  assessmentId: string;
+  assessmentTitle?: string;
+  assessmentStatus: AuditAssessmentStatus;
+  auditPlanId: string;
+  auditPlanTitle: string;
+  frameworkCode?: string | null;
+  title: string;
+  description?: string | null;
+  result: AuditCheckResult;
+  notes?: string | null;
+  auditorId?: string | null;
+  createdById: string;
+  createdByName?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  findingsCount: number;
+  evidenceCount: number;
+  findings: ControlTestFindingSummaryDto[];
+  evidence: ControlTestEvidenceSummaryDto[];
+}
+
+export interface ControlTestingSummaryDto {
+  totalTests: number;
+  effectiveCount: number;
+  partiallyEffectiveCount: number;
+  ineffectiveCount: number;
+  notEvaluatedCount: number;
+  notApplicableCount: number;
+  overallEffectiveness: ControlEffectivenessStatus;
+  latestTestResult: AuditCheckResult | null;
+  latestTestedAt: string | null;
+}
+
+export interface PaginatedControlTestsDto {
+  items: ControlTestExecutionDto[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  summary: ControlTestingSummaryDto;
+}
+
+export interface CreateControlTestDto {
+  assessmentId: string;
+  title?: string;
+  description?: string;
+  result?: AuditCheckResult;
+  notes?: string;
+}
+
+export interface ControlTestQueryDto {
+  page?: number;
+  limit?: number;
+  search?: string;
+  result?: AuditCheckResult;
+  assessmentId?: string;
+}
+
+
 // --------------------------------------------------
 // PHASE 4 — UNIVERSAL APPROVAL & DECISION ENGINE TYPES
 // --------------------------------------------------
@@ -2414,7 +2621,7 @@ export interface ConvertFindingToActionDto {
 }
 
 export interface GrcLifecycleStageDto {
-  stage: 'REQUIREMENT' | 'CONTROL_RISK_POLICY' | 'EVIDENCE' | 'AI_ANALYSIS' | 'HUMAN_REVIEW' | 'APPROVAL' | 'REMEDIATION' | 'AUTHORITATIVE_STATE';
+  stage: 'REQUIREMENT' | 'CONTROL_RISK_POLICY' | 'EVIDENCE' | 'AI_ANALYSIS' | 'HUMAN_REVIEW' | 'APPROVAL' | 'REMEDIATION' | 'AUTHORITATIVE_STATE' | 'CONTROL_TESTING';
   status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'BLOCKED' | 'NOT_APPLICABLE' | 'WARNING';
   label: string;
   details?: string | null;
@@ -2464,6 +2671,48 @@ export interface GrcLifecycleDto {
     owner?: string | null;
     dueDate?: string | null;
     isOverdue: boolean;
+  }>;
+  testing?: {
+    isAvailable: boolean;
+    totalTests: number;
+    latestResult: AuditCheckResult | string | null;
+    effectivenessStatus: ControlEffectivenessStatus | string;
+    unresolvedFindingsCount: number;
+  } | null;
+  nextAction?: WorkflowNextActionDto | null;
+  prerequisites?: WorkflowPrerequisitesDto | null;
+}
+
+export interface WorkflowNextActionDto {
+  title: string;
+  description: string;
+  actionType:
+    | 'RESOLVE_BLOCKER'
+    | 'ATTACH_EVIDENCE'
+    | 'AWAIT_APPROVAL'
+    | 'COMPLETE_REMEDIATION'
+    | 'EXECUTE_TEST'
+    | 'MAP_FRAMEWORK'
+    | 'ASSOCIATE_CONTROLS'
+    | 'TESTING_UNAVAILABLE'
+    | 'LIFECYCLE_COMPLETE';
+  targetView?: string;
+  targetId?: string;
+  buttonLabel?: string;
+  isBlocked: boolean;
+  responsibleParty?: string;
+  priority: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+}
+
+export interface WorkflowPrerequisitesDto {
+  totalCount: number;
+  satisfiedCount: number;
+  items: Array<{
+    id: string;
+    title: string;
+    isSatisfied: boolean;
+    reason?: string;
+    responsibleParty?: string;
   }>;
 }
 
@@ -2706,6 +2955,9 @@ export interface MappedControlSummaryDto {
   mappingStatus: MappingStatus | string;
   departmentId?: string | null;
   projectId?: string | null;
+  latestTestResult?: AuditCheckResult | string | null;
+  effectivenessStatus?: ControlEffectivenessStatus | string;
+  hasUnresolvedFinding?: boolean;
 }
 
 export interface EvidenceSummaryDto {
@@ -2731,6 +2983,14 @@ export interface ApprovalSummaryDto {
   }>;
 }
 
+export interface ReferenceTestingSummaryDto {
+  totalTests: number;
+  latestTestResult: AuditCheckResult | string | null;
+  hasFailures: boolean;
+  hasUnresolvedFindings: boolean;
+  isTestingAvailable: boolean;
+}
+
 export interface FrameworkReferenceCoverageDto {
   referenceId: string;
   code: string;
@@ -2742,6 +3002,7 @@ export interface FrameworkReferenceCoverageDto {
   mappedControls: MappedControlSummaryDto[];
   evidenceSummary: EvidenceSummaryDto;
   approvalSummary: ApprovalSummaryDto;
+  testingSummary?: ReferenceTestingSummaryDto;
 }
 
 export interface FrameworkCoverageSummaryDto {

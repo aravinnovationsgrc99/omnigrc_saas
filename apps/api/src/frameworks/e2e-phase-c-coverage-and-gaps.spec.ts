@@ -4,12 +4,14 @@ import { FrameworkCoverageService } from './framework-coverage.service';
 import { FrameworkEntitlementsService } from './framework-entitlements.service';
 import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { FrameworkCode, EntitlementStatus, Role, MappingStatus } from '@omnigrc/shared';
+import { EffectiveServiceStateResolver } from '../service-control/effective-service-state-resolver.service';
+import { FrameworkCode, EntitlementStatus, Role, MappingStatus, AuditCheckResult, FindingStatus } from '@omnigrc/shared';
 
 describe('Phase C — Framework Coverage & Gap Analysis (E2E / Integration)', () => {
   let coverageService: FrameworkCoverageService;
   let entitlementsService: FrameworkEntitlementsService;
   let resourceAuthService: ResourceAuthorizationService;
+  let effectiveResolver: jest.Mocked<any>;
   let prisma: PrismaService;
 
   const mockOrgId1 = 'org-tenant-alpha-1111';
@@ -257,6 +259,21 @@ describe('Phase C — Framework Coverage & Gap Analysis (E2E / Integration)', ()
             approvalInstance: {
               findMany: jest.fn().mockResolvedValue([]),
             },
+            auditCheckItem: {
+              findMany: jest.fn().mockResolvedValue([]),
+            },
+          },
+        },
+        {
+          provide: EffectiveServiceStateResolver,
+          useValue: {
+            resolveEffectiveState: jest.fn().mockImplementation(async (orgId, capCode) => ({
+              capabilityCode: capCode,
+              effectiveState: 'AVAILABLE',
+              isAvailable: true,
+              reason: 'Active capability',
+              source: 'CATALOG_DEFAULT',
+            })),
           },
         },
       ],
@@ -265,6 +282,7 @@ describe('Phase C — Framework Coverage & Gap Analysis (E2E / Integration)', ()
     coverageService = module.get<FrameworkCoverageService>(FrameworkCoverageService);
     entitlementsService = module.get<FrameworkEntitlementsService>(FrameworkEntitlementsService);
     resourceAuthService = module.get<ResourceAuthorizationService>(ResourceAuthorizationService);
+    effectiveResolver = module.get(EffectiveServiceStateResolver);
     prisma = module.get<PrismaService>(PrismaService);
   });
 
@@ -339,6 +357,176 @@ describe('Phase C — Framework Coverage & Gap Analysis (E2E / Integration)', ()
       await expect(
         coverageService.calculateCoverage(adminAuthCtx, 'UNENTITLED_FW'),
       ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('Phase 3 Increment 4.2 — Control Testing Integration & Coverage Semantics', () => {
+    it('8. should demote reference to PARTIAL when mapped control latest evaluated test is NON_COMPLIANT', async () => {
+      (prisma.auditCheckItem.findMany as jest.Mock).mockResolvedValueOnce([
+        {
+          id: 'ci-fail-1',
+          controlId: mockControl1.id,
+          result: AuditCheckResult.NON_COMPLIANT,
+          updatedAt: new Date(),
+          findings: [],
+        },
+      ]);
+
+      const result = await coverageService.calculateCoverage(adminAuthCtx, mockFramework.code);
+      const refA51 = result.references.find((r) => r.code === 'A.5.1');
+      expect(refA51?.status).toBe('PARTIAL');
+      expect(refA51?.mappedControls[0].latestTestResult).toBe(AuditCheckResult.NON_COMPLIANT);
+      expect(refA51?.mappedControls[0].effectivenessStatus).toBe('INEFFECTIVE');
+      expect(refA51?.testingSummary?.hasFailures).toBe(true);
+    });
+
+    it('9. should demote reference to PARTIAL when mapped control latest test is PARTIALLY_COMPLIANT', async () => {
+      (prisma.auditCheckItem.findMany as jest.Mock).mockResolvedValueOnce([
+        {
+          id: 'ci-partial-1',
+          controlId: mockControl1.id,
+          result: AuditCheckResult.PARTIALLY_COMPLIANT,
+          updatedAt: new Date(),
+          findings: [],
+        },
+      ]);
+
+      const result = await coverageService.calculateCoverage(adminAuthCtx, mockFramework.code);
+      const refA51 = result.references.find((r) => r.code === 'A.5.1');
+      expect(refA51?.status).toBe('PARTIAL');
+      expect(refA51?.mappedControls[0].effectivenessStatus).toBe('PARTIALLY_EFFECTIVE');
+    });
+
+    it('10. should ensure a newer NOT_EVALUATED item does not hide an older NON_COMPLIANT evaluated failure', async () => {
+      (prisma.auditCheckItem.findMany as jest.Mock).mockResolvedValueOnce([
+        {
+          id: 'ci-new-unevaluated',
+          controlId: mockControl1.id,
+          result: AuditCheckResult.NOT_EVALUATED,
+          updatedAt: new Date('2026-04-01T12:00:00Z'),
+          findings: [],
+        },
+        {
+          id: 'ci-old-failure',
+          controlId: mockControl1.id,
+          result: AuditCheckResult.NON_COMPLIANT,
+          updatedAt: new Date('2026-03-01T12:00:00Z'),
+          findings: [],
+        },
+      ]);
+
+      const result = await coverageService.calculateCoverage(adminAuthCtx, mockFramework.code);
+      const refA51 = result.references.find((r) => r.code === 'A.5.1');
+      expect(refA51?.status).toBe('PARTIAL');
+      expect(refA51?.mappedControls[0].effectivenessStatus).toBe('INEFFECTIVE');
+    });
+
+    it('11. should ensure a newer evaluated failure overrides an older COMPLIANT outcome', async () => {
+      (prisma.auditCheckItem.findMany as jest.Mock).mockResolvedValueOnce([
+        {
+          id: 'ci-new-failure',
+          controlId: mockControl1.id,
+          result: AuditCheckResult.NON_COMPLIANT,
+          updatedAt: new Date('2026-04-01T12:00:00Z'),
+          findings: [],
+        },
+        {
+          id: 'ci-old-compliant',
+          controlId: mockControl1.id,
+          result: AuditCheckResult.COMPLIANT,
+          updatedAt: new Date('2026-03-01T12:00:00Z'),
+          findings: [],
+        },
+      ]);
+
+      const result = await coverageService.calculateCoverage(adminAuthCtx, mockFramework.code);
+      const refA51 = result.references.find((r) => r.code === 'A.5.1');
+      expect(refA51?.status).toBe('PARTIAL');
+      expect(refA51?.mappedControls[0].effectivenessStatus).toBe('INEFFECTIVE');
+    });
+
+    it('12. should prevent false COVERED result when an open unresolved finding is linked to control test', async () => {
+      (prisma.auditCheckItem.findMany as jest.Mock).mockResolvedValueOnce([
+        {
+          id: 'ci-passed-with-deficiency',
+          controlId: mockControl1.id,
+          result: AuditCheckResult.COMPLIANT,
+          updatedAt: new Date(),
+          findings: [
+            { id: 'f-1', status: FindingStatus.OPEN, severity: 'HIGH' },
+          ],
+        },
+      ]);
+
+      const result = await coverageService.calculateCoverage(adminAuthCtx, mockFramework.code);
+      const refA51 = result.references.find((r) => r.code === 'A.5.1');
+      expect(refA51?.status).toBe('PARTIAL');
+      expect(refA51?.mappedControls[0].hasUnresolvedFinding).toBe(true);
+      expect(refA51?.testingSummary?.hasUnresolvedFindings).toBe(true);
+    });
+
+    it('13. should produce COVERED when compliant control has only closed or verified findings', async () => {
+      (prisma.auditCheckItem.findMany as jest.Mock).mockResolvedValueOnce([
+        {
+          id: 'ci-passed-clean',
+          controlId: mockControl1.id,
+          result: AuditCheckResult.COMPLIANT,
+          updatedAt: new Date(),
+          findings: [
+            { id: 'f-1', status: FindingStatus.CLOSED, severity: 'LOW' },
+            { id: 'f-2', status: FindingStatus.VERIFIED, severity: 'MEDIUM' },
+          ],
+        },
+      ]);
+
+      const result = await coverageService.calculateCoverage(adminAuthCtx, mockFramework.code);
+      const refA51 = result.references.find((r) => r.code === 'A.5.1');
+      expect(refA51?.status).toBe('COVERED');
+      expect(refA51?.mappedControls[0].effectivenessStatus).toBe('EFFECTIVE');
+      expect(refA51?.mappedControls[0].hasUnresolvedFinding).toBe(false);
+    });
+
+    it('14. should preserve COVERED when control has no test history (backward-compatible baseline)', async () => {
+      (prisma.auditCheckItem.findMany as jest.Mock).mockResolvedValueOnce([]);
+
+      const result = await coverageService.calculateCoverage(adminAuthCtx, mockFramework.code);
+      const refA51 = result.references.find((r) => r.code === 'A.5.1');
+      expect(refA51?.status).toBe('COVERED');
+      expect(refA51?.mappedControls[0].effectivenessStatus).toBe('NOT_TESTED');
+    });
+
+    it('15. should handle NOT_APPLICABLE test result distinctly from compliant', async () => {
+      (prisma.auditCheckItem.findMany as jest.Mock).mockResolvedValueOnce([
+        {
+          id: 'ci-na',
+          controlId: mockControl1.id,
+          result: AuditCheckResult.NOT_APPLICABLE,
+          updatedAt: new Date(),
+          findings: [],
+        },
+      ]);
+
+      const result = await coverageService.calculateCoverage(adminAuthCtx, mockFramework.code);
+      const refA51 = result.references.find((r) => r.code === 'A.5.1');
+      expect(refA51?.status).toBe('COVERED'); // Preserves baseline valid evidence/mapping without failure
+      expect(refA51?.mappedControls[0].latestTestResult).toBe(AuditCheckResult.NOT_APPLICABLE);
+      expect(refA51?.mappedControls[0].effectivenessStatus).toBe('NOT_APPLICABLE');
+    });
+
+    it('16. should degrade gracefully without error when BUSINESS_AUDITS capability is disabled', async () => {
+      effectiveResolver.resolveEffectiveState.mockResolvedValueOnce({
+        capabilityCode: 'BUSINESS_AUDITS',
+        effectiveState: 'DISABLED',
+        isAvailable: false,
+        reason: 'Commercial tier restriction',
+        source: 'COMMERCIAL_LICENSE',
+      });
+
+      const result = await coverageService.calculateCoverage(adminAuthCtx, mockFramework.code);
+      expect(result).toBeDefined();
+      const refA51 = result.references.find((r) => r.code === 'A.5.1');
+      expect(refA51?.status).toBe('COVERED');
+      expect(refA51?.testingSummary?.isTestingAvailable).toBe(false);
     });
   });
 });

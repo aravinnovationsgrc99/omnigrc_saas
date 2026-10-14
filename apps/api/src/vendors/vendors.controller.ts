@@ -25,7 +25,6 @@ import { RequireCapability } from '../common/decorators/require-capability.decor
 @Controller('vendors')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
-@RequireCapability('VENDOR_RISK')
 export class VendorsController {
   constructor(private readonly vendorsService: VendorsService) {}
 
@@ -57,6 +56,7 @@ export class VendorsController {
 
   @Post()
   @RequiresActiveLicense()
+  @RequireCapability('VENDOR_RISK')
   @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
   async create(
     @CurrentUser() user: any,
@@ -72,6 +72,7 @@ export class VendorsController {
 
   @Patch(':id')
   @RequiresActiveLicense()
+  @RequireCapability('VENDOR_RISK')
   @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
   async update(
     @CurrentUser() user: any,
@@ -89,6 +90,7 @@ export class VendorsController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @RequiresActiveLicense()
+  @RequireCapability('VENDOR_RISK')
   @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
   async remove(
     @CurrentUser() user: any,
@@ -104,6 +106,7 @@ export class VendorsController {
 
   @Post(':id/assessments')
   @RequiresActiveLicense()
+  @RequireCapability('VENDOR_RISK')
   @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
   async createAssessment(
     @CurrentUser() user: any,
@@ -120,6 +123,7 @@ export class VendorsController {
 
   @Post('migrate-asset-vendors')
   @RequiresActiveLicense()
+  @RequireCapability('VENDOR_RISK')
   @Roles(Role.ADMIN, Role.MSSP_ADMIN)
   async migrateAssetVendors(
     @CurrentUser() user: any,

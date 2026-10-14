@@ -24,6 +24,7 @@ import {
   ChevronUp,
   RefreshCw,
   Lock,
+  ClipboardCheck,
 } from 'lucide-react';
 
 interface VersionItem {
@@ -364,7 +365,7 @@ export function FrameworkCoverageView() {
                       </span>
                       <div className="min-w-0">
                         <div className="font-semibold text-sm text-slate-900 truncate">{ref.title}</div>
-                        <div className="text-[11px] text-slate-500 font-medium flex items-center gap-2 mt-0.5">
+                        <div className="text-[11px] text-slate-500 font-medium flex items-center gap-2 mt-0.5 flex-wrap">
                           <span className="uppercase tracking-wider font-bold text-[10px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">
                             {ref.type}
                           </span>
@@ -372,6 +373,32 @@ export function FrameworkCoverageView() {
                           <span>{ref.mappedControlsCount} Controls</span>
                           <span>•</span>
                           <span>{ref.evidenceSummary.cleanActiveCount} Clean Evidence</span>
+                          {ref.testingSummary && (
+                            <>
+                              <span>•</span>
+                              {ref.testingSummary.hasFailures ? (
+                                <span className="text-[10px] font-bold text-rose-700 bg-rose-100 border border-rose-300 px-1.5 py-0.5 rounded">
+                                  Test Failures Detected
+                                </span>
+                              ) : ref.testingSummary.hasUnresolvedFindings ? (
+                                <span className="text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded">
+                                  Open Deficiencies
+                                </span>
+                              ) : !ref.testingSummary.isTestingAvailable ? (
+                                <span className="text-[10px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                                  Audits Unlicensed
+                                </span>
+                              ) : ref.testingSummary.totalTests > 0 ? (
+                                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-300 px-1.5 py-0.5 rounded">
+                                  Tested: {ref.testingSummary.latestTestResult === 'COMPLIANT' ? 'Effective' : ref.testingSummary.latestTestResult}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                                  Untested
+                                </span>
+                              )}
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -401,6 +428,52 @@ export function FrameworkCoverageView() {
                   {/* Expanded Drill Down Section */}
                   {isExpanded && (
                     <div className="px-5 pb-5 pt-2 bg-slate-50 border-t border-slate-100 space-y-4">
+                      {/* Operational Testing Summary */}
+                      {ref.testingSummary && (
+                        <div className="p-3 bg-white border border-slate-200 rounded-lg text-xs space-y-2">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                              <ClipboardCheck className="w-3.5 h-3.5 text-teal-700" /> Operational Testing Summary
+                            </h4>
+                            <span className="text-[11px] text-slate-500">
+                              {ref.testingSummary.totalTests} Tests Recorded Across Controls
+                            </span>
+                          </div>
+
+                          {!ref.testingSummary.isTestingAvailable ? (
+                            <div className="text-[11px] text-slate-500 bg-slate-100 p-2 rounded flex items-center gap-1.5">
+                              <Lock className="w-3.5 h-3.5 text-slate-400" />
+                              Business Audits capability is disabled or unentitled. Testing evaluation inactive.
+                            </div>
+                          ) : ref.testingSummary.hasFailures ? (
+                            <div className="text-[11px] text-rose-800 bg-rose-50 border border-rose-200 p-2 rounded flex items-center gap-2">
+                              <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                              <div>
+                                <strong>Operational Failures Detected:</strong> One or more mapped controls failed audit testing (NON_COMPLIANT), preventing full coverage.
+                              </div>
+                            </div>
+                          ) : ref.testingSummary.hasUnresolvedFindings ? (
+                            <div className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 p-2 rounded flex items-center gap-2">
+                              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                              <div>
+                                <strong>Unresolved Deficiencies:</strong> Mapped controls have open audit findings requiring remediation.
+                              </div>
+                            </div>
+                          ) : ref.testingSummary.totalTests > 0 ? (
+                            <div className="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 p-2 rounded flex items-center gap-2">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                              <div>
+                                <strong>Operational Effectiveness Confirmed:</strong> Mapped controls have passed operational testing with zero unresolved deficiencies.
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="text-[11px] text-slate-500 italic">
+                              No operational tests have been conducted yet on mapped controls. Baseline compliance relies on evidence and approval sign-off.
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       {/* Mapped Controls Details */}
                       <div>
                         <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
@@ -410,30 +483,76 @@ export function FrameworkCoverageView() {
                           <p className="text-xs text-slate-500 italic">No active control mapped to this reference.</p>
                         ) : (
                           <div className="space-y-1.5">
-                            {ref.mappedControls.map((c) => (
-                              <div
-                                key={c.controlId}
-                                className="p-2.5 bg-white border border-slate-200 rounded-lg flex items-center justify-between text-xs"
-                              >
-                                <div>
-                                  <span className="font-bold text-slate-900">{c.name}</span>
-                                  {c.category && (
-                                    <span className="ml-2 text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
-                                      {c.category}
-                                    </span>
-                                  )}
-                                </div>
-                                <span
-                                  className={`font-semibold px-2 py-0.5 rounded text-[10px] ${
-                                    c.mappingStatus === 'APPROVED' || c.mappingStatus === 'OVERRIDDEN'
-                                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                                      : 'bg-amber-100 text-amber-800 border border-amber-200'
-                                  }`}
+                            {ref.mappedControls.map((c) => {
+                              const isFailed = c.latestTestResult === 'NON_COMPLIANT';
+                              const isPartial = c.latestTestResult === 'PARTIALLY_COMPLIANT';
+                              const isCompliant = c.latestTestResult === 'COMPLIANT';
+                              const isNotApplicable = c.latestTestResult === 'NOT_APPLICABLE';
+                              const isUnevaluated = c.latestTestResult === 'NOT_EVALUATED';
+
+                              return (
+                                <div
+                                  key={c.controlId}
+                                  className={`p-2.5 bg-white border ${isFailed ? 'border-rose-300 bg-rose-50/20' : 'border-slate-200'} rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs`}
                                 >
-                                  Mapping: {c.mappingStatus}
-                                </span>
-                              </div>
-                            ))}
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-bold text-slate-900">{c.name}</span>
+                                    {c.category && (
+                                      <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                                        {c.category}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    {/* Mapping Status Badge */}
+                                    <span
+                                      className={`font-semibold px-2 py-0.5 rounded text-[10px] ${
+                                        c.mappingStatus === 'APPROVED' || c.mappingStatus === 'OVERRIDDEN'
+                                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                          : 'bg-amber-100 text-amber-800 border border-amber-200'
+                                      }`}
+                                    >
+                                      Mapping: {c.mappingStatus}
+                                    </span>
+
+                                    {/* Operational Test Result & Effectiveness Badge */}
+                                    {isFailed ? (
+                                      <span className="font-bold px-2 py-0.5 rounded text-[10px] bg-rose-100 text-rose-800 border border-rose-300">
+                                        Test: NON-COMPLIANT
+                                      </span>
+                                    ) : isPartial ? (
+                                      <span className="font-bold px-2 py-0.5 rounded text-[10px] bg-amber-100 text-amber-800 border border-amber-300">
+                                        Test: PARTIALLY COMPLIANT
+                                      </span>
+                                    ) : isCompliant ? (
+                                      <span className="font-bold px-2 py-0.5 rounded text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                        Test: COMPLIANT
+                                      </span>
+                                    ) : isNotApplicable ? (
+                                      <span className="font-medium px-2 py-0.5 rounded text-[10px] bg-slate-100 text-slate-600 border border-slate-300">
+                                        Test: NOT APPLICABLE
+                                      </span>
+                                    ) : isUnevaluated ? (
+                                      <span className="font-semibold px-2 py-0.5 rounded text-[10px] bg-sky-100 text-sky-800 border border-sky-300">
+                                        Test: IN PROGRESS
+                                      </span>
+                                    ) : (
+                                      <span className="font-medium px-2 py-0.5 rounded text-[10px] bg-slate-100 text-slate-500 border border-slate-200">
+                                        Untested
+                                      </span>
+                                    )}
+
+                                    {/* Unresolved Finding Pill */}
+                                    {c.hasUnresolvedFinding && (
+                                      <span className="font-bold px-2 py-0.5 rounded text-[10px] bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
+                                        <AlertTriangle className="w-3 h-3 text-amber-600" /> Open Findings
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
                       </div>

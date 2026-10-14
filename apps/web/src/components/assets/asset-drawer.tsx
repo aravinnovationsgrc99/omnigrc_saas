@@ -1,26 +1,49 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { AssetDto, AssetType, AssetCriticality, AuditLogEntryDto, CreateAssetDto, UpdateAssetDto } from '@omnigrc/shared';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  AssetDto,
+  AssetType,
+  AssetCriticality,
+  AuditLogEntryDto,
+  CreateAssetDto,
+  UpdateAssetDto,
+  RiskDto,
+  PaginatedRisksDto,
+} from '@omnigrc/shared';
 
 import { apiRequest } from '@/lib/api-client';
 import { useToast } from '@/context/toast-context';
-import { X, Server, Trash2, ShieldAlert, Shield, History, Clock } from 'lucide-react';
-
-
+import { useAuth } from '@/context/auth-context';
+import { RiskDrawer } from '../risks/risk-drawer';
+import {
+  X,
+  Server,
+  Trash2,
+  ShieldAlert,
+  Shield,
+  History,
+  Clock,
+  Plus,
+  ExternalLink,
+  Lock,
+} from 'lucide-react';
 
 interface AssetDrawerProps {
   asset: AssetDto | null; // null = Create Mode, AssetDto = Edit/Detail Mode
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  onNavigateToRisk?: (assetId: string) => void;
 }
 
-export function AssetDrawer({ asset, isOpen, onClose, onSuccess }: AssetDrawerProps) {
-  const { showToast, addToast } = useToast();
+export function AssetDrawer({ asset, isOpen, onClose, onSuccess, onNavigateToRisk }: AssetDrawerProps) {
+  const { showToast } = useToast();
+  const { hasCapability, organization, user } = useAuth();
   const isEdit = Boolean(asset);
 
-
+  const canReadRisks = hasCapability('GRC_CORE_RISKS');
+  const canCreateRisk = canReadRisks && !organization?.isReadOnly && user?.role !== 'EXTERNAL_AUDITOR';
 
   const [name, setName] = useState('');
   const [type, setType] = useState<AssetType>(AssetType.SOFTWARE);
@@ -40,6 +63,33 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess }: AssetDrawerPr
   const [nameTouched, setNameTouched] = useState(false);
   const [ownerTouched, setOwnerTouched] = useState(false);
 
+  // Associated Risks State
+  const [associatedRisks, setAssociatedRisks] = useState<RiskDto[]>([]);
+  const [loadingRisks, setLoadingRisks] = useState(false);
+  const [risksError, setRisksError] = useState<string | null>(null);
+
+  // Contextual Risk Drawer
+  const [riskDrawerOpen, setRiskDrawerOpen] = useState(false);
+  const [selectedRisk, setSelectedRisk] = useState<RiskDto | null>(null);
+
+  const fetchAssociatedRisks = useCallback(async () => {
+    if (!asset || !canReadRisks) {
+      setAssociatedRisks([]);
+      return;
+    }
+    setLoadingRisks(true);
+    setRisksError(null);
+    try {
+      const data = await apiRequest<PaginatedRisksDto>(`/assets/${asset.id}/risks?limit=50`);
+      setAssociatedRisks(data.items || []);
+    } catch (err: any) {
+      setAssociatedRisks([]);
+      setRisksError(err?.message || 'Failed to load associated risks.');
+    } finally {
+      setLoadingRisks(false);
+    }
+  }, [asset, canReadRisks]);
+
   useEffect(() => {
     if (asset) {
       setName(asset.name || '');
@@ -56,6 +106,9 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess }: AssetDrawerPr
         .then((data) => setAuditLogs(data))
         .catch(() => setAuditLogs([]))
         .finally(() => setLoadingAudit(false));
+
+      // Fetch associated risks if authorized
+      fetchAssociatedRisks();
     } else {
       setName('');
       setType(AssetType.SOFTWARE);
@@ -65,11 +118,12 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess }: AssetDrawerPr
       setDataResidencyRegion('');
       setDescription('');
       setAuditLogs([]);
+      setAssociatedRisks([]);
     }
     setErrorMsg(null);
     setNameTouched(false);
     setOwnerTouched(false);
-  }, [asset, isOpen]);
+  }, [asset, isOpen, fetchAssociatedRisks]);
 
   if (!isOpen) return null;
 
@@ -301,6 +355,137 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess }: AssetDrawerPr
             />
           </form>
 
+          {/* Associated Risks Section (Edit mode only) */}
+          {isEdit && asset && (
+            <div style={{ borderTop: '1px solid #E2E6E4', paddingTop: 20, marginTop: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <ShieldAlert size={15} color="#0F6E6A" />
+                  <h3 style={{ fontSize: 13.5, fontWeight: 600, color: '#1B2430' }}>
+                    Associated Risks ({associatedRisks.length})
+                  </h3>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {onNavigateToRisk && associatedRisks.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onNavigateToRisk(asset.id);
+                      }}
+                      className="omni-btn-ghost"
+                      style={{ fontSize: 11, padding: '3px 8px', display: 'flex', alignItems: 'center', gap: 4 }}
+                    >
+                      <ExternalLink size={12} /> View in Register
+                    </button>
+                  )}
+                  {canCreateRisk && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedRisk(null);
+                        setRiskDrawerOpen(true);
+                      }}
+                      className="omni-btn-primary"
+                      style={{ fontSize: 11, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
+                    >
+                      <Plus size={12} /> Add Risk
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* States: Module Not Licensed / Loading / Error / Empty / List */}
+              {!canReadRisks ? (
+                <div style={{
+                  padding: '12px 14px', background: '#F6F7F6', borderRadius: 8,
+                  border: '1px solid #E2E6E4', fontSize: 12, color: '#6E7A8A',
+                  display: 'flex', alignItems: 'center', gap: 8,
+                }}>
+                  <Lock size={14} color="#8B95A1" />
+                  <span>Risk Management module is not licensed for this organization.</span>
+                </div>
+              ) : loadingRisks ? (
+                <div style={{ fontSize: 12, color: '#8B95A1', padding: '8px 0' }}>Loading associated risks...</div>
+              ) : risksError ? (
+                <div style={{
+                  padding: '10px 12px', background: '#F8E6E8', border: '1px solid #B23A48',
+                  borderRadius: 6, color: '#801F2B', fontSize: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                }}>
+                  <span>{risksError}</span>
+                  <button
+                    type="button"
+                    onClick={fetchAssociatedRisks}
+                    className="text-xs underline font-medium cursor-pointer"
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : associatedRisks.length === 0 ? (
+                <div style={{
+                  padding: '16px 14px', background: '#FAFAFA', borderRadius: 8,
+                  border: '1px dashed #D2D7D5', textAlign: 'center', fontSize: 12, color: '#8B95A1',
+                }}>
+                  <p>No risks currently associated with this asset.</p>
+                  {canCreateRisk && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedRisk(null);
+                        setRiskDrawerOpen(true);
+                      }}
+                      className="omni-btn-ghost mt-2"
+                      style={{ fontSize: 11.5, padding: '4px 10px' }}
+                    >
+                      <Plus size={12} className="inline mr-1" /> Create Associated Risk
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {associatedRisks.map((r) => {
+                    const scoreBand = r.scoreBand || (r.score >= 15 ? 'HIGH' : r.score >= 8 ? 'MEDIUM' : 'LOW');
+                    const badgeClass = scoreBand === 'HIGH' ? 'omni-badge-rose' : scoreBand === 'MEDIUM' ? 'omni-badge-amber' : 'omni-badge-teal';
+                    return (
+                      <div
+                        key={r.id}
+                        onClick={() => {
+                          setSelectedRisk(r);
+                          setRiskDrawerOpen(true);
+                        }}
+                        style={{
+                          padding: '10px 12px', background: '#FFFFFF', borderRadius: 8,
+                          border: '1px solid #E2E6E4', cursor: 'pointer',
+                          display: 'flex', flexDirection: 'column', gap: 6,
+                          transition: 'box-shadow 0.15s ease',
+                        }}
+                        className="hover:border-teal-600 hover:shadow-sm"
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: '#1B2430' }}>
+                            {r.title}
+                          </span>
+                          <span className={`omni-badge ${badgeClass}`} style={{ fontSize: 10 }}>
+                            Score {r.score} • {scoreBand}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5, color: '#5B6672' }}>
+                          <span>Owner: {r.owner}</span>
+                          <span style={{
+                            fontSize: 10.5, padding: '1px 6px', borderRadius: 4, background: '#EDEFED',
+                            fontWeight: 600, color: '#5B6672',
+                          }}>
+                            {r.status}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Audit History (Edit mode only) */}
           {isEdit && (
             <div style={{ borderTop: '1px solid #E2E6E4', paddingTop: 20, marginTop: 10 }}>
@@ -371,6 +556,19 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess }: AssetDrawerPr
           </div>
         </div>
       </div>
+
+      {/* Contextual Risk Drawer */}
+      <RiskDrawer
+        risk={selectedRisk}
+        isOpen={riskDrawerOpen}
+        defaultAssetId={asset?.id}
+        zIndex={60}
+        onClose={() => setRiskDrawerOpen(false)}
+        onSuccess={() => {
+          fetchAssociatedRisks();
+          setRiskDrawerOpen(false);
+        }}
+      />
     </div>
   );
 }

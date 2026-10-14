@@ -8,6 +8,7 @@ import { SamlStrategyStub } from './sso/saml.strategy';
 import { RolesGuard } from './guards/roles.guard';
 import { ResourceAuthorizationService } from './resource-authorization.service';
 import { ResourceAuthorizationGuard } from './guards/resource-authorization.guard';
+import { ServiceControlModule } from '../service-control/service-control.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { ResourceAuthorizationGuard } from './guards/resource-authorization.guar
       secret: process.env.JWT_SECRET || 'omnigrc-dev-secret-key-change-in-prod',
       signOptions: { expiresIn: '15m' },
     }),
+    ServiceControlModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, SamlStrategyStub, RolesGuard, ResourceAuthorizationService, ResourceAuthorizationGuard],

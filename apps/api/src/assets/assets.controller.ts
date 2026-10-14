@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { AssetsService } from './assets.service';
 import { CreateAssetDto, UpdateAssetDto, AssetQueryDto } from './dto/assets.dto';
+import { RiskQueryDto } from '../risks/dto/risks.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -64,6 +65,22 @@ export class AssetsController {
       role: user.role,
     };
     return this.assetsService.getAuditLogs(authCtx, id);
+  }
+
+  @Get(':id/risks')
+  @Roles(Role.ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  @RequireCapability(['GRC_CORE_ASSETS', 'GRC_CORE_RISKS'])
+  async getRisks(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Query() query: RiskQueryDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user?.userId || user?.id || user?.sub,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.assetsService.getRisksForAsset(authCtx, id, query);
   }
 
   @Post()

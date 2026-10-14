@@ -17,6 +17,18 @@ import {
   SignedLicenseArtifact,
 } from '@omnigrc/shared';
 
+export const BASELINE_CORE_CAPABILITIES = [
+  { code: 'service:GRC_CORE_ASSETS', name: 'Asset Management' },
+  { code: 'service:GRC_CORE_RISKS', name: 'Risk Management' },
+  { code: 'service:GRC_CORE_CONTROLS', name: 'Controls & Framework Controls' },
+  { code: 'service:GRC_CORE_TASKS', name: 'Compliance Tasks' },
+  { code: 'service:POLICIES_MODULE', name: 'Policy Management' },
+  { code: 'service:EVIDENCE_VAULT', name: 'Universal Evidence Vault' },
+  { code: 'service:APPROVAL_ENGINE', name: 'Universal Approval Engine' },
+  { code: 'service:REPORTING_MODULE', name: 'Reporting & Exports' },
+  { code: 'service:NOTIFICATIONS_EMAIL', name: 'Email Notifications & Digests' },
+];
+
 @Injectable()
 export class LicensesService {
   constructor(
@@ -24,6 +36,40 @@ export class LicensesService {
     private readonly audit: ControlPlaneAuditLogsService,
     private readonly licenseSigningService: LicenseSigningService,
   ) {}
+
+  /**
+   * Safe Provisioning Safeguard (Phase 1.3.3):
+   * Reconciles baseline core entitlements for a license prior to issuing a v2.0 artifact.
+   * Prevents accidental customer lockouts when converting/reissuing legacy v1.0 licenses.
+   * Preserves explicit operator disabled settings (enabled: false) and does NOT grant unpurchased optional modules.
+   */
+  async reconcileBaselineEntitlements(
+    tx: any,
+    licenseId: string,
+  ): Promise<any[]> {
+    const existingEntitlements = await tx.entitlement.findMany({
+      where: { licenseId },
+    });
+
+    const existingMap = new Map<string, any>(existingEntitlements.map((e: any) => [e.code, e]));
+
+    for (const baseCap of BASELINE_CORE_CAPABILITIES) {
+      if (!existingMap.has(baseCap.code)) {
+        const created = await tx.entitlement.create({
+          data: {
+            licenseId,
+            code: baseCap.code,
+            name: baseCap.name,
+            enabled: true,
+            value: null,
+          },
+        });
+        existingMap.set(baseCap.code, created);
+      }
+    }
+
+    return Array.from(existingMap.values());
+  }
 
   /**
    * Calculate effective runtime status without mutating stored DB state.
@@ -477,64 +523,73 @@ export class LicensesService {
    * Issue signed Ed25519 license artifact for an associated deployment.
    */
   async getSignedArtifactForLicense(licenseId: string, targetDeploymentId?: string): Promise<SignedLicenseArtifact> {
-    const license = await this.prisma.license.findUnique({
-      where: { id: licenseId },
-      include: {
-        entitlements: true,
-        commercialAgreement: true,
-        deployments: true,
-      },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      const license = await tx.license.findUnique({
+        where: { id: licenseId },
+        include: {
+          commercialAgreement: true,
+          deployments: true,
+        },
+      });
 
-    if (!license) throw new NotFoundException(`License with ID "${licenseId}" not found.`);
+      if (!license) throw new NotFoundException(`License with ID "${licenseId}" not found.`);
 
-    let deployment = targetDeploymentId
-      ? license.deployments.find((d) => d.id === targetDeploymentId)
-      : license.deployments[0];
+      const effectiveStatus = this.getEffectiveStatus(license);
+      if (effectiveStatus === LicenseStatus.REVOKED) {
+        throw new BadRequestException(`Cannot issue license artifact for REVOKED license "${licenseId}". Intended customer access cannot be established.`);
+      }
 
-    if (!deployment && targetDeploymentId) {
-      deployment = await this.prisma.deployment.findUnique({ where: { id: targetDeploymentId } });
-    }
+      let deployment = targetDeploymentId
+        ? license.deployments.find((d) => d.id === targetDeploymentId)
+        : license.deployments[0];
 
-    if (!deployment) {
-      throw new BadRequestException(`No active deployment associated with License "${licenseId}". Associate a deployment first.`);
-    }
+      if (!deployment && targetDeploymentId) {
+        deployment = await tx.deployment.findUnique({ where: { id: targetDeploymentId } });
+      }
 
-    const artifact = this.licenseSigningService.signLicenseArtifact({
-      license: {
-        id: license.id,
-        product: license.product,
-        status: this.getEffectiveStatus(license),
-        sequence: Number(license.sequence),
-        customerId: license.commercialAgreement.customerId,
-        commercialAgreementId: license.commercialAgreementId,
-        startsAt: license.startsAt,
-        expiresAt: license.expiresAt,
-        maxDeployments: license.maxDeployments,
-      },
-      deployment: {
-        id: deployment.id,
+      if (!deployment) {
+        throw new BadRequestException(`No active deployment associated with License "${licenseId}". Associate a deployment first.`);
+      }
+
+      // Safe Baseline Provisioning Reconciliation
+      const entitlements = await this.reconcileBaselineEntitlements(tx, licenseId);
+
+      const artifact = this.licenseSigningService.signLicenseArtifact({
+        license: {
+          id: license.id,
+          product: license.product,
+          status: effectiveStatus,
+          sequence: Number(license.sequence),
+          customerId: license.commercialAgreement.customerId,
+          commercialAgreementId: license.commercialAgreementId,
+          startsAt: license.startsAt,
+          expiresAt: license.expiresAt,
+          maxDeployments: license.maxDeployments,
+        },
+        deployment: {
+          id: deployment.id,
+          organizationId: deployment.organizationId,
+          customerId: deployment.customerId,
+          activationState: deployment.activationState || 'ACTIVE',
+          lastActivatedAt: deployment.lastActivatedAt,
+          createdAt: deployment.createdAt,
+        },
+        entitlements: entitlements.map((e) => ({
+          code: e.code,
+          name: e.name,
+          enabled: e.enabled,
+          value: e.value,
+        })),
+      });
+
+      await this.audit.log('ARTIFACT_ISSUED', 'License', license.id, {
+        deploymentId: deployment.id,
         organizationId: deployment.organizationId,
-        customerId: deployment.customerId,
-        activationState: deployment.activationState || 'ACTIVE',
-        lastActivatedAt: deployment.lastActivatedAt,
-        createdAt: deployment.createdAt,
-      },
-      entitlements: license.entitlements.map((e) => ({
-        code: e.code,
-        name: e.name,
-        enabled: e.enabled,
-        value: e.value,
-      })),
-    });
+        sequence: Number(license.sequence),
+      });
 
-    await this.audit.log('ARTIFACT_ISSUED', 'License', license.id, {
-      deploymentId: deployment.id,
-      organizationId: deployment.organizationId,
-      sequence: Number(license.sequence),
+      return artifact;
     });
-
-    return artifact;
   }
 
   /**

@@ -8,6 +8,9 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { Role, ProductAccessStatus } from '@omnigrc/shared';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 
+import { LicenseVerificationService } from '../license-verification/license-verification.service';
+import { FrameworkEntitlementsService } from '../frameworks/framework-entitlements.service';
+
 describe('E2E Phase 2: Organization Hierarchy, Membership RBAC & Selective Access Suite', () => {
   let resourceAuthService: ResourceAuthorizationService;
   let departmentsService: DepartmentsService;
@@ -42,6 +45,18 @@ describe('E2E Phase 2: Organization Hierarchy, Membership RBAC & Selective Acces
         {
           provide: AuditLogsService,
           useValue: { log: jest.fn().mockResolvedValue({}) },
+        },
+        {
+          provide: LicenseVerificationService,
+          useValue: {
+            getEvaluatedStateForOrganization: jest.fn().mockResolvedValue({ state: 'VALID' }),
+          },
+        },
+        {
+          provide: FrameworkEntitlementsService,
+          useValue: {
+            getEntitlementsForOrganization: jest.fn().mockResolvedValue([]),
+          },
         },
       ],
     }).compile();

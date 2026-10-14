@@ -10,12 +10,17 @@ interface ExecutivePostureBannerProps {
 }
 
 export function ExecutivePostureBanner({ metrics, onNavigateToView }: ExecutivePostureBannerProps) {
-  const auditScore = metrics.audits.overallAuditScore || 0;
-  const highRisks = metrics.risks.byScoreBand.HIGH || 0;
+  const isAuditsAvailable = metrics.audits?.isAvailable !== false;
+  const isRisksAvailable = metrics.risks?.isAvailable !== false;
+  const isTasksAvailable = metrics.obligations?.isAvailable !== false;
+  const isVulnsAvailable = metrics.vulnerabilities?.isAvailable !== false;
+
+  const auditScore = isAuditsAvailable ? (metrics.audits?.overallAuditScore || 0) : 0;
+  const highRisks = isRisksAvailable ? (metrics.risks?.byScoreBand?.HIGH || 0) : 0;
   const overdueTotal =
-    (metrics.obligations.overdueCount || 0) +
-    (metrics.vulnerabilities.overdueCount || 0) +
-    (metrics.audits.findingsOverdueCount || 0);
+    (isTasksAvailable ? (metrics.obligations?.overdueCount || 0) : 0) +
+    (isVulnsAvailable ? (metrics.vulnerabilities?.overdueCount || 0) : 0) +
+    (isAuditsAvailable ? (metrics.audits?.findingsOverdueCount || 0) : 0);
 
   // Fact-Based Posture Model derived from actual presence/absence of risk alerts & SLA breaches
   let posture: 'CRITICAL' | 'NEEDS ATTENTION' | 'HEALTHY' = 'HEALTHY';
@@ -50,18 +55,22 @@ export function ExecutivePostureBanner({ metrics, onNavigateToView }: ExecutiveP
   const readings = [
     {
       title: 'Audit Readiness',
-      status: auditScore >= 80 ? 'Optimal' : auditScore >= 60 ? 'Moderate' : 'Low',
-      detail: `${auditScore}% composite score across ${metrics.audits.totalPlans} audit plans and ${metrics.audits.assessmentCount} active assessments.`,
+      status: !isAuditsAvailable ? 'Unlicensed' : auditScore >= 80 ? 'Optimal' : auditScore >= 60 ? 'Moderate' : 'Low',
+      detail: !isAuditsAvailable
+        ? 'Business Audits module not enabled for organization subscription.'
+        : `${auditScore}% composite score across ${metrics.audits?.totalPlans || 0} audit plans and ${metrics.audits?.assessmentCount || 0} active assessments.`,
     },
     {
       title: 'Risk SLA Exposure',
-      status: highRisks === 0 ? 'Within SLA' : 'SLA Alert',
-      detail: `${highRisks} High-Severity risk(s) and ${metrics.risks.totalOpen} total open risk item(s) in current register.`,
+      status: !isRisksAvailable ? 'Unlicensed' : highRisks === 0 ? 'Within SLA' : 'SLA Alert',
+      detail: !isRisksAvailable
+        ? 'Risk Management module not enabled for organization subscription.'
+        : `${highRisks} High-Severity risk(s) and ${metrics.risks?.totalOpen || 0} total open risk item(s) in current register.`,
     },
     {
       title: 'SLA Exceptions',
       status: overdueTotal === 0 ? 'Clean' : `${overdueTotal} Overdue`,
-      detail: `${metrics.vulnerabilities.overdueCount} overdue vulns, ${metrics.obligations.overdueCount} overdue tasks, ${metrics.audits.findingsOverdueCount} overdue findings.`,
+      detail: `${isVulnsAvailable ? (metrics.vulnerabilities?.overdueCount || 0) : 'N/A'} overdue vulns, ${isTasksAvailable ? (metrics.obligations?.overdueCount || 0) : 'N/A'} overdue tasks, ${isAuditsAvailable ? (metrics.audits?.findingsOverdueCount || 0) : 'N/A'} overdue findings.`,
     },
   ];
 

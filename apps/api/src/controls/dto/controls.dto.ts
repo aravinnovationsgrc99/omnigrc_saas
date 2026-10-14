@@ -1,6 +1,6 @@
 import { IsString, IsNotEmpty, IsOptional, IsEnum, IsNumber, Min } from 'class-validator';
 import { Type } from 'class-transformer';
-import { MappingStatus } from '@omnigrc/shared';
+import { MappingStatus, AuditCheckResult } from '@omnigrc/shared';
 
 export class CreateControlDto {
   @IsString()
@@ -121,4 +121,76 @@ export class SignOffMappingDto {
   @IsString()
   @IsOptional()
   note?: string;
+}
+
+export class AttachControlEvidenceDto {
+  @IsString()
+  @IsNotEmpty()
+  evidenceId: string;
+}
+
+export class ControlEvidenceQueryDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  page?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  limit?: number;
+
+  @IsString()
+  @IsOptional()
+  search?: string;
+}
+
+export class CreateControlTestDto {
+  @IsString()
+  @IsNotEmpty()
+  assessmentId: string;
+
+  @IsString()
+  @IsOptional()
+  title?: string;
+
+  @IsString()
+  @IsOptional()
+  description?: string;
+
+  @IsEnum(AuditCheckResult)
+  @IsOptional()
+  result?: AuditCheckResult;
+
+  @IsString()
+  @IsOptional()
+  notes?: string;
+}
+
+export class ControlTestQueryDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  page?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  limit?: number;
+
+  @IsString()
+  @IsOptional()
+  search?: string;
+
+  @IsEnum(AuditCheckResult)
+  @IsOptional()
+  result?: AuditCheckResult;
+
+  @IsString()
+  @IsOptional()
+  assessmentId?: string;
 }

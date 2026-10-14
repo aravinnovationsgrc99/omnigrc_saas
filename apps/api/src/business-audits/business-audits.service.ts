@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
+import { TenantContext } from '../tenant/tenant.context';
 import {
   AuditPlanStatus,
   AuditScheduleStatus,
@@ -19,6 +20,10 @@ import {
   AuditCapaDto,
   PaginatedAuditPlansDto,
   PaginatedAuditFindingsDto,
+  ControlTestExecutionDto,
+  PaginatedControlTestsDto,
+  ControlTestingSummaryDto,
+  ControlEffectivenessStatus,
 } from '@omnigrc/shared';
 import {
   CreateAuditPlanDto,
@@ -32,6 +37,7 @@ import {
   UpdateAuditCapaDto,
   CreateAuditEvidenceDto,
 } from './dto/business-audits.dto';
+import { CreateControlTestDto, ControlTestQueryDto } from '../controls/dto/controls.dto';
 
 @Injectable()
 export class BusinessAuditsService {
@@ -645,6 +651,330 @@ export class BusinessAuditsService {
       verifiedAt: c.verifiedAt ? c.verifiedAt.toISOString() : null,
       createdAt: c.createdAt.toISOString(),
       updatedAt: c.updatedAt.toISOString(),
+    };
+  }
+
+  // --------------------------------------------------
+  // CONTROL TESTING CONTEXTUAL EXTENSIONS (PHASE 3 INC 4.1)
+  // --------------------------------------------------
+
+  async getTestsForControl(
+    authCtx: ResourceAuthContext,
+    controlId: string,
+    query?: ControlTestQueryDto,
+  ): Promise<PaginatedControlTestsDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+    const control = await this.prisma.control.findFirst({
+      where: { id: controlId, ...scopeWhere, deletedAt: null },
+    });
+
+    if (!control) {
+      throw new NotFoundException(`Control "${controlId}" not found or out of scope.`);
+    }
+
+    const page = Math.max(1, Number(query?.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(query?.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    const where: any = {
+      controlId,
+      organizationId: authCtx.organizationId,
+    };
+
+    if (query?.result) {
+      where.result = query.result;
+    }
+
+    if (query?.assessmentId) {
+      where.assessmentId = query.assessmentId;
+    }
+
+    if (query?.search && query.search.trim()) {
+      const s = query.search.trim();
+      where.OR = [
+        { title: { contains: s, mode: 'insensitive' } },
+        { description: { contains: s, mode: 'insensitive' } },
+        { notes: { contains: s, mode: 'insensitive' } },
+        { assessment: { summary: { contains: s, mode: 'insensitive' } } },
+        { assessment: { auditPlan: { title: { contains: s, mode: 'insensitive' } } } },
+      ];
+    }
+
+    const [items, total, allCheckItemsForControl] = await Promise.all([
+      this.prisma.auditCheckItem.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+        include: {
+          assessment: {
+            include: {
+              auditPlan: {
+                select: { id: true, title: true, frameworkCode: true, status: true },
+              },
+            },
+          },
+          findings: {
+            select: { id: true, title: true, severity: true, status: true },
+          },
+          evidenceAssociations: {
+            include: {
+              evidence: {
+                select: { id: true, title: true, fileName: true, scanStatus: true, status: true },
+              },
+            },
+          },
+        },
+      }),
+      this.prisma.auditCheckItem.count({ where }),
+      this.prisma.auditCheckItem.findMany({
+        where: { controlId, organizationId: authCtx.organizationId },
+        orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+        select: { result: true, updatedAt: true },
+      }),
+    ]);
+
+    // Metric Summary Calculation
+    const totalTests = allCheckItemsForControl.length;
+    const effectiveCount = allCheckItemsForControl.filter((i) => i.result === AuditCheckResult.COMPLIANT).length;
+    const partiallyEffectiveCount = allCheckItemsForControl.filter(
+      (i) => i.result === AuditCheckResult.PARTIALLY_COMPLIANT,
+    ).length;
+    const ineffectiveCount = allCheckItemsForControl.filter((i) => i.result === AuditCheckResult.NON_COMPLIANT).length;
+    const notEvaluatedCount = allCheckItemsForControl.filter(
+      (i) => i.result === AuditCheckResult.NOT_EVALUATED,
+    ).length;
+    const notApplicableCount = allCheckItemsForControl.filter(
+      (i) => i.result === AuditCheckResult.NOT_APPLICABLE,
+    ).length;
+
+    const latestEvaluated = allCheckItemsForControl.find((i) => i.result !== AuditCheckResult.NOT_EVALUATED);
+    const latestItem = allCheckItemsForControl[0] || null;
+    const latestTestResult = (latestEvaluated?.result || latestItem?.result || null) as AuditCheckResult | null;
+    const latestTestedAt = latestEvaluated?.updatedAt
+      ? latestEvaluated.updatedAt.toISOString()
+      : latestItem?.updatedAt
+      ? latestItem.updatedAt.toISOString()
+      : null;
+
+    let overallEffectiveness: ControlEffectivenessStatus = 'NOT_TESTED';
+    if (latestTestResult === AuditCheckResult.COMPLIANT) {
+      overallEffectiveness = 'EFFECTIVE';
+    } else if (latestTestResult === AuditCheckResult.PARTIALLY_COMPLIANT) {
+      overallEffectiveness = 'PARTIALLY_EFFECTIVE';
+    } else if (latestTestResult === AuditCheckResult.NON_COMPLIANT) {
+      overallEffectiveness = 'INEFFECTIVE';
+    } else if (latestTestResult === AuditCheckResult.NOT_APPLICABLE) {
+      overallEffectiveness = 'NOT_APPLICABLE';
+    }
+
+    // Lookup user display names
+    const creatorIds = Array.from(new Set(items.map((i) => i.createdById).filter(Boolean)));
+    const userMap = new Map<string, string>();
+    if (creatorIds.length > 0) {
+      const users = await TenantContext.runWithDisplayNameLookup(() =>
+        this.prisma.user.findMany({
+          where: { id: { in: creatorIds } },
+          select: { id: true, name: true, email: true },
+        }),
+      );
+      for (const u of users) {
+        userMap.set(u.id, u.name || u.email);
+      }
+    }
+
+    const mappedItems: ControlTestExecutionDto[] = items.map((item) =>
+      this.mapCheckItemToControlTestExecutionDto(item, controlId, userMap),
+    );
+
+    const totalPages = Math.ceil(total / limit) || 1;
+
+    return {
+      items: mappedItems,
+      total,
+      page,
+      limit,
+      totalPages,
+      summary: {
+        totalTests,
+        effectiveCount,
+        partiallyEffectiveCount,
+        ineffectiveCount,
+        notEvaluatedCount,
+        notApplicableCount,
+        overallEffectiveness,
+        latestTestResult,
+        latestTestedAt,
+      },
+    };
+  }
+
+  async createCheckItemForControl(
+    authCtx: ResourceAuthContext,
+    controlId: string,
+    dto: CreateControlTestDto,
+  ): Promise<ControlTestExecutionDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+    const control = await this.prisma.control.findFirst({
+      where: { id: controlId, ...scopeWhere, deletedAt: null },
+    });
+
+    if (!control) {
+      throw new NotFoundException(`Control "${controlId}" not found or out of scope.`);
+    }
+
+    if (!dto?.assessmentId) {
+      throw new BadRequestException('assessmentId is required in request body.');
+    }
+
+    const assessment = await this.prisma.auditAssessment.findFirst({
+      where: { id: dto.assessmentId, organizationId: authCtx.organizationId },
+      include: { auditPlan: true },
+    });
+
+    if (!assessment) {
+      throw new NotFoundException(`Audit assessment "${dto.assessmentId}" not found or out of scope.`);
+    }
+
+    await this.resourceAuthService.assertResourceAccess(authCtx, assessment.auditPlan);
+
+    if (assessment.status === AuditAssessmentStatus.COMPLETED) {
+      throw new BadRequestException(
+        `Audit assessment "${dto.assessmentId}" is marked COMPLETED and cannot accept new test items.`,
+      );
+    }
+
+    if (
+      assessment.auditPlan.status === AuditPlanStatus.COMPLETED ||
+      assessment.auditPlan.status === AuditPlanStatus.ARCHIVED
+    ) {
+      throw new BadRequestException(
+        `Audit plan "${assessment.auditPlan.id}" is in status "${assessment.auditPlan.status}" and cannot accept new test items.`,
+      );
+    }
+
+    const createdItem = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.auditCheckItem.findFirst({
+        where: {
+          assessmentId: dto.assessmentId,
+          controlId,
+          organizationId: authCtx.organizationId,
+        },
+      });
+
+      if (existing) {
+        throw new ConflictException(
+          `Control "${controlId}" is already registered as a check item in assessment "${dto.assessmentId}". Duplicate check items within the same assessment run are rejected.`,
+        );
+      }
+
+      const testTitle = dto.title?.trim() || `Evaluate Control: ${control.name}`;
+      const testDesc = dto.description !== undefined ? dto.description : control.description;
+      const testResult = dto.result || AuditCheckResult.NOT_EVALUATED;
+      const testNotes = dto.notes !== undefined ? dto.notes : null;
+
+      const newCheckItem = await tx.auditCheckItem.create({
+        data: {
+          organizationId: authCtx.organizationId,
+          assessmentId: dto.assessmentId,
+          controlId,
+          title: testTitle,
+          description: testDesc,
+          result: testResult,
+          notes: testNotes,
+          createdById: authCtx.userId,
+        },
+        include: {
+          assessment: {
+            include: {
+              auditPlan: {
+                select: { id: true, title: true, frameworkCode: true, status: true },
+              },
+            },
+          },
+          findings: {
+            select: { id: true, title: true, severity: true, status: true },
+          },
+          evidenceAssociations: {
+            include: {
+              evidence: {
+                select: { id: true, title: true, fileName: true, scanStatus: true, status: true },
+              },
+            },
+          },
+        },
+      });
+
+      const allCheckItems = await tx.auditCheckItem.findMany({
+        where: { assessmentId: dto.assessmentId },
+        select: { result: true },
+      });
+      const newScore = calculateAuditScore(
+        allCheckItems.map((i) => ({ result: i.result as unknown as AuditCheckResult })),
+      );
+      await tx.auditAssessment.update({
+        where: { id: dto.assessmentId },
+        data: { score: newScore },
+      });
+
+      return newCheckItem;
+    });
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'CONTROL_TEST_ADDED',
+      entityType: 'AuditCheckItem',
+      entityId: createdItem.id,
+      metadata: {
+        controlId,
+        assessmentId: dto.assessmentId,
+        result: createdItem.result,
+      },
+    });
+
+    return this.mapCheckItemToControlTestExecutionDto(createdItem, controlId);
+  }
+
+  private mapCheckItemToControlTestExecutionDto(
+    item: any,
+    fallbackControlId: string,
+    userMap?: Map<string, string>,
+  ): ControlTestExecutionDto {
+    return {
+      id: item.id,
+      organizationId: item.organizationId,
+      controlId: item.controlId || fallbackControlId,
+      assessmentId: item.assessmentId,
+      assessmentTitle: item.assessment?.summary || undefined,
+      assessmentStatus: item.assessment?.status as AuditAssessmentStatus,
+      auditPlanId: item.assessment?.auditPlanId || item.assessment?.auditPlan?.id || '',
+      auditPlanTitle: item.assessment?.auditPlan?.title || 'Untitled Audit Plan',
+      frameworkCode: item.assessment?.auditPlan?.frameworkCode || null,
+      title: item.title,
+      description: item.description,
+      result: item.result as unknown as AuditCheckResult,
+      notes: item.notes,
+      auditorId: item.assessment?.auditorId || null,
+      createdById: item.createdById,
+      createdByName: userMap?.get(item.createdById) || item.createdById,
+      createdAt: item.createdAt.toISOString(),
+      updatedAt: item.updatedAt.toISOString(),
+      findingsCount: item.findings?.length || 0,
+      evidenceCount: item.evidenceAssociations?.length || 0,
+      findings: (item.findings || []).map((f: any) => ({
+        id: f.id,
+        title: f.title,
+        severity: f.severity,
+        status: f.status,
+      })),
+      evidence: (item.evidenceAssociations || []).map((ea: any) => ({
+        id: ea.evidence.id,
+        title: ea.evidence.title,
+        fileName: ea.evidence.fileName,
+        scanStatus: ea.evidence.scanStatus,
+        status: ea.evidence.status,
+      })),
     };
   }
 }

@@ -26,31 +26,38 @@ interface ExecutiveKpiStripProps {
 export function ExecutiveKpiStrip({ metrics, onNavigateToView }: ExecutiveKpiStripProps) {
   const [activeModal, setActiveModal] = useState<'audits' | 'risks' | 'exceptions' | 'governance' | null>(null);
 
+  const isAuditsAvailable = metrics.audits?.isAvailable !== false;
+  const isRisksAvailable = metrics.risks?.isAvailable !== false;
+  const isTasksAvailable = metrics.obligations?.isAvailable !== false;
+  const isPoliciesAvailable = metrics.policies?.isAvailable !== false;
+  const isVulnsAvailable = metrics.vulnerabilities?.isAvailable !== false;
+  const isVendorsAvailable = metrics.vendors?.isAvailable !== false;
+
   // Card 1: Audit Readiness Data
-  const auditScore = metrics.audits?.overallAuditScore || 0;
-  const assessmentCount = metrics.audits?.assessmentCount || 0;
-  const activeAssessments = metrics.audits?.activeAssessments || [];
+  const auditScore = isAuditsAvailable ? (metrics.audits?.overallAuditScore || 0) : 0;
+  const assessmentCount = isAuditsAvailable ? (metrics.audits?.assessmentCount || 0) : 0;
+  const activeAssessments = isAuditsAvailable ? (metrics.audits?.activeAssessments || []) : [];
 
   // Card 2: High-Severity Risks Data
-  const highRisksCount = metrics.risks?.byScoreBand?.HIGH || 0;
-  const totalOpenRisks = metrics.risks?.totalOpen || 0;
-  const highRiskItems = metrics.risks?.highSeverityRisks || [];
+  const highRisksCount = isRisksAvailable ? (metrics.risks?.byScoreBand?.HIGH || 0) : 0;
+  const totalOpenRisks = isRisksAvailable ? (metrics.risks?.totalOpen || 0) : 0;
+  const highRiskItems = isRisksAvailable ? (metrics.risks?.highSeverityRisks || []) : [];
 
   // Card 3: Overdue Exceptions Data
   const totalOverdue =
-    (metrics.obligations?.overdueCount || 0) +
-    (metrics.vulnerabilities?.overdueCount || 0) +
-    (metrics.audits?.findingsOverdueCount || 0) +
-    (metrics.policies?.overdueReviewCount || 0);
+    (isTasksAvailable ? (metrics.obligations?.overdueCount || 0) : 0) +
+    (isVulnsAvailable ? (metrics.vulnerabilities?.overdueCount || 0) : 0) +
+    (isAuditsAvailable ? (metrics.audits?.findingsOverdueCount || 0) : 0) +
+    (isPoliciesAvailable ? (metrics.policies?.overdueReviewCount || 0) : 0);
 
   const attentionItems = metrics.attentionRequired || [];
 
   // Card 4: Governance Coverage Data
-  const publishedPolicies = metrics.policies?.publishedCount || 0;
-  const totalPolicies = metrics.policies?.total || 0;
-  const policyRate = totalPolicies > 0 ? Math.round((publishedPolicies / totalPolicies) * 100) : 0;
-  const pendingExceptions = metrics.policies?.pendingExceptionsCount || 0;
-  const policyStatusMap = metrics.policies?.byStatus || {};
+  const publishedPolicies = isPoliciesAvailable ? (metrics.policies?.publishedCount || 0) : 0;
+  const totalPolicies = isPoliciesAvailable ? (metrics.policies?.total || 0) : 0;
+  const policyRate = (isPoliciesAvailable && totalPolicies > 0) ? Math.round((publishedPolicies / totalPolicies) * 100) : 0;
+  const pendingExceptions = isPoliciesAvailable ? (metrics.policies?.pendingExceptionsCount || 0) : 0;
+  const policyStatusMap = isPoliciesAvailable ? (metrics.policies?.byStatus || {}) : {};
 
   return (
     <>

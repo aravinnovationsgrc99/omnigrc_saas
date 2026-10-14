@@ -7,12 +7,24 @@ import { AnimatedCountUp } from '@/components/ui/animated-count-up';
 import { DonutChart, ChartSegment } from '../charts/donut-chart';
 import { HorizontalBarChart, BarItem } from '../charts/horizontal-bar-chart';
 
+import { ModuleNotLicensedCard } from '@/components/ui/module-not-licensed-card';
+
 interface AuditReadinessWidgetProps {
   metrics: AuditMetricsDto;
   onNavigateToView?: (view: string) => void;
 }
 
 export function AuditReadinessWidget({ metrics, onNavigateToView }: AuditReadinessWidgetProps) {
+  if (metrics?.isAvailable === false) {
+    return (
+      <ModuleNotLicensedCard
+        title="Audit Readiness"
+        description="Audit plans & findings"
+        icon={<FileCheck size={18} />}
+      />
+    );
+  }
+
   const score = metrics.overallAuditScore || 0;
 
   // Build Audit Plan Status Donut chart segments

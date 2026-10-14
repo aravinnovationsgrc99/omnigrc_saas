@@ -18,6 +18,7 @@ import { LicenseVerificationModule } from './license-verification/license-verifi
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
 import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
 import { LicenseWriteGuard } from './common/guards/license-write.guard';
+import { RiskControlsModule } from './risk-controls/risk-controls.module';
 
 import { VendorsModule } from './vendors/vendors.module';
 import { VulnerabilitiesModule } from './vulnerabilities/vulnerabilities.module';
@@ -69,6 +70,7 @@ import { ServiceCapabilityGuard } from './common/guards/service-capability.guard
     AssetsModule,
     RisksModule,
     ControlsModule,
+    RiskControlsModule,
     ComplianceTasksModule,
     NotificationsModule,
     IntegrationsModule,

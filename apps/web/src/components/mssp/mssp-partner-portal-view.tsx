@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { MsspClientSummaryDto } from '@omnigrc/shared';
+import { MsspClientSummaryDto, SwitchContextResponseDto } from '@omnigrc/shared';
 import { Users, ShieldAlert, CheckCircle2, ArrowRightLeft, Building2, RefreshCw } from 'lucide-react';
 
 import { apiRequest, setStoredTokens } from '@/lib/api-client';
@@ -32,13 +32,13 @@ export function MsspPartnerPortalView() {
   const handleContextSwitch = async (targetOrganizationId: string) => {
     setSwitchingId(targetOrganizationId);
     try {
-      const result = await apiRequest<{ accessToken: string; refreshToken?: string }>('/auth/switch-context', {
+      const result = await apiRequest<SwitchContextResponseDto>('/auth/switch-context', {
         method: 'POST',
         body: JSON.stringify({ targetOrganizationId }),
       });
 
       if (result.accessToken && typeof window !== 'undefined') {
-        setStoredTokens(result.accessToken, result.refreshToken || '');
+        setStoredTokens(result.accessToken, '');
         window.location.reload();
       }
     } catch (err: any) {

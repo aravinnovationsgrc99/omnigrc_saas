@@ -151,4 +151,8 @@ export class RiskQueryDto {
   @Min(1)
   @Max(5)
   impact?: number;
+
+  @IsString()
+  @IsOptional()
+  assetId?: string;
 }

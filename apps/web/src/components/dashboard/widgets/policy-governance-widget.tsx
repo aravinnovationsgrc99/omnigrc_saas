@@ -6,12 +6,24 @@ import { BookOpen, FileCheck2, Clock, FileText, ChevronRight } from 'lucide-reac
 import { AnimatedCountUp } from '@/components/ui/animated-count-up';
 import { DonutChart, ChartSegment } from '../charts/donut-chart';
 
+import { ModuleNotLicensedCard } from '@/components/ui/module-not-licensed-card';
+
 interface PolicyGovernanceWidgetProps {
   metrics: PolicyMetricsDto;
   onNavigateToView?: (view: string) => void;
 }
 
 export function PolicyGovernanceWidget({ metrics, onNavigateToView }: PolicyGovernanceWidgetProps) {
+  if (metrics?.isAvailable === false) {
+    return (
+      <ModuleNotLicensedCard
+        title="Policy Governance"
+        description="Corporate policy lifecycles"
+        icon={<BookOpen size={18} />}
+      />
+    );
+  }
+
   const publishedCount = metrics.publishedCount || 0;
   const overdueReviewCount = metrics.overdueReviewCount || 0;
   const total = metrics.total || 0;

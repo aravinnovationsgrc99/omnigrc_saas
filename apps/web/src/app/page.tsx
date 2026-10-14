@@ -33,13 +33,32 @@ import { ComingSoon } from '@/components/dashboard/coming-soon';
 import { OnboardingWizard } from '@/components/onboarding/onboarding-wizard';
 import { ToastProvider } from '@/context/toast-context';
 import { FloatingSupportChat } from '@/components/intelligence/floating-support-chat';
-import { Lock } from 'lucide-react';
+import { ModuleNotLicensedView } from '@/components/ui/module-not-licensed-view';
+import { Lock, ShieldAlert } from 'lucide-react';
 
 export default function MainPage() {
-  const { user, organization, loading, licenseError, clearLicenseError } = useAuth();
+  const { user, organization, loading, licenseError, clearLicenseError, hasCapability, getCapabilityState } = useAuth();
   const [view, setView] = useState('dashboard');
+  const [viewParams, setViewParams] = useState<Record<string, any>>({});
   const [showWizard, setShowWizard] = useState<boolean>(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
+  const navigateToView = (nextView: string, params?: Record<string, any>) => {
+    setView(nextView);
+    setViewParams(params || {});
+    setMobileSidebarOpen(false);
+  };
+
+  // Sync view from URL search param if present on initial mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const urlView = params.get('view');
+      if (urlView) {
+        setView(urlView);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     if (organization && organization.onboardingCompleted === false) {
@@ -71,16 +90,14 @@ export default function MainPage() {
 
   const activeItem = NAV_SECTIONS.flatMap((s) => s.items).find((i) => i.key === view);
   const isReadOnly = organization?.isReadOnly || organization?.licenseState === 'EXPIRED';
+  const isLicensed = !activeItem?.capabilityCode || hasCapability(activeItem.capabilityCode);
 
   return (
     <ToastProvider>
       <div className="omni-root" style={{ height: '100vh', display: 'flex', position: 'relative', overflow: 'hidden' }}>
         <Sidebar
           view={view}
-          setView={(v) => {
-            setView(v);
-            setMobileSidebarOpen(false);
-          }}
+          setView={(v) => navigateToView(v)}
           mobileOpen={mobileSidebarOpen}
           onCloseMobile={() => setMobileSidebarOpen(false)}
         />
@@ -93,28 +110,49 @@ export default function MainPage() {
           )}
           <Topbar onToggleMobileSidebar={() => setMobileSidebarOpen((v) => !v)} />
           <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }} className="omni-scroll w-full max-w-full p-3.5 sm:p-6">
-            {view === 'dashboard' && <DashboardView onNavigateToView={(v) => setView(v)} />}
-            {view === 'reports' && <ReportsView />}
-            {view === 'risk' && <RiskListView />}
-            {view === 'assets' && <AssetListView />}
-            {view === 'vulnerabilities' && <VulnerabilityListView />}
-            {view === 'incidents' && <IncidentListView />}
-            {view === 'remediation' && <RemediationView />}
-            {view === 'controls' && <ControlMappingView />}
-            {view === 'frameworks' && <FrameworkLibraryView />}
-            {view === 'policies' && <PolicyListView />}
-            {view === 'approvals' && <ApprovalCenterView />}
-            {view === 'audits' && <AuditListView />}
-            {view === 'vendors' && <VendorListView />}
-            {view === 'evidence' && <EvidenceVaultView />}
-            {view === 'board' && <ComplianceBoardView />}
-            {view === 'intelligence' && <GrcIntelligenceView />}
-            {view === 'integrations' && <IntegrationsView />}
-            {view === 'mssp' && <MsspPartnerPortalView />}
-            {view === 'settings' && <SettingsView />}
-            {view === 'audit' && <AuditLogView />}
-            {activeItem && !activeItem.enabled && (
-              <ComingSoon label={activeItem.label} phase={activeItem.phase || 'Phase N'} />
+            {!isLicensed && activeItem?.capabilityCode ? (
+              <ModuleNotLicensedView
+                moduleName={activeItem.label}
+                capabilityCode={activeItem.capabilityCode}
+                reason={getCapabilityState(activeItem.capabilityCode)?.reason}
+                onNavigateHome={() => navigateToView('dashboard')}
+              />
+            ) : (
+              <>
+                {view === 'dashboard' && <DashboardView onNavigateToView={(v) => navigateToView(v)} />}
+                {view === 'reports' && <ReportsView />}
+                {view === 'risk' && (
+                  <RiskListView
+                    initialAssetId={viewParams?.assetId}
+                    onClearAssetFilter={() => setViewParams((prev) => ({ ...prev, assetId: undefined }))}
+                    onNavigateToView={(v) => navigateToView(v)}
+                  />
+                )}
+                {view === 'assets' && (
+                  <AssetListView
+                    onNavigateToRisk={(assetId) => navigateToView('risk', { assetId })}
+                  />
+                )}
+                {view === 'vulnerabilities' && <VulnerabilityListView />}
+                {view === 'incidents' && <IncidentListView />}
+                {view === 'remediation' && <RemediationView />}
+                {view === 'controls' && <ControlMappingView onNavigateToView={(v) => navigateToView(v)} />}
+                {view === 'frameworks' && <FrameworkLibraryView />}
+                {view === 'policies' && <PolicyListView />}
+                {view === 'approvals' && <ApprovalCenterView />}
+                {view === 'audits' && <AuditListView />}
+                {view === 'vendors' && <VendorListView />}
+                {view === 'evidence' && <EvidenceVaultView />}
+                {view === 'board' && <ComplianceBoardView />}
+                {view === 'intelligence' && <GrcIntelligenceView />}
+                {view === 'integrations' && <IntegrationsView />}
+                {view === 'mssp' && <MsspPartnerPortalView />}
+                {view === 'settings' && <SettingsView />}
+                {view === 'audit' && <AuditLogView />}
+                {activeItem && !activeItem.enabled && (
+                  <ComingSoon label={activeItem.label} phase={activeItem.phase || 'Phase N'} />
+                )}
+              </>
             )}
           </div>
         </div>
@@ -123,7 +161,7 @@ export default function MainPage() {
           <OnboardingWizard onComplete={() => setShowWizard(false)} />
         )}
 
-        <FloatingSupportChat />
+        {hasCapability('AI_GRC_CHAT') && <FloatingSupportChat />}
       </div>
     </ToastProvider>
   );

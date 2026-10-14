@@ -73,8 +73,8 @@ describe('ServiceControlService (Control Plane)', () => {
 
       await service.onModuleInit();
 
-      expect(mockPrisma.serviceCatalog.findUnique).toHaveBeenCalledTimes(18);
-      expect(mockPrisma.serviceCatalog.create).toHaveBeenCalledTimes(18);
+      expect(mockPrisma.serviceCatalog.findUnique).toHaveBeenCalledTimes(20);
+      expect(mockPrisma.serviceCatalog.create).toHaveBeenCalledTimes(20);
     });
   });
 

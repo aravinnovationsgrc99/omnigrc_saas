@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { DeploymentsService } from './deployments.service';
 import { ControlPlanePrismaService } from '../prisma/prisma.service';
 import { LicenseSigningService } from '../licenses/license-signing.service';
+import { LicensesService } from '../licenses/licenses.service';
 import { ControlPlaneAuditLogsService } from '../audit/audit-logs.service';
 import { NotFoundException, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import {
@@ -17,6 +18,7 @@ describe('DeploymentsService (CP-6.4 Operational Control)', () => {
   let prisma: jest.Mocked<any>;
   let audit: jest.Mocked<any>;
   let signingService: jest.Mocked<any>;
+  let mockLicensesService: any;
 
   beforeEach(async () => {
     prisma = {
@@ -28,6 +30,7 @@ describe('DeploymentsService (CP-6.4 Operational Control)', () => {
         update: jest.fn(),
       },
       license: {
+        findUnique: jest.fn(),
         update: jest.fn().mockResolvedValue({}),
       },
       controlPlaneAuditLog: {
@@ -50,12 +53,21 @@ describe('DeploymentsService (CP-6.4 Operational Control)', () => {
       }),
     };
 
+    mockLicensesService = {
+      reconcileBaselineEntitlements: jest.fn().mockImplementation((tx, licId) =>
+        Promise.resolve([
+          { id: 'ent-1', code: 'service:GRC_CORE_ASSETS', name: 'Asset Mgmt', enabled: true, value: null },
+        ]),
+      ),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DeploymentsService,
         { provide: ControlPlanePrismaService, useValue: prisma },
         { provide: ControlPlaneAuditLogsService, useValue: audit },
         { provide: LicenseSigningService, useValue: signingService },
+        { provide: LicensesService, useValue: mockLicensesService },
       ],
     }).compile();
 
@@ -157,6 +169,15 @@ describe('DeploymentsService (CP-6.4 Operational Control)', () => {
     it('should verify secret, issue signed artifact, and transition state to ACTIVE', async () => {
       const rawSecret = 'secret_valid_12345';
       const secretHash = await bcrypt.hash(rawSecret, 10);
+      const mockLicense = {
+        id: 'lic-1',
+        status: 'ACTIVE',
+        product: 'OMNIGRC',
+        startsAt: new Date(Date.now() - 3600000),
+        expiresAt: new Date(Date.now() + 86400000),
+        maxDeployments: 5,
+        entitlements: [],
+      };
 
       prisma.deployment.findUnique.mockResolvedValueOnce({
         id: 'dep-1',
@@ -164,16 +185,10 @@ describe('DeploymentsService (CP-6.4 Operational Control)', () => {
         activationState: 'PENDING',
         registrationSecretHash: secretHash,
         createdAt: new Date(),
-        license: {
-          id: 'lic-1',
-          status: 'ACTIVE',
-          product: 'OMNIGRC',
-          startsAt: new Date(Date.now() - 3600000),
-          expiresAt: new Date(Date.now() + 86400000),
-          maxDeployments: 5,
-          entitlements: [],
-        },
+        license: mockLicense,
       });
+
+      prisma.license.findUnique.mockResolvedValueOnce(mockLicense);
 
       prisma.deployment.update.mockResolvedValueOnce({
         id: 'dep-1',
@@ -327,6 +342,192 @@ describe('DeploymentsService (CP-6.4 Operational Control)', () => {
 
       expect(history).toHaveLength(1);
       expect(history[0].action).toBe('DEPLOYMENT_STATE_CHANGED');
+    });
+  });
+
+  describe('Phase 1.3.5 Transactional License Issuance Hardening & Race Hardening', () => {
+    it('1. activate should run entitlement reconciliation and artifact signing inside an atomic database transaction', async () => {
+      const secret = 'secret-123';
+      const hash = await bcrypt.hash(secret, 10);
+      const mockDeployment = {
+        id: 'dep-act',
+        activationState: 'PENDING',
+        registrationSecretHash: hash,
+        license: {
+          id: 'lic-act',
+          status: 'ACTIVE',
+          startsAt: new Date(Date.now() - 10000),
+          expiresAt: new Date(Date.now() + 1000000),
+          product: 'OMNIGRC',
+          commercialAgreementId: 'ca-1',
+          maxDeployments: 5,
+        },
+      };
+
+      prisma.deployment.findUnique.mockResolvedValueOnce(mockDeployment);
+      prisma.license.findUnique.mockResolvedValueOnce(mockDeployment.license);
+      prisma.deployment.update.mockResolvedValueOnce({ ...mockDeployment, activationState: 'ACTIVE' });
+
+      const res = await service.activate('dep-act', { registrationSecret: secret });
+
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(mockLicensesService.reconcileBaselineEntitlements).toHaveBeenCalled();
+      expect(signingService.signLicenseArtifact).toHaveBeenCalled();
+      expect(res.success).toBe(true);
+      expect(res.artifact).toBeDefined();
+    });
+
+    it('2. activate should roll back database transaction completely if signing fails', async () => {
+      const secret = 'secret-123';
+      const hash = await bcrypt.hash(secret, 10);
+      const mockDeployment = {
+        id: 'dep-act-fail',
+        activationState: 'PENDING',
+        registrationSecretHash: hash,
+        license: {
+          id: 'lic-act-fail',
+          status: 'ACTIVE',
+          startsAt: new Date(Date.now() - 10000),
+          expiresAt: new Date(Date.now() + 1000000),
+          product: 'OMNIGRC',
+          commercialAgreementId: 'ca-1',
+          maxDeployments: 5,
+        },
+      };
+
+      prisma.deployment.findUnique.mockResolvedValueOnce(mockDeployment);
+      prisma.license.findUnique.mockResolvedValueOnce(mockDeployment.license);
+      signingService.signLicenseArtifact.mockImplementationOnce(() => {
+        throw new Error('Signing key cryptographic failure');
+      });
+
+      await expect(service.activate('dep-act-fail', { registrationSecret: secret })).rejects.toThrow(
+        /Signing key cryptographic failure/i,
+      );
+    });
+
+    it('3. getLicenseArtifact should execute entitlement reconciliation inside a database transaction', async () => {
+      const mockDeployment = {
+        id: 'dep-art',
+        activationState: 'ACTIVE',
+        license: {
+          id: 'lic-art',
+          status: 'ACTIVE',
+          startsAt: new Date(Date.now() - 10000),
+          expiresAt: new Date(Date.now() + 1000000),
+          product: 'OMNIGRC',
+          sequence: 1n,
+          commercialAgreementId: 'ca-1',
+          maxDeployments: 5,
+        },
+      };
+
+      prisma.deployment.findUnique.mockResolvedValueOnce(mockDeployment);
+      prisma.license.findUnique.mockResolvedValueOnce(mockDeployment.license);
+
+      const res = await service.getLicenseArtifact('dep-art');
+
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(mockLicensesService.reconcileBaselineEntitlements).toHaveBeenCalled();
+      expect(res.artifact).toBeDefined();
+    });
+
+    it('4. getLicenseArtifact should roll back transaction if signing fails', async () => {
+      const mockDeployment = {
+        id: 'dep-art-fail',
+        activationState: 'ACTIVE',
+        license: {
+          id: 'lic-art-fail',
+          status: 'ACTIVE',
+          startsAt: new Date(Date.now() - 10000),
+          expiresAt: new Date(Date.now() + 1000000),
+          product: 'OMNIGRC',
+          sequence: 1n,
+          commercialAgreementId: 'ca-1',
+          maxDeployments: 5,
+        },
+      };
+
+      prisma.deployment.findUnique.mockResolvedValueOnce(mockDeployment);
+      prisma.license.findUnique.mockResolvedValueOnce(mockDeployment.license);
+      signingService.signLicenseArtifact.mockImplementationOnce(() => {
+        throw new Error('Signing hardware module error');
+      });
+
+      await expect(service.getLicenseArtifact('dep-art-fail')).rejects.toThrow(
+        /Signing hardware module error/i,
+      );
+    });
+
+    it('5. checkIn should execute entitlement reconciliation and deployment update inside transaction', async () => {
+      const secret = 'secret-123';
+      const hash = await bcrypt.hash(secret, 10);
+      const mockDeployment = {
+        id: 'dep-checkin',
+        activationState: 'ACTIVE',
+        registrationSecretHash: hash,
+        version: '1.0.0',
+        license: {
+          id: 'lic-checkin',
+          status: 'ACTIVE',
+          startsAt: new Date(Date.now() - 10000),
+          expiresAt: new Date(Date.now() + 1000000),
+          product: 'OMNIGRC',
+          commercialAgreementId: 'ca-1',
+          maxDeployments: 5,
+        },
+      };
+
+      prisma.deployment.findUnique.mockResolvedValueOnce(mockDeployment);
+      prisma.license.findUnique.mockResolvedValueOnce(mockDeployment.license);
+      prisma.deployment.update.mockResolvedValueOnce({
+        ...mockDeployment,
+        lastCheckInAt: new Date(),
+        version: '1.0.1',
+      });
+
+      const res = await service.checkIn('dep-checkin', { registrationSecret: secret, version: '1.0.1' });
+
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(mockLicensesService.reconcileBaselineEntitlements).toHaveBeenCalled();
+      expect(res.success).toBe(true);
+      expect(res.artifact).toBeDefined();
+    });
+
+    it('6. checkIn should reject and abort transaction if artifact signing fails', async () => {
+      const secret = 'secret-123';
+      const hash = await bcrypt.hash(secret, 10);
+      const mockDeployment = {
+        id: 'dep-checkin-fail',
+        activationState: 'ACTIVE',
+        registrationSecretHash: hash,
+        version: '1.0.0',
+        license: {
+          id: 'lic-checkin-fail',
+          status: 'ACTIVE',
+          startsAt: new Date(Date.now() - 10000),
+          expiresAt: new Date(Date.now() + 1000000),
+          product: 'OMNIGRC',
+          commercialAgreementId: 'ca-1',
+          maxDeployments: 5,
+        },
+      };
+
+      prisma.deployment.findUnique.mockResolvedValueOnce(mockDeployment);
+      prisma.license.findUnique.mockResolvedValueOnce(mockDeployment.license);
+      prisma.deployment.update.mockResolvedValueOnce({
+        ...mockDeployment,
+        lastCheckInAt: new Date(),
+        version: '1.0.1',
+      });
+
+      signingService.signLicenseArtifact.mockImplementationOnce(() => {
+        throw new Error('CheckIn signing failure');
+      });
+
+      await expect(
+        service.checkIn('dep-checkin-fail', { registrationSecret: secret, version: '1.0.1' }),
+      ).rejects.toThrow(/CheckIn signing failure/i);
     });
   });
 });

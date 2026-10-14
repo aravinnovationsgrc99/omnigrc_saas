@@ -7,9 +7,11 @@ import { Roles } from '../../auth/decorators/roles.decorator';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { Role, JwtPayload, NotificationType } from '@omnigrc/shared';
 import { RequiresActiveLicense } from '../../common/decorators/requires-active-license.decorator';
+import { RequireCapability } from '../../common/decorators/require-capability.decorator';
 
 @Controller('integrations/slack')
 @UseGuards(JwtAuthGuard, RolesGuard)
+@RequireCapability('INTEGRATIONS_HUB')
 export class SlackIntegrationController {
   constructor(
     private readonly prisma: PrismaService,

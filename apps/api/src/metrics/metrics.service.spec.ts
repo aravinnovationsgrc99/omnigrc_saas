@@ -4,11 +4,13 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ResourceAuthorizationService } from '../auth/resource-authorization.service';
 import { FrameworkEntitlementsService } from '../frameworks/framework-entitlements.service';
 import { FrameworkCoverageService } from '../frameworks/framework-coverage.service';
+import { EffectiveServiceStateResolver } from '../service-control/effective-service-state-resolver.service';
 import { Role } from '@omnigrc/shared';
 
 describe('MetricsService', () => {
   let service: MetricsService;
   let prisma: jest.Mocked<any>;
+  let moduleRef: TestingModule;
 
   beforeEach(async () => {
     prisma = {
@@ -70,7 +72,7 @@ describe('MetricsService', () => {
       },
     };
 
-    const module: TestingModule = await Test.createTestingModule({
+    moduleRef = await Test.createTestingModule({
       providers: [
         MetricsService,
         { provide: PrismaService, useValue: prisma },
@@ -94,10 +96,22 @@ describe('MetricsService', () => {
             }),
           },
         },
+        {
+          provide: EffectiveServiceStateResolver,
+          useValue: {
+            resolveEffectiveState: jest.fn().mockImplementation(async (orgId, capabilityCode) => ({
+              capabilityCode,
+              effectiveState: 'AVAILABLE',
+              isAvailable: true,
+              reason: 'Permitted',
+              source: 'CATALOG_DEFAULT',
+            })),
+          },
+        },
       ],
     }).compile();
 
-    service = module.get<MetricsService>(MetricsService);
+    service = moduleRef.get<MetricsService>(MetricsService);
   });
 
   it('should be defined', () => {
@@ -269,5 +283,100 @@ describe('MetricsService', () => {
         take: 20,
       }),
     );
+  });
+
+  it('should zero out optional module metrics and exclude attention items when capabilities are disabled', async () => {
+    const resolver = moduleRef.get(EffectiveServiceStateResolver);
+    jest.spyOn(resolver, 'resolveEffectiveState').mockImplementation(async (orgId, code) => {
+      if (code === 'GRC_CORE_ASSETS') return { capabilityCode: code, effectiveState: 'AVAILABLE', isAvailable: true, reason: 'Base', source: 'CATALOG_DEFAULT' };
+      return { capabilityCode: code, effectiveState: 'COMMERCIAL_DISABLED', isAvailable: false, reason: 'Revoked', source: 'COMMERCIAL_LICENSE' };
+    });
+
+    prisma.asset.count.mockResolvedValueOnce(5); // total base assets
+
+    const authCtx = { userId: 'user-1', organizationId: 'org-unlicensed', role: Role.ADMIN };
+    const result = await service.getOverviewMetrics(authCtx);
+
+    expect(result.assets.total).toBe(5);
+    expect(result.vulnerabilities.total).toBe(0);
+    expect(result.policies.total).toBe(0);
+    expect(result.vendors.total).toBe(0);
+    expect(result.obligations.total).toBe(0);
+    expect(result.audits.totalPlans).toBe(0);
+    expect(result.risks.totalOpen).toBe(0);
+    expect(result.attentionRequired).toEqual([]);
+
+    // Verify DB queries for disabled modules were NOT called
+    expect(prisma.vulnerability.count).not.toHaveBeenCalled();
+    expect(prisma.vendor.count).not.toHaveBeenCalled();
+    expect(result.obligations.completionRate).toBe(0);
+    expect(result.obligations.isAvailable).toBe(false);
+  });
+
+  it('should calculate task completion rate correctly for licensed organization with task data', async () => {
+    prisma.complianceTask.count
+      .mockResolvedValueOnce(10) // obTotal
+      .mockResolvedValueOnce(3)  // obUpcoming
+      .mockResolvedValueOnce(2)  // obOverdue
+      .mockResolvedValueOnce(5); // obCompleted (5 out of 10)
+
+    const authCtx = { userId: 'user-1', organizationId: 'org-tasks-data', role: Role.ADMIN };
+    const result = await service.getOverviewMetrics(authCtx);
+
+    expect(result.obligations.total).toBe(10);
+    expect(result.obligations.completedCount).toBe(5);
+    expect(result.obligations.completionRate).toBe(50);
+    expect(result.obligations.isAvailable).toBe(true);
+  });
+
+  it('should report 100% completion for licensed organization with zero tasks (licensed-but-empty case)', async () => {
+    prisma.complianceTask.count
+      .mockResolvedValueOnce(0) // obTotal = 0
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(0);
+
+    const authCtx = { userId: 'user-1', organizationId: 'org-tasks-empty', role: Role.ADMIN };
+    const result = await service.getOverviewMetrics(authCtx);
+
+    expect(result.obligations.total).toBe(0);
+    expect(result.obligations.completionRate).toBe(100);
+    expect(result.obligations.isAvailable).toBe(true);
+  });
+
+  it('should generate canonical SPA targetView paths for attentionRequired exceptions', async () => {
+    prisma.vulnerability.findMany.mockResolvedValueOnce([
+      { id: 'v1', title: 'OpenSSL CVE', severity: 'CRITICAL', dueDate: new Date() },
+    ]);
+    prisma.complianceTask.findMany.mockResolvedValueOnce([
+      { id: 't1', title: 'Access Review', dueDate: new Date() },
+    ]);
+    prisma.auditFinding.findMany.mockResolvedValueOnce([
+      { id: 'f1', title: 'Missing 2FA', severity: 'HIGH', dueDate: new Date() },
+    ]);
+    prisma.auditCapa.findMany.mockResolvedValueOnce([
+      { id: 'c1', title: 'Patch Firewall', dueDate: new Date() },
+    ]);
+    prisma.policy.findMany.mockResolvedValueOnce([
+      { id: 'p1', title: 'Data Retention Policy', reviewDate: new Date() },
+    ]);
+    prisma.vendorAssessment.findMany.mockResolvedValueOnce([
+      { id: 'va1', title: 'SOC 2 Review', vendor: { name: 'CloudCorp' } },
+    ]);
+
+    const authCtx = { userId: 'user-1', organizationId: 'org-attention', role: Role.ADMIN };
+    const result = await service.getOverviewMetrics(authCtx);
+
+    const targetViews = (result.attentionRequired || []).map((item) => item.targetView);
+    expect(targetViews).toContain('vulnerabilities');
+    expect(targetViews).toContain('board');
+    expect(targetViews).toContain('audits');
+    expect(targetViews).toContain('remediation');
+    expect(targetViews).toContain('policies');
+    expect(targetViews).toContain('vendors');
+    // None should contain legacy slash-prefixed routes that fail SPA matching
+    targetViews.forEach((tv) => {
+      expect(tv).not.toMatch(/^\//);
+    });
   });
 });

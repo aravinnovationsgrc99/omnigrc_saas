@@ -18,11 +18,11 @@ import { RequireCapability } from '../common/decorators/require-capability.decor
 
 @Controller('api/v1')
 @UseGuards(JwtAuthGuard, ResourceAuthorizationGuard)
-@RequireCapability('AI_DOC_INTELLIGENCE')
 export class DocumentIntelligenceController {
   constructor(private readonly service: DocumentIntelligenceService) {}
 
   @Post('evidence/:id/analyze')
+  @RequireCapability('AI_DOC_INTELLIGENCE')
   @HttpCode(HttpStatus.ACCEPTED)
   async analyzeEvidence(
     @CurrentUser() user: ResourceAuthContext,
@@ -49,6 +49,7 @@ export class DocumentIntelligenceController {
   }
 
   @Post('analyses/:id/findings/:findingId/review')
+  @RequireCapability('AI_DOC_INTELLIGENCE')
   async reviewFinding(
     @CurrentUser() user: ResourceAuthContext,
     @Param('id') analysisId: string,
@@ -59,6 +60,7 @@ export class DocumentIntelligenceController {
   }
 
   @Post('analyses/:id/findings/:findingId/convert')
+  @RequireCapability('AI_DOC_INTELLIGENCE')
   async convertFinding(
     @CurrentUser() user: ResourceAuthContext,
     @Param('id') analysisId: string,
@@ -69,6 +71,7 @@ export class DocumentIntelligenceController {
   }
 
   @Post('analyses/:id/retry')
+  @RequireCapability('AI_DOC_INTELLIGENCE')
   async retryAnalysis(
     @CurrentUser() user: ResourceAuthContext,
     @Param('id') analysisId: string,

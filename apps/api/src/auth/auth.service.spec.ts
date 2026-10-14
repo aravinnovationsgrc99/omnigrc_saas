@@ -5,6 +5,7 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { ResendMailerService } from '../notifications/mailer/resend-mailer.service';
 import { JwtService } from '@nestjs/jwt';
 import { LicenseVerificationService } from '../license-verification/license-verification.service';
+import { EffectiveServiceStateResolver } from '../service-control/effective-service-state-resolver.service';
 import {
   ConflictException,
   ForbiddenException,
@@ -14,15 +15,24 @@ import {
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
-import { Role, InvitationStatus, OrgType } from '@omnigrc/shared';
+import { Role, InvitationStatus, OrgType, ProductAccessStatus } from '@omnigrc/shared';
 
 describe('AuthService', () => {
   let service: AuthService;
   let prisma: jest.Mocked<any>;
   let auditLogsService: jest.Mocked<any>;
   let resendMailerService: jest.Mocked<any>;
+  let effectiveResolver: jest.Mocked<any>;
 
   beforeEach(async () => {
+    effectiveResolver = {
+      resolveAllEffectiveStates: jest.fn().mockResolvedValue({
+        GRC_CORE_ASSETS: { capabilityCode: 'GRC_CORE_ASSETS', effectiveState: 'AVAILABLE', isAvailable: true },
+      }),
+      resolveEffectiveState: jest.fn().mockResolvedValue({
+        capabilityCode: 'GRC_CORE_ASSETS', effectiveState: 'AVAILABLE', isAvailable: true
+      }),
+    };
     prisma = {
       $transaction: jest.fn((callback) => callback(prisma)),
       user: {
@@ -48,6 +58,10 @@ describe('AuthService', () => {
       },
       organizationControlStateProjection: {
         findUnique: jest.fn().mockResolvedValue(null),
+      },
+      organizationMembership: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        upsert: jest.fn().mockResolvedValue({}),
       },
     };
 
@@ -77,6 +91,10 @@ describe('AuthService', () => {
             sign: jest.fn().mockReturnValue('mocked-jwt-token'),
             verify: jest.fn().mockReturnValue({ sub: 'user-1' }),
           },
+        },
+        {
+          provide: EffectiveServiceStateResolver,
+          useValue: effectiveResolver,
         },
       ],
     }).compile();
@@ -553,6 +571,111 @@ describe('AuthService', () => {
       );
     });
 
+    it('should reject switchContext with 403 PRODUCT_ACCESS_REVOKED when user membership in target organization is SUSPENDED', async () => {
+      prisma.organization.findUnique
+        .mockResolvedValueOnce({ id: msspHomeOrgId, type: OrgType.MSSP_PROVIDER })
+        .mockResolvedValueOnce({
+          id: clientOrgId,
+          type: OrgType.CLIENT_TENANT,
+          parentOrganizationId: msspHomeOrgId,
+          name: 'Client Org',
+          primaryRegion: 'India',
+        });
+
+      prisma.user.findUnique.mockResolvedValue({
+        id: msspUserId,
+        organizationId: msspHomeOrgId,
+        role: Role.MSSP_ADMIN,
+      });
+
+      prisma.organizationMembership.findUnique.mockResolvedValueOnce({
+        id: 'mem-1',
+        organizationId: clientOrgId,
+        userId: msspUserId,
+        status: ProductAccessStatus.SUSPENDED,
+      });
+
+      await expect(
+        service.switchContext(msspUserId, msspHomeOrgId, Role.MSSP_ADMIN, {
+          targetOrganizationId: clientOrgId,
+        }),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(auditLogsService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'MSSP_CONTEXT_SWITCH_FAILED',
+          entityId: clientOrgId,
+          metadata: expect.objectContaining({
+            reason: 'User membership in target organization is suspended',
+          }),
+        }),
+      );
+    });
+
+    it('should reject switchContext with 403 PRODUCT_ACCESS_REVOKED when user membership in target organization is REVOKED', async () => {
+      prisma.organization.findUnique
+        .mockResolvedValueOnce({ id: msspHomeOrgId, type: OrgType.MSSP_PROVIDER })
+        .mockResolvedValueOnce({
+          id: clientOrgId,
+          type: OrgType.CLIENT_TENANT,
+          parentOrganizationId: msspHomeOrgId,
+          name: 'Client Org',
+          primaryRegion: 'India',
+        });
+
+      prisma.user.findUnique.mockResolvedValue({
+        id: msspUserId,
+        organizationId: msspHomeOrgId,
+        role: Role.MSSP_ADMIN,
+      });
+
+      prisma.organizationMembership.findUnique.mockResolvedValueOnce({
+        id: 'mem-2',
+        organizationId: clientOrgId,
+        userId: msspUserId,
+        status: ProductAccessStatus.REVOKED,
+      });
+
+      await expect(
+        service.switchContext(msspUserId, msspHomeOrgId, Role.MSSP_ADMIN, {
+          targetOrganizationId: clientOrgId,
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should succeed when user has ACTIVE membership and must never mutate or upsert membership', async () => {
+      prisma.organization.findUnique
+        .mockResolvedValueOnce({ id: msspHomeOrgId, type: OrgType.MSSP_PROVIDER })
+        .mockResolvedValueOnce({
+          id: clientOrgId,
+          type: OrgType.CLIENT_TENANT,
+          parentOrganizationId: msspHomeOrgId,
+          name: 'Client Org',
+          primaryRegion: 'India',
+          createdAt: new Date(),
+        });
+
+      prisma.user.findUnique.mockResolvedValue({
+        id: msspUserId,
+        organizationId: msspHomeOrgId,
+        role: Role.MSSP_ADMIN,
+      });
+
+      prisma.organizationMembership.findUnique.mockResolvedValueOnce({
+        id: 'mem-3',
+        organizationId: clientOrgId,
+        userId: msspUserId,
+        status: ProductAccessStatus.ACTIVE,
+      });
+
+      const result = await service.switchContext(msspUserId, msspHomeOrgId, Role.MSSP_ADMIN, {
+        targetOrganizationId: clientOrgId,
+      });
+
+      expect(result.accessToken).toBeDefined();
+      expect(prisma.organizationMembership.upsert).not.toHaveBeenCalled();
+    });
+
     it('refreshToken should return normal token WITHOUT actingViaMsspId (context token cannot be refreshed)', async () => {
       // Simulate the jwtService.verify returning a context token payload
       const jwtVerifyMock = jest.fn().mockReturnValue({
@@ -581,6 +704,10 @@ describe('AuthService', () => {
           {
             provide: JwtService,
             useValue: { sign: jwtSignMock, verify: jwtVerifyMock },
+          },
+          {
+            provide: EffectiveServiceStateResolver,
+            useValue: effectiveResolver,
           },
         ],
       }).compile();

@@ -11,13 +11,24 @@ import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { FrameworksModule } from '../frameworks/frameworks.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ServiceControlModule } from '../service-control/service-control.module';
+import { RiskControlsModule } from '../risk-controls/risk-controls.module';
+import { EvidenceVaultModule } from '../evidence/evidence-vault.module';
+import { BusinessAuditsModule } from '../business-audits/business-audits.module';
 
 import { GrcContextResolver } from './ai/grc-context-resolver';
 import { GrcIntelligenceChatService } from './ai/grc-intelligence-chat.service';
 import { ResourceAuthorizationService } from '../auth/resource-authorization.service';
 
 @Module({
-  imports: [PrismaModule, AuditLogsModule, FrameworksModule, ServiceControlModule],
+  imports: [
+    PrismaModule,
+    AuditLogsModule,
+    FrameworksModule,
+    ServiceControlModule,
+    RiskControlsModule,
+    EvidenceVaultModule,
+    BusinessAuditsModule,
+  ],
   controllers: [ControlsController, GrcIntelligenceController],
   providers: [
     ControlsService,

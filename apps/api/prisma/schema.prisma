@@ -221,6 +221,7 @@ model Organization {
   assets          Asset[]
   risks           Risk[]
   controls        Control[]
+  riskControls    RiskControl[]
   complianceTasks ComplianceTask[]
   notifications   Notification[]
   invitations     Invitation[]
@@ -380,7 +381,9 @@ model Risk {
   auditFindings      AuditFinding[]
   evidenceAssociations RiskEvidence[]
   approvalAssociations RiskApproval[]
+  controlAssociations  RiskControl[]
 
+  @@unique([id, organizationId])
   @@index([organizationId])
   @@index([departmentId])
   @@index([projectId])
@@ -603,7 +606,9 @@ model Control {
   auditCheckItems AuditCheckItem[]
   evidenceAssociations ControlEvidence[]
   approvalAssociations ControlApproval[]
+  riskAssociations     RiskControl[]
 
+  @@unique([id, organizationId])
   @@index([organizationId])
   @@index([departmentId])
   @@index([projectId])
@@ -634,6 +639,33 @@ model ControlFrameworkMapping {
   @@index([frameworkReferenceId])
   @@index([status])
   @@map("control_framework_mappings")
+}
+
+enum RiskControlMitigationType {
+  PREVENTATIVE
+  DETECTIVE
+  CORRECTIVE
+  COMPENSATING
+}
+
+model RiskControl {
+  id             String                    @id @default(uuid())
+  organizationId String
+  riskId         String
+  controlId      String
+  mitigationType RiskControlMitigationType @default(PREVENTATIVE)
+  notes          String?
+  createdAt      DateTime                  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  risk         Risk         @relation(fields: [riskId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  control      Control      @relation(fields: [controlId, organizationId], references: [id, organizationId], onDelete: Cascade)
+
+  @@unique([riskId, controlId])
+  @@index([organizationId])
+  @@index([riskId])
+  @@index([controlId])
+  @@map("risk_controls")
 }
 
 model ComplianceTask {

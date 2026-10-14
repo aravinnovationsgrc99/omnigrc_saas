@@ -23,6 +23,22 @@ export const clearStoredTokens = () => {
   localStorage.removeItem(REFRESH_TOKEN_KEY);
 };
 
+export class ApiClientError extends Error {
+  status: number;
+  statusCode: number;
+  code?: string;
+  data?: any;
+
+  constructor(message: string, status: number, code?: string, data?: any) {
+    super(message);
+    this.name = 'ApiClientError';
+    this.status = status;
+    this.statusCode = status;
+    this.code = code;
+    this.data = data;
+  }
+}
+
 export async function apiRequest<T = any>(
   endpoint: string,
   options: RequestInit = {},
@@ -71,7 +87,9 @@ export async function apiRequest<T = any>(
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || `Request failed with status ${response.status}`);
+    const message = errorData.message || `Request failed with status ${response.status}`;
+    const code = errorData.code;
+    throw new ApiClientError(message, response.status, code, errorData);
   }
 
   return response.json();

@@ -29,7 +29,11 @@ const FRAMEWORK_ACCENTS: Record<string, { bg: string; color: string; border: str
   HIPAA: { bg: '#FFE4E6', color: '#E11D48', border: '#FECDD3', label: 'HIPAA' },
 };
 
-export function ControlMappingView() {
+interface ControlMappingViewProps {
+  onNavigateToView?: (view: string) => void;
+}
+
+export function ControlMappingView({ onNavigateToView }: ControlMappingViewProps = {}) {
   const { showToast } = useToast();
   const [controls, setControls] = useState<ControlDto[]>([]);
   const [frameworks, setFrameworks] = useState<FrameworkApiDto[]>([]);
@@ -103,6 +107,7 @@ export function ControlMappingView() {
           setSelectedControlId(null);
           fetchControls();
         }}
+        onNavigateToView={onNavigateToView}
       />
     );
   }

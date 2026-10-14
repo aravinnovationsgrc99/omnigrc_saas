@@ -6,6 +6,8 @@ import { Layers, Lock, ShieldCheck, AlertCircle, HelpCircle, ChevronRight } from
 import { HorizontalBarChart, BarItem } from '../charts/horizontal-bar-chart';
 import { AnimatedCountUp } from '@/components/ui/animated-count-up';
 
+import { ModuleNotLicensedCard } from '@/components/ui/module-not-licensed-card';
+
 interface EntitledFrameworkCoverageWidgetProps {
   metrics?: EntitledFrameworkCoverageSummaryDto[];
   controls?: ControlCoverageMetricsDto;
@@ -17,6 +19,16 @@ export function EntitledFrameworkCoverageWidget({
   controls,
   onNavigateToView,
 }: EntitledFrameworkCoverageWidgetProps) {
+  if (controls?.isAvailable === false) {
+    return (
+      <ModuleNotLicensedCard
+        title="Framework Coverage"
+        description="Compliance framework alignment"
+        icon={<Layers size={18} />}
+      />
+    );
+  }
+
   const colorPalette = ['#0d9488', '#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#6366f1'];
 
   const coverageItems: BarItem[] = metrics.map((fw, index) => ({

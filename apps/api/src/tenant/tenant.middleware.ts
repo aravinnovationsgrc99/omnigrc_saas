@@ -12,6 +12,7 @@ export class TenantMiddleware implements NestMiddleware {
     let organizationId: string | undefined;
     let userId: string | undefined;
     let role: string | undefined;
+    let actingViaMsspId: string | undefined;
 
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.substring(7);
@@ -27,6 +28,7 @@ export class TenantMiddleware implements NestMiddleware {
           organizationId = payload.organizationId;
           userId = payload.sub;
           role = payload.role;
+          actingViaMsspId = payload.actingViaMsspId;
         }
       } catch {
         // Verification failure (expired, forged, wrong secret) → context is NOT set.
@@ -34,10 +36,11 @@ export class TenantMiddleware implements NestMiddleware {
         organizationId = undefined;
         userId = undefined;
         role = undefined;
+        actingViaMsspId = undefined;
       }
     }
 
-    TenantContext.run({ organizationId, userId, role }, () => {
+    TenantContext.run({ organizationId, userId, role, actingViaMsspId }, () => {
       next();
     });
   }
