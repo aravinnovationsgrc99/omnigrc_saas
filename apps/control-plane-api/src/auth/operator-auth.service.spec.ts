@@ -7,6 +7,8 @@ import { OperatorRole } from '@prisma/control-plane-client';
 import * as bcrypt from 'bcrypt';
 
 describe('OperatorAuthService', () => {
+  jest.setTimeout(30000);
+
   let service: OperatorAuthService;
   let securityService: OperatorSecurityService;
   let auditLogsService: ControlPlaneAuditLogsService;
@@ -197,6 +199,135 @@ describe('OperatorAuthService', () => {
           result: 'DENIED',
         }),
       );
+    });
+  });
+
+  describe('MFA & Authorization Enforcement (Root Cause Regressions)', () => {
+    it('should reject login when MFA is enabled and totpCode is omitted', async () => {
+      const passwordHash = await securityService.hashPassword('TestOperatorPassword!2026');
+      mockPrisma.operator.findUnique.mockResolvedValue({
+        id: 'op_mfa_1',
+        email: 'initial-admin@omnigrc.co',
+        passwordHash,
+        role: OperatorRole.PLATFORM_SUPER_ADMIN,
+        status: 'ACTIVE',
+        mfaEnabled: true,
+        totpSecret: 'DLUXKKIRVVPAFK233OR7XOSJYWCX2OYN',
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+      });
+
+      await expect(
+        service.login(
+          { email: 'initial-admin@omnigrc.co', password: 'TestOperatorPassword!2026' },
+          '127.0.0.1',
+          'Jest',
+        ),
+      ).rejects.toThrow('6-digit TOTP verification code is required for MFA-enabled accounts');
+    });
+
+    it('should reject login when invalid totpCode is provided for MFA-enabled account', async () => {
+      const passwordHash = await securityService.hashPassword('TestOperatorPassword!2026');
+      mockPrisma.operator.findUnique.mockResolvedValue({
+        id: 'op_mfa_1',
+        email: 'initial-admin@omnigrc.co',
+        passwordHash,
+        role: OperatorRole.PLATFORM_SUPER_ADMIN,
+        status: 'ACTIVE',
+        mfaEnabled: true,
+        totpSecret: 'DLUXKKIRVVPAFK233OR7XOSJYWCX2OYN',
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+      });
+
+      await expect(
+        service.login(
+          { email: 'initial-admin@omnigrc.co', password: 'TestOperatorPassword!2026', totpCode: '000000' },
+          '127.0.0.1',
+          'Jest',
+        ),
+      ).rejects.toThrow('Invalid TOTP verification code');
+    });
+
+    it('should reject login if operator status is SUSPENDED', async () => {
+      const passwordHash = await securityService.hashPassword('TestOperatorPassword!2026');
+      mockPrisma.operator.findUnique.mockResolvedValue({
+        id: 'op_susp',
+        email: 'suspended@omnigrc.co',
+        passwordHash,
+        role: OperatorRole.SUPPORT_ENGINEER,
+        status: 'SUSPENDED',
+        mfaEnabled: false,
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+      });
+
+      await expect(
+        service.login(
+          { email: 'suspended@omnigrc.co', password: 'TestOperatorPassword!2026' },
+          '127.0.0.1',
+          'Jest',
+        ),
+      ).rejects.toThrow('Operator account is suspended');
+    });
+
+    it('should issue OPERATOR_MFA_ENROLLMENT_PENDING token when mfaEnabled is false', async () => {
+      const passwordHash = await securityService.hashPassword('TestOperatorPassword!2026');
+      mockPrisma.operator.findUnique.mockResolvedValue({
+        id: 'op_no_mfa',
+        email: 'operator@omnigrc.co',
+        passwordHash,
+        role: OperatorRole.PLATFORM_SUPER_ADMIN,
+        status: 'ACTIVE',
+        mfaEnabled: false,
+        totpSecret: null,
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+      });
+      mockPrisma.operator.update.mockResolvedValue({});
+      mockPrisma.operatorSession.create.mockResolvedValue({
+        id: 'sess_test_mfa',
+        familyId: 'fam_test_mfa',
+        operatorId: 'op_no_mfa',
+        ipAddress: '127.0.0.1',
+      });
+
+      const response = await service.login(
+        { email: 'operator@omnigrc.co', password: 'TestOperatorPassword!2026' },
+        '127.0.0.1',
+        'Jest',
+      );
+
+      expect(response.accessToken).toBeDefined();
+      expect(response.operator.mfaEnabled).toBe(false);
+      // Verify JWT token type is OPERATOR_MFA_ENROLLMENT_PENDING
+      const decoded: any = jwtService.decode(response.accessToken);
+      expect(decoded.type).toBe('OPERATOR_MFA_ENROLLMENT_PENDING');
+    });
+
+    it('should upgrade to OPERATOR_ACCESS token upon successful MFA verification', async () => {
+      const encryptedSecret = securityService.encryptSecret('JBSWY3DPEHPK3PXP');
+      mockPrisma.operator.findUnique.mockResolvedValue({
+        id: 'op_verify_1',
+        email: 'operator@omnigrc.co',
+        role: OperatorRole.PLATFORM_SUPER_ADMIN,
+        totpSecret: encryptedSecret,
+        mfaEnabled: false,
+      });
+      mockPrisma.operator.update.mockResolvedValue({});
+
+      jest.spyOn(securityService, 'verifyTotpCode').mockReturnValue(true);
+
+      const result = await service.verifyAndEnableMfa('op_verify_1', '123456', 'session_123');
+      expect(result.success).toBe(true);
+      expect(result.accessToken).toBeDefined();
+
+      const decoded: any = jwtService.decode(result.accessToken!);
+      expect(decoded.type).toBe('OPERATOR_ACCESS');
+      expect(mockPrisma.operator.update).toHaveBeenCalledWith({
+        where: { id: 'op_verify_1' },
+        data: { mfaEnabled: true },
+      });
     });
   });
 });

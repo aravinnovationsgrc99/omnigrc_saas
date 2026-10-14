@@ -7,28 +7,40 @@ const logger = new Logger('ControlPlaneBootstrap');
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Phase 10 Security: The Control Plane is a server-to-server internal API with no
-  // direct browser clients. CORS is disabled by default.
-  // Set CONTROL_PLANE_CORS_ORIGINS to a comma-separated list of allowed origins
-  // only for internal Arav ops tooling that requires browser access.
+  // Control Plane CORS Configuration:
+  // Allows Control Panel Web (control.omnigrc.co / localhost:3002) to communicate securely.
   const corsOrigins = process.env.CONTROL_PLANE_CORS_ORIGINS;
-  if (corsOrigins) {
-    const allowedOrigins = corsOrigins
-      .split(',')
-      .map((o) => o.trim())
-      .filter(Boolean);
-    app.enableCors({ origin: allowedOrigins, credentials: false });
-    logger.warn(
-      `Control Plane CORS enabled for explicit origins: ${allowedOrigins.join(', ')}`,
-    );
-  } else {
-    // CORS disabled: server-to-server calls do not require CORS headers.
-    app.enableCors({ origin: false });
-  }
-
-  // Phase 10 Security: Warn at startup if admin key is not explicitly configured.
   const isProduction =
     process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
+
+  const defaultOrigins = isProduction
+    ? ['https://control.omnigrc.co']
+    : [
+        'http://localhost:3002',
+        'http://127.0.0.1:3002',
+        'https://control.omnigrc.co',
+      ];
+  const allowedOrigins = corsOrigins
+    ? corsOrigins.split(',').map((o) => o.trim()).filter(Boolean)
+    : defaultOrigins;
+
+  app.enableCors({
+    origin: allowedOrigins,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'x-correlation-id',
+      'x-operator-access-token',
+      'x-control-plane-admin-key',
+    ],
+  });
+  logger.log(
+    `Control Plane CORS enabled for origins: ${allowedOrigins.join(', ')}`,
+  );
+
+  // Phase 10 Security: Warn at startup if admin key is not explicitly configured.
   if (!process.env.CONTROL_PLANE_ADMIN_KEY) {
     if (isProduction) {
       logger.error(

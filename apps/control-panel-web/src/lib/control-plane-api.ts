@@ -79,9 +79,14 @@ export function clearAuthTokens() {
 
 function getBaseUrl(): string {
   if (typeof window !== 'undefined') {
-    return process.env.NEXT_PUBLIC_CONTROL_PLANE_API_URL || 'http://localhost:3001';
+    if (process.env.NEXT_PUBLIC_CONTROL_PLANE_API_URL) {
+      return process.env.NEXT_PUBLIC_CONTROL_PLANE_API_URL;
+    }
+    return process.env.NODE_ENV === 'production' ? 'https://control-api.omnigrc.co' : 'http://localhost:4001';
   }
-  return process.env.CONTROL_PLANE_API_URL || 'http://localhost:3001';
+  const ssrUrl = process.env.CONTROL_PLANE_API_URL || process.env.NEXT_PUBLIC_CONTROL_PLANE_API_URL;
+  if (ssrUrl) return ssrUrl;
+  return process.env.NODE_ENV === 'production' ? 'https://control-api.omnigrc.co' : 'http://localhost:4001';
 }
 
 function generateCorrelationId(): string {
@@ -213,6 +218,23 @@ export const controlPlaneApi = {
 
   getMe: async (): Promise<OperatorProfile> => {
     return request<OperatorProfile>('v1/operator-auth/me', { method: 'GET' });
+  },
+
+  setupMfa: async (): Promise<{ secret: string; otpauthUrl: string }> => {
+    return request<{ secret: string; otpauthUrl: string }>('v1/operator-auth/mfa/setup', {
+      method: 'POST',
+    });
+  },
+
+  verifyMfa: async (totpCode: string): Promise<{ success: boolean; accessToken?: string }> => {
+    const res = await request<{ success: boolean; accessToken?: string }>('v1/operator-auth/mfa/verify', {
+      method: 'POST',
+      body: JSON.stringify({ totpCode }),
+    });
+    if (res.accessToken) {
+      setAuthTokens(res.accessToken, inMemoryRefreshToken);
+    }
+    return res;
   },
 
   // Operator Administration Operations

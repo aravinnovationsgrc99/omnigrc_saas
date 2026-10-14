@@ -17,7 +17,13 @@ describe('OperatorRbacGuard', () => {
       getHandler: () => ({}),
       getClass: () => ({}),
       switchToHttp: () => ({
-        getRequest: () => ({ operator }),
+        getRequest: () => ({
+          operator: {
+            mfaEnabled: true,
+            isMfaRestricted: false,
+            ...operator,
+          },
+        }),
       }),
     } as any);
 
@@ -28,18 +34,32 @@ describe('OperatorRbacGuard', () => {
     expect(guard.canActivate(context)).toBe(true);
   });
 
-  it('should allow PLATFORM_SUPER_ADMIN full access regardless of required role', () => {
+  it('should allow PLATFORM_SUPER_ADMIN full access regardless of required role when MFA is verified', () => {
     jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue([OperatorRole.COMMERCIAL_OPERATOR]);
     const context = createMockContext({ role: OperatorRole.PLATFORM_SUPER_ADMIN, status: 'ACTIVE' });
 
     expect(guard.canActivate(context)).toBe(true);
   });
 
-  it('should allow matching role access', () => {
+  it('should allow matching role access when MFA is verified', () => {
     jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue([OperatorRole.COMMERCIAL_OPERATOR]);
     const context = createMockContext({ role: OperatorRole.COMMERCIAL_OPERATOR, status: 'ACTIVE' });
 
     expect(guard.canActivate(context)).toBe(true);
+  });
+
+  it('should block even PLATFORM_SUPER_ADMIN if mfaEnabled is false', () => {
+    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue([OperatorRole.COMMERCIAL_OPERATOR]);
+    const context = createMockContext({ role: OperatorRole.PLATFORM_SUPER_ADMIN, status: 'ACTIVE', mfaEnabled: false });
+
+    expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
+  });
+
+  it('should block operator if isMfaRestricted is true', () => {
+    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue([OperatorRole.COMMERCIAL_OPERATOR]);
+    const context = createMockContext({ role: OperatorRole.COMMERCIAL_OPERATOR, status: 'ACTIVE', isMfaRestricted: true });
+
+    expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
   });
 
   it('should reject non-matching role access with ForbiddenException', () => {

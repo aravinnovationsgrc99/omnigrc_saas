@@ -182,12 +182,16 @@ export class OperatorAuthService {
       },
     });
 
+    const tokenType = operator.mfaEnabled
+      ? 'OPERATOR_ACCESS'
+      : 'OPERATOR_MFA_ENROLLMENT_PENDING';
+
     const accessToken = this.jwtService.sign({
       sub: operator.id,
       email: operator.email,
       role: operator.role,
       sessionId: session.id,
-      type: 'OPERATOR_ACCESS',
+      type: tokenType,
     });
 
     await this.auditLogsService.log({
@@ -199,7 +203,7 @@ export class OperatorAuthService {
       ipAddress,
       correlationId,
       result: 'SUCCESS',
-      metadata: { sessionId: session.id },
+      metadata: { sessionId: session.id, mfaEnforced: operator.mfaEnabled },
     });
 
     return {
@@ -316,12 +320,16 @@ export class OperatorAuthService {
         },
       });
 
+      const tokenType = session.operator.mfaEnabled
+        ? 'OPERATOR_ACCESS'
+        : 'OPERATOR_MFA_ENROLLMENT_PENDING';
+
       const accessToken = this.jwtService.sign({
         sub: session.operator.id,
         email: session.operator.email,
         role: session.operator.role,
         sessionId: newSession.id,
-        type: 'OPERATOR_ACCESS',
+        type: tokenType,
       });
 
       await this.auditLogsService.log({
@@ -333,6 +341,7 @@ export class OperatorAuthService {
         ipAddress,
         correlationId,
         result: 'SUCCESS',
+        metadata: { mfaEnforced: session.operator.mfaEnabled },
       });
 
       return {
@@ -410,7 +419,11 @@ export class OperatorAuthService {
     return mfaData;
   }
 
-  async verifyAndEnableMfa(operatorId: string, totpCode: string): Promise<{ success: boolean }> {
+  async verifyAndEnableMfa(
+    operatorId: string,
+    totpCode: string,
+    sessionId?: string,
+  ): Promise<{ success: boolean; accessToken?: string }> {
     const operator = await this.prisma.operator.findUnique({ where: { id: operatorId } });
     if (!operator || !operator.totpSecret) {
       throw new BadRequestException('MFA setup has not been initiated for this account');
@@ -435,7 +448,19 @@ export class OperatorAuthService {
       result: 'SUCCESS',
     });
 
-    return { success: true };
+    // Issue upgraded OPERATOR_ACCESS token upon verified MFA enrollment
+    let accessToken: string | undefined = undefined;
+    if (sessionId) {
+      accessToken = this.jwtService.sign({
+        sub: operator.id,
+        email: operator.email,
+        role: operator.role,
+        sessionId,
+        type: 'OPERATOR_ACCESS',
+      });
+    }
+
+    return { success: true, ...(accessToken ? { accessToken } : {}) };
   }
 
   async bootstrapOperator(

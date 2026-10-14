@@ -8,9 +8,8 @@ export class ControlPlanePrismaService extends PrismaClient implements OnModuleI
       datasources: {
         db: {
           url:
-            process.env.CONTROL_PLANE_DIRECT_URL ||
             process.env.CONTROL_PLANE_DATABASE_URL ||
-            'postgresql://postgres.wzkccgutcqjjxidwiwcx:N3Tn8UovDLpBHuXm@aws-0-ap-south-1.pooler.supabase.com:5432/postgres',
+            process.env.CONTROL_PLANE_DIRECT_URL,
         },
       },
     });

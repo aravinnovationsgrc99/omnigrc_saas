@@ -34,6 +34,13 @@ export class OperatorRbacGuard implements CanActivate {
       throw new ForbiddenException('Operator account is suspended');
     }
 
+    // Server-enforced MFA barrier: all administrative endpoints require active verified MFA
+    if (operator.isMfaRestricted || !operator.mfaEnabled) {
+      throw new ForbiddenException(
+        'MFA re-enrollment required: full operator administrative access is restricted until MFA setup and verification are completed',
+      );
+    }
+
     // PLATFORM_SUPER_ADMIN has full platform administrative authority
     if (operator.role === OperatorRole.PLATFORM_SUPER_ADMIN) {
       return true;

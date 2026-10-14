@@ -30,10 +30,6 @@ export class OperatorJwtStrategy extends PassportStrategy(Strategy, 'operator-jw
   }
 
   async validate(payload: OperatorJwtPayload) {
-    if (payload.type !== 'OPERATOR_ACCESS') {
-      throw new UnauthorizedException('Invalid token type for operator authentication');
-    }
-
     const operator = await this.prisma.operator.findUnique({
       where: { id: payload.sub },
     });
@@ -55,6 +51,19 @@ export class OperatorJwtStrategy extends PassportStrategy(Strategy, 'operator-jw
       throw new UnauthorizedException('Operator session has expired or been revoked');
     }
 
+    // Server-enforced MFA validation
+    if (payload.type === 'OPERATOR_ACCESS') {
+      if (!operator.mfaEnabled) {
+        throw new UnauthorizedException(
+          'MFA re-enrollment required: operator access token is no longer valid',
+        );
+      }
+    } else if (payload.type === 'OPERATOR_MFA_ENROLLMENT_PENDING') {
+      // Permitted for restricted MFA re-enrollment flow only
+    } else {
+      throw new UnauthorizedException('Invalid token type for operator authentication');
+    }
+
     return {
       id: operator.id,
       email: operator.email,
@@ -64,6 +73,8 @@ export class OperatorJwtStrategy extends PassportStrategy(Strategy, 'operator-jw
       sessionId: session.id,
       familyId: session.familyId,
       sessionIp: session.ipAddress,
+      mfaEnabled: operator.mfaEnabled,
+      isMfaRestricted: payload.type === 'OPERATOR_MFA_ENROLLMENT_PENDING' || !operator.mfaEnabled,
     };
   }
 }

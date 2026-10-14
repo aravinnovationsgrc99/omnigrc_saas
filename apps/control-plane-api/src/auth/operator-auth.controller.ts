@@ -67,7 +67,7 @@ export class OperatorAuthController {
   @HttpCode(HttpStatus.OK)
   async verifyMfa(@Req() req: any, @Body() dto: VerifyMfaDto) {
     const operator = req.user;
-    return this.authService.verifyAndEnableMfa(operator.id, dto.totpCode);
+    return this.authService.verifyAndEnableMfa(operator.id, dto.totpCode, operator.sessionId);
   }
 
   @Get('me')
