@@ -19,10 +19,17 @@ describe('FrameworkEntitlementsService', () => {
   const mockPrismaService = {
     organizationFrameworkEntitlement: {
       findMany: jest.fn(),
+      findFirst: jest.fn(),
       upsert: jest.fn(),
     },
     framework: {
       findMany: jest.fn(),
+      findFirst: jest.fn(),
+    },
+    systemLicenseState: {
+      findFirst: jest.fn(),
+    },
+    deployment: {
       findFirst: jest.fn(),
     },
   };

@@ -40,11 +40,13 @@ describe('EvidenceService - Control Evidence Association Suite', () => {
       evidence: {
         findFirst: jest.fn(),
         findUnique: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0),
         create: jest.fn(),
         update: jest.fn(),
       },
       user: {
-        findMany: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
         findUnique: jest.fn().mockResolvedValue({ id: 'user-1', name: 'User 1', email: 'user1@example.com' }),
       },
     };
@@ -282,6 +284,129 @@ describe('EvidenceService - Control Evidence Association Suite', () => {
       await expect(
         service.downloadEvidence(authCtx, 'ev-malware', mockRes),
       ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('findAll (Vault & Scope Filtering)', () => {
+    it('applies frameworkReferenceId at the database level with proper pagination', async () => {
+      prisma.evidence.findMany.mockResolvedValue([
+        {
+          id: 'ev-scoped-1',
+          organizationId: 'org-1',
+          title: 'Access Control Policy Screenshot',
+          description: 'Proof for AC-1',
+          evidenceType: EvidenceType.IMAGE,
+          fileName: 'proof.png',
+          fileSize: 1024,
+          mimeType: 'image/png',
+          storageKey: 'key-1',
+          checksum: 'sha-scoped-1',
+          status: EvidenceStatus.ACTIVE,
+          scanStatus: EvidenceScanStatus.CLEAN,
+          uploadedById: 'user-1',
+          retentionUntil: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          controlAssociations: [],
+          riskAssociations: [],
+          policyAssociations: [],
+          auditCheckAssociations: [],
+          auditFindingAssociations: [],
+          vendorAssociations: [],
+          vulnerabilityAssociations: [],
+          incidentAssociations: [],
+          frameworkReferences: [
+            {
+              frameworkReference: {
+                id: 'ref-iso-1',
+                identifier: 'A.9.1.1',
+                title: 'Access control policy',
+                frameworkVersion: {
+                  framework: { code: 'ISO27001', name: 'ISO/IEC 27001' },
+                },
+              },
+            },
+          ],
+        },
+      ]);
+      prisma.evidence.count.mockResolvedValue(1);
+
+      const result = await service.findAll(authCtx, {
+        page: 2,
+        limit: 10,
+        frameworkReferenceId: 'ref-iso-1',
+      });
+
+      expect(prisma.evidence.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          skip: 10,
+          take: 10,
+          where: expect.objectContaining({
+            organizationId: 'org-1',
+            deletedAt: null,
+            frameworkReferences: {
+              some: { frameworkReferenceId: 'ref-iso-1' },
+            },
+          }),
+        }),
+      );
+      expect(prisma.evidence.count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            organizationId: 'org-1',
+            frameworkReferences: {
+              some: { frameworkReferenceId: 'ref-iso-1' },
+            },
+          }),
+        }),
+      );
+      expect(result.items.length).toBe(1);
+      expect(result.total).toBe(1);
+      expect(result.page).toBe(2);
+      expect(result.items[0].frameworkReferences?.[0].identifier).toBe('A.9.1.1');
+      expect(result.items[0].frameworkReferences?.[0].frameworkCode).toBe('ISO27001');
+    });
+
+    it('applies frameworkId filter via nested frameworkVersion relationship at database level', async () => {
+      prisma.evidence.findMany.mockResolvedValue([]);
+      prisma.evidence.count.mockResolvedValue(0);
+
+      await service.findAll(authCtx, {
+        frameworkId: 'fw-soc2',
+      });
+
+      expect(prisma.evidence.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            organizationId: 'org-1',
+            frameworkReferences: {
+              some: {
+                frameworkReference: {
+                  frameworkVersion: { frameworkId: 'fw-soc2' },
+                },
+              },
+            },
+          }),
+        }),
+      );
+    });
+
+    it('enforces multi-tenant isolation from ResourceAuthorizationService', async () => {
+      resourceAuthService.getScopeWhereClause.mockResolvedValue({
+        organizationId: 'org-custom-tenant',
+      });
+      prisma.evidence.findMany.mockResolvedValue([]);
+      prisma.evidence.count.mockResolvedValue(0);
+
+      await service.findAll({ userId: 'u-x', organizationId: 'org-custom-tenant', role: Role.ADMIN }, {});
+
+      expect(prisma.evidence.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            organizationId: 'org-custom-tenant',
+          }),
+        }),
+      );
     });
   });
 });

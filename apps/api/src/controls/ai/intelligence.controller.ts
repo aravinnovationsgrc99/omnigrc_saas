@@ -84,6 +84,9 @@ export class GrcIntelligenceController {
     return {
       disclaimer: 'AI Assistance — Suggestions are generated for advisory review and must be authoritatively verified by a compliance analyst.',
       tierUsed: result.tierUsed,
+      providerName: result.providerName,
+      isFallback: result.isFallback,
+      fallbackReason: result.fallbackReason,
       suggestions: result.acceptedSuggestions,
       query: { controlName, controlDescription },
     };

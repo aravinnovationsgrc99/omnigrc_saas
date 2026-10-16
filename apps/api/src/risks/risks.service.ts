@@ -47,6 +47,14 @@ export class RisksService {
       where.impact = query.impact;
     }
 
+    if (query.frameworkId) {
+      where.frameworkId = query.frameworkId;
+    }
+
+    if (query.frameworkReferenceId) {
+      where.frameworkReferenceId = query.frameworkReferenceId;
+    }
+
     if (query.scoreBand) {
       if (query.scoreBand === RiskScoreBand.LOW) {
         where.score = { lte: 6 };

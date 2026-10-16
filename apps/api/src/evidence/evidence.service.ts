@@ -130,42 +130,82 @@ export class EvidenceService {
   async findAll(authCtx: ResourceAuthContext, query: EvidenceVaultQueryDto): Promise<PaginatedEvidenceDto> {
     const page = Math.max(1, Number(query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
-    const search = query.search?.trim().toLowerCase();
+    const skip = (page - 1) * limit;
+    const search = query.search?.trim();
     const status = query.status || EvidenceStatus.ACTIVE;
 
     const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
 
-    const evidences = await this.prisma.evidence.findMany({
-      where: {
-        ...scopeWhere,
-        deletedAt: null,
-        ...(query.evidenceType && { evidenceType: query.evidenceType }),
-        ...(status && { status }),
-      },
-      include: {
-        controlAssociations: { include: { control: true } },
-        riskAssociations: { include: { risk: true } },
-        policyAssociations: { include: { policy: true } },
-        auditCheckAssociations: { include: { checkItem: true } },
-        auditFindingAssociations: { include: { finding: true } },
-        vendorAssociations: { include: { vendor: true } },
-        vulnerabilityAssociations: { include: { vulnerability: true } },
-        incidentAssociations: { include: { incident: true } },
-        frameworkReferences: { include: { frameworkReference: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    const where: any = {
+      ...scopeWhere,
+      deletedAt: null,
+      ...(query.evidenceType && { evidenceType: query.evidenceType }),
+      ...(status && { status }),
+    };
+
+    if (query.frameworkReferenceId) {
+      where.frameworkReferences = {
+        some: { frameworkReferenceId: query.frameworkReferenceId },
+      };
+    } else if (query.frameworkId) {
+      where.frameworkReferences = {
+        some: {
+          frameworkReference: {
+            frameworkVersion: { frameworkId: query.frameworkId },
+          },
+        },
+      };
+    }
+
+    if (search) {
+      where.OR = [
+        { title: { contains: search, mode: 'insensitive' } },
+        { fileName: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    const [evidences, total] = await Promise.all([
+      this.prisma.evidence.findMany({
+        where,
+        skip,
+        take: limit,
+        include: {
+          controlAssociations: { include: { control: true } },
+          riskAssociations: { include: { risk: true } },
+          policyAssociations: { include: { policy: true } },
+          auditCheckAssociations: { include: { checkItem: true } },
+          auditFindingAssociations: { include: { finding: true } },
+          vendorAssociations: { include: { vendor: true } },
+          vulnerabilityAssociations: { include: { vulnerability: true } },
+          incidentAssociations: { include: { incident: true } },
+          frameworkReferences: {
+            include: {
+              frameworkReference: {
+                include: {
+                  frameworkVersion: {
+                    include: { framework: true },
+                  },
+                },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.evidence.count({ where }),
+    ]);
 
     const uploaderIds = Array.from(new Set(evidences.map((e) => e.uploadedById)));
-    const users = await TenantContext.runWithDisplayNameLookup(() =>
+    const users = (await TenantContext.runWithDisplayNameLookup(() =>
       this.prisma.user.findMany({
         where: { id: { in: uploaderIds } },
         select: { id: true, name: true, email: true },
       }),
-    );
-    const userMap = new Map(users.map((u) => [u.id, u.name || u.email]));
+    )) || [];
+    const userMap = new Map((users || []).map((u) => [u.id, u.name || u.email]));
 
-    let dtos: EvidenceDto[] = evidences.map((e) => {
+    const dtos: EvidenceDto[] = evidences.map((e) => {
       const associations: ResourceAssociationDto[] = [];
       e.controlAssociations.forEach((ca) => associations.push({ resourceType: 'CONTROL', resourceId: ca.controlId, resourceTitle: ca.control.name }));
       e.riskAssociations.forEach((ra) => associations.push({ resourceType: 'RISK', resourceId: ra.riskId, resourceTitle: ra.risk.title }));
@@ -201,64 +241,14 @@ export class EvidenceService {
           id: fr.frameworkReference.id,
           identifier: fr.frameworkReference.identifier,
           title: fr.frameworkReference.title,
+          frameworkCode: fr.frameworkReference.frameworkVersion?.framework?.code || undefined,
+          frameworkName: fr.frameworkReference.frameworkVersion?.framework?.name || undefined,
         })),
       } as any;
     });
 
-    if (!query.domain || query.domain === 'AUDIT' || query.domain === 'ALL') {
-      const legacyAuditEvidences = await this.prisma.auditEvidence.findMany({
-        where: { organizationId: authCtx.organizationId },
-        include: { checkItem: true, finding: true },
-      });
-
-      for (const leg of legacyAuditEvidences) {
-        if (!dtos.some((d) => d.id === leg.id)) {
-          const associations: ResourceAssociationDto[] = [];
-          if (leg.checkItem) associations.push({ resourceType: 'AUDIT_CHECK', resourceId: leg.checkItemId!, resourceTitle: leg.checkItem.title });
-          if (leg.finding) associations.push({ resourceType: 'AUDIT_FINDING', resourceId: leg.findingId!, resourceTitle: leg.finding.title });
-
-          dtos.push({
-            id: leg.id,
-            organizationId: leg.organizationId,
-            title: leg.fileName,
-            description: `Audit Proof Reference`,
-            evidenceType: EvidenceType.DOCUMENT,
-            fileName: leg.fileName,
-            fileSize: leg.fileSize || 0,
-            mimeType: leg.mimeType || 'application/octet-stream',
-            storageKey: leg.fileUrl,
-            checksum: null,
-            status: EvidenceStatus.ACTIVE,
-            scanStatus: EvidenceScanStatus.CLEAN,
-            uploadedById: leg.uploadedById,
-            uploaderName: 'Audit System',
-            retentionUntil: null,
-            createdAt: leg.createdAt.toISOString(),
-            updatedAt: leg.createdAt.toISOString(),
-            associations,
-          });
-        }
-      }
-    }
-
-    if (search) {
-      dtos = dtos.filter(
-        (d) =>
-          d.title.toLowerCase().includes(search) ||
-          d.fileName.toLowerCase().includes(search) ||
-          (d.description && d.description.toLowerCase().includes(search)) ||
-          d.associations.some((a) => a.resourceTitle && a.resourceTitle.toLowerCase().includes(search)),
-      );
-    }
-
-    dtos.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-    const total = dtos.length;
-    const startIndex = (page - 1) * limit;
-    const paginatedItems = dtos.slice(startIndex, startIndex + limit);
-
     return {
-      items: paginatedItems,
+      items: dtos,
       total,
       page,
       limit,

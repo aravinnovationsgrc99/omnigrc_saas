@@ -3,6 +3,7 @@ import { ComplianceTasksService } from './compliance-tasks.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ResourceAuthorizationService } from '../auth/resource-authorization.service';
 import { TaskStatus, Role } from '@omnigrc/shared';
 
 describe('ComplianceTasksService', () => {
@@ -10,6 +11,7 @@ describe('ComplianceTasksService', () => {
   let prisma: jest.Mocked<any>;
   let auditLogsService: jest.Mocked<any>;
   let notificationsService: jest.Mocked<any>;
+  let resourceAuthService: jest.Mocked<any>;
 
   beforeEach(async () => {
     prisma = {
@@ -30,12 +32,18 @@ describe('ComplianceTasksService', () => {
       notify: jest.fn().mockResolvedValue(undefined),
     };
 
+    resourceAuthService = {
+      getScopeWhereClause: jest.fn().mockImplementation((authCtx) => Promise.resolve({ organizationId: authCtx.organizationId })),
+      authorize: jest.fn().mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ComplianceTasksService,
         { provide: PrismaService, useValue: prisma },
         { provide: AuditLogsService, useValue: auditLogsService },
         { provide: NotificationsService, useValue: notificationsService },
+        { provide: ResourceAuthorizationService, useValue: resourceAuthService },
       ],
     }).compile();
 
@@ -102,6 +110,43 @@ describe('ComplianceTasksService', () => {
         metadata: expect.objectContaining({
           previousStatus: TaskStatus.NOT_STARTED,
           newStatus: TaskStatus.IN_PROGRESS,
+        }),
+      }),
+    );
+  });
+
+  it('should filter compliance tasks by frameworkId via control mappings', async () => {
+    prisma.complianceTask.findMany.mockResolvedValue([]);
+    prisma.complianceTask.count.mockResolvedValue(0);
+
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    await service.findAll(authCtx, { frameworkId: 'fw-pci' });
+
+    expect(prisma.complianceTask.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          organizationId: 'org-1',
+          deletedAt: null,
+          control: {
+            mappings: {
+              some: {
+                OR: [
+                  {
+                    frameworkReference: {
+                      frameworkVersion: {
+                        frameworkId: 'fw-pci',
+                      },
+                    },
+                  },
+                  {
+                    frameworkClause: {
+                      frameworkId: 'fw-pci',
+                    },
+                  },
+                ],
+              },
+            },
+          },
         }),
       }),
     );

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FrameworkCode, Role, AssetType, AssetCriticality } from '@omnigrc/shared';
 import { apiRequest } from '@/lib/api-client';
 import { useAuth } from '@/context/auth-context';
@@ -50,7 +50,34 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   const [inviteRole, setInviteRole] = useState<Role>(Role.ANALYST);
   const [inviteName, setInviteName] = useState('');
 
-  const frameworks = [
+  const [availableFrameworks, setAvailableFrameworks] = useState<Array<{ code: string; name: string; desc: string; tag: string }>>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadFws() {
+      try {
+        const list = await apiRequest<Array<{ code: string; name: string; description?: string }>>('/frameworks');
+        if (isMounted && list && list.length > 0) {
+          setAvailableFrameworks(
+            list.map((f) => ({
+              code: f.code,
+              name: f.name,
+              desc: f.description || `Compliance Framework (${f.code})`,
+              tag: 'Compliance Standard',
+            }))
+          );
+        }
+      } catch {
+        // Safe fallback if unauthenticated in preview
+      }
+    }
+    loadFws();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const frameworks = availableFrameworks.length > 0 ? availableFrameworks : [
     { code: FrameworkCode.ISO27001, name: 'ISO/IEC 27001', desc: 'Information Security Management System', tag: 'Security Standard' },
     { code: FrameworkCode.SOC2, name: 'SOC 2 Type II', desc: 'Trust Services Criteria (Security, Availability, Confidentiality)', tag: 'Auditing Standard' },
     { code: FrameworkCode.GDPR, name: 'EU GDPR', desc: 'General Data Protection Regulation', tag: 'Data Privacy' },

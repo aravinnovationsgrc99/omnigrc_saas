@@ -33,9 +33,22 @@ export class ControlsService {
       where.category = query.category;
     }
 
+    const mappingConditions: any = {};
     if (query.status) {
+      mappingConditions.status = query.status;
+    }
+    if (query.frameworkReferenceId) {
+      mappingConditions.frameworkReferenceId = query.frameworkReferenceId;
+    }
+    if (query.frameworkId) {
+      mappingConditions.OR = [
+        { frameworkReference: { frameworkVersion: { frameworkId: query.frameworkId } } },
+        { frameworkClause: { frameworkId: query.frameworkId } },
+      ];
+    }
+    if (Object.keys(mappingConditions).length > 0) {
       where.mappings = {
-        some: { status: query.status },
+        some: mappingConditions,
       };
     }
 

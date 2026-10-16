@@ -61,13 +61,24 @@ export class BusinessAuditsController {
     @Query('limit') limit?: number,
     @Query('status') status?: AuditPlanStatus,
     @Query('search') search?: string,
+    @Query('frameworkId') frameworkId?: string,
+    @Query('frameworkCode') frameworkCode?: string,
+    @Query('frameworkReferenceId') frameworkReferenceId?: string,
   ) {
     const authCtx: ResourceAuthContext = {
       userId: user.userId,
       organizationId: user.organizationId,
       role: user.role,
     };
-    return this.businessAuditsService.findAllPlans(authCtx, { page, limit, status, search });
+    return this.businessAuditsService.findAllPlans(authCtx, {
+      page,
+      limit,
+      status,
+      search,
+      frameworkId,
+      frameworkCode,
+      frameworkReferenceId,
+    });
   }
 
   @Get('plans/:id')

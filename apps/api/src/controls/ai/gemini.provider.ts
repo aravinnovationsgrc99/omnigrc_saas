@@ -26,8 +26,9 @@ export class GeminiProvider implements AiProvider {
     if (!this.genAI) {
       throw new Error('Gemini API client not initialized.');
     }
+    const modelName = process.env.GEMINI_MODEL || 'gemini-pro-latest';
     const model = this.genAI.getGenerativeModel({
-      model: 'gemini-2.5-flash-lite',
+      model: modelName,
       systemInstruction: systemPrompt,
     });
     const result = await model.generateContent(userPrompt);
@@ -75,8 +76,9 @@ CANDIDATE CLAUSES LIST:
 ${JSON.stringify(candidateListPrompt, null, 2)}`;
 
     // Constrain Gemini using native responseSchema and enum tool constraints
+    const modelName = process.env.GEMINI_MODEL || 'gemini-pro-latest';
     const model = this.genAI.getGenerativeModel({
-      model: 'gemini-2.5-flash-lite',
+      model: modelName,
       generationConfig: {
         responseMimeType: 'application/json',
         responseSchema: {
@@ -117,13 +119,13 @@ ${JSON.stringify(candidateListPrompt, null, 2)}`;
       frameworkCode: s.frameworkCode,
       clauseCode: s.clauseCode,
       confidenceScore: typeof s.confidenceScore === 'number' ? s.confidenceScore : 0.85,
-      reasoning: s.reasoning || 'Gemini 2.5 Flash-Lite structured mapping recommendation.',
+      reasoning: s.reasoning || `Gemini (${modelName}) structured mapping recommendation.`,
     }));
 
     return {
       suggestions,
       modelTier: ModelTier.TIER_1,
-      providerName: 'GeminiProvider (Tier 1)',
+      providerName: `GeminiProvider (${modelName})`,
     };
   }
 }

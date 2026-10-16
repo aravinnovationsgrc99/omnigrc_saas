@@ -8,6 +8,7 @@ export class ControlPlanePrismaService extends PrismaClient implements OnModuleI
       datasources: {
         db: {
           url:
+            process.env.CONTROL_PLANE_TEST_DATABASE_URL ||
             process.env.CONTROL_PLANE_DATABASE_URL ||
             process.env.CONTROL_PLANE_DIRECT_URL,
         },

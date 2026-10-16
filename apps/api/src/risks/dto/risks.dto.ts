@@ -155,4 +155,12 @@ export class RiskQueryDto {
   @IsString()
   @IsOptional()
   assetId?: string;
+
+  @IsString()
+  @IsOptional()
+  frameworkId?: string;
+
+  @IsString()
+  @IsOptional()
+  frameworkReferenceId?: string;
 }

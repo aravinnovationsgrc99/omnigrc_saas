@@ -1,4 +1,5 @@
 import React from 'react';
+import '@testing-library/jest-dom';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { ControlTestingSection } from '../src/components/controls/control-testing-section';
 import { FrameworkCoverageView } from '../src/components/frameworks/framework-coverage-view';

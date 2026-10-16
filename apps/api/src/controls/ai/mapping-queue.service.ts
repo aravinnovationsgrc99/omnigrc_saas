@@ -383,7 +383,8 @@ export class MappingQueueService implements OnModuleInit, OnModuleDestroy {
       if (state) state.progress = 60;
 
       // STAGE 2b, 2c, 2d: TIERED ROUTING, EXTERNAL CALL, RESPONSE VALIDATOR
-      const { acceptedSuggestions, tierUsed } = await this.aiRouterService.executeMapping(redactedPayload);
+      const { acceptedSuggestions, tierUsed, providerName, isFallback } =
+        await this.aiRouterService.executeMapping(redactedPayload);
 
       if (state) state.progress = 80;
 
@@ -439,6 +440,8 @@ export class MappingQueueService implements OnModuleInit, OnModuleDestroy {
             referenceIdentifier: sug.clauseCode,
             confidenceScore: sug.confidenceScore,
             modelTier: tierUsed,
+            providerName,
+            isFallback,
           },
         });
       }

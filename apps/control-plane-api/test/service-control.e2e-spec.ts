@@ -5,6 +5,7 @@ import { AppModule } from '../src/app.module';
 import { ControlPlanePrismaService } from '../src/prisma/prisma.service';
 import { OperatorRole } from '@prisma/control-plane-client';
 import { JwtService } from '@nestjs/jwt';
+import { E2ETestIsolationManager } from './helpers/e2e-safety-guard';
 
 describe('CP-3 — Service Control E2E Security Suite (Control Plane)', () => {
   jest.setTimeout(60000);
@@ -12,11 +13,14 @@ describe('CP-3 — Service Control E2E Security Suite (Control Plane)', () => {
   let app: INestApplication;
   let prisma: ControlPlanePrismaService;
   let jwtService: JwtService;
+  let isolationManager: E2ETestIsolationManager;
 
   let superAdminToken: string;
   let auditorToken: string;
 
   const testOrgId = `org_e2e_cp3_${Date.now()}`;
+  const EPHEMERAL_CAP_1 = 'E2E_TEST_CAP_1';
+  const EPHEMERAL_CAP_2 = 'E2E_TEST_CAP_2';
 
   beforeAll(async () => {
     (global as any).fetch = jest.fn().mockResolvedValue({
@@ -35,6 +39,16 @@ describe('CP-3 — Service Control E2E Security Suite (Control Plane)', () => {
 
     prisma = moduleRef.get<ControlPlanePrismaService>(ControlPlanePrismaService);
     jwtService = moduleRef.get<JwtService>(JwtService);
+
+    // Enforce environment safety guard - fail closed if database is unapproved or in production
+    isolationManager = new E2ETestIsolationManager(prisma);
+    isolationManager.assertEnvironmentSafe();
+
+    // Snapshot canonical states to guarantee no persistent modification of production/shared states
+    await isolationManager.snapshotCanonicalStates();
+
+    // Seed dedicated ephemeral capability codes for mutating E2E tests
+    await isolationManager.seedEphemeralCapabilities([EPHEMERAL_CAP_1, EPHEMERAL_CAP_2]);
 
     const secret = process.env.OPERATOR_JWT_SECRET || process.env.JWT_SECRET || 'arav-operator-dev-jwt-secret-key-2026';
 
@@ -95,6 +109,10 @@ describe('CP-3 — Service Control E2E Security Suite (Control Plane)', () => {
   });
 
   afterAll(async () => {
+    if (isolationManager) {
+      // Clean up ephemeral capabilities and restore any modified canonical states
+      await isolationManager.cleanupAndRestore();
+    }
     if (prisma) {
       await prisma.organizationServiceOverride.deleteMany({ where: { organizationId: testOrgId } });
       await prisma.organizationControlState.deleteMany({ where: { organizationId: testOrgId } });
@@ -125,7 +143,7 @@ describe('CP-3 — Service Control E2E Security Suite (Control Plane)', () => {
   describe('PUT /v1/services/:code/global-state (Update Global Service State)', () => {
     it('3. Insufficient operator role (READ_ONLY_AUDITOR) -> 403', async () => {
       await request(app.getHttpServer())
-        .put('/v1/services/AI_DOC_INTELLIGENCE/global-state')
+        .put(`/v1/services/${EPHEMERAL_CAP_1}/global-state`)
         .set('Authorization', `Bearer ${auditorToken}`)
         .send({
           state: 'DISABLED',
@@ -136,7 +154,7 @@ describe('CP-3 — Service Control E2E Security Suite (Control Plane)', () => {
 
     it('4. Invalid reason (< 10 chars) -> 400 REASON_TOO_SHORT', async () => {
       await request(app.getHttpServer())
-        .put('/v1/services/AI_DOC_INTELLIGENCE/global-state')
+        .put(`/v1/services/${EPHEMERAL_CAP_1}/global-state`)
         .set('Authorization', `Bearer ${superAdminToken}`)
         .send({
           state: 'DISABLED',
@@ -147,7 +165,7 @@ describe('CP-3 — Service Control E2E Security Suite (Control Plane)', () => {
 
     it('5. Trivial reason ("testing123") -> 400 REASON_TOO_TRIVIAL', async () => {
       await request(app.getHttpServer())
-        .put('/v1/services/AI_DOC_INTELLIGENCE/global-state')
+        .put(`/v1/services/${EPHEMERAL_CAP_1}/global-state`)
         .set('Authorization', `Bearer ${superAdminToken}`)
         .send({
           state: 'DISABLED',
@@ -156,9 +174,9 @@ describe('CP-3 — Service Control E2E Security Suite (Control Plane)', () => {
         .expect(400);
     });
 
-    it('6. Authorized operator (SUPER_ADMIN) with valid reason -> 200 SUCCESS', async () => {
+    it('6. Authorized operator (SUPER_ADMIN) with valid reason on ephemeral cap -> 200 SUCCESS', async () => {
       const res = await request(app.getHttpServer())
-        .put('/v1/services/AI_DOC_INTELLIGENCE/global-state')
+        .put(`/v1/services/${EPHEMERAL_CAP_1}/global-state`)
         .set('Authorization', `Bearer ${superAdminToken}`)
         .send({
           state: 'DISABLED',
@@ -166,7 +184,7 @@ describe('CP-3 — Service Control E2E Security Suite (Control Plane)', () => {
         })
         .expect(200);
 
-      expect(res.body.capabilityCode).toBe('AI_DOC_INTELLIGENCE');
+      expect(res.body.capabilityCode).toBe(EPHEMERAL_CAP_1);
       expect(res.body.state).toBe('DISABLED');
     });
 
@@ -174,18 +192,18 @@ describe('CP-3 — Service Control E2E Security Suite (Control Plane)', () => {
       const key = `idem_global_${Date.now()}`;
       const payload = {
         state: 'DISABLED',
-        reason: 'Emergency security audit on AI services',
+        reason: 'Emergency security audit on ephemeral service',
         idempotencyKey: key,
       };
 
       const res1 = await request(app.getHttpServer())
-        .put('/v1/services/AI_GRC_CHAT/global-state')
+        .put(`/v1/services/${EPHEMERAL_CAP_2}/global-state`)
         .set('Authorization', `Bearer ${superAdminToken}`)
         .send(payload)
         .expect(200);
 
       const res2 = await request(app.getHttpServer())
-        .put('/v1/services/AI_GRC_CHAT/global-state')
+        .put(`/v1/services/${EPHEMERAL_CAP_2}/global-state`)
         .set('Authorization', `Bearer ${superAdminToken}`)
         .send(payload)
         .expect(200);
@@ -197,21 +215,21 @@ describe('CP-3 — Service Control E2E Security Suite (Control Plane)', () => {
       const key = `idem_global_conflict_${Date.now()}`;
 
       await request(app.getHttpServer())
-        .put('/v1/services/AI_CONTROL_MAPPING/global-state')
+        .put(`/v1/services/${EPHEMERAL_CAP_2}/global-state`)
         .set('Authorization', `Bearer ${superAdminToken}`)
         .send({
           state: 'DISABLED',
-          reason: 'Security maintenance on control mapping',
+          reason: 'Security maintenance on ephemeral capability',
           idempotencyKey: key,
         })
         .expect(200);
 
       await request(app.getHttpServer())
-        .put('/v1/services/AI_CONTROL_MAPPING/global-state')
+        .put(`/v1/services/${EPHEMERAL_CAP_2}/global-state`)
         .set('Authorization', `Bearer ${superAdminToken}`)
         .send({
           state: 'AVAILABLE',
-          reason: 'Security maintenance on control mapping',
+          reason: 'Security maintenance on ephemeral capability',
           idempotencyKey: key,
         })
         .expect(409);
@@ -220,9 +238,9 @@ describe('CP-3 — Service Control E2E Security Suite (Control Plane)', () => {
 
   describe('PUT /v1/organizations/:orgId/services/:code (Set Organization Service Override)', () => {
     it('9. Commercial Primacy Rule: Reject AVAILABLE override when global state is COMMERCIAL_DISABLED -> 400', async () => {
-      // Set global state to COMMERCIAL_DISABLED first
+      // Set global state to COMMERCIAL_DISABLED first on ephemeral capability
       await request(app.getHttpServer())
-        .put('/v1/services/AI_DOC_INTELLIGENCE/global-state')
+        .put(`/v1/services/${EPHEMERAL_CAP_1}/global-state`)
         .set('Authorization', `Bearer ${superAdminToken}`)
         .send({
           state: 'COMMERCIAL_DISABLED',
@@ -232,7 +250,7 @@ describe('CP-3 — Service Control E2E Security Suite (Control Plane)', () => {
 
       // Attempt to set Org override to AVAILABLE
       const res = await request(app.getHttpServer())
-        .put(`/v1/organizations/${testOrgId}/services/AI_DOC_INTELLIGENCE`)
+        .put(`/v1/organizations/${testOrgId}/services/${EPHEMERAL_CAP_1}`)
         .set('Authorization', `Bearer ${superAdminToken}`)
         .send({
           overrideState: 'AVAILABLE',
@@ -246,7 +264,7 @@ describe('CP-3 — Service Control E2E Security Suite (Control Plane)', () => {
     it('10. Authorized override to DISABLED when global state is AVAILABLE -> 200 SUCCESS', async () => {
       // Re-enable global state to AVAILABLE
       await request(app.getHttpServer())
-        .put('/v1/services/AI_DOC_INTELLIGENCE/global-state')
+        .put(`/v1/services/${EPHEMERAL_CAP_1}/global-state`)
         .set('Authorization', `Bearer ${superAdminToken}`)
         .send({
           state: 'AVAILABLE',
@@ -255,22 +273,22 @@ describe('CP-3 — Service Control E2E Security Suite (Control Plane)', () => {
         .expect(200);
 
       const res = await request(app.getHttpServer())
-        .put(`/v1/organizations/${testOrgId}/services/AI_DOC_INTELLIGENCE`)
+        .put(`/v1/organizations/${testOrgId}/services/${EPHEMERAL_CAP_1}`)
         .set('Authorization', `Bearer ${superAdminToken}`)
         .send({
           overrideState: 'DISABLED',
-          reason: 'Customer requested disabling AI Document Intelligence for compliance team',
+          reason: 'Customer requested disabling ephemeral service for compliance team',
         })
         .expect(200);
 
       expect(res.body.organizationId).toBe(testOrgId);
-      expect(res.body.capabilityCode).toBe('AI_DOC_INTELLIGENCE');
+      expect(res.body.capabilityCode).toBe(EPHEMERAL_CAP_1);
       expect(res.body.overrideState).toBe('DISABLED');
     });
 
     it('11. DELETE /v1/organizations/:orgId/services/:code (Clear Override) -> 200 SUCCESS', async () => {
       const res = await request(app.getHttpServer())
-        .delete(`/v1/organizations/${testOrgId}/services/AI_DOC_INTELLIGENCE`)
+        .delete(`/v1/organizations/${testOrgId}/services/${EPHEMERAL_CAP_1}`)
         .set('Authorization', `Bearer ${superAdminToken}`)
         .expect(200);
 

@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ResourceAuthorizationService } from '../auth/resource-authorization.service';
-import { NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import { NotFoundException, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import {
   AuditPlanStatus,
   AuditAssessmentStatus,
@@ -59,6 +59,20 @@ describe('BusinessAuditsService', () => {
       control: {
         findMany: jest.fn(),
         findFirst: jest.fn(),
+      },
+      framework: {
+        findUnique: jest.fn(),
+        findFirst: jest.fn(),
+      },
+      frameworkVersion: {
+        findFirst: jest.fn(),
+      },
+      frameworkReference: {
+        findMany: jest.fn(),
+      },
+      auditPlanFrameworkReference: {
+        createMany: jest.fn(),
+        deleteMany: jest.fn(),
       },
       user: {
         findMany: jest.fn().mockResolvedValue([]),
@@ -474,6 +488,478 @@ describe('BusinessAuditsService', () => {
           entityId: 'ci-new',
         }),
       );
+    });
+  });
+
+  describe('Compliance Scope & Multi-Clause Audits', () => {
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+
+    it('should create an audit plan with framework and multi-clause scope', async () => {
+      prisma.framework.findUnique.mockResolvedValue({
+        id: 'fw-iso',
+        code: 'ISO27001',
+        name: 'ISO/IEC 27001',
+      });
+      prisma.frameworkVersion.findFirst.mockResolvedValue({
+        id: 'ver-2022',
+        frameworkId: 'fw-iso',
+        version: '2022',
+      });
+      prisma.frameworkReference.findMany.mockResolvedValue([
+        { id: 'ref-1', frameworkVersionId: 'ver-2022' },
+        { id: 'ref-2', frameworkVersionId: 'ver-2022' },
+      ]);
+      prisma.auditPlan.create.mockResolvedValue({
+        id: 'plan-scoped',
+        organizationId: 'org-1',
+        title: 'FY26 ISO Audit',
+        frameworkId: 'fw-iso',
+        frameworkVersionId: 'ver-2022',
+        frameworkCode: 'ISO27001',
+        ownerId: 'lead-auditor',
+        status: AuditPlanStatus.DRAFT,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      prisma.auditPlanFrameworkReference.createMany.mockResolvedValue({ count: 2 });
+      prisma.auditPlan.findFirst.mockResolvedValue({
+        id: 'plan-scoped',
+        organizationId: 'org-1',
+        title: 'FY26 ISO Audit',
+        frameworkId: 'fw-iso',
+        frameworkVersionId: 'ver-2022',
+        frameworkCode: 'ISO27001',
+        ownerId: 'lead-auditor',
+        status: AuditPlanStatus.DRAFT,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        frameworkRef: { name: 'ISO/IEC 27001' },
+        versionRef: { version: '2022' },
+        scopeReferences: [
+          { id: 'psr-1', frameworkReferenceId: 'ref-1', frameworkReference: { identifier: 'A.5.1', title: 'Policies for info sec' } },
+          { id: 'psr-2', frameworkReferenceId: 'ref-2', frameworkReference: { identifier: 'A.5.2', title: 'Information security roles' } },
+        ],
+      });
+
+      const result = await service.createPlan(authCtx, {
+        title: 'FY26 ISO Audit',
+        frameworkId: 'fw-iso',
+        frameworkVersionId: 'ver-2022',
+        frameworkReferenceIds: ['ref-1', 'ref-2'],
+        ownerId: 'lead-auditor',
+      });
+
+      expect(result.id).toBe('plan-scoped');
+      expect(result.frameworkId).toBe('fw-iso');
+      expect(result.frameworkName).toBe('ISO/IEC 27001');
+      expect(result.scopeReferences).toHaveLength(2);
+      expect(prisma.auditPlanFrameworkReference.createMany).toHaveBeenCalledWith({
+        data: [
+          { auditPlanId: 'plan-scoped', frameworkReferenceId: 'ref-1' },
+          { auditPlanId: 'plan-scoped', frameworkReferenceId: 'ref-2' },
+        ],
+        skipDuplicates: true,
+      });
+    });
+
+    it('should reject plan creation if selected references do not belong to the framework version', async () => {
+      prisma.framework.findUnique.mockResolvedValue({
+        id: 'fw-iso',
+        code: 'ISO27001',
+      });
+      prisma.frameworkVersion.findFirst.mockResolvedValue({
+        id: 'ver-2022',
+        frameworkId: 'fw-iso',
+      });
+      // Return only 1 ref when 2 were passed
+      prisma.frameworkReference.findMany.mockResolvedValue([{ id: 'ref-1' }]);
+
+      await expect(
+        service.createPlan(authCtx, {
+          title: 'Invalid Ref Audit',
+          frameworkId: 'fw-iso',
+          frameworkVersionId: 'ver-2022',
+          frameworkReferenceIds: ['ref-1', 'nonexistent-ref'],
+          ownerId: 'lead-auditor',
+        }),
+      ).rejects.toThrow('One or more selected framework references do not belong to the selected framework/version');
+    });
+
+    it('should filter audit plans by frameworkId and frameworkReferenceId server-side', async () => {
+      prisma.auditPlan.findMany.mockResolvedValue([]);
+      prisma.auditPlan.count.mockResolvedValue(0);
+
+      await service.findAllPlans(authCtx, {
+        frameworkId: 'fw-soc2',
+        frameworkReferenceId: 'ref-cc1',
+      });
+
+      expect(prisma.auditPlan.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            frameworkId: 'fw-soc2',
+            scopeReferences: {
+              some: { frameworkReferenceId: 'ref-cc1' },
+            },
+          }),
+        }),
+      );
+    });
+
+    it('should clear old clause associations transactionally when changing framework without supplying clause IDs', async () => {
+      const existingPlan = {
+        id: 'plan-1',
+        organizationId: 'org-1',
+        title: 'Audit Plan 1',
+        frameworkId: 'fw-iso',
+        frameworkVersionId: 'ver-2022',
+        frameworkCode: 'ISO27001',
+        status: AuditPlanStatus.DRAFT,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        scopeReferences: [
+          { id: 'psr-1', frameworkReferenceId: 'ref-1' },
+        ],
+      };
+
+      prisma.auditPlan.findFirst
+        .mockResolvedValueOnce(existingPlan)
+        .mockResolvedValueOnce({
+          ...existingPlan,
+          frameworkId: 'fw-soc2',
+          frameworkVersionId: null,
+          frameworkCode: 'SOC2',
+          scopeReferences: [],
+        });
+
+      prisma.framework.findUnique.mockResolvedValue({
+        id: 'fw-soc2',
+        code: 'SOC2',
+      });
+
+      prisma.auditPlan.update.mockResolvedValue({
+        ...existingPlan,
+        frameworkId: 'fw-soc2',
+        frameworkVersionId: null,
+        frameworkCode: 'SOC2',
+      });
+
+      const result = await service.updatePlan(authCtx, 'plan-1', {
+        frameworkId: 'fw-soc2',
+      });
+
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(prisma.auditPlan.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'plan-1' },
+          data: expect.objectContaining({
+            frameworkId: 'fw-soc2',
+            frameworkVersionId: null,
+            frameworkCode: 'SOC2',
+          }),
+        }),
+      );
+      expect(prisma.auditPlanFrameworkReference.deleteMany).toHaveBeenCalledWith({
+        where: { auditPlanId: 'plan-1' },
+      });
+      expect(prisma.auditPlanFrameworkReference.createMany).not.toHaveBeenCalled();
+      expect(result.frameworkId).toBe('fw-soc2');
+      expect(result.scopeReferences).toHaveLength(0);
+    });
+
+    it('should clear old clause associations transactionally when changing version without supplying clause IDs', async () => {
+      const existingPlan = {
+        id: 'plan-1',
+        organizationId: 'org-1',
+        title: 'Audit Plan 1',
+        frameworkId: 'fw-iso',
+        frameworkVersionId: 'ver-2013',
+        frameworkCode: 'ISO27001',
+        status: AuditPlanStatus.DRAFT,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        scopeReferences: [
+          { id: 'psr-1', frameworkReferenceId: 'ref-old-1' },
+        ],
+      };
+
+      prisma.auditPlan.findFirst
+        .mockResolvedValueOnce(existingPlan)
+        .mockResolvedValueOnce({
+          ...existingPlan,
+          frameworkVersionId: 'ver-2022',
+          scopeReferences: [],
+        });
+
+      prisma.framework.findUnique.mockResolvedValue({
+        id: 'fw-iso',
+        code: 'ISO27001',
+      });
+      prisma.frameworkVersion.findFirst.mockResolvedValue({
+        id: 'ver-2022',
+        frameworkId: 'fw-iso',
+      });
+
+      prisma.auditPlan.update.mockResolvedValue({
+        ...existingPlan,
+        frameworkVersionId: 'ver-2022',
+      });
+
+      const result = await service.updatePlan(authCtx, 'plan-1', {
+        frameworkVersionId: 'ver-2022',
+      });
+
+      expect(prisma.auditPlan.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'plan-1' },
+          data: expect.objectContaining({
+            frameworkId: 'fw-iso',
+            frameworkVersionId: 'ver-2022',
+          }),
+        }),
+      );
+      expect(prisma.auditPlanFrameworkReference.deleteMany).toHaveBeenCalledWith({
+        where: { auditPlanId: 'plan-1' },
+      });
+      expect(prisma.auditPlanFrameworkReference.createMany).not.toHaveBeenCalled();
+      expect(result.scopeReferences).toHaveLength(0);
+    });
+
+    it('should update framework, version, and replace clauses when all are supplied', async () => {
+      const existingPlan = {
+        id: 'plan-1',
+        organizationId: 'org-1',
+        title: 'Audit Plan 1',
+        frameworkId: 'fw-iso',
+        frameworkVersionId: 'ver-2013',
+        frameworkCode: 'ISO27001',
+        status: AuditPlanStatus.DRAFT,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        scopeReferences: [],
+      };
+
+      prisma.auditPlan.findFirst
+        .mockResolvedValueOnce(existingPlan)
+        .mockResolvedValueOnce({
+          ...existingPlan,
+          frameworkId: 'fw-soc2',
+          frameworkVersionId: 'ver-soc2-v1',
+          frameworkCode: 'SOC2',
+          scopeReferences: [
+            { id: 'sr-1', frameworkReferenceId: 'ref-soc-1', frameworkReference: { identifier: 'CC1.1' } },
+          ],
+        });
+
+      prisma.framework.findUnique.mockResolvedValue({
+        id: 'fw-soc2',
+        code: 'SOC2',
+      });
+      prisma.frameworkVersion.findFirst.mockResolvedValue({
+        id: 'ver-soc2-v1',
+        frameworkId: 'fw-soc2',
+      });
+      prisma.frameworkReference.findMany.mockResolvedValue([
+        { id: 'ref-soc-1' },
+      ]);
+
+      prisma.auditPlan.update.mockResolvedValue({
+        ...existingPlan,
+        frameworkId: 'fw-soc2',
+        frameworkVersionId: 'ver-soc2-v1',
+        frameworkCode: 'SOC2',
+      });
+
+      const result = await service.updatePlan(authCtx, 'plan-1', {
+        frameworkId: 'fw-soc2',
+        frameworkVersionId: 'ver-soc2-v1',
+        frameworkReferenceIds: ['ref-soc-1'],
+      });
+
+      expect(prisma.auditPlanFrameworkReference.deleteMany).toHaveBeenCalledWith({
+        where: { auditPlanId: 'plan-1' },
+      });
+      expect(prisma.auditPlanFrameworkReference.createMany).toHaveBeenCalledWith({
+        data: [{ auditPlanId: 'plan-1', frameworkReferenceId: 'ref-soc-1' }],
+        skipDuplicates: true,
+      });
+      expect(result.frameworkId).toBe('fw-soc2');
+      expect(result.scopeReferences).toHaveLength(1);
+    });
+
+    it('should reject update if framework version does not belong to framework', async () => {
+      const existingPlan = {
+        id: 'plan-1',
+        organizationId: 'org-1',
+        frameworkId: 'fw-iso',
+      };
+      prisma.auditPlan.findFirst.mockResolvedValue(existingPlan);
+      prisma.framework.findUnique.mockResolvedValue({ id: 'fw-iso', code: 'ISO27001' });
+      prisma.frameworkVersion.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.updatePlan(authCtx, 'plan-1', {
+          frameworkVersionId: 'foreign-version-id',
+        }),
+      ).rejects.toThrow('Framework Version "foreign-version-id" does not belong to Framework "fw-iso"');
+      expect(prisma.auditPlan.update).not.toHaveBeenCalled();
+    });
+
+    it('should reject update if replacement references do not belong to the framework version', async () => {
+      const existingPlan = {
+        id: 'plan-1',
+        organizationId: 'org-1',
+        frameworkId: 'fw-iso',
+        frameworkVersionId: 'ver-2022',
+      };
+      prisma.auditPlan.findFirst.mockResolvedValue(existingPlan);
+      prisma.framework.findUnique.mockResolvedValue({ id: 'fw-iso', code: 'ISO27001' });
+      prisma.frameworkVersion.findFirst.mockResolvedValue({ id: 'ver-2022', frameworkId: 'fw-iso' });
+      prisma.frameworkReference.findMany.mockResolvedValue([{ id: 'ref-1' }]);
+
+      await expect(
+        service.updatePlan(authCtx, 'plan-1', {
+          frameworkReferenceIds: ['ref-1', 'mismatched-ref-2'],
+        }),
+      ).rejects.toThrow('One or more selected framework references do not belong to the selected framework/version');
+      expect(prisma.auditPlan.update).not.toHaveBeenCalled();
+    });
+
+    it('should explicitly clear clauses when frameworkReferenceIds is an empty array', async () => {
+      const existingPlan = {
+        id: 'plan-1',
+        organizationId: 'org-1',
+        frameworkId: 'fw-iso',
+        frameworkVersionId: 'ver-2022',
+        frameworkCode: 'ISO27001',
+        status: AuditPlanStatus.DRAFT,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        scopeReferences: [{ id: 'psr-1', frameworkReferenceId: 'ref-1' }],
+      };
+
+      prisma.auditPlan.findFirst
+        .mockResolvedValueOnce(existingPlan)
+        .mockResolvedValueOnce({
+          ...existingPlan,
+          scopeReferences: [],
+        });
+
+      prisma.framework.findUnique.mockResolvedValue({ id: 'fw-iso', code: 'ISO27001' });
+      prisma.frameworkVersion.findFirst.mockResolvedValue({ id: 'ver-2022', frameworkId: 'fw-iso' });
+      prisma.auditPlan.update.mockResolvedValue(existingPlan);
+
+      const result = await service.updatePlan(authCtx, 'plan-1', {
+        frameworkReferenceIds: [],
+      });
+
+      expect(prisma.auditPlanFrameworkReference.deleteMany).toHaveBeenCalledWith({
+        where: { auditPlanId: 'plan-1' },
+      });
+      expect(prisma.auditPlanFrameworkReference.createMany).not.toHaveBeenCalled();
+      expect(result.scopeReferences).toHaveLength(0);
+    });
+
+    it('should preserve existing clauses when scope is unchanged and frameworkReferenceIds is omitted', async () => {
+      const existingPlan = {
+        id: 'plan-1',
+        organizationId: 'org-1',
+        title: 'Original Title',
+        frameworkId: 'fw-iso',
+        frameworkVersionId: 'ver-2022',
+        frameworkCode: 'ISO27001',
+        status: AuditPlanStatus.DRAFT,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        scopeReferences: [{ id: 'psr-1', frameworkReferenceId: 'ref-1' }],
+      };
+
+      prisma.auditPlan.findFirst
+        .mockResolvedValueOnce(existingPlan)
+        .mockResolvedValueOnce({
+          ...existingPlan,
+          title: 'Renamed Title',
+        });
+
+      prisma.auditPlan.update.mockResolvedValue({
+        ...existingPlan,
+        title: 'Renamed Title',
+      });
+
+      const result = await service.updatePlan(authCtx, 'plan-1', {
+        title: 'Renamed Title',
+      });
+
+      expect(prisma.auditPlan.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'plan-1' },
+          data: expect.objectContaining({
+            title: 'Renamed Title',
+          }),
+        }),
+      );
+      expect(prisma.auditPlanFrameworkReference.deleteMany).not.toHaveBeenCalled();
+      expect(prisma.auditPlanFrameworkReference.createMany).not.toHaveBeenCalled();
+      expect(result.title).toBe('Renamed Title');
+    });
+
+    it('should reject update if target audit plan belongs to another tenant', async () => {
+      prisma.auditPlan.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.updatePlan(authCtx, 'foreign-plan-id', {
+          title: 'Unauthorized Hack',
+        }),
+      ).rejects.toThrow(NotFoundException);
+      expect(prisma.auditPlan.update).not.toHaveBeenCalled();
+    });
+
+    it('should reject update if organization is not commercially entitled to framework', async () => {
+      const existingPlan = {
+        id: 'plan-1',
+        organizationId: 'org-1',
+        frameworkId: 'fw-iso',
+      };
+      prisma.auditPlan.findFirst.mockResolvedValue(existingPlan);
+      prisma.framework.findUnique.mockResolvedValue({ id: 'fw-soc2', code: 'SOC2' });
+
+      const mockEntitlements = {
+        assertEntitled: jest.fn().mockRejectedValue(new ForbiddenException('Organization not entitled')),
+      };
+      const serviceWithEntitlements = new BusinessAuditsService(
+        prisma,
+        auditLogsService,
+        notificationsService,
+        resourceAuthService,
+        mockEntitlements as any,
+      );
+
+      await expect(
+        serviceWithEntitlements.updatePlan(authCtx, 'plan-1', {
+          frameworkId: 'fw-soc2',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(prisma.auditPlan.update).not.toHaveBeenCalled();
+    });
+
+    it('should reject update and propagate error if transaction write fails', async () => {
+      const existingPlan = {
+        id: 'plan-1',
+        organizationId: 'org-1',
+        frameworkId: 'fw-iso',
+      };
+      prisma.auditPlan.findFirst.mockResolvedValue(existingPlan);
+      prisma.framework.findUnique.mockResolvedValue({ id: 'fw-soc2', code: 'SOC2' });
+
+      prisma.$transaction.mockImplementation(async (cb: any) => {
+        throw new Error('Database transaction deadlocked or constraint failed');
+      });
+
+      await expect(
+        service.updatePlan(authCtx, 'plan-1', {
+          frameworkId: 'fw-soc2',
+        }),
+      ).rejects.toThrow('Database transaction deadlocked or constraint failed');
     });
   });
 });

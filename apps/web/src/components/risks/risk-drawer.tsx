@@ -520,7 +520,10 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
                 <select
                   className="omni-input"
                   value={frameworkId}
-                  onChange={(e) => setFrameworkId(e.target.value)}
+                  onChange={(e) => {
+                    setFrameworkId(e.target.value);
+                    setFrameworkReferenceId('');
+                  }}
                 >
                   <option value="">-- Select Framework --</option>
                   {availableFrameworks.map((fw) => (

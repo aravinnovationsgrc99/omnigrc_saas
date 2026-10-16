@@ -10,7 +10,7 @@ import { InlineErrorState } from '@/components/ui/inline-error-state';
 import { RiskHeatmap } from './risk-heatmap';
 import { RiskDrawer } from './risk-drawer';
 import { Plus, List, LayoutGrid, Search, X, ShieldAlert } from 'lucide-react';
-
+import { ComplianceScopeFilter } from '@/components/ui/compliance-scope-filter';
 
 interface RiskListViewProps {
   initialAssetId?: string;
@@ -32,6 +32,7 @@ export function RiskListView({ initialAssetId, onClearAssetFilter, onNavigateToV
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [scoreBandFilter, setScoreBandFilter] = useState<string>('');
+  const [frameworkFilter, setFrameworkFilter] = useState<string>('');
   const [cellLikelihood, setCellLikelihood] = useState<number | null>(null);
   const [cellImpact, setCellImpact] = useState<number | null>(null);
   const [assetIdFilter, setAssetIdFilter] = useState<string | null>(initialAssetId || null);
@@ -57,6 +58,7 @@ export function RiskListView({ initialAssetId, onClearAssetFilter, onNavigateToV
       if (cellLikelihood) params.set('likelihood', cellLikelihood.toString());
       if (cellImpact) params.set('impact', cellImpact.toString());
       if (assetIdFilter) params.set('assetId', assetIdFilter);
+      if (frameworkFilter) params.set('frameworkId', frameworkFilter);
 
       const queryString = params.toString() ? `?${params.toString()}` : '';
       const data = await apiRequest<PaginatedRisksDto>(`/risks${queryString}`);
@@ -69,7 +71,7 @@ export function RiskListView({ initialAssetId, onClearAssetFilter, onNavigateToV
     } finally {
       setLoading(false);
     }
-  }, [search, statusFilter, scoreBandFilter, cellLikelihood, cellImpact, assetIdFilter]);
+  }, [search, statusFilter, scoreBandFilter, frameworkFilter, cellLikelihood, cellImpact, assetIdFilter]);
 
   useEffect(() => {
     fetchRisks();
@@ -211,6 +213,13 @@ export function RiskListView({ initialAssetId, onClearAssetFilter, onNavigateToV
             <option value={RiskScoreBand.MEDIUM}>MEDIUM (8–12)</option>
             <option value={RiskScoreBand.LOW}>LOW (1–6)</option>
           </select>
+
+          {/* Compliance Framework Filter */}
+          <ComplianceScopeFilter
+            selectedFrameworkId={frameworkFilter}
+            onFrameworkChange={(fwId) => setFrameworkFilter(fwId)}
+            allOptionLabel="All Frameworks"
+          />
         </div>
       </div>
 

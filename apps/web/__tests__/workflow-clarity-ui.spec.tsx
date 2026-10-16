@@ -1,4 +1,5 @@
 import React from 'react';
+import '@testing-library/jest-dom';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { WorkflowLifecyclePanel } from '../src/components/workflow/workflow-lifecycle-panel';
 import { AttentionRequiredWidget } from '../src/components/dashboard/widgets/attention-required-widget';
@@ -248,7 +249,7 @@ describe('Phase 4 — Workflow Clarity Frontend UI', () => {
       const mockItems = [
         {
           id: 'item-1',
-          domain: 'OBLIGATION',
+          domain: 'OBLIGATION' as const,
           title: 'Quarterly Access Certification',
           severityOrPriority: 'HIGH',
           dueDate: '2026-10-15T00:00:00Z',
@@ -256,7 +257,7 @@ describe('Phase 4 — Workflow Clarity Frontend UI', () => {
         },
         {
           id: 'item-2',
-          domain: 'AUDIT_FINDING',
+          domain: 'AUDIT_FINDING' as const,
           title: 'Unencrypted S3 Bucket',
           severityOrPriority: 'CRITICAL',
           dueDate: '2026-10-18T00:00:00Z',

@@ -5,6 +5,7 @@ import { ExcelExportService } from './excel-export.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { ResourceAuthorizationService } from '../auth/resource-authorization.service';
 import {
   ReportType,
   ObligationCadence,
@@ -23,6 +24,7 @@ describe('ReportsService', () => {
   let prisma: jest.Mocked<any>;
   let metricsService: jest.Mocked<any>;
   let auditLogsService: jest.Mocked<any>;
+  let resourceAuthService: jest.Mocked<any>;
 
   beforeEach(async () => {
     prisma = {
@@ -72,6 +74,11 @@ describe('ReportsService', () => {
       log: jest.fn().mockResolvedValue(undefined),
     };
 
+    resourceAuthService = {
+      getScopeWhereClause: jest.fn().mockImplementation((authCtx) => Promise.resolve({ organizationId: authCtx.organizationId })),
+      assertCanAccess: jest.fn().mockResolvedValue(true),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ReportsService,
@@ -80,6 +87,7 @@ describe('ReportsService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: MetricsService, useValue: metricsService },
         { provide: AuditLogsService, useValue: auditLogsService },
+        { provide: ResourceAuthorizationService, useValue: resourceAuthService },
       ],
     }).compile();
 

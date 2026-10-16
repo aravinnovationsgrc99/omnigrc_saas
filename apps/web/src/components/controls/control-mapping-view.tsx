@@ -29,6 +29,22 @@ const FRAMEWORK_ACCENTS: Record<string, { bg: string; color: string; border: str
   HIPAA: { bg: '#FFE4E6', color: '#E11D48', border: '#FECDD3', label: 'HIPAA' },
 };
 
+function getFrameworkAccent(code?: string): { bg: string; color: string; border: string; label: string } {
+  if (!code) {
+    return { bg: '#F8FAFC', color: '#475569', border: '#E2E8F0', label: 'Unspecified' };
+  }
+  const clean = code.toUpperCase();
+  if (FRAMEWORK_ACCENTS[clean]) {
+    return FRAMEWORK_ACCENTS[clean];
+  }
+  return {
+    bg: '#F0FDFA',
+    color: '#0F766E',
+    border: '#99F6E4',
+    label: code,
+  };
+}
+
 interface ControlMappingViewProps {
   onNavigateToView?: (view: string) => void;
 }
@@ -48,6 +64,7 @@ export function ControlMappingView({ onNavigateToView }: ControlMappingViewProps
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [frameworkFilter, setFrameworkFilter] = useState<string>('');
 
   // Drawer state (Create Mode)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -60,6 +77,7 @@ export function ControlMappingView({ onNavigateToView }: ControlMappingViewProps
       if (search.trim()) params.set('search', search.trim());
       if (categoryFilter) params.set('category', categoryFilter);
       if (statusFilter) params.set('status', statusFilter);
+      if (frameworkFilter) params.set('frameworkId', frameworkFilter);
 
       const queryString = params.toString() ? `?${params.toString()}` : '';
       const data = await apiRequest<PaginatedControlsDto>(`/controls${queryString}`);
@@ -72,7 +90,7 @@ export function ControlMappingView({ onNavigateToView }: ControlMappingViewProps
     } finally {
       setLoading(false);
     }
-  }, [search, categoryFilter, statusFilter]);
+  }, [search, categoryFilter, statusFilter, frameworkFilter]);
 
   useEffect(() => {
     fetchControls();
@@ -82,17 +100,10 @@ export function ControlMappingView({ onNavigateToView }: ControlMappingViewProps
     async function fetchFrameworks() {
       try {
         const data = await apiRequest<FrameworkApiDto[]>('/frameworks');
-        setFrameworks(data);
-      } catch {
-        // Fallback default framework set if API is building or offline
-        setFrameworks([
-          { id: '1', code: 'ISO27001', name: 'Information Security Management' },
-          { id: '2', code: 'SOC2', name: 'Trust Services Criteria' },
-          { id: '3', code: 'GDPR', name: 'General Data Protection Regulation' },
-          { id: '4', code: 'DPDP', name: 'Digital Personal Data Protection Act' },
-          { id: '5', code: 'ISO42001', name: 'Artificial Intelligence Management' },
-          { id: '6', code: 'HIPAA', name: 'Health Insurance Portability & Accountability' },
-        ]);
+        setFrameworks(data || []);
+      } catch (err: any) {
+        setFrameworks([]);
+        console.warn('Could not load entitled frameworks for controls view:', err?.message);
       }
     }
     fetchFrameworks();
@@ -153,9 +164,7 @@ export function ControlMappingView({ onNavigateToView }: ControlMappingViewProps
             Supported Frameworks:
           </span>
           {frameworks.map((fw) => {
-            const accent = FRAMEWORK_ACCENTS[fw.code] || {
-              bg: '#F4F6F5', color: '#1B2430', border: '#E2E6E4', label: fw.code,
-            };
+            const accent = getFrameworkAccent(fw.code);
             return (
               <div
                 key={fw.id || fw.code}
@@ -216,6 +225,23 @@ export function ControlMappingView({ onNavigateToView }: ControlMappingViewProps
             <option value={MappingStatus.APPROVED}>APPROVED</option>
             <option value={MappingStatus.SUGGESTED}>SUGGESTED</option>
             <option value={MappingStatus.OVERRIDDEN}>OVERRIDDEN</option>
+          </select>
+        </div>
+
+        {/* Framework Filter */}
+        <div className="flex items-center gap-2 w-full md:w-auto">
+          <select
+            className="omni-input w-full md:w-48"
+            value={frameworkFilter}
+            onChange={(e) => setFrameworkFilter(e.target.value)}
+            aria-label="Filter by compliance framework"
+          >
+            <option value="">All Frameworks</option>
+            {frameworks.map((fw) => (
+              <option key={fw.id} value={fw.id}>
+                {fw.code} — {fw.name}
+              </option>
+            ))}
           </select>
         </div>
       </div>

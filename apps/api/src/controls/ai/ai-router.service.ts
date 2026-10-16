@@ -44,7 +44,13 @@ export class AiRouterService {
     controlName: string;
     controlDescription: string;
     candidates: CandidateClause[];
-  }): Promise<{ acceptedSuggestions: SuggestedMappingItem[]; tierUsed: ModelTier }> {
+  }): Promise<{
+    acceptedSuggestions: SuggestedMappingItem[];
+    tierUsed: ModelTier;
+    providerName: string;
+    isFallback: boolean;
+    fallbackReason?: string;
+  }> {
     const { organizationId, actorId, controlId, controlName, controlDescription, candidates } = params;
 
     const targetTier = this.classifyTier(controlName, controlDescription);
@@ -74,15 +80,20 @@ export class AiRouterService {
     }
 
     let rawResponse: AiMappingResponse;
+    let isFallback = (provider === this.mockAiProvider);
+    let fallbackReason: string | undefined = isFallback ? 'Mock provider selected as default' : undefined;
+
     try {
       rawResponse = await provider.suggestMappings({ controlName, controlDescription, candidates });
     } catch (err: any) {
       this.logger.error(`Primary provider ${provider.constructor.name} failed: ${err.message}. Falling back to MockAiProvider.`);
+      isFallback = true;
+      fallbackReason = err.message;
       rawResponse = await this.mockAiProvider.suggestMappings({ controlName, controlDescription, candidates });
     }
 
     actualTier = rawResponse.modelTier || targetTier;
-    this.logger.log(`Job executed via provider: ${rawResponse.providerName} (${actualTier})`);
+    this.logger.log(`Job executed via provider: ${rawResponse.providerName} (${actualTier})${isFallback ? ' [FALLBACK]' : ''}`);
 
     // STAGE 2d: RESPONSE VALIDATOR
     const validCandidateIds = new Set(candidates.map((c) => c.id));
@@ -124,6 +135,9 @@ export class AiRouterService {
     return {
       acceptedSuggestions,
       tierUsed: actualTier,
+      providerName: rawResponse.providerName,
+      isFallback,
+      fallbackReason,
     };
   }
 }

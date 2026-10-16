@@ -563,7 +563,11 @@ export function ControlDetailView({ controlId, onBack, onNavigateToView }: Contr
 
   // Open Override Modal
   const handleOpenOverride = (mapping: ControlFrameworkMappingDto) => {
-    const code = mapping.frameworkCode || 'ISO27001';
+    const code = mapping.frameworkCode || (mapping as any).frameworkReference?.frameworkVersion?.framework?.code;
+    if (!code) {
+      showToast('Cannot override mapping: target framework code is undefined.', 'error');
+      return;
+    }
     setOverrideTargetFw(code);
     setOverrideMappingId(mapping.id);
     setOverrideModalOpen(true);

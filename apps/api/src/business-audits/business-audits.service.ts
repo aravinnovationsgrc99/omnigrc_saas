@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, ConflictException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
+import { FrameworkEntitlementsService } from '../frameworks/framework-entitlements.service';
 import { TenantContext } from '../tenant/tenant.context';
 import {
   AuditPlanStatus,
@@ -46,11 +47,82 @@ export class BusinessAuditsService {
     private readonly auditLogsService: AuditLogsService,
     private readonly notificationsService: NotificationsService,
     private readonly resourceAuthService: ResourceAuthorizationService,
+    @Optional()
+    private readonly frameworkEntitlementsService?: FrameworkEntitlementsService,
   ) {}
 
   // --------------------------------------------------
   // AUDIT PLANS
   // --------------------------------------------------
+
+  private async validateFrameworkScope(
+    organizationId: string,
+    frameworkId?: string | null,
+    frameworkVersionId?: string | null,
+    frameworkReferenceIds?: string[],
+    frameworkCode?: string | null,
+  ): Promise<{ frameworkId?: string | null; frameworkVersionId?: string | null; frameworkCode?: string | null }> {
+    let targetFwId = frameworkId;
+    let resolvedCode = frameworkCode;
+
+    if (!targetFwId && frameworkCode) {
+      const fwByCode = await this.prisma.framework.findFirst({
+        where: { code: frameworkCode as any },
+      });
+      if (fwByCode) {
+        targetFwId = fwByCode.id;
+      }
+    }
+
+    if (!targetFwId && frameworkReferenceIds && frameworkReferenceIds.length > 0) {
+      throw new BadRequestException('Cannot assign framework references without a valid framework');
+    }
+
+    if (targetFwId) {
+      const fw = await this.prisma.framework.findUnique({
+        where: { id: targetFwId },
+      });
+      if (!fw) {
+        throw new NotFoundException(`Framework with ID "${targetFwId}" not found`);
+      }
+      resolvedCode = fw.code;
+
+      if (this.frameworkEntitlementsService) {
+        await this.frameworkEntitlementsService.assertEntitled(organizationId, targetFwId, frameworkVersionId);
+      }
+
+      if (frameworkVersionId) {
+        const ver = await this.prisma.frameworkVersion.findFirst({
+          where: { id: frameworkVersionId, frameworkId: targetFwId },
+        });
+        if (!ver) {
+          throw new BadRequestException(`Framework Version "${frameworkVersionId}" does not belong to Framework "${targetFwId}"`);
+        }
+      }
+
+      if (frameworkReferenceIds && frameworkReferenceIds.length > 0) {
+        const refs = await this.prisma.frameworkReference.findMany({
+          where: {
+            id: { in: frameworkReferenceIds },
+            ...(frameworkVersionId
+              ? { frameworkVersionId }
+              : { frameworkVersion: { frameworkId: targetFwId } }),
+          },
+          select: { id: true },
+        });
+
+        if (refs.length !== frameworkReferenceIds.length) {
+          throw new BadRequestException('One or more selected framework references do not belong to the selected framework/version');
+        }
+      }
+    }
+
+    return {
+      frameworkId: targetFwId || null,
+      frameworkVersionId: frameworkVersionId || null,
+      frameworkCode: resolvedCode || null,
+    };
+  }
 
   async createPlan(authCtx: ResourceAuthContext, dto: CreateAuditPlanDto): Promise<AuditPlanDto> {
     await this.resourceAuthService.authorize(authCtx, {
@@ -65,21 +137,45 @@ export class BusinessAuditsService {
       dto.projectId,
     );
 
-    const plan = await this.prisma.auditPlan.create({
-      data: {
-        organizationId: authCtx.organizationId,
-        departmentId: dto.departmentId || null,
-        projectId: dto.projectId || null,
-        title: dto.title,
-        objective: dto.objective,
-        scope: dto.scope,
-        frameworkCode: dto.frameworkCode,
-        ownerId: dto.ownerId,
-        plannedStartDate: dto.plannedStartDate ? new Date(dto.plannedStartDate) : null,
-        plannedEndDate: dto.plannedEndDate ? new Date(dto.plannedEndDate) : null,
-        status: AuditPlanStatus.DRAFT,
-        createdById: authCtx.userId,
-      },
+    const fwScope = await this.validateFrameworkScope(
+      authCtx.organizationId,
+      dto.frameworkId,
+      dto.frameworkVersionId,
+      dto.frameworkReferenceIds,
+      dto.frameworkCode,
+    );
+
+    const plan = await this.prisma.$transaction(async (tx: any) => {
+      const createdPlan = await tx.auditPlan.create({
+        data: {
+          organizationId: authCtx.organizationId,
+          departmentId: dto.departmentId || null,
+          projectId: dto.projectId || null,
+          title: dto.title,
+          objective: dto.objective,
+          scope: dto.scope,
+          frameworkCode: fwScope.frameworkCode,
+          frameworkId: fwScope.frameworkId,
+          frameworkVersionId: fwScope.frameworkVersionId,
+          ownerId: dto.ownerId,
+          plannedStartDate: dto.plannedStartDate ? new Date(dto.plannedStartDate) : null,
+          plannedEndDate: dto.plannedEndDate ? new Date(dto.plannedEndDate) : null,
+          status: AuditPlanStatus.DRAFT,
+          createdById: authCtx.userId,
+        },
+      });
+
+      if (dto.frameworkReferenceIds && dto.frameworkReferenceIds.length > 0) {
+        await tx.auditPlanFrameworkReference.createMany({
+          data: dto.frameworkReferenceIds.map((refId) => ({
+            auditPlanId: createdPlan.id,
+            frameworkReferenceId: refId,
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      return createdPlan;
     });
 
     await this.auditLogsService.log({
@@ -88,15 +184,44 @@ export class BusinessAuditsService {
       action: 'AUDIT_PLAN_CREATED',
       entityType: 'AuditPlan',
       entityId: plan.id,
-      metadata: { title: plan.title, frameworkCode: plan.frameworkCode, departmentId: plan.departmentId, projectId: plan.projectId },
+      metadata: {
+        title: plan.title,
+        frameworkCode: plan.frameworkCode,
+        frameworkId: plan.frameworkId,
+        frameworkVersionId: plan.frameworkVersionId,
+        referenceCount: dto.frameworkReferenceIds?.length || 0,
+        departmentId: plan.departmentId,
+        projectId: plan.projectId,
+      },
     });
 
-    return this.mapPlanToDto(plan);
+    const created = await this.prisma.auditPlan.findFirst({
+      where: { id: plan.id },
+      include: {
+        schedules: true,
+        assessments: true,
+        frameworkRef: true,
+        versionRef: true,
+        scopeReferences: {
+          include: { frameworkReference: true },
+        },
+      },
+    });
+
+    return this.mapPlanToDto(created || plan);
   }
 
   async findAllPlans(
     authCtx: ResourceAuthContext,
-    query: { page?: number; limit?: number; status?: AuditPlanStatus; search?: string },
+    query: {
+      page?: number;
+      limit?: number;
+      status?: AuditPlanStatus;
+      search?: string;
+      frameworkId?: string;
+      frameworkCode?: string;
+      frameworkReferenceId?: string;
+    },
   ): Promise<PaginatedAuditPlansDto> {
     const page = Number(query.page) || 1;
     const limit = Number(query.limit) || 20;
@@ -106,11 +231,19 @@ export class BusinessAuditsService {
 
     const where: any = { ...scopeWhere };
     if (query.status) where.status = query.status;
+    if (query.frameworkId) where.frameworkId = query.frameworkId;
+    if (query.frameworkCode) where.frameworkCode = query.frameworkCode;
+    if (query.frameworkReferenceId) {
+      where.scopeReferences = {
+        some: { frameworkReferenceId: query.frameworkReferenceId },
+      };
+    }
     if (query.search && query.search.trim()) {
       const searchTerm = query.search.trim();
       const searchConditions = [
         { title: { contains: searchTerm, mode: 'insensitive' } },
         { objective: { contains: searchTerm, mode: 'insensitive' } },
+        { frameworkCode: { contains: searchTerm, mode: 'insensitive' } },
       ];
 
       if (where.OR) {
@@ -130,7 +263,15 @@ export class BusinessAuditsService {
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
-        include: { schedules: true, assessments: true },
+        include: {
+          schedules: true,
+          assessments: true,
+          frameworkRef: true,
+          versionRef: true,
+          scopeReferences: {
+            include: { frameworkReference: true },
+          },
+        },
       }),
       this.prisma.auditPlan.count({ where }),
     ]);
@@ -155,6 +296,11 @@ export class BusinessAuditsService {
             findings: { include: { capas: true, evidence: true } },
           },
         },
+        frameworkRef: true,
+        versionRef: true,
+        scopeReferences: {
+          include: { frameworkReference: true },
+        },
       },
     });
 
@@ -166,6 +312,9 @@ export class BusinessAuditsService {
     const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const existing = await this.prisma.auditPlan.findFirst({
       where: { id, ...scopeWhere },
+      include: {
+        scopeReferences: true,
+      },
     });
 
     if (!existing) throw new NotFoundException(`Audit Plan with ID "${id}" not found`);
@@ -187,20 +336,112 @@ export class BusinessAuditsService {
       );
     }
 
-    const updated = await this.prisma.auditPlan.update({
-      where: { id },
-      data: {
-        ...(dto.title && { title: dto.title }),
-        ...(dto.objective !== undefined && { objective: dto.objective }),
-        ...(dto.scope !== undefined && { scope: dto.scope }),
-        ...(dto.frameworkCode !== undefined && { frameworkCode: dto.frameworkCode }),
-        ...(dto.ownerId && { ownerId: dto.ownerId }),
-        ...(dto.plannedStartDate !== undefined && { plannedStartDate: dto.plannedStartDate ? new Date(dto.plannedStartDate) : null }),
-        ...(dto.plannedEndDate !== undefined && { plannedEndDate: dto.plannedEndDate ? new Date(dto.plannedEndDate) : null }),
-        ...(dto.status && { status: dto.status }),
-        ...(dto.departmentId !== undefined && { departmentId: dto.departmentId }),
-        ...(dto.projectId !== undefined && { projectId: dto.projectId }),
-      },
+    const isScopeFieldPresent =
+      dto.frameworkId !== undefined ||
+      dto.frameworkVersionId !== undefined ||
+      dto.frameworkReferenceIds !== undefined ||
+      dto.frameworkCode !== undefined;
+
+    let fwScope: { frameworkId?: string | null; frameworkVersionId?: string | null; frameworkCode?: string | null } | undefined;
+    let shouldSyncReferences = false;
+    let targetReferenceIds: string[] = [];
+
+    if (isScopeFieldPresent) {
+      const isFrameworkIdChanged = dto.frameworkId !== undefined && dto.frameworkId !== existing.frameworkId;
+      const isFrameworkCodeChanged = dto.frameworkCode !== undefined && dto.frameworkCode !== existing.frameworkCode;
+      const isVersionIdChanged = dto.frameworkVersionId !== undefined && dto.frameworkVersionId !== existing.frameworkVersionId;
+      const isScopeChanged = isFrameworkIdChanged || isFrameworkCodeChanged || isVersionIdChanged;
+
+      let targetFwId: string | undefined | null;
+      if (dto.frameworkId !== undefined) {
+        targetFwId = dto.frameworkId;
+      } else if (dto.frameworkCode !== undefined && !existing.frameworkId) {
+        targetFwId = undefined;
+      } else {
+        targetFwId = existing.frameworkId || undefined;
+      }
+
+      let targetVerId: string | undefined | null;
+      if (dto.frameworkVersionId !== undefined) {
+        targetVerId = dto.frameworkVersionId;
+      } else if (isFrameworkIdChanged || isFrameworkCodeChanged) {
+        // Framework changed, previous version cannot belong to new framework
+        targetVerId = null;
+      } else {
+        targetVerId = existing.frameworkVersionId || undefined;
+      }
+
+      let targetCode: string | undefined | null;
+      if (dto.frameworkCode !== undefined) {
+        targetCode = dto.frameworkCode;
+      } else if (isFrameworkIdChanged) {
+        targetCode = undefined;
+      } else {
+        targetCode = existing.frameworkCode || undefined;
+      }
+
+      if (dto.frameworkReferenceIds !== undefined) {
+        // Explicitly provided (either populated array or empty array to clear)
+        targetReferenceIds = dto.frameworkReferenceIds;
+        shouldSyncReferences = true;
+      } else if (isScopeChanged) {
+        // Framework or version changed without supplying replacement clause IDs.
+        // Transactionally clear old incompatible clauses.
+        targetReferenceIds = [];
+        shouldSyncReferences = true;
+      } else {
+        // Scope did not change and frameworkReferenceIds was omitted.
+        // Preserve existing clause associations.
+        shouldSyncReferences = false;
+      }
+
+      fwScope = await this.validateFrameworkScope(
+        authCtx.organizationId,
+        targetFwId,
+        targetVerId,
+        shouldSyncReferences ? targetReferenceIds : undefined,
+        targetCode,
+      );
+    }
+
+    const updated = await this.prisma.$transaction(async (tx: any) => {
+      const plan = await tx.auditPlan.update({
+        where: { id },
+        data: {
+          ...(dto.title && { title: dto.title }),
+          ...(dto.objective !== undefined && { objective: dto.objective }),
+          ...(dto.scope !== undefined && { scope: dto.scope }),
+          ...(dto.ownerId && { ownerId: dto.ownerId }),
+          ...(dto.plannedStartDate !== undefined && { plannedStartDate: dto.plannedStartDate ? new Date(dto.plannedStartDate) : null }),
+          ...(dto.plannedEndDate !== undefined && { plannedEndDate: dto.plannedEndDate ? new Date(dto.plannedEndDate) : null }),
+          ...(dto.status && { status: dto.status }),
+          ...(dto.departmentId !== undefined && { departmentId: dto.departmentId }),
+          ...(dto.projectId !== undefined && { projectId: dto.projectId }),
+          ...(fwScope && {
+            frameworkId: fwScope.frameworkId,
+            frameworkVersionId: fwScope.frameworkVersionId,
+            frameworkCode: fwScope.frameworkCode,
+          }),
+        },
+      });
+
+      if (shouldSyncReferences) {
+        await tx.auditPlanFrameworkReference.deleteMany({
+          where: { auditPlanId: id },
+        });
+
+        if (targetReferenceIds.length > 0) {
+          await tx.auditPlanFrameworkReference.createMany({
+            data: targetReferenceIds.map((refId) => ({
+              auditPlanId: id,
+              frameworkReferenceId: refId,
+            })),
+            skipDuplicates: true,
+          });
+        }
+      }
+
+      return plan;
     });
 
     await this.auditLogsService.log({
@@ -209,10 +450,30 @@ export class BusinessAuditsService {
       action: 'AUDIT_PLAN_UPDATED',
       entityType: 'AuditPlan',
       entityId: id,
-      metadata: { status: updated.status },
+      metadata: {
+        status: updated.status,
+        frameworkId: updated.frameworkId,
+        frameworkVersionId: updated.frameworkVersionId,
+        frameworkCode: updated.frameworkCode,
+        referencesUpdated: shouldSyncReferences,
+        referenceCount: shouldSyncReferences ? targetReferenceIds.length : existing.scopeReferences?.length || 0,
+      },
     });
 
-    return this.mapPlanToDto(updated);
+    const reloaded = await this.prisma.auditPlan.findFirst({
+      where: { id },
+      include: {
+        schedules: true,
+        assessments: true,
+        frameworkRef: true,
+        versionRef: true,
+        scopeReferences: {
+          include: { frameworkReference: true },
+        },
+      },
+    });
+
+    return this.mapPlanToDto(reloaded || updated);
   }
 
   // --------------------------------------------------
@@ -551,6 +812,10 @@ export class BusinessAuditsService {
       objective: p.objective,
       scope: p.scope,
       frameworkCode: p.frameworkCode,
+      frameworkId: p.frameworkId || null,
+      frameworkVersionId: p.frameworkVersionId || null,
+      frameworkName: p.frameworkRef?.name || null,
+      versionName: p.versionRef?.version || p.versionRef?.name || null,
       ownerId: p.ownerId,
       plannedStartDate: p.plannedStartDate ? p.plannedStartDate.toISOString() : null,
       plannedEndDate: p.plannedEndDate ? p.plannedEndDate.toISOString() : null,
@@ -560,6 +825,16 @@ export class BusinessAuditsService {
       updatedAt: p.updatedAt.toISOString(),
       schedules: p.schedules ? p.schedules.map((s: any) => this.mapScheduleToDto(s)) : [],
       assessments: p.assessments ? p.assessments.map((a: any) => this.mapAssessmentToDto(a)) : [],
+      scopeReferences: p.scopeReferences
+        ? p.scopeReferences.map((sr: any) => ({
+            id: sr.id,
+            frameworkReferenceId: sr.frameworkReferenceId,
+            identifier: sr.frameworkReference?.identifier,
+            title: sr.frameworkReference?.title,
+            type: sr.frameworkReference?.type,
+            description: sr.frameworkReference?.description,
+          }))
+        : [],
     } as any;
   }
 

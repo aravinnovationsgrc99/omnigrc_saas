@@ -35,6 +35,8 @@ export function ReportsView() {
   const [type, setType] = useState('');
   const [cadence, setCadence] = useState('');
   const [scoreBand, setScoreBand] = useState('');
+  const [frameworkFilter, setFrameworkFilter] = useState('');
+  const [frameworks, setFrameworks] = useState<Array<{ id: string; code: string; name: string }>>([]);
   const [overdue, setOverdue] = useState(false);
   const [upcoming, setUpcoming] = useState(false);
 
@@ -50,6 +52,12 @@ export function ReportsView() {
   const [exporting, setExporting] = useState<ExportFormat | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    apiRequest<Array<{ id: string; code: string; name: string }>>('/frameworks')
+      .then((data) => setFrameworks(data || []))
+      .catch(() => {});
+  }, []);
+
   // Reset filters when switching reports
   useEffect(() => {
     const newMeta = FRONTEND_REPORTS[selectedReportType];
@@ -61,6 +69,7 @@ export function ReportsView() {
     setType('');
     setCadence('');
     setScoreBand('');
+    setFrameworkFilter('');
     setOverdue(false);
     setUpcoming(false);
     setSortBy(newMeta?.defaultSortBy || '');
@@ -86,6 +95,7 @@ export function ReportsView() {
       if (type) params.append('type', type);
       if (cadence) params.append('cadence', cadence);
       if (scoreBand) params.append('scoreBand', scoreBand);
+      if (frameworkFilter) params.append('frameworkCode', frameworkFilter);
       if (overdue) params.append('overdue', 'true');
       if (upcoming) params.append('upcoming', 'true');
 
@@ -112,6 +122,7 @@ export function ReportsView() {
     type,
     cadence,
     scoreBand,
+    frameworkFilter,
     overdue,
     upcoming,
     sortBy,
@@ -139,6 +150,7 @@ export function ReportsView() {
       if (type) params.append('type', type);
       if (cadence) params.append('cadence', cadence);
       if (scoreBand) params.append('scoreBand', scoreBand);
+      if (frameworkFilter) params.append('frameworkCode', frameworkFilter);
       if (overdue) params.append('overdue', 'true');
       if (upcoming) params.append('upcoming', 'true');
 
@@ -375,6 +387,21 @@ export function ReportsView() {
                   <option value="HIGH">High (≥15)</option>
                   <option value="MEDIUM">Medium (8–14)</option>
                   <option value="LOW">Low (1–7)</option>
+                </select>
+              )}
+
+              {meta.supportedFilters.includes('frameworkCode') && (
+                <select
+                  value={frameworkFilter}
+                  onChange={(e) => { setFrameworkFilter(e.target.value); setPage(1); }}
+                  className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none"
+                >
+                  <option value="">All Frameworks</option>
+                  {frameworks.map((fw) => (
+                    <option key={fw.id} value={fw.code}>
+                      {fw.code} - {fw.name}
+                    </option>
+                  ))}
                 </select>
               )}
 

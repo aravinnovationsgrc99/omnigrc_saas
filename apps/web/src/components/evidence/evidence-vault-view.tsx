@@ -5,6 +5,7 @@ import { EvidenceDto, PaginatedEvidenceDto, EvidenceType, EvidenceStatus } from 
 import { Search, FileText, Download, Info, RefreshCw, FileArchive, Upload, ShieldCheck, Tag, Trash2, Link } from 'lucide-react';
 import { apiRequest, getStoredTokens } from '@/lib/api-client';
 import { useToast } from '@/context/toast-context';
+import { ComplianceScopeFilter } from '@/components/ui/compliance-scope-filter';
 
 export function EvidenceVaultView() {
   const { addToast } = useToast();
@@ -14,6 +15,8 @@ export function EvidenceVaultView() {
 
   const [search, setSearch] = useState('');
   const [evidenceType, setEvidenceType] = useState<string>('');
+  const [frameworkId, setFrameworkId] = useState<string>('');
+  const [frameworkReferenceId, setFrameworkReferenceId] = useState<string>('');
   const [page, setPage] = useState(1);
 
   // Upload Modal State
@@ -34,6 +37,8 @@ export function EvidenceVaultView() {
       params.append('limit', '15');
       if (search) params.append('search', search);
       if (evidenceType) params.append('evidenceType', evidenceType);
+      if (frameworkId) params.append('frameworkId', frameworkId);
+      if (frameworkReferenceId) params.append('frameworkReferenceId', frameworkReferenceId);
 
       const result = await apiRequest<PaginatedEvidenceDto>(`/evidence/vault?${params.toString()}`);
       setData(result);
@@ -46,7 +51,7 @@ export function EvidenceVaultView() {
 
   useEffect(() => {
     fetchVault();
-  }, [page, evidenceType]);
+  }, [page, evidenceType, frameworkId, frameworkReferenceId]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -175,42 +180,63 @@ export function EvidenceVaultView() {
       </div>
 
       {/* Filter Bar */}
-      <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 shadow-sm space-y-4 sm:space-y-0 sm:flex sm:items-center sm:justify-between gap-4">
-        <form onSubmit={handleSearchSubmit} className="flex-1 flex items-center gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search evidence file name, description, or resource attachment..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-xs bg-white border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-teal-600 transition"
-            />
-          </div>
-          <button
-            type="submit"
-            className="px-4 py-2 text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white rounded-lg transition shadow-sm"
-          >
-            Filter
-          </button>
-        </form>
+      <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 shadow-sm space-y-3">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <form onSubmit={handleSearchSubmit} className="flex-1 flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search evidence file name, description, or resource attachment..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 text-xs bg-white border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-teal-600 transition"
+              />
+            </div>
+            <button
+              type="submit"
+              className="px-4 py-2 text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white rounded-lg transition shadow-sm"
+            >
+              Filter
+            </button>
+          </form>
 
-        <div className="flex items-center gap-3">
-          <select
-            value={evidenceType}
-            onChange={(e) => {
-              setEvidenceType(e.target.value);
+          <div className="flex items-center gap-3">
+            <select
+              value={evidenceType}
+              onChange={(e) => {
+                setEvidenceType(e.target.value);
+                setPage(1);
+              }}
+              className="px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:ring-1 focus:ring-teal-600 font-medium"
+            >
+              <option value="">All Evidence Types</option>
+              <option value="DOCUMENT">Document (PDF/DOC)</option>
+              <option value="SPREADSHEET">Spreadsheet (XLS/CSV)</option>
+              <option value="IMAGE">Image (PNG/JPG)</option>
+              <option value="CONFIG_EXPORT">Config Export</option>
+              <option value="SYSTEM_LOG">System Log</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Dynamic Framework & Clause Scope Filter */}
+        <div className="pt-2 border-t border-slate-200/60">
+          <ComplianceScopeFilter
+            frameworkId={frameworkId}
+            frameworkReferenceId={frameworkReferenceId}
+            onFrameworkChange={(fwId) => {
+              setFrameworkId(fwId);
+              setFrameworkReferenceId('');
               setPage(1);
             }}
-            className="px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:ring-1 focus:ring-teal-600 font-medium"
-          >
-            <option value="">All Evidence Types</option>
-            <option value="DOCUMENT">Document (PDF/DOC)</option>
-            <option value="SPREADSHEET">Spreadsheet (XLS/CSV)</option>
-            <option value="IMAGE">Image (PNG/JPG)</option>
-            <option value="CONFIG_EXPORT">Config Export</option>
-            <option value="SYSTEM_LOG">System Log</option>
-          </select>
+            onReferenceChange={(refId) => {
+              setFrameworkReferenceId(refId);
+              setPage(1);
+            }}
+            frameworkPlaceholder="Filter by Framework..."
+            clausePlaceholder="Filter by Clause / Section..."
+          />
         </div>
       </div>
 
@@ -233,7 +259,7 @@ export function EvidenceVaultView() {
                 <tr>
                   <th className="py-3 px-4">Proof Title & File</th>
                   <th className="py-3 px-4">Evidence Type</th>
-                  <th className="py-3 px-4">Associated Resources</th>
+                  <th className="py-3 px-4">Associated Resources & Scopes</th>
                   <th className="py-3 px-4">Size & Hash</th>
                   <th className="py-3 px-4">Uploader</th>
                   <th className="py-3 px-4 text-right">Actions</th>
@@ -257,13 +283,22 @@ export function EvidenceVaultView() {
                       </span>
                     </td>
                     <td className="py-3.5 px-4">
-                      {item.associations.length === 0 ? (
+                      {item.associations.length === 0 && (!item.frameworkReferences || item.frameworkReferences.length === 0) ? (
                         <span className="italic text-slate-400">Unattached</span>
                       ) : (
                         <div className="flex flex-wrap gap-1">
                           {item.associations.map((a, idx) => (
-                            <span key={idx} className="px-1.5 py-0.5 bg-teal-50 text-teal-800 border border-teal-200 text-[10px] rounded">
+                            <span key={`assoc-${idx}`} className="px-1.5 py-0.5 bg-teal-50 text-teal-800 border border-teal-200 text-[10px] rounded">
                               {a.resourceType}: {a.resourceTitle || a.resourceId.slice(0, 8)}
+                            </span>
+                          ))}
+                          {item.frameworkReferences?.map((fr, idx) => (
+                            <span
+                              key={`fr-${idx}`}
+                              className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] rounded font-medium"
+                              title={fr.title}
+                            >
+                              {fr.frameworkCode ? `${fr.frameworkCode}: ` : ''}{fr.identifier}
                             </span>
                           ))}
                         </div>

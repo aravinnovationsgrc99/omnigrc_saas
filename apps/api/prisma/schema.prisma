@@ -488,6 +488,7 @@ model Framework {
   entitlements     OrganizationFrameworkEntitlement[]
   documentAnalyses DocumentAnalysis[]
   risks            Risk[]
+  auditPlans       AuditPlan[]
 
   @@map("frameworks")
 }
@@ -508,6 +509,7 @@ model FrameworkVersion {
   references   FrameworkReference[]
   entitlements OrganizationFrameworkEntitlement[]
   documentAnalyses DocumentAnalysis[]
+  auditPlans       AuditPlan[]
 
   @@unique([frameworkId, version])
   @@index([frameworkId])
@@ -563,6 +565,7 @@ model FrameworkReference {
   approvalInstances ApprovalInstance[]
   documentAnalyses DocumentAnalysis[]
   risks            Risk[]
+  auditPlanReferences AuditPlanFrameworkReference[]
 
   @@unique([frameworkVersionId, identifier])
   @@index([frameworkVersionId])
@@ -1024,6 +1027,8 @@ model AuditPlan {
   objective        String?
   scope            String?
   frameworkCode    String?
+  frameworkId      String?
+  frameworkVersionId String?
   ownerId          String
   plannedStartDate DateTime?
   plannedEndDate   DateTime?
@@ -1032,17 +1037,37 @@ model AuditPlan {
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
-  organization  Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  departmentRef Department?       @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  projectRef    Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  schedules     AuditSchedule[]
-  assessments   AuditAssessment[]
+  organization     Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  departmentRef    Department?        @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  projectRef       Project?           @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  frameworkRef     Framework?         @relation(fields: [frameworkId], references: [id], onDelete: SetNull)
+  versionRef       FrameworkVersion?  @relation(fields: [frameworkVersionId], references: [id], onDelete: SetNull)
+  schedules        AuditSchedule[]
+  assessments      AuditAssessment[]
+  scopeReferences  AuditPlanFrameworkReference[]
 
   @@index([organizationId])
   @@index([departmentId])
   @@index([projectId])
+  @@index([frameworkId])
+  @@index([frameworkVersionId])
   @@index([status])
   @@map("audit_plans")
+}
+
+model AuditPlanFrameworkReference {
+  id                   String             @id @default(uuid())
+  auditPlanId          String
+  frameworkReferenceId String
+  createdAt            DateTime           @default(now())
+
+  auditPlan          AuditPlan          @relation(fields: [auditPlanId], references: [id], onDelete: Cascade)
+  frameworkReference FrameworkReference @relation(fields: [frameworkReferenceId], references: [id], onDelete: Cascade)
+
+  @@unique([auditPlanId, frameworkReferenceId], map: "audit_plan_framework_references_auditPlanId_frameworkReferenceI")
+  @@index([auditPlanId])
+  @@index([frameworkReferenceId])
+  @@map("audit_plan_framework_references")
 }
 
 model AuditSchedule {

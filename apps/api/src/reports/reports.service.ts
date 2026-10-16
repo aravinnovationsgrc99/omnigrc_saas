@@ -377,12 +377,26 @@ export class ReportsService {
       case ReportType.BUSINESS_AUDIT_REPORT: {
         const where: any = { organizationId };
         if (query.status) where.status = query.status;
-        if (query.search) {
+        if (query.frameworkId) {
+          where.frameworkId = query.frameworkId;
+        } else if (query.frameworkCode) {
           where.OR = [
+            { frameworkCode: query.frameworkCode },
+            { frameworkRef: { code: query.frameworkCode } },
+          ];
+        }
+        if (query.search) {
+          const searchClause = [
             { title: { contains: query.search, mode: 'insensitive' } },
             { objective: { contains: query.search, mode: 'insensitive' } },
             { scope: { contains: query.search, mode: 'insensitive' } },
           ];
+          if (where.OR) {
+            where.AND = [{ OR: where.OR }, { OR: searchClause }];
+            delete where.OR;
+          } else {
+            where.OR = searchClause;
+          }
         }
 
         const [count, plans] = await Promise.all([
@@ -390,6 +404,7 @@ export class ReportsService {
           this.prisma.auditPlan.findMany({
             where,
             include: {
+              frameworkRef: { select: { code: true, name: true } },
               assessments: {
                 include: {
                   findings: {
@@ -437,7 +452,7 @@ export class ReportsService {
           return {
             id: p.id,
             title: p.title,
-            frameworkCode: p.frameworkCode || 'N/A',
+            frameworkCode: p.frameworkRef?.code || p.frameworkCode || 'N/A',
             status: p.status,
             ownerId: p.ownerId,
             assessmentCount: assessments.length,
@@ -454,6 +469,13 @@ export class ReportsService {
       case ReportType.RISK_REGISTER_REPORT: {
         const where: any = { organizationId, deletedAt: null };
         if (query.status) where.status = query.status;
+        if (query.frameworkReferenceId) {
+          where.frameworkReferenceId = query.frameworkReferenceId;
+        } else if (query.frameworkId) {
+          where.frameworkReference = {
+            frameworkVersion: { frameworkId: query.frameworkId },
+          };
+        }
         if (query.scoreBand) {
           if (query.scoreBand === RiskScoreBand.HIGH) where.score = { gte: 15 };
           else if (query.scoreBand === RiskScoreBand.MEDIUM) where.score = { gte: 8, lte: 14 };
@@ -521,6 +543,9 @@ export class ReportsService {
         cadence: query.cadence || null,
         scoreBand: query.scoreBand || null,
         overdue: query.overdue ?? null,
+        frameworkId: query.frameworkId || null,
+        frameworkCode: query.frameworkCode || null,
+        frameworkReferenceId: query.frameworkReferenceId || null,
       },
       total,
       page,

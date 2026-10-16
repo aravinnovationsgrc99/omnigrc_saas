@@ -178,6 +178,42 @@ describe('RisksService', () => {
     expect(result.items.length).toBe(0);
     expect(result.total).toBe(0);
   });
+
+  it('should filter risks by frameworkReferenceId while maintaining tenant isolation', async () => {
+    prisma.risk.findMany.mockResolvedValue([]);
+    prisma.risk.count.mockResolvedValue(0);
+
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    await service.findAll(authCtx, { frameworkReferenceId: 'ref-iso-sec5' });
+
+    expect(prisma.risk.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          organizationId: 'org-1',
+          deletedAt: null,
+          frameworkReferenceId: 'ref-iso-sec5',
+        }),
+      }),
+    );
+  });
+
+  it('should filter risks by frameworkId via relational traversal', async () => {
+    prisma.risk.findMany.mockResolvedValue([]);
+    prisma.risk.count.mockResolvedValue(0);
+
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    await service.findAll(authCtx, { frameworkId: 'fw-hipaa' });
+
+    expect(prisma.risk.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          organizationId: 'org-1',
+          deletedAt: null,
+          frameworkId: 'fw-hipaa',
+        }),
+      }),
+    );
+  });
 });
 
 describe('RiskQueryDto validation', () => {

@@ -14,6 +14,9 @@ export class CreateAuditPlanDto {
   objective?: string;
   scope?: string;
   frameworkCode?: string;
+  frameworkId?: string;
+  frameworkVersionId?: string;
+  frameworkReferenceIds?: string[];
   ownerId: string;
   plannedStartDate?: string;
   plannedEndDate?: string;
@@ -26,6 +29,9 @@ export class UpdateAuditPlanDto {
   objective?: string;
   scope?: string;
   frameworkCode?: string;
+  frameworkId?: string;
+  frameworkVersionId?: string;
+  frameworkReferenceIds?: string[];
   ownerId?: string;
   plannedStartDate?: string;
   plannedEndDate?: string;

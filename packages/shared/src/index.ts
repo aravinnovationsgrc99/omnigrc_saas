@@ -369,6 +369,8 @@ export interface RiskQueryDto {
   likelihood?: number;
   impact?: number;
   assetId?: string;
+  frameworkId?: string;
+  frameworkReferenceId?: string;
 }
 
 export interface PaginatedRisksDto {
@@ -696,6 +698,8 @@ export interface ControlQueryDto {
   search?: string;
   category?: string;
   status?: MappingStatus;
+  frameworkId?: string;
+  frameworkReferenceId?: string;
 }
 
 export interface PaginatedControlsDto {
@@ -1612,13 +1616,28 @@ export interface AuditScheduleDto {
   updatedAt: Date | string;
 }
 
+export interface AuditPlanScopeReferenceDto {
+  id: string;
+  frameworkReferenceId: string;
+  identifier: string;
+  title: string;
+  type?: string;
+  description?: string | null;
+}
+
 export interface AuditPlanDto {
   id: string;
   organizationId: string;
+  departmentId?: string | null;
+  projectId?: string | null;
   title: string;
   objective?: string | null;
   scope?: string | null;
   frameworkCode?: FrameworkCode | string | null;
+  frameworkId?: string | null;
+  frameworkVersionId?: string | null;
+  frameworkName?: string | null;
+  versionName?: string | null;
   ownerId: string;
   plannedStartDate?: Date | string | null;
   plannedEndDate?: Date | string | null;
@@ -1628,6 +1647,17 @@ export interface AuditPlanDto {
   updatedAt: Date | string;
   schedules?: AuditScheduleDto[];
   assessments?: AuditAssessmentDto[];
+  scopeReferences?: AuditPlanScopeReferenceDto[];
+}
+
+export interface AuditPlanQueryDto {
+  page?: number;
+  limit?: number;
+  status?: AuditPlanStatus;
+  search?: string;
+  frameworkId?: string;
+  frameworkCode?: string;
+  frameworkReferenceId?: string;
 }
 
 export interface PaginatedAuditPlansDto {
@@ -1872,6 +1902,9 @@ export interface ReportQueryDto {
   overdueReview?: boolean;
   requiringReview?: boolean;
   assetId?: string;
+  frameworkId?: string;
+  frameworkCode?: string;
+  frameworkReferenceId?: string;
   format?: ExportFormat;
 }
 
@@ -2022,6 +2055,7 @@ export interface EvidenceVaultQueryDto {
   status?: EvidenceStatus;
   resourceType?: string;
   frameworkReferenceId?: string;
+  frameworkId?: string;
 }
 
 export interface PaginatedEvidenceVaultDto {
@@ -2262,7 +2296,7 @@ export interface EvidenceDto {
   createdAt: string;
   updatedAt: string;
   associations: ResourceAssociationDto[];
-  frameworkReferences?: Array<{ id: string; identifier: string; title: string }>;
+  frameworkReferences?: Array<{ id: string; identifier: string; title: string; frameworkCode?: string; frameworkName?: string }>;
 }
 
 export interface CreateEvidenceUploadDto {

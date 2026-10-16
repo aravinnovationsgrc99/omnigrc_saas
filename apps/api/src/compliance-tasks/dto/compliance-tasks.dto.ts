@@ -124,4 +124,8 @@ export class ComplianceTaskQueryDto {
   @IsString()
   @IsOptional()
   controlId?: string;
+
+  @IsString()
+  @IsOptional()
+  frameworkId?: string;
 }

@@ -152,7 +152,7 @@ export const FRONTEND_REPORTS: Record<ReportType, FrontendReportMeta> = {
     title: 'Business Audit Report',
     category: 'Business Audits',
     description: 'Business audit plans, schedules, stored assessment scores, findings, and CAPA remediation progress.',
-    supportedFilters: ['status', 'search'],
+    supportedFilters: ['status', 'frameworkCode', 'frameworkId', 'search'],
     allowlistedSortFields: ['createdAt', 'title', 'status', 'plannedStartDate'],
     defaultSortBy: 'createdAt',
     defaultSortDirection: 'desc',

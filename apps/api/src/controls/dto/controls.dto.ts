@@ -83,6 +83,14 @@ export class ControlQueryDto {
   @IsEnum(MappingStatus)
   @IsOptional()
   status?: MappingStatus;
+
+  @IsString()
+  @IsOptional()
+  frameworkId?: string;
+
+  @IsString()
+  @IsOptional()
+  frameworkReferenceId?: string;
 }
 
 export class CreateControlMappingDto {

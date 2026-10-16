@@ -35,6 +35,19 @@ export class ComplianceTasksService {
       where.controlId = query.controlId;
     }
 
+    if (query.frameworkId) {
+      where.control = {
+        mappings: {
+          some: {
+            OR: [
+              { frameworkReference: { frameworkVersion: { frameworkId: query.frameworkId } } },
+              { frameworkClause: { frameworkId: query.frameworkId } },
+            ],
+          },
+        },
+      };
+    }
+
     if (query.search && query.search.trim()) {
       const searchTerm = query.search.trim();
       const searchConditions = [
