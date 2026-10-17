@@ -33,12 +33,72 @@ export class ControlsService {
       where.category = query.category;
     }
 
+    if (query.frameworkId) {
+      const fw = await this.prisma.framework.findUnique({
+        where: { id: query.frameworkId },
+        select: { id: true },
+      });
+      if (!fw) {
+        return { items: [], total: 0, page, limit };
+      }
+      const isEntitled = await this.frameworkEntitlementsService.isEntitled(
+        authCtx.organizationId,
+        query.frameworkId,
+        query.frameworkVersionId,
+      );
+      if (!isEntitled) {
+        return { items: [], total: 0, page, limit };
+      }
+    }
+
+    if (query.frameworkVersionId) {
+      const ver = await this.prisma.frameworkVersion.findUnique({
+        where: { id: query.frameworkVersionId },
+        select: { id: true, frameworkId: true },
+      });
+      if (!ver) {
+        return { items: [], total: 0, page, limit };
+      }
+      const isEntitled = await this.frameworkEntitlementsService.isEntitled(
+        authCtx.organizationId,
+        ver.frameworkId,
+        ver.id,
+      );
+      if (!isEntitled) {
+        return { items: [], total: 0, page, limit };
+      }
+    }
+
+    if (query.frameworkReferenceId) {
+      const ref = await this.prisma.frameworkReference.findUnique({
+        where: { id: query.frameworkReferenceId },
+        include: { frameworkVersion: true },
+      });
+      if (!ref) {
+        return { items: [], total: 0, page, limit };
+      }
+      const isEntitled = await this.frameworkEntitlementsService.isEntitled(
+        authCtx.organizationId,
+        ref.frameworkVersion.frameworkId,
+        ref.frameworkVersionId,
+      );
+      if (!isEntitled) {
+        return { items: [], total: 0, page, limit };
+      }
+    }
+
     const mappingConditions: any = {};
     if (query.status) {
       mappingConditions.status = query.status;
     }
     if (query.frameworkReferenceId) {
       mappingConditions.frameworkReferenceId = query.frameworkReferenceId;
+    }
+    if (query.frameworkVersionId) {
+      mappingConditions.frameworkReference = {
+        ...(mappingConditions.frameworkReference || {}),
+        frameworkVersionId: query.frameworkVersionId,
+      };
     }
     if (query.frameworkId) {
       mappingConditions.OR = [

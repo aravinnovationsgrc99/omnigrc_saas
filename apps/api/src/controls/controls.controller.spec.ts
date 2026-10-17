@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ControlsController } from './controls.controller';
 import { ControlsService } from './controls.service';
+import { ControlImportService } from './control-import.service';
 import { MappingQueueService } from './ai/mapping-queue.service';
 import { RiskControlsService } from '../risk-controls/risk-controls.service';
 import { EvidenceService } from '../evidence/evidence.service';
@@ -15,6 +16,7 @@ import { BadRequestException } from '@nestjs/common';
 describe('ControlsController Evidence Association Integration', () => {
   let controller: ControlsController;
   let controlsService: jest.Mocked<any>;
+  let controlImportService: jest.Mocked<any>;
   let mappingQueueService: jest.Mocked<any>;
   let riskControlsService: jest.Mocked<any>;
   let evidenceService: jest.Mocked<any>;
@@ -31,6 +33,10 @@ describe('ControlsController Evidence Association Integration', () => {
     controlsService = {
       findAll: jest.fn(),
       findOne: jest.fn(),
+    };
+    controlImportService = {
+      analyzeImportFile: jest.fn(),
+      persistImportedControls: jest.fn(),
     };
     mappingQueueService = {
       enqueueMappingJob: jest.fn(),
@@ -55,6 +61,7 @@ describe('ControlsController Evidence Association Integration', () => {
       controllers: [ControlsController],
       providers: [
         { provide: ControlsService, useValue: controlsService },
+        { provide: ControlImportService, useValue: controlImportService },
         { provide: MappingQueueService, useValue: mappingQueueService },
         { provide: RiskControlsService, useValue: riskControlsService },
         { provide: EvidenceService, useValue: evidenceService },
@@ -244,6 +251,53 @@ describe('ControlsController Evidence Association Integration', () => {
       expect(businessAuditsService.createCheckItemForControl).toHaveBeenCalledWith(
         expect.objectContaining({ organizationId: 'org-1', userId: 'user-1', role: Role.ADMIN }),
         'ctrl-1',
+        mockDto,
+      );
+      expect(result).toBe(mockResult);
+    });
+  });
+
+  describe('Control Import Endpoints', () => {
+    it('analyzeImport delegates to controlImportService.analyzeImportFile with scoped authCtx', async () => {
+      const mockFile = { originalname: 'controls.xlsx', buffer: Buffer.from('test'), size: 4 };
+      const mockResponse = {
+        fileName: 'controls.xlsx',
+        fileType: 'XLSX',
+        totalControlsDetected: 1,
+        requiresOcr: false,
+        coverage: { totalExtracted: 1, matchedCount: 1, unmatchedCount: 0, highConfidenceCount: 1 },
+        suggestions: [],
+      };
+      controlImportService.analyzeImportFile.mockResolvedValue(mockResponse);
+
+      const result = await controller.analyzeImport(
+        mockUser,
+        mockFile as any,
+        { frameworkId: 'fw-1', frameworkVersionId: 'ver-1' },
+      );
+
+      expect(controlImportService.analyzeImportFile).toHaveBeenCalledWith(
+        expect.objectContaining({ organizationId: 'org-1', userId: 'user-1', role: Role.ADMIN }),
+        mockFile,
+        'fw-1',
+        'ver-1',
+      );
+      expect(result).toBe(mockResponse);
+    });
+
+    it('persistImport delegates to controlImportService.persistImportedControls with scoped authCtx', async () => {
+      const mockDto = {
+        controls: [
+          { name: 'Imported Control', description: 'Description', frameworkReferenceId: 'ref-1' },
+        ],
+      };
+      const mockResult = { createdCount: 1, mappedCount: 1, controlIds: ['ctrl-1'] };
+      controlImportService.persistImportedControls.mockResolvedValue(mockResult);
+
+      const result = await controller.persistImport(mockUser, mockDto as any);
+
+      expect(controlImportService.persistImportedControls).toHaveBeenCalledWith(
+        expect.objectContaining({ organizationId: 'org-1', userId: 'user-1', role: Role.ADMIN }),
         mockDto,
       );
       expect(result).toBe(mockResult);

@@ -94,7 +94,7 @@ export default function MainPage() {
 
   return (
     <ToastProvider>
-      <div className="omni-root" style={{ height: '100vh', display: 'flex', position: 'relative', overflow: 'hidden' }}>
+      <div className="omni-root" style={{ height: '100dvh', minHeight: '100vh', display: 'flex', position: 'relative', overflow: 'hidden' }}>
         <Sidebar
           view={view}
           setView={(v) => navigateToView(v)}
@@ -108,7 +108,10 @@ export default function MainPage() {
               <span>Software License Expired — Operating in Read-Only Mode. Data exports and viewing remain available.</span>
             </div>
           )}
-          <Topbar onToggleMobileSidebar={() => setMobileSidebarOpen((v) => !v)} />
+          <Topbar
+            onToggleMobileSidebar={() => setMobileSidebarOpen((v) => !v)}
+            mobileSidebarOpen={mobileSidebarOpen}
+          />
           <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }} className="omni-scroll w-full max-w-full p-3.5 sm:p-6">
             {!isLicensed && activeItem?.capabilityCode ? (
               <ModuleNotLicensedView

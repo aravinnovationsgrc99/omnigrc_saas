@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { ControlDto, AuditLogEntryDto, CreateControlDto, UpdateControlDto } from '@omnigrc/shared';
 import { apiRequest } from '@/lib/api-client';
 import { useToast } from '@/context/toast-context';
-import { GitMerge, X, Trash2, History, Clock } from 'lucide-react';
+import { GitMerge, X, Trash2, History, Clock, Sparkles } from 'lucide-react';
 
 
 interface ControlDrawerProps {
@@ -12,9 +12,10 @@ interface ControlDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  onOpenImport?: () => void;
 }
 
-export function ControlDrawer({ control, isOpen, onClose, onSuccess }: ControlDrawerProps) {
+export function ControlDrawer({ control, isOpen, onClose, onSuccess, onOpenImport }: ControlDrawerProps) {
   const { showToast } = useToast();
   const isEdit = Boolean(control);
 
@@ -181,6 +182,59 @@ export function ControlDrawer({ control, isOpen, onClose, onSuccess }: ControlDr
               borderRadius: 6, color: '#801F2B', fontSize: 13, marginBottom: 16,
             }}>
               {errorMsg}
+            </div>
+          )}
+
+          {!isEdit && (
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: '#5B6672', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                Creation Method
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div
+                  style={{
+                    padding: '12px 14px',
+                    borderRadius: 8,
+                    border: '1.5px solid #0F6E6A',
+                    background: '#E4F1F0',
+                    cursor: 'default',
+                  }}
+                >
+                  <div style={{ fontWeight: 600, fontSize: 13, color: '#0F6E6A', marginBottom: 2 }}>
+                    Manual Creation
+                  </div>
+                  <div style={{ fontSize: 11, color: '#5B6672' }}>
+                    Define single control manually
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onOpenImport) {
+                      onOpenImport();
+                    }
+                  }}
+                  style={{
+                    padding: '12px 14px',
+                    borderRadius: 8,
+                    border: '1px solid #CBD5E1',
+                    background: '#FFFFFF',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    transition: 'all 0.15s ease',
+                  }}
+                  className="hover:border-teal-500 hover:bg-teal-50/30"
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600, fontSize: 13, color: '#1B2430', marginBottom: 2 }}>
+                    <Sparkles size={14} className="text-teal-600" />
+                    <span>Import & Map File</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: '#5B6672' }}>
+                    AI-extract from PDF or Excel
+                  </div>
+                </button>
+              </div>
             </div>
           )}
 

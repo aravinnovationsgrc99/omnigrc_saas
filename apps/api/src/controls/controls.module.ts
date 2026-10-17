@@ -18,6 +18,7 @@ import { BusinessAuditsModule } from '../business-audits/business-audits.module'
 import { GrcContextResolver } from './ai/grc-context-resolver';
 import { GrcIntelligenceChatService } from './ai/grc-intelligence-chat.service';
 import { ResourceAuthorizationService } from '../auth/resource-authorization.service';
+import { ControlImportService } from './control-import.service';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { ResourceAuthorizationService } from '../auth/resource-authorization.ser
   controllers: [ControlsController, GrcIntelligenceController],
   providers: [
     ControlsService,
+    ControlImportService,
     MappingQueueService,
     AiRouterService,
     GeminiProvider,
@@ -41,6 +43,6 @@ import { ResourceAuthorizationService } from '../auth/resource-authorization.ser
     GrcIntelligenceChatService,
     ResourceAuthorizationService,
   ],
-  exports: [ControlsService, AiRouterService, GrcIntelligenceChatService],
+  exports: [ControlsService, ControlImportService, AiRouterService, GrcIntelligenceChatService],
 })
 export class ControlsModule {}

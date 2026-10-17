@@ -9,7 +9,9 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { InlineErrorState } from '@/components/ui/inline-error-state';
 import { ControlDrawer } from './control-drawer';
 import { ControlDetailView } from './control-detail-view';
-import { Plus, Search, Filter, GitMerge, ChevronRight } from 'lucide-react';
+import { ControlImportModal } from './control-import-modal';
+import { ComplianceScopeFilter } from '@/components/ui/compliance-scope-filter';
+import { Plus, Search, Filter, GitMerge, ChevronRight, Sparkles } from 'lucide-react';
 
 
 
@@ -65,9 +67,16 @@ export function ControlMappingView({ onNavigateToView }: ControlMappingViewProps
   const [categoryFilter, setCategoryFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [frameworkFilter, setFrameworkFilter] = useState<string>('');
+  const [referenceFilter, setReferenceFilter] = useState<string>('');
 
   // Drawer state (Create Mode)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+
+  const handleFrameworkChange = (fwId: string) => {
+    setFrameworkFilter(fwId);
+    setReferenceFilter('');
+  };
 
   const fetchControls = useCallback(async () => {
     setLoading(true);
@@ -78,6 +87,7 @@ export function ControlMappingView({ onNavigateToView }: ControlMappingViewProps
       if (categoryFilter) params.set('category', categoryFilter);
       if (statusFilter) params.set('status', statusFilter);
       if (frameworkFilter) params.set('frameworkId', frameworkFilter);
+      if (referenceFilter) params.set('frameworkReferenceId', referenceFilter);
 
       const queryString = params.toString() ? `?${params.toString()}` : '';
       const data = await apiRequest<PaginatedControlsDto>(`/controls${queryString}`);
@@ -90,7 +100,7 @@ export function ControlMappingView({ onNavigateToView }: ControlMappingViewProps
     } finally {
       setLoading(false);
     }
-  }, [search, categoryFilter, statusFilter, frameworkFilter]);
+  }, [search, categoryFilter, statusFilter, frameworkFilter, referenceFilter]);
 
   useEffect(() => {
     fetchControls();
@@ -149,12 +159,22 @@ export function ControlMappingView({ onNavigateToView }: ControlMappingViewProps
             Map operational security controls to ISO 27001, ISO 42001, SOC 2, GDPR, DPDP, and HIPAA standards using AI suggestions.
           </p>
         </div>
-        <button
-          onClick={() => setIsDrawerOpen(true)}
-          className="omni-btn-primary w-full md:w-auto justify-center shrink-0 flex items-center gap-1.5"
-        >
-          <Plus size={15} /> New Control
-        </button>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
+          <button
+            onClick={() => setIsImportModalOpen(true)}
+            className="omni-btn-secondary w-full sm:w-auto justify-center shrink-0 flex items-center gap-1.5 text-xs sm:text-sm font-semibold"
+            aria-label="Import and map controls from file"
+          >
+            <Sparkles size={15} className="text-teal-600" />
+            Import & Map File
+          </button>
+          <button
+            onClick={() => setIsDrawerOpen(true)}
+            className="omni-btn-primary w-full sm:w-auto justify-center shrink-0 flex items-center gap-1.5 text-xs sm:text-sm"
+          >
+            <Plus size={15} /> New Control
+          </button>
+        </div>
       </div>
 
       {/* Dynamic Framework Badge Strip (Data-Driven from Framework API) */}
@@ -228,21 +248,16 @@ export function ControlMappingView({ onNavigateToView }: ControlMappingViewProps
           </select>
         </div>
 
-        {/* Framework Filter */}
+        {/* Compliance Scope Filter (Framework & Cascading Reference) */}
         <div className="flex items-center gap-2 w-full md:w-auto">
-          <select
-            className="omni-input w-full md:w-48"
-            value={frameworkFilter}
-            onChange={(e) => setFrameworkFilter(e.target.value)}
-            aria-label="Filter by compliance framework"
-          >
-            <option value="">All Frameworks</option>
-            {frameworks.map((fw) => (
-              <option key={fw.id} value={fw.id}>
-                {fw.code} — {fw.name}
-              </option>
-            ))}
-          </select>
+          <ComplianceScopeFilter
+            selectedFrameworkId={frameworkFilter}
+            selectedReferenceId={referenceFilter}
+            onFrameworkChange={handleFrameworkChange}
+            onReferenceChange={(refId) => setReferenceFilter(refId)}
+            allOptionLabel="All Frameworks"
+            showReferenceFilter={true}
+          />
         </div>
       </div>
 
@@ -346,6 +361,18 @@ export function ControlMappingView({ onNavigateToView }: ControlMappingViewProps
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
         onSuccess={fetchControls}
+        onOpenImport={() => {
+          setIsDrawerOpen(false);
+          setIsImportModalOpen(true);
+        }}
+      />
+
+      {/* AI Control Import Modal */}
+      <ControlImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onSuccess={fetchControls}
+        initialFrameworkId={frameworkFilter}
       />
     </div>
   );

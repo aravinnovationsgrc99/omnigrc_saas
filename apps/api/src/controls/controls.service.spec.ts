@@ -29,6 +29,16 @@ describe('ControlsService', () => {
         create: jest.fn(),
         update: jest.fn(),
       },
+      framework: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'fw-iso27001' }),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      frameworkVersion: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'ver-2022', frameworkId: 'fw-iso27001' }),
+      },
+      frameworkReference: {
+        findUnique: jest.fn(),
+      },
     };
 
     auditLogsService = {
@@ -50,6 +60,7 @@ describe('ControlsService', () => {
           useValue: {
             assertEntitled: jest.fn().mockResolvedValue(true),
             getEntitledFrameworkIds: jest.fn().mockResolvedValue(null),
+            isEntitled: jest.fn().mockResolvedValue(true),
           },
         },
         {
@@ -226,5 +237,122 @@ describe('ControlsService', () => {
     expect(auditLogsService.log).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'MAPPING_OVERRIDDEN' }),
     );
+  });
+
+  describe('Framework Filtering & Entitlement Isolation', () => {
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    const mockControl = {
+      id: 'ctrl-1',
+      organizationId: 'org-1',
+      name: 'Access Control Policy',
+      description: 'MFA required',
+      category: 'Access Control',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      createdById: 'user-1',
+      mappings: [],
+    };
+
+    it('should filter controls by frameworkId when tenant is entitled to it', async () => {
+      prisma.framework.findUnique.mockResolvedValue({ id: 'fw-iso27001' });
+      const entitlementsService = (service as any).frameworkEntitlementsService;
+      entitlementsService.isEntitled.mockResolvedValue(true);
+      prisma.control.findMany.mockResolvedValue([mockControl]);
+      prisma.control.count.mockResolvedValue(1);
+
+      const res = await service.findAll(authCtx, { frameworkId: 'fw-iso27001' });
+
+      expect(prisma.framework.findUnique).toHaveBeenCalledWith({
+        where: { id: 'fw-iso27001' },
+        select: { id: true },
+      });
+      expect(entitlementsService.isEntitled).toHaveBeenCalledWith('org-1', 'fw-iso27001', undefined);
+      expect(prisma.control.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            organizationId: 'org-1',
+            mappings: {
+              some: expect.objectContaining({
+                OR: [
+                  { frameworkReference: { frameworkVersion: { frameworkId: 'fw-iso27001' } } },
+                  { frameworkClause: { frameworkId: 'fw-iso27001' } },
+                ],
+              }),
+            },
+          }),
+        }),
+      );
+      expect(res.items).toHaveLength(1);
+    });
+
+    it('should return empty results when frameworkId is invalid/not in catalogue', async () => {
+      prisma.framework.findUnique.mockResolvedValue(null);
+
+      const res = await service.findAll(authCtx, { frameworkId: 'invalid-fw-id' });
+
+      expect(res.items).toEqual([]);
+      expect(res.total).toBe(0);
+      expect(prisma.control.findMany).not.toHaveBeenCalled();
+    });
+
+    it('should return empty results when tenant is not entitled to frameworkId (tenant isolation)', async () => {
+      prisma.framework.findUnique.mockResolvedValue({ id: 'fw-hipaa' });
+      const entitlementsService = (service as any).frameworkEntitlementsService;
+      entitlementsService.isEntitled.mockResolvedValue(false);
+
+      const res = await service.findAll(authCtx, { frameworkId: 'fw-hipaa' });
+
+      expect(res.items).toEqual([]);
+      expect(res.total).toBe(0);
+      expect(prisma.control.findMany).not.toHaveBeenCalled();
+    });
+
+    it('should handle switching frameworks cleanly', async () => {
+      prisma.framework.findUnique.mockResolvedValue({ id: 'fw-soc2' });
+      const entitlementsService = (service as any).frameworkEntitlementsService;
+      entitlementsService.isEntitled.mockResolvedValue(true);
+      prisma.control.findMany.mockResolvedValue([mockControl]);
+      prisma.control.count.mockResolvedValue(1);
+
+      const res = await service.findAll(authCtx, { frameworkId: 'fw-soc2' });
+
+      expect(entitlementsService.isEntitled).toHaveBeenCalledWith('org-1', 'fw-soc2', undefined);
+      expect(res.items).toHaveLength(1);
+    });
+
+    it('should filter by frameworkVersionId and frameworkReferenceId', async () => {
+      prisma.frameworkVersion.findUnique.mockResolvedValue({ id: 'ver-2022', frameworkId: 'fw-iso27001' });
+      prisma.frameworkReference.findUnique.mockResolvedValue({
+        id: 'ref-a51',
+        frameworkVersionId: 'ver-2022',
+        frameworkVersion: { frameworkId: 'fw-iso27001' },
+      });
+      const entitlementsService = (service as any).frameworkEntitlementsService;
+      entitlementsService.isEntitled.mockResolvedValue(true);
+      prisma.control.findMany.mockResolvedValue([mockControl]);
+      prisma.control.count.mockResolvedValue(1);
+
+      const res = await service.findAll(authCtx, {
+        frameworkVersionId: 'ver-2022',
+        frameworkReferenceId: 'ref-a51',
+      });
+
+      expect(res.items).toHaveLength(1);
+      expect(prisma.control.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            organizationId: 'org-1',
+            mappings: {
+              some: expect.objectContaining({
+                frameworkReferenceId: 'ref-a51',
+                frameworkReference: expect.objectContaining({
+                  frameworkVersionId: 'ver-2022',
+                }),
+              }),
+            },
+          }),
+        }),
+      );
+    });
   });
 });

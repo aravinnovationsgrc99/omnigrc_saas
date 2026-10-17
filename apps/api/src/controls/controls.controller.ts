@@ -1,5 +1,7 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards, UseInterceptors, UploadedFile, NotFoundException, BadRequestException } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ControlsService } from './controls.service';
+import { ControlImportService } from './control-import.service';
 import { MappingQueueService } from './ai/mapping-queue.service';
 import { RiskControlsService } from '../risk-controls/risk-controls.service';
 import { EvidenceService } from '../evidence/evidence.service';
@@ -16,6 +18,8 @@ import {
   ControlEvidenceQueryDto,
   CreateControlTestDto,
   ControlTestQueryDto,
+  AnalyzeControlsImportQueryDto,
+  PersistImportedControlsDto,
 } from './dto/controls.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -33,6 +37,7 @@ import { RequireCapability } from '../common/decorators/require-capability.decor
 export class ControlsController {
   constructor(
     private readonly controlsService: ControlsService,
+    private readonly controlImportService: ControlImportService,
     private readonly mappingQueueService: MappingQueueService,
     private readonly riskControlsService: RiskControlsService,
     private readonly evidenceService: EvidenceService,
@@ -87,6 +92,43 @@ export class ControlsController {
       role: user.role,
     };
     return this.controlsService.getAuditLogs(authCtx, id);
+  }
+
+  @Post('import/analyze')
+  @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  @UseInterceptors(FileInterceptor('file'))
+  async analyzeImport(
+    @CurrentUser() user: any,
+    @UploadedFile() file: any,
+    @Query() query: AnalyzeControlsImportQueryDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id || user.sub,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.controlImportService.analyzeImportFile(
+      authCtx,
+      file,
+      query.frameworkId,
+      query.frameworkVersionId,
+    );
+  }
+
+  @Post('import/persist')
+  @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async persistImport(
+    @CurrentUser() user: any,
+    @Body() dto: PersistImportedControlsDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id || user.sub,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.controlImportService.persistImportedControls(authCtx, dto);
   }
 
   @Post()

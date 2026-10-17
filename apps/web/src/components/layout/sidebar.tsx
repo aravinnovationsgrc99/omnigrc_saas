@@ -84,24 +84,46 @@ export function Sidebar({ view, setView, mobileOpen = false, onCloseMobile }: Si
   const { user, hasCapability, capabilities, capabilitiesStatus, loading } = useAuth();
   const userRole = user?.role || Role.ANALYST;
 
+  // Task 1: Handle body-scroll lock and Escape dismissal when mobile drawer is open
+  React.useEffect(() => {
+    if (mobileOpen) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape' && onCloseMobile) {
+          onCloseMobile();
+        }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+
+      return () => {
+        document.body.style.overflow = originalOverflow;
+        window.removeEventListener('keydown', handleKeyDown);
+      };
+    }
+  }, [mobileOpen, onCloseMobile]);
+
   return (
     <>
-      {/* Backdrop overlay for mobile drawer */}
+      {/* Backdrop overlay for mobile drawer - z-index 70 to sit above all page content and drawers */}
       {mobileOpen && (
         <div
           onClick={onCloseMobile}
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(15,23,42,0.5)',
-            backdropFilter: 'blur(2px)',
-            zIndex: 40,
+            background: 'rgba(15,23,42,0.6)',
+            backdropFilter: 'blur(3px)',
+            WebkitBackdropFilter: 'blur(3px)',
+            zIndex: 70,
           }}
-          className="lg:hidden"
+          className="lg:hidden transition-opacity duration-200"
           aria-hidden="true"
         />
       )}
 
+      {/* Mobile Drawer / Desktop Sidebar - z-index 75 on mobile so it is always on top */}
       <div
         style={{
           width: 232,
@@ -112,11 +134,11 @@ export function Sidebar({ view, setView, mobileOpen = false, onCloseMobile }: Si
           padding: '18px 12px',
           color: '#fff',
           height: '100%',
-          zIndex: 50,
-          transition: 'transform 0.2s ease-in-out',
+          zIndex: 75,
+          transition: 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
         }}
-        className={`fixed lg:relative inset-y-0 left-0 ${
-          mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+        className={`fixed lg:relative inset-y-0 left-0 lg:z-auto ${
+          mobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full lg:translate-x-0'
         }`}
         aria-label="Main Navigation"
       >

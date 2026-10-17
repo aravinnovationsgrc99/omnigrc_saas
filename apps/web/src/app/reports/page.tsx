@@ -1,33 +1,18 @@
 'use client';
 
-import React from 'react';
-import { ReportsView } from '@/components/reports/reports-view';
-import { useAuth } from '@/context/auth-context';
-import { ModuleNotLicensedView } from '@/components/ui/module-not-licensed-view';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function ReportsPage() {
-  const { hasCapability, getCapabilityState, loading } = useAuth();
+  const router = useRouter();
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-teal-700 font-semibold">
-        Loading...
-      </div>
-    );
-  }
+  useEffect(() => {
+    router.replace('/?view=reports');
+  }, [router]);
 
-  if (!hasCapability('REPORTING_MODULE')) {
-    return (
-      <ModuleNotLicensedView
-        moduleName="Reports & Exports"
-        capabilityCode="REPORTING_MODULE"
-        reason={getCapabilityState('REPORTING_MODULE')?.reason}
-        onNavigateHome={() => {
-          if (typeof window !== 'undefined') window.location.href = '/';
-        }}
-      />
-    );
-  }
-
-  return <ReportsView />;
+  return (
+    <div className="min-h-screen flex items-center justify-center text-teal-700 font-semibold">
+      Loading Reports...
+    </div>
+  );
 }

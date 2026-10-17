@@ -8,9 +8,10 @@ import { NotificationDto, PaginatedNotificationsDto, NotificationType } from '@o
 
 interface TopbarProps {
   onToggleMobileSidebar?: () => void;
+  mobileSidebarOpen?: boolean;
 }
 
-export function Topbar({ onToggleMobileSidebar }: TopbarProps) {
+export function Topbar({ onToggleMobileSidebar, mobileSidebarOpen }: TopbarProps) {
   const { user, organization, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -102,8 +103,8 @@ export function Topbar({ onToggleMobileSidebar }: TopbarProps) {
   };
 
   return (
-    <div 
-      className="w-full max-w-full px-3 sm:px-6 relative z-40"
+    <header 
+      className="w-full max-w-full px-3 sm:px-6 sticky top-0 shrink-0 z-40"
       style={{
         height: 56, minHeight: 56, borderBottom: '1px solid #E2E6E4',
         background: 'linear-gradient(90deg, #FFFFFF 0%, #FAFCFB 60%, rgba(15, 110, 106, 0.03) 85%, rgba(181, 117, 10, 0.02) 100%)',
@@ -114,11 +115,11 @@ export function Topbar({ onToggleMobileSidebar }: TopbarProps) {
         {onToggleMobileSidebar && (
           <button
             onClick={onToggleMobileSidebar}
-            className="lg:hidden omni-btn-ghost shrink-0"
-            style={{ padding: 6 }}
-            aria-label="Toggle Navigation Sidebar"
+            className="lg:hidden omni-btn-ghost shrink-0 flex items-center justify-center p-2 rounded-lg text-slate-700 hover:text-slate-900 hover:bg-slate-100 touch-manipulation focus:outline-none focus:ring-2 focus:ring-teal-600 min-w-[40px] min-h-[40px]"
+            aria-label={mobileSidebarOpen ? "Close navigation menu" : "Open navigation menu"}
+            aria-expanded={mobileSidebarOpen}
           >
-            <Menu size={18} />
+            <Menu size={20} />
           </button>
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
@@ -280,6 +281,6 @@ export function Topbar({ onToggleMobileSidebar }: TopbarProps) {
           )}
         </div>
       </div>
-    </div>
+    </header>
   );
 }

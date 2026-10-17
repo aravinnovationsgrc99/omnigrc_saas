@@ -699,6 +699,7 @@ export interface ControlQueryDto {
   category?: string;
   status?: MappingStatus;
   frameworkId?: string;
+  frameworkVersionId?: string;
   frameworkReferenceId?: string;
 }
 
@@ -738,6 +739,57 @@ export interface SignOffMappingDto {
   overrideReferenceId?: string;
   overrideClauseId?: string;
   note?: string;
+}
+
+export interface ExtractedControlSuggestionDto {
+  tempId: string;
+  sourceLocation: string;
+  originalTitle: string;
+  originalDescription: string;
+  suggestedCategory?: string;
+  suggestedFrameworkReferenceId?: string;
+  suggestedReferenceIdentifier?: string;
+  suggestedReferenceTitle?: string;
+  confidenceScore: number;
+  rationale: string;
+  status: 'MATCHED' | 'UNMATCHED' | 'AMBIGUOUS';
+  gapsOrNotes?: string;
+}
+
+export interface ControlImportCoverageDto {
+  totalExtracted: number;
+  matchedCount: number;
+  unmatchedCount: number;
+  highConfidenceCount: number;
+}
+
+export interface AnalyzeControlsImportResponseDto {
+  fileName: string;
+  fileType: string;
+  totalControlsDetected: number;
+  requiresOcr: boolean;
+  extractionMessage?: string;
+  coverage: ControlImportCoverageDto;
+  suggestions: ExtractedControlSuggestionDto[];
+}
+
+export interface PersistImportedControlItemDto {
+  name: string;
+  description: string;
+  category?: string;
+  frameworkReferenceId?: string;
+  frameworkClauseId?: string;
+  status?: MappingStatus;
+}
+
+export interface PersistImportedControlsDto {
+  controls: PersistImportedControlItemDto[];
+}
+
+export interface PersistImportedControlsResponseDto {
+  createdCount: number;
+  mappedCount: number;
+  controlIds: string[];
 }
 
 export interface ComplianceTaskDto {

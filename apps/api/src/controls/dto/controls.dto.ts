@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsEnum, IsNumber, Min } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsEnum, IsNumber, Min, IsArray, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { MappingStatus, AuditCheckResult } from '@omnigrc/shared';
 
@@ -87,6 +87,10 @@ export class ControlQueryDto {
   @IsString()
   @IsOptional()
   frameworkId?: string;
+
+  @IsString()
+  @IsOptional()
+  frameworkVersionId?: string;
 
   @IsString()
   @IsOptional()
@@ -201,4 +205,47 @@ export class ControlTestQueryDto {
   @IsString()
   @IsOptional()
   assessmentId?: string;
+}
+
+export class AnalyzeControlsImportQueryDto {
+  @IsString()
+  @IsNotEmpty()
+  frameworkId: string;
+
+  @IsString()
+  @IsOptional()
+  frameworkVersionId?: string;
+}
+
+export class PersistImportedControlItemDto {
+  @IsString()
+  @IsNotEmpty()
+  name: string;
+
+  @IsString()
+  @IsNotEmpty()
+  description: string;
+
+  @IsString()
+  @IsOptional()
+  category?: string;
+
+  @IsString()
+  @IsOptional()
+  frameworkReferenceId?: string;
+
+  @IsString()
+  @IsOptional()
+  frameworkClauseId?: string;
+
+  @IsEnum(MappingStatus)
+  @IsOptional()
+  status?: MappingStatus;
+}
+
+export class PersistImportedControlsDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PersistImportedControlItemDto)
+  controls: PersistImportedControlItemDto[];
 }
