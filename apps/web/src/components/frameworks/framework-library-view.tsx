@@ -20,6 +20,9 @@ export function FrameworkLibraryView() {
   const [importJson, setImportJson] = useState('');
   const [importing, setImporting] = useState(false);
 
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailsError, setDetailsError] = useState<string | null>(null);
+
   const fetchFrameworks = async () => {
     setLoading(true);
     setError(null);
@@ -28,7 +31,7 @@ export function FrameworkLibraryView() {
       setFrameworks(list);
 
       if (list.length > 0 && !selectedFramework) {
-        fetchFrameworkDetails(list[0].id);
+        fetchFrameworkDetails(list[0].code || list[0].id);
       }
     } catch (err: any) {
       setError(err.message || 'Error loading frameworks.');
@@ -38,11 +41,16 @@ export function FrameworkLibraryView() {
   };
 
   const fetchFrameworkDetails = async (idOrCode: string) => {
+    setDetailsLoading(true);
+    setDetailsError(null);
     try {
       const fw = await apiRequest<FrameworkItemDto>(`/frameworks/${idOrCode}`);
       setSelectedFramework(fw);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to fetch framework details:', err);
+      setDetailsError(err.message || 'Failed to load framework clauses.');
+    } finally {
+      setDetailsLoading(false);
     }
   };
 
@@ -137,11 +145,11 @@ export function FrameworkLibraryView() {
             <h3 className="text-xs font-bold text-slate-600 uppercase tracking-wider px-1">Frameworks Catalog</h3>
             <div className="space-y-2">
               {frameworks.map((fw) => {
-                const isSelected = selectedFramework?.id === fw.id;
+                const isSelected = selectedFramework?.id === fw.id || selectedFramework?.code === fw.code;
                 return (
                   <button
                     key={fw.id}
-                    onClick={() => fetchFrameworkDetails(fw.id)}
+                    onClick={() => fetchFrameworkDetails(fw.code || fw.id)}
                     className={`w-full text-left p-4 rounded-xl border transition shadow-sm ${
                       isSelected
                         ? 'bg-white border-2 border-teal-700 text-slate-900 shadow-md ring-2 ring-teal-600/10'
@@ -166,7 +174,16 @@ export function FrameworkLibraryView() {
 
           {/* Clause Details Viewer */}
           <div className="lg:col-span-8 space-y-4">
-            {selectedFramework ? (
+            {detailsLoading ? (
+              <div className="p-12 text-center rounded-2xl bg-white border border-slate-200 shadow-sm text-slate-500 font-medium flex items-center justify-center gap-2">
+                <div className="w-5 h-5 border-2 border-teal-700 border-t-transparent rounded-full animate-spin" />
+                <span>Loading clauses for framework...</span>
+              </div>
+            ) : detailsError ? (
+              <div className="p-6 rounded-2xl bg-red-50 border border-red-200 shadow-sm text-red-800 text-sm font-medium">
+                {detailsError}
+              </div>
+            ) : selectedFramework ? (
               <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-5">
                 <div className="flex items-center justify-between border-b border-slate-200 pb-4">
                   <div>
@@ -192,6 +209,21 @@ export function FrameworkLibraryView() {
                     onChange={(e) => setSearchClause(e.target.value)}
                     className="w-full pl-9 pr-4 py-2 text-sm bg-white border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-teal-600 transition"
                   />
+                </div>
+
+                {/* Clauses Count Indicator */}
+                <div className="flex items-center justify-between text-xs font-semibold text-slate-500 px-1">
+                  <span>
+                    Showing {filteredClauses?.length ?? 0} of {selectedFramework.clausesCount} Clauses
+                  </span>
+                  {searchClause && (
+                    <button
+                      onClick={() => setSearchClause('')}
+                      className="text-teal-700 hover:text-teal-800 font-medium"
+                    >
+                      Clear search
+                    </button>
+                  )}
                 </div>
 
                 {/* Clauses Table */}

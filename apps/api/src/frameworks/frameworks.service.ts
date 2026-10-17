@@ -5,6 +5,7 @@ import {
   FrameworkItemDto,
   FrameworkClauseItemDto,
   CustomFrameworkImportDto,
+  FrameworkCode,
 } from '@omnigrc/shared';
 
 @Injectable()
@@ -45,10 +46,11 @@ export class FrameworksService {
   async findOne(organizationId: string, idOrCode: string): Promise<FrameworkItemDto> {
     await this.frameworkEntitlementsService.assertEntitled(organizationId, idOrCode);
 
+    const isEnumCode = Object.values(FrameworkCode).includes(idOrCode as FrameworkCode);
     const framework = await this.prisma.framework.findFirst({
-      where: {
-        OR: [{ id: idOrCode }, { code: idOrCode as any }],
-      },
+      where: isEnumCode
+        ? { OR: [{ id: idOrCode }, { code: idOrCode as FrameworkCode }] }
+        : { id: idOrCode },
       include: {
         clauses: { orderBy: { code: 'asc' } },
         _count: { select: { clauses: true } },
@@ -80,10 +82,11 @@ export class FrameworksService {
   async getVersions(organizationId: string, frameworkIdOrCode: string) {
     await this.frameworkEntitlementsService.assertEntitled(organizationId, frameworkIdOrCode);
 
+    const isEnumCode = Object.values(FrameworkCode).includes(frameworkIdOrCode as FrameworkCode);
     const fw = await this.prisma.framework.findFirst({
-      where: {
-        OR: [{ id: frameworkIdOrCode }, { code: frameworkIdOrCode as any }],
-      },
+      where: isEnumCode
+        ? { OR: [{ id: frameworkIdOrCode }, { code: frameworkIdOrCode as FrameworkCode }] }
+        : { id: frameworkIdOrCode },
     });
     if (!fw) {
       throw new NotFoundException(`Framework ${frameworkIdOrCode} not found.`);
