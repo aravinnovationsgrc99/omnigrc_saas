@@ -725,7 +725,8 @@ export interface MappingJobStatusDto {
 }
 
 export interface CreateControlMappingDto {
-  frameworkReferenceId: string;
+  frameworkReferenceId?: string;
+  frameworkClauseId?: string;
 }
 
 export interface SuggestMappingsDto {

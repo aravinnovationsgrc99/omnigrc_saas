@@ -99,8 +99,12 @@ export class ControlQueryDto {
 
 export class CreateControlMappingDto {
   @IsString()
-  @IsNotEmpty()
-  frameworkReferenceId: string;
+  @IsOptional()
+  frameworkReferenceId?: string;
+
+  @IsString()
+  @IsOptional()
+  frameworkClauseId?: string;
 }
 
 export class SuggestMappingsDto {

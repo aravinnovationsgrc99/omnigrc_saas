@@ -10,6 +10,7 @@ import { InlineErrorState } from '@/components/ui/inline-error-state';
 import { ControlDrawer } from './control-drawer';
 import { ControlDetailView } from './control-detail-view';
 import { ControlImportModal } from './control-import-modal';
+import { FrameworkClausesModal, FrameworkClauseItem, FrameworkSummary } from './framework-clauses-modal';
 import { ComplianceScopeFilter } from '@/components/ui/compliance-scope-filter';
 import { Plus, Search, Filter, GitMerge, ChevronRight, Sparkles } from 'lucide-react';
 
@@ -73,6 +74,15 @@ export function ControlMappingView({ onNavigateToView }: ControlMappingViewProps
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
+  // Framework Clauses Popup State (Instant In-Memory Cache)
+  const [selectedFrameworkForClauses, setSelectedFrameworkForClauses] = useState<FrameworkApiDto | null>(null);
+  const [allClauses, setAllClauses] = useState<FrameworkClauseItem[]>([]);
+  const [clausesLoading, setClausesLoading] = useState(false);
+
+  // Pre-selected mapping for ControlDrawer
+  const [preselectedFrameworkId, setPreselectedFrameworkId] = useState<string>('');
+  const [preselectedClauseId, setPreselectedClauseId] = useState<string>('');
+
   const handleFrameworkChange = (fwId: string) => {
     setFrameworkFilter(fwId);
     setReferenceFilter('');
@@ -118,6 +128,58 @@ export function ControlMappingView({ onNavigateToView }: ControlMappingViewProps
     }
     fetchFrameworks();
   }, []);
+
+  // Pre-load all clauses in background so opening any framework popup is 0ms instant with zero lag
+  useEffect(() => {
+    async function fetchAllClauses() {
+      try {
+        const data = await apiRequest<FrameworkClauseItem[]>('/controls/framework-clauses');
+        setAllClauses(data || []);
+      } catch (err) {
+        console.warn('Could not pre-load framework clauses:', err);
+      }
+    }
+    fetchAllClauses();
+  }, []);
+
+  const handleFrameworkBadgeClick = async (fw: FrameworkApiDto) => {
+    setSelectedFrameworkForClauses(fw);
+    const hasClauses = allClauses.some(
+      (c) => c.frameworkId === fw.id || c.frameworkCode === fw.code
+    );
+    if (!hasClauses) {
+      setClausesLoading(true);
+      try {
+        const details = await apiRequest<{ clauses?: { id: string; code: string; title: string }[] }>(
+          `/frameworks/${fw.code || fw.id}`
+        );
+        if (details && details.clauses) {
+          const mapped: FrameworkClauseItem[] = details.clauses.map((c) => ({
+            id: c.id,
+            frameworkId: fw.id,
+            frameworkCode: fw.code,
+            code: c.code,
+            title: c.title,
+          }));
+          setAllClauses((prev) => [...prev, ...mapped]);
+        }
+      } catch (err) {
+        console.warn('Failed fallback fetch for framework clauses:', err);
+      } finally {
+        setClausesLoading(false);
+      }
+    }
+  };
+
+  const handleSelectMapClause = (
+    fw: FrameworkSummary,
+    clause: FrameworkClauseItem
+  ) => {
+    setSelectedFrameworkForClauses(null);
+    setPreselectedFrameworkId(fw.id);
+    setPreselectedClauseId(clause.id);
+    setIsDrawerOpen(true);
+  };
 
   // If user selected a control, render Detail View
   if (selectedControlId) {
@@ -169,7 +231,11 @@ export function ControlMappingView({ onNavigateToView }: ControlMappingViewProps
             Import & Map File
           </button>
           <button
-            onClick={() => setIsDrawerOpen(true)}
+            onClick={() => {
+              setPreselectedFrameworkId('');
+              setPreselectedClauseId('');
+              setIsDrawerOpen(true);
+            }}
             className="omni-btn-primary w-full sm:w-auto justify-center shrink-0 flex items-center gap-1.5 text-xs sm:text-sm"
           >
             <Plus size={15} /> New Control
@@ -186,8 +252,10 @@ export function ControlMappingView({ onNavigateToView }: ControlMappingViewProps
           {frameworks.map((fw) => {
             const accent = getFrameworkAccent(fw.code);
             return (
-              <div
+              <button
+                type="button"
                 key={fw.id || fw.code}
+                onClick={() => handleFrameworkBadgeClick(fw)}
                 style={{
                   background: accent.bg,
                   color: accent.color,
@@ -199,11 +267,11 @@ export function ControlMappingView({ onNavigateToView }: ControlMappingViewProps
                   display: 'flex',
                   alignItems: 'center',
                   gap: 6,
-                  transition: 'transform 0.15s ease, filter 0.15s ease',
-                  cursor: 'default',
+                  transition: 'all 0.15s ease',
+                  cursor: 'pointer',
                 }}
-                className="hover:scale-[1.02]"
-                title={`${fw.name}${fw.clauseCount ? ` (${fw.clauseCount} clauses)` : ''}`}
+                className="hover:scale-105 active:scale-95 transition-transform hover:shadow-xs focus:outline-none focus:ring-2 focus:ring-teal-600/30"
+                title={`Click to inspect clauses and map controls for ${fw.name}`}
               >
                 <span>{accent.label || fw.code}</span>
                 {fw.clauseCount ? (
@@ -211,7 +279,7 @@ export function ControlMappingView({ onNavigateToView }: ControlMappingViewProps
                     {fw.clauseCount} clauses
                   </span>
                 ) : null}
-              </div>
+              </button>
             );
           })}
         </div>
@@ -359,12 +427,36 @@ export function ControlMappingView({ onNavigateToView }: ControlMappingViewProps
       <ControlDrawer
         control={null}
         isOpen={isDrawerOpen}
-        onClose={() => setIsDrawerOpen(false)}
+        onClose={() => {
+          setIsDrawerOpen(false);
+          setPreselectedFrameworkId('');
+          setPreselectedClauseId('');
+        }}
         onSuccess={fetchControls}
+        initialFrameworkId={preselectedFrameworkId}
+        initialFrameworkClauseId={preselectedClauseId}
         onOpenImport={() => {
           setIsDrawerOpen(false);
           setIsImportModalOpen(true);
         }}
+      />
+
+      {/* Framework Clauses Inspection & Mapping Popup Modal */}
+      <FrameworkClausesModal
+        isOpen={Boolean(selectedFrameworkForClauses)}
+        onClose={() => setSelectedFrameworkForClauses(null)}
+        framework={selectedFrameworkForClauses}
+        clauses={
+          selectedFrameworkForClauses
+            ? allClauses.filter(
+                (c) =>
+                  c.frameworkId === selectedFrameworkForClauses.id ||
+                  c.frameworkCode === selectedFrameworkForClauses.code
+              )
+            : []
+        }
+        loading={clausesLoading}
+        onSelectMapClause={handleSelectMapClause}
       />
 
       {/* AI Control Import Modal */}

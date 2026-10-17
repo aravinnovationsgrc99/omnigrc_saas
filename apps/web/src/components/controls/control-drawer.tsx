@@ -13,9 +13,19 @@ interface ControlDrawerProps {
   onClose: () => void;
   onSuccess: () => void;
   onOpenImport?: () => void;
+  initialFrameworkId?: string;
+  initialFrameworkClauseId?: string;
 }
 
-export function ControlDrawer({ control, isOpen, onClose, onSuccess, onOpenImport }: ControlDrawerProps) {
+export function ControlDrawer({
+  control,
+  isOpen,
+  onClose,
+  onSuccess,
+  onOpenImport,
+  initialFrameworkId,
+  initialFrameworkClauseId,
+}: ControlDrawerProps) {
   const { showToast } = useToast();
   const isEdit = Boolean(control);
 
@@ -66,14 +76,21 @@ export function ControlDrawer({ control, isOpen, onClose, onSuccess, onOpenImpor
       setName('');
       setDescription('');
       setCategory('');
-      setFrameworkId('');
-      setFrameworkClauseId('');
+      setFrameworkId(initialFrameworkId || '');
+      setFrameworkClauseId(initialFrameworkClauseId || '');
       setAuditLogs([]);
     }
     setErrorMsg(null);
     setNameTouched(false);
     setDescTouched(false);
-  }, [control, isOpen]);
+  }, [control, isOpen, initialFrameworkId, initialFrameworkClauseId]);
+
+  useEffect(() => {
+    if (!control && isOpen) {
+      if (initialFrameworkId) setFrameworkId(initialFrameworkId);
+      if (initialFrameworkClauseId) setFrameworkClauseId(initialFrameworkClauseId);
+    }
+  }, [initialFrameworkId, initialFrameworkClauseId, isOpen, control]);
 
   if (!isOpen) return null;
 
@@ -108,10 +125,22 @@ export function ControlDrawer({ control, isOpen, onClose, onSuccess, onOpenImpor
           description: description.trim(),
           category: category.trim() || undefined,
         };
-        await apiRequest('/controls', {
+        const createdControl = await apiRequest<ControlDto>('/controls', {
           method: 'POST',
           body: JSON.stringify(payload),
         });
+
+        if (frameworkClauseId && createdControl?.id) {
+          try {
+            await apiRequest(`/controls/${createdControl.id}/mappings`, {
+              method: 'POST',
+              body: JSON.stringify({ frameworkClauseId }),
+            });
+          } catch (mapErr) {
+            console.warn('Initial mapping attachment skipped or failed:', mapErr);
+          }
+        }
+
         showToast('Control created');
       }
       onSuccess();
@@ -239,6 +268,23 @@ export function ControlDrawer({ control, isOpen, onClose, onSuccess, onOpenImpor
           )}
 
           <form id="control-form" onSubmit={handleSave}>
+            {frameworkClauseId && (
+              <div className="mb-4 p-3 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-between text-xs omni-fade-in">
+                <div className="flex items-center gap-2 text-teal-900 font-medium">
+                  <GitMerge className="w-4 h-4 text-teal-700 shrink-0" />
+                  <span>
+                    Pre-selected Mapping:{' '}
+                    <strong>
+                      {availableClauses.find((c) => c.id === frameworkClauseId)?.code || 'Selected Clause'}
+                    </strong>
+                    {availableClauses.find((c) => c.id === frameworkClauseId)?.title
+                      ? ` — ${availableClauses.find((c) => c.id === frameworkClauseId)?.title}`
+                      : ''}
+                  </span>
+                </div>
+              </div>
+            )}
+
             <div style={{ marginBottom: 16 }}>
               <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
                 Control Name *

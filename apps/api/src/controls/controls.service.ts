@@ -412,13 +412,37 @@ export class ControlsService {
       throw new NotFoundException(`Control with ID "${controlId}" not found`);
     }
 
+    let targetReferenceId = dto.frameworkReferenceId;
+    let targetClauseId = dto.frameworkClauseId;
+
+    if (!targetReferenceId && targetClauseId) {
+      const clause = await this.prisma.frameworkClause.findUnique({
+        where: { id: targetClauseId },
+      });
+      if (clause) {
+        const matchingRef = await this.prisma.frameworkReference.findFirst({
+          where: {
+            identifier: clause.code,
+            frameworkVersion: { frameworkId: clause.frameworkId },
+          },
+        });
+        if (matchingRef) {
+          targetReferenceId = matchingRef.id;
+        }
+      }
+    }
+
+    if (!targetReferenceId) {
+      throw new BadRequestException('A valid frameworkReferenceId or frameworkClauseId must be provided.');
+    }
+
     const ref = await this.prisma.frameworkReference.findUnique({
-      where: { id: dto.frameworkReferenceId },
+      where: { id: targetReferenceId },
       include: { frameworkVersion: { include: { framework: { select: { id: true, code: true, name: true } } } } },
     });
 
     if (!ref) {
-      throw new NotFoundException(`Framework reference with ID "${dto.frameworkReferenceId}" not found`);
+      throw new NotFoundException(`Framework reference with ID "${targetReferenceId}" not found`);
     }
 
     await this.frameworkEntitlementsService.assertEntitled(
@@ -431,17 +455,19 @@ export class ControlsService {
       where: {
         controlId_frameworkReferenceId: {
           controlId,
-          frameworkReferenceId: dto.frameworkReferenceId,
+          frameworkReferenceId: targetReferenceId,
         },
       },
       create: {
         controlId,
-        frameworkReferenceId: dto.frameworkReferenceId,
+        frameworkReferenceId: targetReferenceId,
+        frameworkClauseId: targetClauseId || null,
         status: MappingStatus.APPROVED,
         reviewedById: userId,
         reviewedAt: new Date(),
       },
       update: {
+        frameworkClauseId: targetClauseId || undefined,
         status: MappingStatus.APPROVED,
         reviewedById: userId,
         reviewedAt: new Date(),
