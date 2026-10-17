@@ -1,9 +1,21 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
+import { EvidenceService } from '../evidence/evidence.service';
 import { CreateVendorDto, UpdateVendorDto, VendorQueryDto, CreateVendorAssessmentDto } from './dto/vendors.dto';
-import { VendorDto, PaginatedVendorsDto, VendorCriticality, VendorStatus, VendorAssessmentDto, VendorAssessmentStatus } from '@omnigrc/shared';
+import {
+  VendorDto,
+  PaginatedVendorsDto,
+  VendorCriticality,
+  VendorStatus,
+  VendorAssessmentDto,
+  VendorAssessmentStatus,
+  VendorDocumentDto,
+  PaginatedVendorDocumentsDto,
+  EvidenceStatus,
+  EvidenceScanStatus,
+} from '@omnigrc/shared';
 
 @Injectable()
 export class VendorsService {
@@ -11,6 +23,7 @@ export class VendorsService {
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
     private readonly resourceAuthService: ResourceAuthorizationService,
+    private readonly evidenceService: EvidenceService,
   ) {}
 
   async findAll(authCtx: ResourceAuthContext, query: VendorQueryDto): Promise<PaginatedVendorsDto> {
@@ -61,7 +74,7 @@ export class VendorsService {
         orderBy: { updatedAt: 'desc' },
         include: {
           assessments: true,
-          _count: { select: { assets: true } },
+          _count: { select: { assets: true, evidenceAssociations: true } },
         },
       }),
       this.prisma.vendor.count({ where }),
@@ -85,7 +98,7 @@ export class VendorsService {
       },
       include: {
         assessments: true,
-        _count: { select: { assets: true } },
+        _count: { select: { assets: true, evidenceAssociations: true } },
       },
     });
 
@@ -388,6 +401,159 @@ export class VendorsService {
         updatedAt: a.updatedAt.toISOString(),
       })) : [],
       assetCount: vendor._count?.assets || 0,
+      documentCount: vendor._count?.evidenceAssociations || 0,
     } as any;
+  }
+
+  async getDocuments(
+    authCtx: ResourceAuthContext,
+    vendorId: string,
+    query?: { search?: string; page?: number; limit?: number },
+  ): Promise<PaginatedVendorDocumentsDto> {
+    // Validate vendor exists and belongs to tenant
+    await this.findOne(authCtx, vendorId);
+
+    const joins = await this.prisma.vendorEvidence.findMany({
+      where: {
+        vendorId,
+        organizationId: authCtx.organizationId,
+        evidence: {
+          deletedAt: null,
+        },
+      },
+      include: {
+        evidence: true,
+      },
+      orderBy: { attachedAt: 'desc' },
+    });
+
+    const uploaderIds = Array.from(new Set(joins.map((j) => j.evidence.uploadedById)));
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: uploaderIds } },
+      select: { id: true, name: true, email: true },
+    });
+    const userMap = new Map(users.map((u) => [u.id, u.name || u.email]));
+
+    let items: VendorDocumentDto[] = joins.map((j) => ({
+      id: j.id,
+      vendorId: j.vendorId,
+      evidenceId: j.evidenceId,
+      attachedAt: j.attachedAt.toISOString(),
+      title: j.evidence.title,
+      description: j.evidence.description,
+      fileName: j.evidence.fileName,
+      fileSize: j.evidence.fileSize,
+      mimeType: j.evidence.mimeType,
+      status: j.evidence.status as EvidenceStatus,
+      scanStatus: j.evidence.scanStatus as EvidenceScanStatus,
+      uploadedById: j.evidence.uploadedById,
+      uploaderName: userMap.get(j.evidence.uploadedById) || 'Security Team',
+    }));
+
+    if (query?.search && query.search.trim()) {
+      const term = query.search.trim().toLowerCase();
+      items = items.filter(
+        (i) =>
+          i.title.toLowerCase().includes(term) ||
+          i.fileName.toLowerCase().includes(term) ||
+          (i.description && i.description.toLowerCase().includes(term)),
+      );
+    }
+
+    return {
+      items,
+      total: items.length,
+    };
+  }
+
+  async uploadDocument(
+    authCtx: ResourceAuthContext,
+    vendorId: string,
+    file: any,
+    dto: { title?: string; description?: string },
+  ): Promise<VendorDocumentDto> {
+    if (!file || !file.buffer) {
+      throw new BadRequestException('Binary proof file is required for document upload.');
+    }
+
+    const vendor = await this.findOne(authCtx, vendorId);
+
+    const evidence = await this.evidenceService.createAndUpload(authCtx, file, {
+      title: dto.title?.trim() || file.originalname,
+      description: dto.description?.trim(),
+      targetResourceType: 'VENDOR',
+      targetResourceId: vendorId,
+    });
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'VENDOR_DOCUMENT_ATTACHED',
+      entityType: 'Vendor',
+      entityId: vendorId,
+      metadata: {
+        vendorName: vendor.name,
+        evidenceId: evidence.id,
+        fileName: file.originalname,
+        fileSize: file.size || file.buffer.length,
+      },
+    });
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: authCtx.userId },
+      select: { name: true, email: true },
+    });
+
+    return {
+      id: `ve-${evidence.id}`,
+      vendorId,
+      evidenceId: evidence.id,
+      attachedAt: new Date().toISOString(),
+      title: evidence.title,
+      description: evidence.description,
+      fileName: evidence.fileName,
+      fileSize: evidence.fileSize,
+      mimeType: evidence.mimeType,
+      status: evidence.status as EvidenceStatus,
+      scanStatus: evidence.scanStatus as EvidenceScanStatus,
+      uploadedById: authCtx.userId,
+      uploaderName: user?.name || user?.email || 'Security Team',
+    };
+  }
+
+  async removeDocument(
+    authCtx: ResourceAuthContext,
+    vendorId: string,
+    evidenceId: string,
+  ): Promise<{ success: boolean; evidenceId: string }> {
+    const vendor = await this.findOne(authCtx, vendorId);
+
+    const assoc = await this.prisma.vendorEvidence.findFirst({
+      where: {
+        vendorId,
+        evidenceId,
+        organizationId: authCtx.organizationId,
+      },
+    });
+
+    if (!assoc) {
+      throw new NotFoundException(`Document "${evidenceId}" is not attached to vendor "${vendorId}".`);
+    }
+
+    await this.evidenceService.detachEvidence(authCtx, evidenceId, 'VENDOR', vendorId);
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'VENDOR_DOCUMENT_REMOVED',
+      entityType: 'Vendor',
+      entityId: vendorId,
+      metadata: {
+        vendorName: vendor.name,
+        evidenceId,
+      },
+    });
+
+    return { success: true, evidenceId };
   }
 }

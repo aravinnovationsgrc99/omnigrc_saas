@@ -11,6 +11,7 @@ import { RiskHeatmap } from './risk-heatmap';
 import { RiskDrawer } from './risk-drawer';
 import { Plus, List, LayoutGrid, Search, X, ShieldAlert } from 'lucide-react';
 import { ComplianceScopeFilter } from '@/components/ui/compliance-scope-filter';
+import { RagStatusBadge, getRiskRag } from '@/components/ui/rag-status-badge';
 
 interface RiskListViewProps {
   initialAssetId?: string;
@@ -334,9 +335,12 @@ export function RiskListView({ initialAssetId, onClearAssetFilter, onNavigateToV
                       )}
                     </td>
                     <td style={{ padding: '14px 16px' }}>
-                      <span className={`${scoreBadgeClass} omni-mono`}>
-                        {risk.scoreBand} ({risk.score})
-                      </span>
+                      <RagStatusBadge
+                        status={getRiskRag(risk.score).status}
+                        label={`${risk.scoreBand} (${risk.score})`}
+                        detail={`Likelihood ${risk.likelihood} × Impact ${risk.impact}`}
+                        size="sm"
+                      />
                     </td>
                     <td style={{ padding: '14px 16px' }}>
                       <span className={statusBadgeClass}>

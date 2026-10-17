@@ -55,10 +55,34 @@ export function FloatingSupportChat() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen]);
 
+  // Collision Avoidance: Detect when any modal or drawer is active on screen
+  const [hasActiveModal, setHasActiveModal] = useState(false);
+
+  useEffect(() => {
+    const checkActiveModal = () => {
+      if (typeof document === 'undefined') return;
+      const modals = document.querySelectorAll(
+        '[role="dialog"]:not([data-floating-support]), [aria-modal="true"]:not([data-floating-support]), .fixed.inset-0:not([data-floating-support])'
+      );
+      setHasActiveModal(modals.length > 0);
+    };
+
+    checkActiveModal();
+    const observer = new MutationObserver(checkActiveModal);
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'style', 'aria-modal', 'role'],
+    });
+
+    return () => observer.disconnect();
+  }, []);
+
   // Auto-scroll to bottom of chat
   useEffect(() => {
     if (isOpen) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      messagesEndRef.current?.scrollIntoView?.({ behavior: 'smooth' });
     }
   }, [messages, isOpen, loading]);
 
@@ -128,21 +152,28 @@ export function FloatingSupportChat() {
   const categories = ['All', ...Array.from(new Set(pills.map((p) => p.category)))];
   const filteredPills = selectedCategory === 'All' ? pills : pills.filter((p) => p.category === selectedCategory);
 
+  const launcherPositionClass = hasActiveModal
+    ? 'bottom-4 left-4 sm:bottom-6 sm:right-6'
+    : 'bottom-4 right-4 sm:bottom-6 sm:right-6';
+
   return (
-    <div className="fixed bottom-4 sm:bottom-6 right-4 sm:right-6 z-50 omni-font-sans">
+    <div
+      data-floating-support="true"
+      className={`fixed ${launcherPositionClass} z-45 transition-all duration-300 omni-font-sans`}
+    >
       {/* Floating Launcher Button */}
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
           aria-label="Open GRC Intelligence Assistant"
-          className="group relative flex items-center gap-2.5 px-4 py-3 bg-teal-800 hover:bg-teal-900 text-white font-semibold text-sm rounded-full shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-teal-500"
+          className="group relative flex items-center justify-center gap-2 p-2.5 sm:px-4 sm:py-3 bg-teal-800 hover:bg-teal-900 text-white font-semibold text-sm rounded-full shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-teal-500 min-w-[44px] min-h-[44px]"
         >
-          <div className="relative">
+          <div className="relative flex items-center justify-center">
             <Bot className="w-5 h-5 text-teal-200 group-hover:scale-110 transition-transform" />
             <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full animate-pulse border-2 border-teal-800" />
           </div>
-          <span>GRC Support AI</span>
-          <Sparkles className="w-4 h-4 text-amber-300" />
+          <span className="hidden sm:inline">GRC Support AI</span>
+          <Sparkles className="hidden sm:inline w-4 h-4 text-amber-300" />
         </button>
       )}
 
@@ -150,8 +181,10 @@ export function FloatingSupportChat() {
       {isOpen && (
         <div
           role="dialog"
+          aria-modal="true"
+          data-floating-support="true"
           aria-label="GRC Intelligence Support Panel"
-          className="fixed bottom-16 sm:bottom-20 right-3 sm:right-6 left-3 sm:left-auto w-auto sm:w-[440px] max-w-[calc(100vw-1.5rem)] h-[560px] max-h-[calc(100vh-5rem)] bg-white border border-slate-200 rounded-2xl shadow-2xl flex flex-col overflow-hidden omni-fade-in z-50"
+          className="fixed bottom-16 sm:bottom-20 right-3 sm:right-6 left-3 sm:left-auto w-auto sm:w-[440px] max-w-[calc(100vw-1.5rem)] h-[560px] max-h-[calc(100vh-5rem)] bg-white border border-slate-200 rounded-2xl shadow-2xl flex flex-col overflow-hidden omni-fade-in z-[70]"
         >
           {/* Header */}
           <div className="bg-slate-900 text-white px-4 py-3.5 flex items-center justify-between border-b border-slate-800 shrink-0">

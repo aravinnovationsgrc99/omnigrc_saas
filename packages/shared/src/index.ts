@@ -1511,6 +1511,39 @@ export interface VendorDto {
   updatedAt: Date | string;
   assessments?: VendorAssessmentDto[];
   assetCount?: number;
+  documentCount?: number;
+}
+
+export interface VendorDocumentDto {
+  id: string;
+  vendorId: string;
+  evidenceId: string;
+  attachedAt: Date | string;
+  title: string;
+  description?: string | null;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  status: EvidenceStatus;
+  scanStatus: EvidenceScanStatus;
+  uploadedById: string;
+  uploaderName?: string;
+}
+
+export interface PaginatedVendorDocumentsDto {
+  items: VendorDocumentDto[];
+  total: number;
+}
+
+export type RagStatus = 'RED' | 'AMBER' | 'GREEN' | 'NEUTRAL';
+
+export interface RagAssessment {
+  status: RagStatus;
+  label: string;
+  score?: number | null;
+  reason?: string;
+  detail?: string;
+  badgeClass?: string;
 }
 
 export interface PaginatedVendorsDto {

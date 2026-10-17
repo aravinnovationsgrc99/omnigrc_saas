@@ -153,3 +153,28 @@ export class CreateVendorAssessmentDto {
   @IsOptional()
   complianceTaskId?: string;
 }
+
+export class UploadVendorDocumentDto {
+  @IsString()
+  @IsOptional()
+  description?: string;
+}
+
+export class VendorDocumentQueryDto {
+  @IsString()
+  @IsOptional()
+  search?: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  page?: number = 1;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  @IsOptional()
+  limit?: number = 20;
+}

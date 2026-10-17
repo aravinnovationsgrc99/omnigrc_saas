@@ -25,6 +25,7 @@ import {
   PaginatedControlTestsDto,
   ControlTestingSummaryDto,
   ControlEffectivenessStatus,
+  VulnerabilitySeverity,
 } from '@omnigrc/shared';
 import {
   CreateAuditPlanDto,
@@ -404,6 +405,50 @@ export class BusinessAuditsService {
       );
     }
 
+    if (dto.status === AuditPlanStatus.COMPLETED) {
+      if (existing.status !== AuditPlanStatus.IN_PROGRESS) {
+        throw new BadRequestException('Cannot complete an audit plan that has not been started. Audit status must be IN_PROGRESS.');
+      }
+
+      const fullPlan = await this.prisma.auditPlan.findFirst({
+        where: { id, ...scopeWhere },
+        include: {
+          assessments: {
+            include: {
+              checkItems: true,
+              findings: true,
+            },
+          },
+        },
+      });
+
+      if (!fullPlan || fullPlan.assessments.length === 0) {
+        throw new BadRequestException('Cannot complete audit plan without at least one executed assessment run.');
+      }
+
+      const allCheckItems = fullPlan.assessments.flatMap((a: any) => a.checkItems || []);
+      if (allCheckItems.length === 0) {
+        throw new BadRequestException('Cannot complete audit plan without any evaluation checklist items.');
+      }
+
+      const unevaluated = allCheckItems.filter((ci: any) => ci.result === AuditCheckResult.NOT_EVALUATED);
+      if (unevaluated.length > 0) {
+        throw new BadRequestException(
+          `Cannot complete audit: ${unevaluated.length} checklist item(s) remain unevaluated. All items must be evaluated.`,
+        );
+      }
+
+      const allFindings = fullPlan.assessments.flatMap((a: any) => a.findings || []);
+      const unresolved = allFindings.filter(
+        (f: any) => f.status === FindingStatus.OPEN || f.status === FindingStatus.IN_REMEDIATION,
+      );
+      if (unresolved.length > 0) {
+        throw new BadRequestException(
+          `Cannot complete audit: ${unresolved.length} finding(s) remain open or in remediation. Findings must be ready for verification, verified, or closed.`,
+        );
+      }
+    }
+
     const updated = await this.prisma.$transaction(async (tx: any) => {
       const plan = await tx.auditPlan.update({
         where: { id },
@@ -424,6 +469,13 @@ export class BusinessAuditsService {
           }),
         },
       });
+
+      if (dto.status === AuditPlanStatus.COMPLETED) {
+        await tx.auditAssessment.updateMany({
+          where: { auditPlanId: id, status: AuditAssessmentStatus.IN_PROGRESS },
+          data: { status: AuditAssessmentStatus.COMPLETED, completedAt: new Date() },
+        });
+      }
 
       if (shouldSyncReferences) {
         await tx.auditPlanFrameworkReference.deleteMany({
@@ -447,7 +499,7 @@ export class BusinessAuditsService {
     await this.auditLogsService.log({
       organizationId: authCtx.organizationId,
       actorId: authCtx.userId,
-      action: 'AUDIT_PLAN_UPDATED',
+      action: dto.status === AuditPlanStatus.COMPLETED ? 'AUDIT_PLAN_COMPLETED' : 'AUDIT_PLAN_UPDATED',
       entityType: 'AuditPlan',
       entityId: id,
       metadata: {
@@ -672,6 +724,10 @@ export class BusinessAuditsService {
 
     await this.resourceAuthService.assertResourceAccess(authCtx, finding.assessment.auditPlan);
 
+    if (dto.status === FindingStatus.VERIFIED || dto.status === FindingStatus.CLOSED) {
+      throw new BadRequestException('Formal verification and closure must be performed via the dedicated verify endpoint.');
+    }
+
     const updated = await this.prisma.auditFinding.update({
       where: { id },
       data: {
@@ -753,16 +809,153 @@ export class BusinessAuditsService {
       data: {
         organizationId: authCtx.organizationId,
         findingId: dto.findingId,
-        title: dto.title,
-        correctiveAction: dto.correctiveAction,
-        preventiveAction: dto.preventiveAction,
-        ownerId: dto.ownerId,
+        title: dto.title.trim(),
+        correctiveAction: dto.correctiveAction.trim(),
+        preventiveAction: dto.preventiveAction?.trim() || null,
+        ownerId: dto.ownerId.trim(),
         dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
         status: CapaStatus.OPEN,
       },
     });
 
+    if (finding.status === FindingStatus.OPEN) {
+      await this.prisma.auditFinding.update({
+        where: { id: dto.findingId },
+        data: { status: FindingStatus.IN_REMEDIATION },
+      });
+    }
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'AUDIT_CAPA_CREATED',
+      entityType: 'AuditCapa',
+      entityId: capa.id,
+      metadata: { findingId: dto.findingId, title: capa.title, ownerId: capa.ownerId },
+    });
+
     return this.mapCapaToDto(capa);
+  }
+
+  async updateCapa(
+    authCtx: ResourceAuthContext,
+    id: string,
+    dto: UpdateAuditCapaDto,
+  ): Promise<AuditCapaDto> {
+    const capa = await this.prisma.auditCapa.findFirst({
+      where: { id, organizationId: authCtx.organizationId },
+      include: { finding: { include: { assessment: { include: { auditPlan: true } } } } },
+    });
+
+    if (!capa) throw new NotFoundException(`Audit CAPA with ID "${id}" not found`);
+
+    await this.resourceAuthService.assertResourceAccess(authCtx, capa.finding.assessment.auditPlan);
+
+    const updated = await this.prisma.auditCapa.update({
+      where: { id },
+      data: {
+        ...(dto.title !== undefined && { title: dto.title.trim() }),
+        ...(dto.correctiveAction !== undefined && { correctiveAction: dto.correctiveAction.trim() }),
+        ...(dto.preventiveAction !== undefined && { preventiveAction: dto.preventiveAction?.trim() || null }),
+        ...(dto.ownerId !== undefined && { ownerId: dto.ownerId.trim() }),
+        ...(dto.dueDate !== undefined && { dueDate: dto.dueDate ? new Date(dto.dueDate) : null }),
+        ...(dto.status !== undefined && { status: dto.status }),
+        ...(dto.status === CapaStatus.COMPLETED && { completedAt: new Date() }),
+      },
+    });
+
+    if (dto.status === CapaStatus.COMPLETED && capa.finding.status === FindingStatus.IN_REMEDIATION) {
+      const remainingOpenCapas = await this.prisma.auditCapa.count({
+        where: {
+          findingId: capa.findingId,
+          status: { in: [CapaStatus.OPEN, CapaStatus.IN_PROGRESS] },
+        },
+      });
+      if (remainingOpenCapas === 0) {
+        await this.prisma.auditFinding.update({
+          where: { id: capa.findingId },
+          data: { status: FindingStatus.READY_FOR_VERIFICATION },
+        });
+      }
+    }
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'AUDIT_CAPA_UPDATED',
+      entityType: 'AuditCapa',
+      entityId: id,
+      metadata: { status: updated.status, title: updated.title, findingId: capa.findingId },
+    });
+
+    return this.mapCapaToDto(updated);
+  }
+
+  async findAllFindings(
+    authCtx: ResourceAuthContext,
+    query: {
+      page?: number;
+      limit?: number;
+      status?: FindingStatus;
+      severity?: VulnerabilitySeverity;
+      search?: string;
+      planId?: string;
+      assessmentId?: string;
+    },
+  ): Promise<PaginatedAuditFindingsDto> {
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+
+    const where: any = {
+      organizationId: authCtx.organizationId,
+      ...scopeWhere,
+    };
+
+    if (query.status) where.status = query.status;
+    if (query.severity) where.severity = query.severity;
+    if (query.assessmentId) where.assessmentId = query.assessmentId;
+    if (query.planId) {
+      where.assessment = { auditPlanId: query.planId };
+    }
+
+    if (query.search && query.search.trim()) {
+      const term = query.search.trim();
+      where.OR = [
+        { title: { contains: term, mode: 'insensitive' } },
+        { description: { contains: term, mode: 'insensitive' } },
+        { remediationPlan: { contains: term, mode: 'insensitive' } },
+        { ownerId: { contains: term, mode: 'insensitive' } },
+      ];
+    }
+
+    const [items, total] = await Promise.all([
+      this.prisma.auditFinding.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          capas: true,
+          evidence: true,
+          assessment: {
+            include: {
+              auditPlan: true,
+            },
+          },
+        },
+      }),
+      this.prisma.auditFinding.count({ where }),
+    ]);
+
+    return {
+      items: items.map((f: any) => this.mapFindingToDto(f)),
+      total,
+      page,
+      limit,
+    };
   }
 
   async addEvidence(authCtx: ResourceAuthContext, dto: CreateAuditEvidenceDto): Promise<any> {
@@ -854,6 +1047,16 @@ export class BusinessAuditsService {
     };
   }
 
+  private toIso(val: any): string {
+    if (!val) return new Date().toISOString();
+    return val instanceof Date ? val.toISOString() : new Date(val).toISOString();
+  }
+
+  private toNullableIso(val: any): string | null {
+    if (!val) return null;
+    return val instanceof Date ? val.toISOString() : new Date(val).toISOString();
+  }
+
   private mapAssessmentToDto(a: any): AuditAssessmentDto {
     return {
       id: a.id,
@@ -864,11 +1067,11 @@ export class BusinessAuditsService {
       status: a.status as AuditAssessmentStatus,
       score: a.score,
       summary: a.summary,
-      startedAt: a.startedAt.toISOString(),
-      completedAt: a.completedAt ? a.completedAt.toISOString() : null,
+      startedAt: this.toIso(a.startedAt),
+      completedAt: this.toNullableIso(a.completedAt),
       createdById: a.createdById,
-      createdAt: a.createdAt.toISOString(),
-      updatedAt: a.updatedAt.toISOString(),
+      createdAt: this.toIso(a.createdAt),
+      updatedAt: this.toIso(a.updatedAt),
       checkItems: a.checkItems ? a.checkItems.map((c: any) => ({
         id: c.id,
         organizationId: c.organizationId,
@@ -879,8 +1082,8 @@ export class BusinessAuditsService {
         result: c.result as AuditCheckResult,
         notes: c.notes,
         createdById: c.createdById,
-        createdAt: c.createdAt.toISOString(),
-        updatedAt: c.updatedAt.toISOString(),
+        createdAt: this.toIso(c.createdAt),
+        updatedAt: this.toIso(c.updatedAt),
       })) : [],
       findings: a.findings ? a.findings.map((f: any) => this.mapFindingToDto(f)) : [],
     };
@@ -897,15 +1100,15 @@ export class BusinessAuditsService {
       severity: f.severity,
       status: f.status as FindingStatus,
       ownerId: f.ownerId,
-      dueDate: f.dueDate ? f.dueDate.toISOString() : null,
+      dueDate: this.toNullableIso(f.dueDate),
       riskId: f.riskId,
       remediationPlan: f.remediationPlan,
       verificationNotes: f.verificationNotes,
       verifiedById: f.verifiedById,
-      verifiedAt: f.verifiedAt ? f.verifiedAt.toISOString() : null,
+      verifiedAt: this.toNullableIso(f.verifiedAt),
       createdById: f.createdById,
-      createdAt: f.createdAt.toISOString(),
-      updatedAt: f.updatedAt.toISOString(),
+      createdAt: this.toIso(f.createdAt),
+      updatedAt: this.toIso(f.updatedAt),
       capas: f.capas ? f.capas.map((c: any) => this.mapCapaToDto(c)) : [],
     };
   }
@@ -919,13 +1122,13 @@ export class BusinessAuditsService {
       correctiveAction: c.correctiveAction,
       preventiveAction: c.preventiveAction,
       ownerId: c.ownerId,
-      dueDate: c.dueDate ? c.dueDate.toISOString() : null,
+      dueDate: this.toNullableIso(c.dueDate),
       status: c.status as CapaStatus,
-      completedAt: c.completedAt ? c.completedAt.toISOString() : null,
+      completedAt: this.toNullableIso(c.completedAt),
       verifiedById: c.verifiedById,
-      verifiedAt: c.verifiedAt ? c.verifiedAt.toISOString() : null,
-      createdAt: c.createdAt.toISOString(),
-      updatedAt: c.updatedAt.toISOString(),
+      verifiedAt: this.toNullableIso(c.verifiedAt),
+      createdAt: this.toIso(c.createdAt),
+      updatedAt: this.toIso(c.updatedAt),
     };
   }
 

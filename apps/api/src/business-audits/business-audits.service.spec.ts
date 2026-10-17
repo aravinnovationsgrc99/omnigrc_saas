@@ -10,6 +10,7 @@ import {
   AuditAssessmentStatus,
   AuditCheckResult,
   FindingStatus,
+  CapaStatus,
   calculateAuditScore,
   VulnerabilitySeverity,
   Role,
@@ -38,7 +39,9 @@ describe('BusinessAuditsService', () => {
         create: jest.fn(),
         findUnique: jest.fn(),
         findFirst: jest.fn(),
+        findMany: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn(),
       },
       auditCheckItem: {
         create: jest.fn(),
@@ -51,9 +54,18 @@ describe('BusinessAuditsService', () => {
       auditFinding: {
         create: jest.fn(),
         findFirst: jest.fn(),
+        findMany: jest.fn(),
+        count: jest.fn(),
         update: jest.fn(),
       },
       auditCapa: {
+        create: jest.fn(),
+        findFirst: jest.fn(),
+        findMany: jest.fn(),
+        count: jest.fn(),
+        update: jest.fn(),
+      },
+      auditEvidence: {
         create: jest.fn(),
       },
       control: {
@@ -960,6 +972,371 @@ describe('BusinessAuditsService', () => {
           frameworkId: 'fw-soc2',
         }),
       ).rejects.toThrow('Database transaction deadlocked or constraint failed');
+    });
+
+    describe('Audit Plan Completion Eligibility', () => {
+      it('should reject completion if audit plan is not IN_PROGRESS', async () => {
+        const draftPlan = {
+          id: 'plan-1',
+          organizationId: 'org-1',
+          status: AuditPlanStatus.DRAFT,
+        };
+        prisma.auditPlan.findFirst.mockResolvedValue(draftPlan);
+
+        await expect(
+          service.updatePlan(authCtx, 'plan-1', { status: AuditPlanStatus.COMPLETED }),
+        ).rejects.toThrow('Audit status must be IN_PROGRESS');
+      });
+
+      it('should reject completion if plan has no assessments', async () => {
+        const inProgressPlan = {
+          id: 'plan-1',
+          organizationId: 'org-1',
+          status: AuditPlanStatus.IN_PROGRESS,
+        };
+        // First findFirst for existence check
+        prisma.auditPlan.findFirst
+          .mockResolvedValueOnce(inProgressPlan)
+          // Second findFirst for fullPlan check with empty assessments
+          .mockResolvedValueOnce({
+            ...inProgressPlan,
+            assessments: [],
+          });
+
+        await expect(
+          service.updatePlan(authCtx, 'plan-1', { status: AuditPlanStatus.COMPLETED }),
+        ).rejects.toThrow('Cannot complete audit plan without at least one executed assessment run.');
+      });
+
+      it('should reject completion if assessment has no check items', async () => {
+        const inProgressPlan = {
+          id: 'plan-1',
+          organizationId: 'org-1',
+          status: AuditPlanStatus.IN_PROGRESS,
+        };
+        prisma.auditPlan.findFirst
+          .mockResolvedValueOnce(inProgressPlan)
+          .mockResolvedValueOnce({
+            ...inProgressPlan,
+            assessments: [{ id: 'ass-1', checkItems: [], findings: [] }],
+          });
+
+        await expect(
+          service.updatePlan(authCtx, 'plan-1', { status: AuditPlanStatus.COMPLETED }),
+        ).rejects.toThrow('Cannot complete audit plan without any evaluation checklist items.');
+      });
+
+      it('should reject completion if any checklist items are NOT_EVALUATED', async () => {
+        const inProgressPlan = {
+          id: 'plan-1',
+          organizationId: 'org-1',
+          status: AuditPlanStatus.IN_PROGRESS,
+        };
+        prisma.auditPlan.findFirst
+          .mockResolvedValueOnce(inProgressPlan)
+          .mockResolvedValueOnce({
+            ...inProgressPlan,
+            assessments: [
+              {
+                id: 'ass-1',
+                checkItems: [
+                  { id: 'ci-1', result: AuditCheckResult.COMPLIANT },
+                  { id: 'ci-2', result: AuditCheckResult.NOT_EVALUATED },
+                ],
+                findings: [],
+              },
+            ],
+          });
+
+        await expect(
+          service.updatePlan(authCtx, 'plan-1', { status: AuditPlanStatus.COMPLETED }),
+        ).rejects.toThrow('1 checklist item(s) remain unevaluated');
+      });
+
+      it('should reject completion if any findings are OPEN or IN_REMEDIATION', async () => {
+        const inProgressPlan = {
+          id: 'plan-1',
+          organizationId: 'org-1',
+          status: AuditPlanStatus.IN_PROGRESS,
+        };
+        prisma.auditPlan.findFirst
+          .mockResolvedValueOnce(inProgressPlan)
+          .mockResolvedValueOnce({
+            ...inProgressPlan,
+            assessments: [
+              {
+                id: 'ass-1',
+                checkItems: [{ id: 'ci-1', result: AuditCheckResult.NON_COMPLIANT }],
+                findings: [
+                  { id: 'f-1', status: FindingStatus.OPEN },
+                ],
+              },
+            ],
+          });
+
+        await expect(
+          service.updatePlan(authCtx, 'plan-1', { status: AuditPlanStatus.COMPLETED }),
+        ).rejects.toThrow('1 finding(s) remain open or in remediation');
+      });
+
+      it('should successfully complete audit plan when all check items are evaluated and findings resolved', async () => {
+        const inProgressPlan = {
+          id: 'plan-1',
+          organizationId: 'org-1',
+          title: 'Q4 SOC2 Audit',
+          status: AuditPlanStatus.IN_PROGRESS,
+        };
+        const fullPlan = {
+          ...inProgressPlan,
+          assessments: [
+            {
+              id: 'ass-1',
+              status: AuditAssessmentStatus.IN_PROGRESS,
+              checkItems: [
+                { id: 'ci-1', result: AuditCheckResult.COMPLIANT },
+                { id: 'ci-2', result: AuditCheckResult.NOT_APPLICABLE },
+              ],
+              findings: [
+                { id: 'f-1', status: FindingStatus.VERIFIED },
+              ],
+            },
+          ],
+        };
+
+        const completedPlan = {
+          ...inProgressPlan,
+          status: AuditPlanStatus.COMPLETED,
+          completedAt: new Date(),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          schedules: [],
+          assessments: fullPlan.assessments,
+          scopeReferences: [],
+        };
+
+        prisma.auditPlan.findFirst
+          .mockResolvedValueOnce(inProgressPlan)
+          .mockResolvedValueOnce(fullPlan);
+
+        prisma.auditPlan.update.mockResolvedValue(completedPlan);
+        prisma.auditAssessment.updateMany.mockResolvedValue({ count: 1 });
+
+        const result = await service.updatePlan(authCtx, 'plan-1', {
+          status: AuditPlanStatus.COMPLETED,
+        });
+
+        expect(result.status).toBe(AuditPlanStatus.COMPLETED);
+        expect(prisma.auditAssessment.updateMany).toHaveBeenCalledWith({
+          where: {
+            auditPlanId: 'plan-1',
+            status: AuditAssessmentStatus.IN_PROGRESS,
+          },
+          data: expect.objectContaining({
+            status: AuditAssessmentStatus.COMPLETED,
+          }),
+        });
+        expect(auditLogsService.log).toHaveBeenCalledWith(
+          expect.objectContaining({
+            action: 'AUDIT_PLAN_COMPLETED',
+            entityId: 'plan-1',
+          }),
+        );
+      });
+    });
+
+    describe('Finding Status Transitions and Verification Gating', () => {
+      it('should reject direct status update to VERIFIED or CLOSED via updateFindingStatus', async () => {
+        const finding = {
+          id: 'f-1',
+          organizationId: 'org-1',
+          status: FindingStatus.READY_FOR_VERIFICATION,
+          assessment: {
+            auditPlan: {
+              organizationId: 'org-1',
+            },
+          },
+        };
+        prisma.auditFinding.findFirst.mockResolvedValue(finding);
+
+        await expect(
+          service.updateFindingStatus(authCtx, 'f-1', { status: FindingStatus.VERIFIED }),
+        ).rejects.toThrow(BadRequestException);
+
+        await expect(
+          service.updateFindingStatus(authCtx, 'f-1', { status: FindingStatus.CLOSED }),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('should allow formal verification via verifyFinding and record audit log', async () => {
+        const finding = {
+          id: 'f-1',
+          organizationId: 'org-1',
+          title: 'Unencrypted S3 Bucket',
+          status: FindingStatus.READY_FOR_VERIFICATION,
+          remediationPlan: 'Enable SSE-KMS',
+          assessment: {
+            auditPlan: {
+              organizationId: 'org-1',
+            },
+          },
+        };
+        prisma.auditFinding.findFirst.mockResolvedValue(finding);
+        prisma.auditFinding.update.mockResolvedValue({
+          ...finding,
+          status: FindingStatus.VERIFIED,
+          verificationNotes: 'Verified KMS key policy and encryption enabled',
+          verifiedById: authCtx.userId,
+          verifiedAt: new Date(),
+        });
+
+        const result = await service.verifyFinding(
+          authCtx,
+          'f-1',
+          FindingStatus.VERIFIED,
+          'Verified KMS key policy and encryption enabled',
+        );
+
+        expect(result.status).toBe(FindingStatus.VERIFIED);
+        expect(result.verificationNotes).toBe('Verified KMS key policy and encryption enabled');
+        expect(auditLogsService.log).toHaveBeenCalledWith(
+          expect.objectContaining({
+            action: 'AUDIT_FINDING_VERIFIED',
+            entityId: 'f-1',
+          }),
+        );
+      });
+    });
+
+    describe('CAPA Creation and Lifecycle', () => {
+      it('should create CAPA, advance OPEN finding to IN_REMEDIATION, and log audit event', async () => {
+        const finding = {
+          id: 'f-1',
+          organizationId: 'org-1',
+          status: FindingStatus.OPEN,
+          assessment: {
+            auditPlan: {
+              organizationId: 'org-1',
+            },
+          },
+        };
+        prisma.auditFinding.findFirst.mockResolvedValue(finding);
+        prisma.auditCapa.create.mockResolvedValue({
+          id: 'capa-1',
+          findingId: 'f-1',
+          title: 'Implement Enforced TLS 1.3',
+          correctiveAction: 'Update ALB listener policy',
+          preventiveAction: 'Add Terraform guardrail',
+          ownerId: 'user-1',
+          status: CapaStatus.OPEN,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+
+        const result = await service.createCapa(authCtx, {
+          findingId: 'f-1',
+          title: 'Implement Enforced TLS 1.3',
+          correctiveAction: 'Update ALB listener policy',
+          preventiveAction: 'Add Terraform guardrail',
+          ownerId: 'user-1',
+        });
+
+        expect(result.id).toBe('capa-1');
+        // Verifies finding status was auto-advanced to IN_REMEDIATION
+        expect(prisma.auditFinding.update).toHaveBeenCalledWith({
+          where: { id: 'f-1' },
+          data: { status: FindingStatus.IN_REMEDIATION },
+        });
+        expect(auditLogsService.log).toHaveBeenCalledWith(
+          expect.objectContaining({
+            action: 'AUDIT_CAPA_CREATED',
+            entityId: 'capa-1',
+          }),
+        );
+      });
+
+      it('should update CAPA status and advance finding to READY_FOR_VERIFICATION when all CAPAs are COMPLETED', async () => {
+        const mockCapa = {
+          id: 'capa-1',
+          findingId: 'f-1',
+          status: CapaStatus.IN_PROGRESS,
+          finding: {
+            id: 'f-1',
+            organizationId: 'org-1',
+            status: FindingStatus.IN_REMEDIATION,
+            assessment: {
+              auditPlan: {
+                organizationId: 'org-1',
+              },
+            },
+          },
+        };
+
+        prisma.auditCapa.findFirst.mockResolvedValue(mockCapa);
+        prisma.auditCapa.update.mockResolvedValue({
+          ...mockCapa,
+          status: CapaStatus.COMPLETED,
+          completedAt: new Date(),
+        });
+        // count of open CAPAs for this finding returns 0 (all finished)
+        prisma.auditCapa.count.mockResolvedValue(0);
+
+        const result = await service.updateCapa(authCtx, 'capa-1', {
+          status: CapaStatus.COMPLETED,
+        });
+
+        expect(result.status).toBe(CapaStatus.COMPLETED);
+        expect(prisma.auditFinding.update).toHaveBeenCalledWith({
+          where: { id: 'f-1' },
+          data: { status: FindingStatus.READY_FOR_VERIFICATION },
+        });
+        expect(auditLogsService.log).toHaveBeenCalledWith(
+          expect.objectContaining({
+            action: 'AUDIT_CAPA_UPDATED',
+            entityId: 'capa-1',
+          }),
+        );
+      });
+    });
+
+    describe('Finding Retrieval and Tenant Scoping', () => {
+      it('should query findings scoped to tenant and handle pagination', async () => {
+        const mockFindings = [
+          {
+            id: 'f-1',
+            organizationId: 'org-1',
+            title: 'Missing MFA',
+            severity: VulnerabilitySeverity.HIGH,
+            status: FindingStatus.OPEN,
+            assessment: { id: 'ass-1', title: 'Q1 Access Review', plan: { id: 'plan-1', title: 'SOC2 Plan' } },
+            capas: [],
+            evidence: [],
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ];
+
+        prisma.auditFinding.findMany.mockResolvedValue(mockFindings);
+        prisma.auditFinding.count.mockResolvedValue(1);
+
+        const result = await service.findAllFindings(authCtx, {
+          page: 1,
+          limit: 10,
+          status: FindingStatus.OPEN,
+          severity: VulnerabilitySeverity.HIGH,
+        });
+
+        expect(result.total).toBe(1);
+        expect(result.items.length).toBe(1);
+        expect(prisma.auditFinding.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              organizationId: 'org-1',
+              status: FindingStatus.OPEN,
+              severity: VulnerabilitySeverity.HIGH,
+            }),
+          }),
+        );
+      });
     });
   });
 });

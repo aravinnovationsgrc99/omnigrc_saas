@@ -15,7 +15,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequiresActiveLicense } from '../common/decorators/requires-active-license.decorator';
-import { Role, AuditPlanStatus, FindingStatus } from '@omnigrc/shared';
+import { Role, AuditPlanStatus, FindingStatus, VulnerabilitySeverity } from '@omnigrc/shared';
 import { ResourceAuthContext } from '../auth/resource-authorization.service';
 import { BusinessAuditsService } from './business-audits.service';
 import {
@@ -27,6 +27,7 @@ import {
   CreateAuditFindingDto,
   UpdateAuditFindingDto,
   CreateAuditCapaDto,
+  UpdateAuditCapaDto,
   CreateAuditEvidenceDto,
 } from './dto/business-audits.dto';
 import { RequireCapability } from '../common/decorators/require-capability.decorator';
@@ -155,6 +156,29 @@ export class BusinessAuditsController {
     return this.businessAuditsService.evaluateCheckItem(authCtx, id, dto);
   }
 
+  @Get('findings')
+  async findAllFindings(
+    @CurrentUser() user: any,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+    @Query('status') status?: FindingStatus,
+    @Query('severity') severity?: VulnerabilitySeverity,
+    @Query('search') search?: string,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.businessAuditsService.findAllFindings(authCtx, {
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+      status,
+      severity,
+      search,
+    });
+  }
+
   @Post('findings')
   @RequiresActiveLicense()
   @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
@@ -218,6 +242,22 @@ export class BusinessAuditsController {
       role: user.role,
     };
     return this.businessAuditsService.createCapa(authCtx, dto);
+  }
+
+  @Patch('capas/:id')
+  @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async updateCapa(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateAuditCapaDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.businessAuditsService.updateCapa(authCtx, id, dto);
   }
 
   @Post('evidence')

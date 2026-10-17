@@ -258,6 +258,24 @@ a:focus-visible,
   filter: brightness(0.97);
 }
 
+.omni-badge-slate {
+  background: #F1F5F9;
+  color: #475569;
+  border: 1px solid #CBD5E1;
+  font-weight: 600;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: filter 0.15s ease-in-out;
+}
+
+.omni-badge-slate:hover {
+  filter: brightness(0.97);
+}
+
 /* Arav Innovations Restrained Accent Utilities */
 .arav-badge-gold {
   background: var(--arav-gold-light);

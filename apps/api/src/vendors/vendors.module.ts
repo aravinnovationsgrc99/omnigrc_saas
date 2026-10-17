@@ -4,9 +4,10 @@ import { VendorsController } from './vendors.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { AuthModule } from '../auth/auth.module';
+import { EvidenceVaultModule } from '../evidence/evidence-vault.module';
 
 @Module({
-  imports: [PrismaModule, AuditLogsModule, AuthModule],
+  imports: [PrismaModule, AuditLogsModule, AuthModule, EvidenceVaultModule],
   controllers: [VendorsController],
   providers: [VendorsService],
   exports: [VendorsService],
