@@ -1653,6 +1653,7 @@ export interface AuditCapaDto {
 export interface AuditFindingDto {
   id: string;
   organizationId: string;
+  planId?: string | null;
   assessmentId: string;
   checkItemId?: string | null;
   title: string;
@@ -1681,6 +1682,8 @@ export interface AuditAssessmentDto {
   organizationId: string;
   auditPlanId: string;
   scheduleId?: string | null;
+  title?: string | null;
+  scopeDescription?: string | null;
   auditorId: string;
   auditorName?: string | null;
   auditorEmail?: string | null;
@@ -1694,6 +1697,7 @@ export interface AuditAssessmentDto {
   updatedAt: Date | string;
   checkItems?: AuditCheckItemDto[];
   findings?: AuditFindingDto[];
+  evidence?: AuditEvidenceDto[];
 }
 
 export interface AuditScheduleDto {

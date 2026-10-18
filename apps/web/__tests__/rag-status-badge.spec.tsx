@@ -115,6 +115,55 @@ describe('Contextual RAG Status Mapping & Component', () => {
       expect(res.status).toBe('GREEN');
       expect(res.label).toBe('Conformant');
     });
+
+    it('returns NEUTRAL ("Not Assessed") when framework is UNSPECIFIED even if COMPLETED', () => {
+      const res = getAuditPlanRag(
+        'COMPLETED',
+        [{ checkItems: [{ result: 'COMPLIANT' }] }],
+        { frameworkCode: 'UNSPECIFIED' },
+      );
+      expect(res.status).toBe('NEUTRAL');
+      expect(res.label).toBe('Not Assessed');
+      expect(res.detail).toContain('Unspecified framework');
+    });
+
+    it('returns NEUTRAL ("Not Assessed") when framework baseline is missing', () => {
+      const res = getAuditPlanRag(
+        'COMPLETED',
+        [{ checkItems: [{ result: 'COMPLIANT' }] }],
+        { frameworkCode: null, frameworkId: null, frameworkName: null },
+      );
+      expect(res.status).toBe('NEUTRAL');
+      expect(res.label).toBe('Not Assessed');
+    });
+
+    it('returns NEUTRAL ("Not Assessed") when audit has zero assessments', () => {
+      const res = getAuditPlanRag('COMPLETED', []);
+      expect(res.status).toBe('NEUTRAL');
+      expect(res.label).toBe('Not Assessed');
+    });
+
+    it('returns NEUTRAL ("Insufficient Data") when assessments have zero check items', () => {
+      const res = getAuditPlanRag('COMPLETED', [{ checkItems: [] }]);
+      expect(res.status).toBe('NEUTRAL');
+      expect(res.label).toBe('Insufficient Data');
+    });
+
+    it('returns NEUTRAL ("Not Assessed") when all check items are NOT_EVALUATED', () => {
+      const res = getAuditPlanRag('IN_PROGRESS', [
+        { checkItems: [{ result: 'NOT_EVALUATED' }] },
+      ]);
+      expect(res.status).toBe('NEUTRAL');
+      expect(res.label).toBe('Not Assessed');
+    });
+
+    it('returns AMBER ("Incomplete Evaluation") when COMPLETED has remaining unevaluated items', () => {
+      const res = getAuditPlanRag('COMPLETED', [
+        { checkItems: [{ result: 'COMPLIANT' }, { result: 'NOT_EVALUATED' }] },
+      ]);
+      expect(res.status).toBe('AMBER');
+      expect(res.label).toBe('Incomplete Evaluation');
+    });
   });
 
   describe('RagStatusBadge UI Component', () => {

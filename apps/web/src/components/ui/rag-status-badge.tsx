@@ -126,7 +126,27 @@ export function getRiskRag(score: number | null | undefined): RagAssessment {
 export function getAuditPlanRag(
   status: string,
   assessments?: Array<{ score?: number; checkItems?: Array<{ result?: string }> }>,
+  planContext?: {
+    frameworkCode?: string | null;
+    frameworkId?: string | null;
+    frameworkName?: string | null;
+    scopeReferences?: Array<any>;
+  },
 ): RagAssessment {
+  // 1. Explicit baseline check: Unspecified or missing framework baseline cannot be conformant
+  if (
+    planContext &&
+    (planContext.frameworkCode === 'UNSPECIFIED' ||
+      (!planContext.frameworkId && !planContext.frameworkCode && !planContext.frameworkName))
+  ) {
+    return {
+      status: 'NEUTRAL',
+      label: 'Not Assessed',
+      detail: 'Unspecified framework — no compliance baseline configured',
+    };
+  }
+
+  // 2. Draft or Planned status
   if (status === 'DRAFT' || status === 'PLANNED') {
     return {
       status: 'NEUTRAL',
@@ -135,19 +155,50 @@ export function getAuditPlanRag(
     };
   }
 
-  // Check if any assessment has failed items
+  // 3. No execution runs / assessments started
+  if (!assessments || assessments.length === 0) {
+    return {
+      status: 'NEUTRAL',
+      label: 'Not Assessed',
+      detail: 'No execution runs or assessments started',
+    };
+  }
+
   const allCheckItems = (assessments || []).flatMap((a) => a.checkItems || []);
+
+  // 4. Zero checklist items configured
+  if (allCheckItems.length === 0) {
+    return {
+      status: 'NEUTRAL',
+      label: 'Insufficient Data',
+      detail: 'Zero checklist items configured for evaluation',
+    };
+  }
+
   const failedCount = allCheckItems.filter((ci) => ci.result === 'NON_COMPLIANT').length;
   const compliantCount = allCheckItems.filter((ci) => ci.result === 'COMPLIANT').length;
+  const evaluatedItems = allCheckItems.filter((ci) => ci.result && ci.result !== 'NOT_EVALUATED');
+  const unevaluatedCount = allCheckItems.filter((ci) => !ci.result || ci.result === 'NOT_EVALUATED').length;
 
+  // 5. No checklist items evaluated yet
+  if (evaluatedItems.length === 0) {
+    return {
+      status: 'NEUTRAL',
+      label: 'Not Assessed',
+      detail: 'Checklist items have not been evaluated',
+    };
+  }
+
+  // 6. Failures detected
   if (failedCount > 0) {
     return {
       status: 'RED',
       label: 'Non-Conformant',
-      detail: `${failedCount} non-conformant finding(s) detected`,
+      detail: `${failedCount} non-conformant item(s) detected`,
     };
   }
 
+  // 7. Active execution
   if (status === 'IN_PROGRESS') {
     return {
       status: 'AMBER',
@@ -156,11 +207,26 @@ export function getAuditPlanRag(
     };
   }
 
+  // 8. Completed status verification
   if (status === 'COMPLETED') {
+    if (unevaluatedCount > 0) {
+      return {
+        status: 'AMBER',
+        label: 'Incomplete Evaluation',
+        detail: `${unevaluatedCount} item(s) remained unevaluated at completion`,
+      };
+    }
+    if (compliantCount > 0) {
+      return {
+        status: 'GREEN',
+        label: 'Conformant',
+        detail: 'All evaluated audit checks passed',
+      };
+    }
     return {
-      status: 'GREEN',
-      label: 'Conformant',
-      detail: 'All evaluated audit checks passed',
+      status: 'NEUTRAL',
+      label: 'Not Assessed',
+      detail: 'Zero compliant checks verified',
     };
   }
 
