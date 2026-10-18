@@ -11,7 +11,7 @@ import {
   EvidenceStatus,
   EvidenceScanStatus,
 } from '@omnigrc/shared';
-import { NotFoundException, ForbiddenException } from '@nestjs/common';
+import { NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 
 describe('EvidenceService - Control Evidence Association Suite', () => {
   let service: EvidenceService;
@@ -31,6 +31,27 @@ describe('EvidenceService - Control Evidence Association Suite', () => {
     prisma = {
       control: {
         findFirst: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      risk: {
+        findFirst: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      policy: {
+        findFirst: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      vendor: {
+        findFirst: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      vulnerability: {
+        findFirst: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      incident: {
+        findFirst: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
       },
       controlEvidence: {
         findMany: jest.fn(),
@@ -404,6 +425,98 @@ describe('EvidenceService - Control Evidence Association Suite', () => {
         expect.objectContaining({
           where: expect.objectContaining({
             organizationId: 'org-custom-tenant',
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('getTargetResources (Searchable Resource Selector)', () => {
+    it('returns empty array when type is None or empty', async () => {
+      const resNone = await service.getTargetResources(authCtx, 'NONE');
+      expect(resNone).toEqual([]);
+
+      const resEmpty = await service.getTargetResources(authCtx, '');
+      expect(resEmpty).toEqual([]);
+    });
+
+    it('returns tenant-scoped controls with name, category and description', async () => {
+      prisma.control.findMany.mockResolvedValue([
+        { id: 'ctrl-1', name: 'Access Control Policy', category: 'ACCESS_CONTROL', description: 'Policy for logical access' },
+      ]);
+
+      const res = await service.getTargetResources(authCtx, 'CONTROL', 'access');
+
+      expect(prisma.control.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            organizationId: 'org-1',
+            deletedAt: null,
+          }),
+        }),
+      );
+      expect(res).toHaveLength(1);
+      expect(res[0]).toEqual({
+        id: 'ctrl-1',
+        name: 'Access Control Policy',
+        code: 'ACCESS_CONTROL',
+        type: 'CONTROL',
+        details: 'Policy for logical access',
+      });
+    });
+
+    it('returns tenant-scoped risks with title, score and status', async () => {
+      prisma.risk.findMany.mockResolvedValue([
+        { id: 'risk-1', title: 'Data Breach via Unencrypted Backup', score: 16, status: 'OPEN' },
+      ]);
+
+      const res = await service.getTargetResources(authCtx, 'RISK');
+      expect(res[0]).toEqual({
+        id: 'risk-1',
+        name: 'Data Breach via Unencrypted Backup',
+        code: 'Score: 16',
+        type: 'RISK',
+        details: 'Status: OPEN',
+      });
+    });
+
+    it('returns tenant-scoped policies and vendors', async () => {
+      prisma.policy.findMany.mockResolvedValue([
+        { id: 'pol-1', title: 'Password Standard', code: 'POL-01', status: 'ACTIVE' },
+      ]);
+      prisma.vendor.findMany.mockResolvedValue([
+        { id: 'ven-1', name: 'AWS Cloud Services', criticality: 'CRITICAL', category: 'Cloud Infrastructure' },
+      ]);
+
+      const polRes = await service.getTargetResources(authCtx, 'POLICY');
+      expect(polRes[0].name).toBe('Password Standard');
+
+      const venRes = await service.getTargetResources(authCtx, 'VENDOR');
+      expect(venRes[0].name).toBe('AWS Cloud Services');
+      expect(venRes[0].code).toBe('CRITICAL');
+    });
+
+    it('throws BadRequestException for unsupported resource type', async () => {
+      await expect(
+        service.getTargetResources(authCtx, 'UNSUPPORTED_TYPE'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('CRITICAL TENANT ISOLATION: enforces scopeWhere from ResourceAuthorizationService for target resources', async () => {
+      resourceAuthService.getScopeWhereClause.mockResolvedValue({
+        organizationId: 'isolated-tenant-42',
+      });
+      prisma.control.findMany.mockResolvedValue([]);
+
+      await service.getTargetResources(
+        { userId: 'u-42', organizationId: 'isolated-tenant-42', role: Role.ADMIN },
+        'CONTROL',
+      );
+
+      expect(prisma.control.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            organizationId: 'isolated-tenant-42',
           }),
         }),
       );

@@ -92,6 +92,16 @@ export class BusinessAuditsController {
     return this.businessAuditsService.findOnePlan(authCtx, id);
   }
 
+  @Get('plans/:id/history')
+  async getPlanHistory(@CurrentUser() user: any, @Param('id') id: string) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.businessAuditsService.getPlanHistory(authCtx, id);
+  }
+
   @Patch('plans/:id')
   @RequiresActiveLicense()
   @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)

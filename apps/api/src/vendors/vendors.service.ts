@@ -556,4 +556,27 @@ export class VendorsService {
 
     return { success: true, evidenceId };
   }
+
+  async downloadDocument(
+    authCtx: ResourceAuthContext,
+    vendorId: string,
+    evidenceId: string,
+    res: any,
+  ): Promise<void> {
+    await this.findOne(authCtx, vendorId);
+
+    const assoc = await this.prisma.vendorEvidence.findFirst({
+      where: {
+        vendorId,
+        evidenceId,
+        organizationId: authCtx.organizationId,
+      },
+    });
+
+    if (!assoc) {
+      throw new NotFoundException(`Document "${evidenceId}" is not attached to vendor "${vendorId}".`);
+    }
+
+    await this.evidenceService.downloadEvidence(authCtx, evidenceId, res);
+  }
 }

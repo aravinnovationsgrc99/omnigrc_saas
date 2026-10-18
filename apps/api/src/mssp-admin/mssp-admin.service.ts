@@ -12,7 +12,13 @@ export class MsspAdminService {
     });
 
     if (!msspOrg || msspOrg.type !== OrgType.MSSP_PROVIDER) {
-      throw new ForbiddenException('Authenticated organization is not an MSSP Provider.');
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: 'Forbidden',
+        message: 'Authenticated organization is not an MSSP Provider.',
+        code: 'ORGANIZATION_NOT_MSSP_PROVIDER',
+        currentOrgType: msspOrg?.type || 'UNKNOWN',
+      });
     }
 
     const clients = await this.prisma.organization.findMany({

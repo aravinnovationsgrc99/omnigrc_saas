@@ -2,24 +2,29 @@
 
 import React, { useState, useEffect } from 'react';
 import { MsspClientSummaryDto, SwitchContextResponseDto } from '@omnigrc/shared';
-import { Users, ShieldAlert, CheckCircle2, ArrowRightLeft, Building2, RefreshCw } from 'lucide-react';
-
+import { Users, ShieldAlert, CheckCircle2, ArrowRightLeft, Building2, RefreshCw, Lock } from 'lucide-react';
+import { useAuth } from '@/context/auth-context';
 import { apiRequest, setStoredTokens } from '@/lib/api-client';
 
 export function MsspPartnerPortalView() {
+  const { organization } = useAuth();
   const [clients, setClients] = useState<MsspClientSummaryDto[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [errorDetails, setErrorDetails] = useState<{ message: string; code?: string; status?: number } | null>(null);
   const [switchingId, setSwitchingId] = useState<string | null>(null);
 
   const fetchClients = async () => {
     setLoading(true);
-    setError(null);
+    setErrorDetails(null);
     try {
       const data = await apiRequest<MsspClientSummaryDto[]>('/mssp-admin/clients');
       setClients(data);
     } catch (err: any) {
-      setError(err.message || 'Error loading MSSP partner portal.');
+      setErrorDetails({
+        message: err.message || 'Error loading MSSP partner portal.',
+        code: err.code,
+        status: err.status || err.statusCode,
+      });
     } finally {
       setLoading(false);
     }
@@ -48,6 +53,10 @@ export function MsspPartnerPortalView() {
     }
   };
 
+  const isNotProviderError =
+    errorDetails?.code === 'ORGANIZATION_NOT_MSSP_PROVIDER' ||
+    errorDetails?.message?.includes('not an MSSP Provider');
+
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 omni-fade-in space-y-6">
       {/* Header */}
@@ -71,8 +80,37 @@ export function MsspPartnerPortalView() {
 
       {loading ? (
         <div className="py-16 text-center text-slate-500 font-medium">Loading managed client tenants...</div>
-      ) : error ? (
-        <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-red-900 text-sm font-medium">{error}</div>
+      ) : isNotProviderError ? (
+        <div className="p-8 rounded-2xl bg-amber-50/70 border border-amber-200/80 shadow-sm space-y-4">
+          <div className="flex items-start gap-3">
+            <div className="p-2.5 bg-amber-100 rounded-xl text-amber-800">
+              <ShieldAlert className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-amber-950">MSSP Provider Configuration Required</h3>
+              <p className="text-xs sm:text-sm text-amber-800 mt-1">
+                The active organization <span className="font-semibold text-amber-950">"{organization?.name || 'Current Organization'}"</span> is registered as a <span className="font-semibold uppercase text-amber-950">[{organization?.type || 'STANDALONE'}]</span> workspace and is not an authorized MSSP Provider parent account.
+              </p>
+            </div>
+          </div>
+
+          <div className="p-4 rounded-xl bg-white/80 border border-amber-200/60 text-xs text-slate-700 space-y-2">
+            <div className="font-semibold text-slate-900 flex items-center gap-1.5">
+              <Building2 className="w-4 h-4 text-teal-700" />
+              Supported Provisioning & Eligibility Workflow:
+            </div>
+            <ul className="list-disc pl-5 space-y-1 text-slate-600">
+              <li>MSSP Partner capabilities require an organization record with <code className="text-teal-800 font-mono">type: MSSP_PROVIDER</code> and child tenant hierarchy links in the Control Plane.</li>
+              <li>To upgrade or provision your organization as an authorized MSSP Provider, contact your commercial operator or platform administrator to update the deployment model and entitlements.</li>
+              <li>Client organizations managed under an MSSP can only be accessed by authorized partner operators with assigned <code className="text-teal-800 font-mono">MSSP_ADMIN</code> or <code className="text-teal-800 font-mono">MSSP_ANALYST</code> roles.</li>
+            </ul>
+          </div>
+        </div>
+      ) : errorDetails ? (
+        <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-red-900 text-sm font-medium flex items-center gap-2">
+          <Lock className="w-4 h-4 text-red-600 flex-shrink-0" />
+          <span>{errorDetails.message}</span>
+        </div>
       ) : clients.length === 0 ? (
         <div className="p-12 text-center rounded-xl bg-white border border-slate-200 shadow-sm text-slate-500 font-medium">
           <Building2 className="w-10 h-10 mx-auto mb-3 text-slate-400" />

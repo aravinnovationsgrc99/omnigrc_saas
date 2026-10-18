@@ -170,6 +170,8 @@ export class AuthService {
       organization: {
         id: user.organization.id,
         name: user.organization.name,
+        type: user.organization.type as OrgType,
+        parentOrganizationId: user.organization.parentOrganizationId,
         primaryRegion: user.organization.primaryRegion,
         primaryFramework: user.organization.primaryFramework,
         onboardingCompleted: user.organization.onboardingCompleted,
@@ -251,6 +253,8 @@ export class AuthService {
       organization: {
         id: user.organization.id,
         name: user.organization.name,
+        type: user.organization.type as OrgType,
+        parentOrganizationId: user.organization.parentOrganizationId,
         primaryRegion: user.organization.primaryRegion,
         primaryFramework: user.organization.primaryFramework,
         onboardingCompleted: user.organization.onboardingCompleted,

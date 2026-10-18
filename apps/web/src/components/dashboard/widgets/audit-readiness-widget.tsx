@@ -61,13 +61,13 @@ export function AuditReadinessWidget({ metrics, onNavigateToView }: AuditReadine
             </div>
             <div>
               <h3 className="text-sm font-semibold text-slate-900">Audit & Remediation Readiness</h3>
-              <p className="text-xs text-slate-500">Business audit scores & CAPA status</p>
+              <p className="text-xs text-slate-500">Audit scores & CAPA status</p>
             </div>
           </div>
           <button
             onClick={() => onNavigateToView?.('audits')}
             className="text-xs font-semibold text-indigo-700 hover:text-indigo-800 flex items-center gap-1 hover:underline shrink-0"
-            title="Open Business Audits"
+            title="Open Audits"
           >
             <span>Audits</span>
             <ChevronRight size={14} />

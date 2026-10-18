@@ -988,6 +988,20 @@ describe('BusinessAuditsService', () => {
         ).rejects.toThrow('Audit status must be IN_PROGRESS');
       });
 
+      it('should reject completion if framework is UNSPECIFIED', async () => {
+        const unspecifiedPlan = {
+          id: 'plan-1',
+          organizationId: 'org-1',
+          status: AuditPlanStatus.IN_PROGRESS,
+          frameworkCode: 'UNSPECIFIED',
+        };
+        prisma.auditPlan.findFirst.mockResolvedValueOnce(unspecifiedPlan);
+
+        await expect(
+          service.updatePlan(authCtx, 'plan-1', { status: AuditPlanStatus.COMPLETED }),
+        ).rejects.toThrow('Cannot complete audit plan with an UNSPECIFIED framework baseline.');
+      });
+
       it('should reject completion if plan has no assessments', async () => {
         const inProgressPlan = {
           id: 'plan-1',
@@ -1336,6 +1350,108 @@ describe('BusinessAuditsService', () => {
             }),
           }),
         );
+      });
+    });
+
+    describe('Audit Ownership Resolution & History Timeline', () => {
+      it('should resolve human-readable user name and role for audit plan owner', async () => {
+        const mockPlan = {
+          id: 'plan-owner-1',
+          organizationId: 'org-1',
+          title: 'Owner Test Plan',
+          ownerId: 'user-uuid-1',
+          createdById: 'user-uuid-1',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          departmentRef: { name: 'SecOps Team' },
+        };
+
+        prisma.auditPlan.findFirst.mockResolvedValue(mockPlan);
+        prisma.user.findMany.mockResolvedValue([
+          { id: 'user-uuid-1', name: 'Alice Auditor', email: 'alice@example.com', role: Role.ADMIN },
+        ]);
+
+        const planDto = await service.findOnePlan(authCtx, 'plan-owner-1');
+        expect(planDto.ownerId).toBe('user-uuid-1');
+        expect(planDto.ownerName).toBe('Alice Auditor');
+        expect(planDto.ownerEmail).toBe('alice@example.com');
+        expect(planDto.ownerRole).toBe(Role.ADMIN);
+        expect(planDto.teamName).toBe('SecOps Team');
+      });
+
+      it('should enforce tenant isolation and not resolve user belonging to another organization', async () => {
+        const mockPlan = {
+          id: 'plan-owner-2',
+          organizationId: 'org-1',
+          title: 'Cross Tenant Owner Test',
+          ownerId: 'other-org-user-uuid',
+          createdById: 'user-uuid-1',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+
+        prisma.auditPlan.findFirst.mockResolvedValue(mockPlan);
+        // prisma.user.findMany with organizationId: 'org-1' returns empty array because user is in org-2
+        prisma.user.findMany.mockResolvedValue([]);
+
+        const planDto = await service.findOnePlan(authCtx, 'plan-owner-2');
+        expect(planDto.ownerId).toBe('other-org-user-uuid');
+        expect(planDto.ownerName).toBeNull();
+        expect(planDto.ownerEmail).toBeNull();
+      });
+
+      it('should retrieve audit lifecycle history timeline with resolved actor identities', async () => {
+        const mockPlan = {
+          id: 'plan-hist-1',
+          organizationId: 'org-1',
+          title: 'History Test Plan',
+          ownerId: 'user-uuid-1',
+          createdById: 'user-uuid-1',
+          assessments: [
+            {
+              id: 'ass-1',
+              findings: [{ id: 'find-1', capas: [{ id: 'capa-1' }] }],
+            },
+          ],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+
+        prisma.auditPlan.findFirst.mockResolvedValue(mockPlan);
+        prisma.auditLogEntry = {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              id: 'log-1',
+              action: 'AUDIT_PLAN_CREATED',
+              entityType: 'AuditPlan',
+              entityId: 'plan-hist-1',
+              actorId: 'user-uuid-1',
+              metadata: { title: 'History Test Plan' },
+              createdAt: new Date('2026-10-18T10:00:00Z'),
+            },
+            {
+              id: 'log-2',
+              action: 'AUDIT_ASSESSMENT_STARTED',
+              entityType: 'AuditAssessment',
+              entityId: 'ass-1',
+              actorId: 'user-uuid-2',
+              metadata: { auditorId: 'user-uuid-2' },
+              createdAt: new Date('2026-10-18T10:30:00Z'),
+            },
+          ]),
+        };
+
+        prisma.user.findMany.mockResolvedValue([
+          { id: 'user-uuid-1', name: 'Alice Admin', email: 'alice@example.com' },
+          { id: 'user-uuid-2', name: 'Bob Auditor', email: 'bob@example.com' },
+        ]);
+
+        const history = await service.getPlanHistory(authCtx, 'plan-hist-1');
+        expect(history.length).toBe(2);
+        expect(history[0].action).toBe('AUDIT_PLAN_CREATED');
+        expect(history[0].actorName).toBe('Alice Admin');
+        expect(history[1].action).toBe('AUDIT_ASSESSMENT_STARTED');
+        expect(history[1].actorName).toBe('Bob Auditor');
       });
     });
   });

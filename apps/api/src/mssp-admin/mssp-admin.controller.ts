@@ -17,7 +17,9 @@ export class MsspAdminController {
   @Roles(Role.MSSP_ADMIN, Role.MSSP_ANALYST, Role.ADMIN)
   async getManagedClients(
     @CurrentUser('organizationId') organizationId: string,
+    @CurrentUser('actingViaMsspId') actingViaMsspId?: string,
   ): Promise<MsspClientSummaryDto[]> {
-    return this.msspAdminService.getManagedClients(organizationId);
+    const effectiveMsspOrgId = actingViaMsspId || organizationId;
+    return this.msspAdminService.getManagedClients(effectiveMsspOrgId);
   }
 }

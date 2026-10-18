@@ -12,6 +12,7 @@ import {
   HttpStatus,
   UseInterceptors,
   UploadedFile,
+  Res,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { VendorsService } from './vendors.service';
@@ -195,5 +196,20 @@ export class VendorsController {
       role: user.role,
     };
     await this.vendorsService.removeDocument(authCtx, id, evidenceId);
+  }
+
+  @Get(':id/documents/:evidenceId/download')
+  async downloadDocument(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Param('evidenceId') evidenceId: string,
+    @Res() res: any,
+  ): Promise<void> {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    await this.vendorsService.downloadDocument(authCtx, id, evidenceId, res);
   }
 }

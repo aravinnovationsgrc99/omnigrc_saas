@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { useAuth } from '@/context/auth-context';
-import { Role, hasRole, OMNIGRC_VERSION } from '@omnigrc/shared';
+import { Role, OrgType, hasRole, OMNIGRC_VERSION } from '@omnigrc/shared';
 import {
   LayoutDashboard, ShieldAlert, Boxes, GitMerge, KanbanSquare,
   Settings, Globe2, FileText, Lock, FileCheck, Building2, Bug, ClipboardList, FileSpreadsheet,
@@ -57,7 +57,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { key: 'frameworks', label: 'Framework Library', icon: Library, capabilityCode: 'FRAMEWORK_LIBRARY', enabled: true },
       { key: 'policies', label: 'Policy Mgmt', icon: FileCheck, capabilityCode: 'POLICIES_MODULE', enabled: true },
       { key: 'approvals', label: 'Approval Center', icon: CheckCircle2, capabilityCode: 'APPROVAL_ENGINE', enabled: true },
-      { key: 'audits', label: 'Business Audits', icon: ClipboardList, capabilityCode: 'BUSINESS_AUDITS', enabled: true },
+      { key: 'audits', label: 'Audit Management', icon: ClipboardList, capabilityCode: 'BUSINESS_AUDITS', enabled: true },
       { key: 'vendors', label: 'Vendor Risk', icon: Building2, capabilityCode: 'VENDOR_RISK', enabled: true },
       { key: 'evidence', label: 'Evidence Vault', icon: FileArchive, capabilityCode: 'EVIDENCE_VAULT', enabled: true },
       { key: 'board', label: 'Compliance Board', icon: KanbanSquare, capabilityCode: 'GRC_CORE_TASKS', enabled: true },
@@ -81,7 +81,7 @@ export const NAV_SECTIONS: NavSection[] = [
 ];
 
 export function Sidebar({ view, setView, mobileOpen = false, onCloseMobile }: SidebarProps) {
-  const { user, hasCapability, capabilities, capabilitiesStatus, loading } = useAuth();
+  const { user, organization, hasCapability, capabilities, capabilitiesStatus, loading } = useAuth();
   const userRole = user?.role || Role.ANALYST;
 
   // Task 1: Handle body-scroll lock and Escape dismissal when mobile drawer is open
@@ -174,9 +174,15 @@ export function Sidebar({ view, setView, mobileOpen = false, onCloseMobile }: Si
 
         <div style={{ flex: 1, overflowY: 'auto' }} className="omni-scroll">
           {NAV_SECTIONS.map((section) => {
-            const visibleItems = section.items.filter(
-              (item) => !item.roles || hasRole(userRole, item.roles),
-            );
+            const visibleItems = section.items.filter((item) => {
+              if (item.roles && !hasRole(userRole, item.roles)) return false;
+              if (item.key === 'mssp') {
+                const isMsspRole = userRole === Role.MSSP_ADMIN || userRole === Role.MSSP_ANALYST;
+                const isMsspOrg = organization?.type === OrgType.MSSP_PROVIDER;
+                if (!isMsspRole && !isMsspOrg) return false;
+              }
+              return true;
+            });
             if (visibleItems.length === 0) return null;
 
             return (

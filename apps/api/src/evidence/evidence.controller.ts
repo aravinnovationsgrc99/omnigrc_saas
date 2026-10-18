@@ -28,6 +28,7 @@ import {
   PaginatedEvidenceDto,
   EvidenceDto,
   Role,
+  TargetResourceItemDto,
 } from '@omnigrc/shared';
 import { RequireCapability } from '../common/decorators/require-capability.decorator';
 
@@ -66,6 +67,21 @@ export class EvidenceController {
       role: user.role,
     };
     return this.evidenceService.findAll(authCtx, query);
+  }
+
+  @Get('target-resources')
+  @RequireCapability('EVIDENCE_VAULT')
+  async getTargetResources(
+    @CurrentUser() user: any,
+    @Query('type') type: string,
+    @Query('search') search?: string,
+  ): Promise<TargetResourceItemDto[]> {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.evidenceService.getTargetResources(authCtx, type, search);
   }
 
   @Get(':id')

@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { EvidenceDto, PaginatedEvidenceDto, EvidenceType, EvidenceStatus } from '@omnigrc/shared';
-import { Search, FileText, Download, Info, RefreshCw, FileArchive, Upload, ShieldCheck, Tag, Trash2, Link } from 'lucide-react';
+import { EvidenceDto, PaginatedEvidenceDto, EvidenceType, EvidenceStatus, TargetResourceItemDto } from '@omnigrc/shared';
+import { Search, FileText, Download, Info, RefreshCw, FileArchive, Upload, ShieldCheck, Tag, Trash2, Link, ChevronDown, X, Check } from 'lucide-react';
 import { apiRequest, getStoredTokens } from '@/lib/api-client';
 import { useToast } from '@/context/toast-context';
 import { ComplianceScopeFilter } from '@/components/ui/compliance-scope-filter';
@@ -27,6 +27,56 @@ export function EvidenceVaultView() {
   const [targetResourceType, setTargetResourceType] = useState<string>('');
   const [targetResourceId, setTargetResourceId] = useState<string>('');
   const [uploading, setUploading] = useState(false);
+
+  // Resource Selector State
+  const [availableResources, setAvailableResources] = useState<TargetResourceItemDto[]>([]);
+  const [loadingResources, setLoadingResources] = useState(false);
+  const [resourceError, setResourceError] = useState<string | null>(null);
+  const [resourceSearch, setResourceSearch] = useState('');
+  const [isResourceDropdownOpen, setIsResourceDropdownOpen] = useState(false);
+  const [selectedResource, setSelectedResource] = useState<TargetResourceItemDto | null>(null);
+  const [resourcesCache, setResourcesCache] = useState<Record<string, TargetResourceItemDto[]>>({});
+
+  const handleResourceTypeChange = async (newType: string) => {
+    setTargetResourceType(newType);
+    setTargetResourceId('');
+    setSelectedResource(null);
+    setResourceSearch('');
+    setIsResourceDropdownOpen(false);
+    setResourceError(null);
+
+    if (!newType) {
+      setAvailableResources([]);
+      return;
+    }
+
+    if (resourcesCache[newType]) {
+      setAvailableResources(resourcesCache[newType]);
+      return;
+    }
+
+    setLoadingResources(true);
+    try {
+      const items = await apiRequest<TargetResourceItemDto[]>(`/evidence/target-resources?type=${newType}`);
+      setAvailableResources(items);
+      setResourcesCache((prev) => ({ ...prev, [newType]: items }));
+    } catch (err: any) {
+      setResourceError(err.message || 'Failed to load resources');
+      setAvailableResources([]);
+    } finally {
+      setLoadingResources(false);
+    }
+  };
+
+  const filteredResources = availableResources.filter((r) => {
+    if (!resourceSearch.trim()) return true;
+    const term = resourceSearch.toLowerCase().trim();
+    return (
+      r.name.toLowerCase().includes(term) ||
+      (r.code && r.code.toLowerCase().includes(term)) ||
+      (r.details && r.details.toLowerCase().includes(term))
+    );
+  });
 
   const fetchVault = async () => {
     setLoading(true);
@@ -102,6 +152,9 @@ export function EvidenceVaultView() {
       setDescription('');
       setTargetResourceType('');
       setTargetResourceId('');
+      setSelectedResource(null);
+      setResourceSearch('');
+      setIsResourceDropdownOpen(false);
       fetchVault();
     } catch (err: any) {
       addToast(err.message || 'Upload failed', 'error');
@@ -376,11 +429,12 @@ export function EvidenceVaultView() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-semibold text-slate-700">Target GRC Resource</label>
+                  <label htmlFor="target-resource-type" className="text-xs font-semibold text-slate-700">Target GRC Resource Type</label>
                   <select
+                    id="target-resource-type"
                     value={targetResourceType}
-                    onChange={(e) => setTargetResourceType(e.target.value)}
-                    className="w-full text-xs p-2 border border-slate-300 rounded-lg mt-1 bg-white font-medium"
+                    onChange={(e) => handleResourceTypeChange(e.target.value)}
+                    className="w-full text-xs p-2 border border-slate-300 rounded-lg mt-1 bg-white font-medium focus:ring-1 focus:ring-teal-600 focus:border-teal-600"
                   >
                     <option value="">None (Unattached)</option>
                     <option value="CONTROL">Control</option>
@@ -392,16 +446,111 @@ export function EvidenceVaultView() {
                   </select>
                 </div>
 
-                <div>
-                  <label className="text-xs font-semibold text-slate-700">Target Resource ID</label>
-                  <input
-                    type="text"
-                    disabled={!targetResourceType}
-                    value={targetResourceId}
-                    onChange={(e) => setTargetResourceId(e.target.value)}
-                    placeholder="Enter Resource UUID"
-                    className="w-full text-xs p-2 border border-slate-300 rounded-lg mt-1"
-                  />
+                <div className="relative">
+                  <label className="text-xs font-semibold text-slate-700">Select Target Resource</label>
+                  {!targetResourceType ? (
+                    <div className="w-full text-xs p-2.5 border border-slate-200 rounded-lg mt-1 bg-slate-50 text-slate-400 italic">
+                      None (Evidence unattached)
+                    </div>
+                  ) : selectedResource ? (
+                    <div className="w-full text-xs p-2 border border-teal-300 rounded-lg mt-1 bg-teal-50/70 flex items-center justify-between">
+                      <div className="min-w-0 pr-2">
+                        <div className="font-semibold text-teal-950 truncate flex items-center gap-1.5">
+                          {selectedResource.code && (
+                            <span className="px-1.5 py-0.5 rounded bg-teal-100 text-teal-800 text-[10px] font-mono">
+                              {selectedResource.code}
+                            </span>
+                          )}
+                          <span className="truncate">{selectedResource.name}</span>
+                        </div>
+                        {selectedResource.details && (
+                          <div className="text-[10px] text-teal-700 truncate mt-0.5">{selectedResource.details}</div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedResource(null);
+                          setTargetResourceId('');
+                          setIsResourceDropdownOpen(true);
+                        }}
+                        className="text-slate-400 hover:text-rose-600 p-1"
+                        title="Change selection"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="relative mt-1">
+                      <button
+                        type="button"
+                        onClick={() => setIsResourceDropdownOpen(!isResourceDropdownOpen)}
+                        className="w-full text-left text-xs p-2 border border-slate-300 rounded-lg bg-white flex items-center justify-between hover:border-slate-400 transition"
+                      >
+                        <span className={resourceError ? 'text-rose-600 font-medium' : 'text-slate-500'}>
+                          {loadingResources ? 'Loading resources...' : resourceError ? resourceError : `Select a ${targetResourceType.toLowerCase()}...`}
+                        </span>
+                        <ChevronDown size={14} className="text-slate-400" />
+                      </button>
+
+                      {isResourceDropdownOpen && (
+                        <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden omni-fade-in">
+                          <div className="p-2 border-b border-slate-100 bg-slate-50">
+                            <input
+                              type="text"
+                              value={resourceSearch}
+                              onChange={(e) => setResourceSearch(e.target.value)}
+                              placeholder={`Search ${targetResourceType.toLowerCase()}s by name or code...`}
+                              className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-teal-600"
+                              autoFocus
+                            />
+                          </div>
+
+                          <div className="max-h-48 overflow-y-auto omni-scroll divide-y divide-slate-100">
+                            {loadingResources ? (
+                              <div className="p-4 text-center text-xs text-slate-500 flex items-center justify-center gap-1.5">
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin text-teal-600" />
+                                Loading {targetResourceType.toLowerCase()}s...
+                              </div>
+                            ) : resourceError ? (
+                              <div className="p-3 text-center text-xs text-rose-600">
+                                {resourceError}
+                              </div>
+                            ) : filteredResources.length === 0 ? (
+                              <div className="p-4 text-center text-xs text-slate-500">
+                                No {targetResourceType.toLowerCase()}s found.
+                              </div>
+                            ) : (
+                              filteredResources.map((res) => (
+                                <button
+                                  key={res.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedResource(res);
+                                    setTargetResourceId(res.id);
+                                    setIsResourceDropdownOpen(false);
+                                  }}
+                                  className="w-full text-left p-2 hover:bg-teal-50 transition flex items-start gap-2"
+                                >
+                                  {res.code && (
+                                    <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-mono flex-shrink-0 mt-0.5">
+                                      {res.code}
+                                    </span>
+                                  )}
+                                  <div className="min-w-0 flex-1">
+                                    <div className="text-xs font-semibold text-slate-800 truncate">{res.name}</div>
+                                    {res.details && (
+                                      <div className="text-[10px] text-slate-500 truncate mt-0.5">{res.details}</div>
+                                    )}
+                                  </div>
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 

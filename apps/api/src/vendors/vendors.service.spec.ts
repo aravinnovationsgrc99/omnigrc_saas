@@ -51,6 +51,7 @@ describe('VendorsService', () => {
     evidenceService = {
       createAndUpload: jest.fn(),
       detachEvidence: jest.fn().mockResolvedValue({}),
+      downloadEvidence: jest.fn().mockResolvedValue({}),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -348,6 +349,32 @@ describe('VendorsService', () => {
         'VENDOR',
         'ven-1',
       );
+    });
+
+    it('should successfully download document attached to vendor', async () => {
+      prisma.vendor.findFirst.mockResolvedValue(mockVendor);
+      prisma.vendorEvidence.findFirst.mockResolvedValue({
+        id: 've-1',
+        vendorId: 'ven-1',
+        evidenceId: 'evi-1',
+        organizationId: 'org-1',
+      });
+
+      const mockRes = { setHeader: jest.fn(), send: jest.fn() };
+      await service.downloadDocument(authCtx, 'ven-1', 'evi-1', mockRes);
+
+      expect(evidenceService.downloadEvidence).toHaveBeenCalledWith(authCtx, 'evi-1', mockRes);
+    });
+
+    it('should reject document download when attachment does not exist or belongs to another tenant', async () => {
+      prisma.vendor.findFirst.mockResolvedValue(mockVendor);
+      prisma.vendorEvidence.findFirst.mockResolvedValue(null);
+
+      const mockRes = { setHeader: jest.fn(), send: jest.fn() };
+      await expect(
+        service.downloadDocument(authCtx, 'ven-1', 'foreign-evi', mockRes),
+      ).rejects.toThrow(NotFoundException);
+      expect(evidenceService.downloadEvidence).not.toHaveBeenCalled();
     });
   });
 });

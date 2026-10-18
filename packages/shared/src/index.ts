@@ -1638,10 +1638,13 @@ export interface AuditCapaDto {
   correctiveAction: string;
   preventiveAction?: string | null;
   ownerId: string;
+  ownerName?: string | null;
+  ownerEmail?: string | null;
   dueDate?: Date | string | null;
   status: CapaStatus;
   completedAt?: Date | string | null;
   verifiedById?: string | null;
+  verifiedByName?: string | null;
   verifiedAt?: Date | string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
@@ -1657,11 +1660,14 @@ export interface AuditFindingDto {
   severity: VulnerabilitySeverity;
   status: FindingStatus;
   ownerId: string;
+  ownerName?: string | null;
+  ownerEmail?: string | null;
   dueDate?: Date | string | null;
   riskId?: string | null;
   remediationPlan?: string | null;
   verificationNotes?: string | null;
   verifiedById?: string | null;
+  verifiedByName?: string | null;
   verifiedAt?: Date | string | null;
   createdById: string;
   createdAt: Date | string;
@@ -1676,6 +1682,8 @@ export interface AuditAssessmentDto {
   auditPlanId: string;
   scheduleId?: string | null;
   auditorId: string;
+  auditorName?: string | null;
+  auditorEmail?: string | null;
   status: AuditAssessmentStatus;
   score: number;
   summary?: string | null;
@@ -1725,6 +1733,10 @@ export interface AuditPlanDto {
   frameworkName?: string | null;
   versionName?: string | null;
   ownerId: string;
+  ownerName?: string | null;
+  ownerEmail?: string | null;
+  ownerRole?: string | null;
+  teamName?: string | null;
   plannedStartDate?: Date | string | null;
   plannedEndDate?: Date | string | null;
   status: AuditPlanStatus;
@@ -1734,6 +1746,46 @@ export interface AuditPlanDto {
   schedules?: AuditScheduleDto[];
   assessments?: AuditAssessmentDto[];
   scopeReferences?: AuditPlanScopeReferenceDto[];
+}
+
+/**
+ * Resolves a human-readable display string for an owner, assignee, or auditor identity.
+ * Fallbacks safely when owner is a raw UUID, unassigned, or external.
+ */
+export function formatOwnerDisplay(options: {
+  ownerId?: string | null;
+  ownerName?: string | null;
+  ownerEmail?: string | null;
+  teamName?: string | null;
+  fallback?: string;
+}): string {
+  const { ownerId, ownerName, ownerEmail, teamName, fallback = 'Unassigned' } = options;
+  if (ownerName && ownerName.trim()) {
+    if (teamName && teamName.trim() && teamName.trim() !== ownerName.trim()) {
+      return `${ownerName.trim()} (${teamName.trim()})`;
+    }
+    return ownerName.trim();
+  }
+  if (ownerEmail && ownerEmail.trim()) {
+    if (teamName && teamName.trim()) {
+      return `${ownerEmail.trim()} (${teamName.trim()})`;
+    }
+    return ownerEmail.trim();
+  }
+  if (teamName && teamName.trim()) {
+    return teamName.trim();
+  }
+  if (!ownerId || !ownerId.trim()) {
+    return fallback;
+  }
+  const trimmed = ownerId.trim();
+  // Check if ownerId is a raw UUID (8-4-4-4-12 hex chars)
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
+  if (isUuid) {
+    // If it's a UUID and was not resolved to a user name/email in the org, do not display raw UUID
+    return fallback;
+  }
+  return trimmed;
 }
 
 export interface AuditPlanQueryDto {
@@ -2399,6 +2451,14 @@ export interface AttachEvidenceDto {
   evidenceId: string;
   resourceType: 'CONTROL' | 'RISK' | 'POLICY' | 'AUDIT_CHECK' | 'AUDIT_FINDING' | 'VENDOR' | 'VULNERABILITY' | 'INCIDENT';
   resourceId: string;
+}
+
+export interface TargetResourceItemDto {
+  id: string;
+  name: string;
+  code?: string;
+  type: string;
+  details?: string;
 }
 
 

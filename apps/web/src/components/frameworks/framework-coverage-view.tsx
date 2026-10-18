@@ -443,7 +443,7 @@ export function FrameworkCoverageView() {
                           {!ref.testingSummary.isTestingAvailable ? (
                             <div className="text-[11px] text-slate-500 bg-slate-100 p-2 rounded flex items-center gap-1.5">
                               <Lock className="w-3.5 h-3.5 text-slate-400" />
-                              Business Audits capability is disabled or unentitled. Testing evaluation inactive.
+                              Audit Management capability is disabled or unentitled. Testing evaluation inactive.
                             </div>
                           ) : ref.testingSummary.hasFailures ? (
                             <div className="text-[11px] text-rose-800 bg-rose-50 border border-rose-200 p-2 rounded flex items-center gap-2">

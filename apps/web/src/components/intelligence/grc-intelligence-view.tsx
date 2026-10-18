@@ -49,7 +49,7 @@ export const PREDEFINED_GRC_QUESTIONS: PredefinedQuestion[] = [
     key: 'q5-overdue-audits',
     category: 'Audits',
     label: 'Overdue Audits',
-    prompt: 'Are there any overdue audit plans or upcoming business audits scheduled?',
+    prompt: 'Are there any overdue audit plans or upcoming audits scheduled?',
   },
   {
     key: 'q6-unresolved-findings',

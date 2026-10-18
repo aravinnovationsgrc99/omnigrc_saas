@@ -57,7 +57,7 @@ export function ExecutivePostureBanner({ metrics, onNavigateToView }: ExecutiveP
       title: 'Audit Readiness',
       status: !isAuditsAvailable ? 'Unlicensed' : auditScore >= 80 ? 'Optimal' : auditScore >= 60 ? 'Moderate' : 'Low',
       detail: !isAuditsAvailable
-        ? 'Business Audits module not enabled for organization subscription.'
+        ? 'Audit Management module not enabled for organization subscription.'
         : `${auditScore}% composite score across ${metrics.audits?.totalPlans || 0} audit plans and ${metrics.audits?.assessmentCount || 0} active assessments.`,
     },
     {

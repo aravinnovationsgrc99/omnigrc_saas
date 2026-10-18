@@ -52,6 +52,31 @@ export class BusinessAuditsService {
     private readonly frameworkEntitlementsService?: FrameworkEntitlementsService,
   ) {}
 
+  private async resolveUserMap(
+    organizationId: string,
+    candidateIds: (string | null | undefined)[],
+  ): Promise<Map<string, { name: string; email: string; role?: string }>> {
+    const userMap = new Map<string, { name: string; email: string; role?: string }>();
+    const validIds = Array.from(
+      new Set(
+        candidateIds.filter((id): id is string => Boolean(id) && typeof id === 'string' && id.trim().length > 0),
+      ),
+    );
+    if (validIds.length === 0) return userMap;
+
+    const users = await TenantContext.runWithDisplayNameLookup(() =>
+      this.prisma.user.findMany({
+        where: { id: { in: validIds }, organizationId },
+        select: { id: true, name: true, email: true, role: true },
+      }),
+    );
+
+    for (const u of users) {
+      userMap.set(u.id, { name: u.name, email: u.email, role: u.role });
+    }
+    return userMap;
+  }
+
   // --------------------------------------------------
   // AUDIT PLANS
   // --------------------------------------------------
@@ -203,13 +228,15 @@ export class BusinessAuditsService {
         assessments: true,
         frameworkRef: true,
         versionRef: true,
+        departmentRef: true,
         scopeReferences: {
           include: { frameworkReference: true },
         },
       },
     });
 
-    return this.mapPlanToDto(created || plan);
+    const userMap = await this.resolveUserMap(authCtx.organizationId, [(created || plan).ownerId]);
+    return this.mapPlanToDto(created || plan, userMap);
   }
 
   async findAllPlans(
@@ -269,6 +296,7 @@ export class BusinessAuditsService {
           assessments: true,
           frameworkRef: true,
           versionRef: true,
+          departmentRef: true,
           scopeReferences: {
             include: { frameworkReference: true },
           },
@@ -277,8 +305,11 @@ export class BusinessAuditsService {
       this.prisma.auditPlan.count({ where }),
     ]);
 
+    const candidateUserIds = items.map((p) => p.ownerId).filter(Boolean);
+    const userMap = await this.resolveUserMap(authCtx.organizationId, candidateUserIds);
+
     return {
-      items: items.map((p) => this.mapPlanToDto(p)),
+      items: items.map((p) => this.mapPlanToDto(p, userMap)),
       total,
       page,
       limit,
@@ -299,6 +330,7 @@ export class BusinessAuditsService {
         },
         frameworkRef: true,
         versionRef: true,
+        departmentRef: true,
         scopeReferences: {
           include: { frameworkReference: true },
         },
@@ -306,7 +338,23 @@ export class BusinessAuditsService {
     });
 
     if (!plan) throw new NotFoundException(`Audit Plan with ID "${id}" not found`);
-    return this.mapPlanToDto(plan);
+
+    const candidateUserIds: string[] = [plan.ownerId, plan.createdById];
+    for (const a of plan.assessments || []) {
+      if (a.auditorId) candidateUserIds.push(a.auditorId);
+      if (a.createdById) candidateUserIds.push(a.createdById);
+      for (const f of a.findings || []) {
+        if (f.ownerId) candidateUserIds.push(f.ownerId);
+        if (f.verifiedById) candidateUserIds.push(f.verifiedById);
+        for (const c of f.capas || []) {
+          if (c.ownerId) candidateUserIds.push(c.ownerId);
+          if (c.verifiedById) candidateUserIds.push(c.verifiedById);
+        }
+      }
+    }
+
+    const userMap = await this.resolveUserMap(authCtx.organizationId, candidateUserIds);
+    return this.mapPlanToDto(plan, userMap);
   }
 
   async updatePlan(authCtx: ResourceAuthContext, id: string, dto: UpdateAuditPlanDto): Promise<AuditPlanDto> {
@@ -408,6 +456,10 @@ export class BusinessAuditsService {
     if (dto.status === AuditPlanStatus.COMPLETED) {
       if (existing.status !== AuditPlanStatus.IN_PROGRESS) {
         throw new BadRequestException('Cannot complete an audit plan that has not been started. Audit status must be IN_PROGRESS.');
+      }
+
+      if (existing.frameworkCode === 'UNSPECIFIED') {
+        throw new BadRequestException('Cannot complete audit plan with an UNSPECIFIED framework baseline.');
       }
 
       const fullPlan = await this.prisma.auditPlan.findFirst({
@@ -519,13 +571,51 @@ export class BusinessAuditsService {
         assessments: true,
         frameworkRef: true,
         versionRef: true,
+        departmentRef: true,
         scopeReferences: {
           include: { frameworkReference: true },
         },
       },
     });
 
-    return this.mapPlanToDto(reloaded || updated);
+    const userMap = await this.resolveUserMap(authCtx.organizationId, [(reloaded || updated).ownerId]);
+    return this.mapPlanToDto(reloaded || updated, userMap);
+  }
+
+  async getPlanHistory(authCtx: ResourceAuthContext, planId: string): Promise<any[]> {
+    const plan = await this.findOnePlan(authCtx, planId);
+    if (!plan) throw new NotFoundException(`Audit Plan with ID "${planId}" not found`);
+
+    const assessmentIds = (plan.assessments || []).map((a) => a.id);
+    const findingIds = (plan.assessments || []).flatMap((a) => (a.findings || []).map((f) => f.id));
+    const capaIds = (plan.assessments || []).flatMap((a) =>
+      (a.findings || []).flatMap((f) => (f.capas || []).map((c) => c.id)),
+    );
+
+    const relatedEntityIds = [planId, ...assessmentIds, ...findingIds, ...capaIds];
+
+    const logs = await this.prisma.auditLogEntry.findMany({
+      where: {
+        organizationId: authCtx.organizationId,
+        entityId: { in: relatedEntityIds },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+
+    const actorIds = Array.from(new Set(logs.map((l: any) => l.actorId).filter(Boolean)));
+    const userMap = await this.resolveUserMap(authCtx.organizationId, actorIds);
+
+    return logs.map((log: any) => ({
+      id: log.id,
+      action: log.action,
+      entityType: log.entityType,
+      entityId: log.entityId,
+      actorId: log.actorId,
+      actorName: userMap.get(log.actorId)?.name || userMap.get(log.actorId)?.email || 'System User',
+      metadata: log.metadata,
+      createdAt: log.createdAt.toISOString(),
+    }));
   }
 
   // --------------------------------------------------
@@ -707,7 +797,8 @@ export class BusinessAuditsService {
       metadata: { title: finding.title, severity: finding.severity },
     });
 
-    return this.mapFindingToDto(finding);
+    const userMap = await this.resolveUserMap(authCtx.organizationId, [finding.ownerId]);
+    return this.mapFindingToDto(finding, userMap);
   }
 
   async updateFindingStatus(
@@ -751,7 +842,8 @@ export class BusinessAuditsService {
       metadata: { status: updated.status },
     });
 
-    return this.mapFindingToDto(updated);
+    const userMap = await this.resolveUserMap(authCtx.organizationId, [updated.ownerId, updated.verifiedById]);
+    return this.mapFindingToDto(updated, userMap);
   }
 
   async verifyFinding(
@@ -792,7 +884,8 @@ export class BusinessAuditsService {
       metadata: { status },
     });
 
-    return this.mapFindingToDto(updated);
+    const userMap = await this.resolveUserMap(authCtx.organizationId, [updated.ownerId, updated.verifiedById]);
+    return this.mapFindingToDto(updated, userMap);
   }
 
   async createCapa(authCtx: ResourceAuthContext, dto: CreateAuditCapaDto): Promise<AuditCapaDto> {
@@ -834,7 +927,8 @@ export class BusinessAuditsService {
       metadata: { findingId: dto.findingId, title: capa.title, ownerId: capa.ownerId },
     });
 
-    return this.mapCapaToDto(capa);
+    const userMap = await this.resolveUserMap(authCtx.organizationId, [capa.ownerId]);
+    return this.mapCapaToDto(capa, userMap);
   }
 
   async updateCapa(
@@ -888,7 +982,8 @@ export class BusinessAuditsService {
       metadata: { status: updated.status, title: updated.title, findingId: capa.findingId },
     });
 
-    return this.mapCapaToDto(updated);
+    const userMap = await this.resolveUserMap(authCtx.organizationId, [updated.ownerId, updated.verifiedById]);
+    return this.mapCapaToDto(updated, userMap);
   }
 
   async findAllFindings(
@@ -950,8 +1045,19 @@ export class BusinessAuditsService {
       this.prisma.auditFinding.count({ where }),
     ]);
 
+    const candidateIds: string[] = [];
+    for (const item of items) {
+      if (item.ownerId) candidateIds.push(item.ownerId);
+      if (item.verifiedById) candidateIds.push(item.verifiedById);
+      for (const c of item.capas || []) {
+        if (c.ownerId) candidateIds.push(c.ownerId);
+        if (c.verifiedById) candidateIds.push(c.verifiedById);
+      }
+    }
+    const userMap = await this.resolveUserMap(authCtx.organizationId, candidateIds);
+
     return {
-      items: items.map((f: any) => this.mapFindingToDto(f)),
+      items: items.map((f: any) => this.mapFindingToDto(f, userMap)),
       total,
       page,
       limit,
@@ -995,7 +1101,8 @@ export class BusinessAuditsService {
   // MAPPER HELPERS
   // --------------------------------------------------
 
-  private mapPlanToDto(p: any): AuditPlanDto {
+  private mapPlanToDto(p: any, userMap?: Map<string, { name: string; email: string; role?: string }>): AuditPlanDto {
+    const userInfo = userMap?.get(p.ownerId);
     return {
       id: p.id,
       organizationId: p.organizationId,
@@ -1010,6 +1117,10 @@ export class BusinessAuditsService {
       frameworkName: p.frameworkRef?.name || null,
       versionName: p.versionRef?.version || p.versionRef?.name || null,
       ownerId: p.ownerId,
+      ownerName: userInfo?.name || null,
+      ownerEmail: userInfo?.email || null,
+      ownerRole: userInfo?.role || null,
+      teamName: p.departmentRef?.name || null,
       plannedStartDate: p.plannedStartDate ? p.plannedStartDate.toISOString() : null,
       plannedEndDate: p.plannedEndDate ? p.plannedEndDate.toISOString() : null,
       status: p.status as AuditPlanStatus,
@@ -1017,7 +1128,7 @@ export class BusinessAuditsService {
       createdAt: p.createdAt.toISOString(),
       updatedAt: p.updatedAt.toISOString(),
       schedules: p.schedules ? p.schedules.map((s: any) => this.mapScheduleToDto(s)) : [],
-      assessments: p.assessments ? p.assessments.map((a: any) => this.mapAssessmentToDto(a)) : [],
+      assessments: p.assessments ? p.assessments.map((a: any) => this.mapAssessmentToDto(a, userMap)) : [],
       scopeReferences: p.scopeReferences
         ? p.scopeReferences.map((sr: any) => ({
             id: sr.id,
@@ -1057,13 +1168,16 @@ export class BusinessAuditsService {
     return val instanceof Date ? val.toISOString() : new Date(val).toISOString();
   }
 
-  private mapAssessmentToDto(a: any): AuditAssessmentDto {
+  private mapAssessmentToDto(a: any, userMap?: Map<string, { name: string; email: string; role?: string }>): AuditAssessmentDto {
+    const auditorInfo = userMap?.get(a.auditorId);
     return {
       id: a.id,
       organizationId: a.organizationId,
       auditPlanId: a.auditPlanId,
       scheduleId: a.scheduleId,
       auditorId: a.auditorId,
+      auditorName: auditorInfo?.name || null,
+      auditorEmail: auditorInfo?.email || null,
       status: a.status as AuditAssessmentStatus,
       score: a.score,
       summary: a.summary,
@@ -1081,15 +1195,29 @@ export class BusinessAuditsService {
         description: c.description,
         result: c.result as AuditCheckResult,
         notes: c.notes,
+        evidence: c.evidence ? c.evidence.map((e: any) => ({
+          id: e.id,
+          organizationId: e.organizationId,
+          checkItemId: e.checkItemId,
+          findingId: e.findingId,
+          fileName: e.fileName,
+          fileUrl: e.fileUrl,
+          fileSize: e.fileSize,
+          mimeType: e.mimeType,
+          uploadedById: e.uploadedById,
+          createdAt: this.toIso(e.createdAt),
+        })) : [],
         createdById: c.createdById,
         createdAt: this.toIso(c.createdAt),
         updatedAt: this.toIso(c.updatedAt),
       })) : [],
-      findings: a.findings ? a.findings.map((f: any) => this.mapFindingToDto(f)) : [],
+      findings: a.findings ? a.findings.map((f: any) => this.mapFindingToDto(f, userMap)) : [],
     };
   }
 
-  private mapFindingToDto(f: any): AuditFindingDto {
+  private mapFindingToDto(f: any, userMap?: Map<string, { name: string; email: string; role?: string }>): AuditFindingDto {
+    const ownerInfo = userMap?.get(f.ownerId);
+    const verifierInfo = f.verifiedById ? userMap?.get(f.verifiedById) : undefined;
     return {
       id: f.id,
       organizationId: f.organizationId,
@@ -1100,20 +1228,37 @@ export class BusinessAuditsService {
       severity: f.severity,
       status: f.status as FindingStatus,
       ownerId: f.ownerId,
+      ownerName: ownerInfo?.name || null,
+      ownerEmail: ownerInfo?.email || null,
       dueDate: this.toNullableIso(f.dueDate),
       riskId: f.riskId,
       remediationPlan: f.remediationPlan,
       verificationNotes: f.verificationNotes,
       verifiedById: f.verifiedById,
+      verifiedByName: verifierInfo?.name || verifierInfo?.email || null,
       verifiedAt: this.toNullableIso(f.verifiedAt),
       createdById: f.createdById,
       createdAt: this.toIso(f.createdAt),
       updatedAt: this.toIso(f.updatedAt),
-      capas: f.capas ? f.capas.map((c: any) => this.mapCapaToDto(c)) : [],
+      capas: f.capas ? f.capas.map((c: any) => this.mapCapaToDto(c, userMap)) : [],
+      evidence: f.evidence ? f.evidence.map((e: any) => ({
+        id: e.id,
+        organizationId: e.organizationId,
+        checkItemId: e.checkItemId,
+        findingId: e.findingId,
+        fileName: e.fileName,
+        fileUrl: e.fileUrl,
+        fileSize: e.fileSize,
+        mimeType: e.mimeType,
+        uploadedById: e.uploadedById,
+        createdAt: this.toIso(e.createdAt),
+      })) : [],
     };
   }
 
-  private mapCapaToDto(c: any): AuditCapaDto {
+  private mapCapaToDto(c: any, userMap?: Map<string, { name: string; email: string; role?: string }>): AuditCapaDto {
+    const ownerInfo = userMap?.get(c.ownerId);
+    const verifierInfo = c.verifiedById ? userMap?.get(c.verifiedById) : undefined;
     return {
       id: c.id,
       organizationId: c.organizationId,
@@ -1122,10 +1267,13 @@ export class BusinessAuditsService {
       correctiveAction: c.correctiveAction,
       preventiveAction: c.preventiveAction,
       ownerId: c.ownerId,
+      ownerName: ownerInfo?.name || null,
+      ownerEmail: ownerInfo?.email || null,
       dueDate: this.toNullableIso(c.dueDate),
       status: c.status as CapaStatus,
       completedAt: this.toNullableIso(c.completedAt),
       verifiedById: c.verifiedById,
+      verifiedByName: verifierInfo?.name || verifierInfo?.email || null,
       verifiedAt: this.toNullableIso(c.verifiedAt),
       createdAt: this.toIso(c.createdAt),
       updatedAt: this.toIso(c.updatedAt),

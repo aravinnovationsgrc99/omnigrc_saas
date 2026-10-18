@@ -117,6 +117,10 @@ export function VendorListView() {
   }
 
   async function fetchVendorDocuments(vendorId: string) {
+    if (!vendorId) {
+      setVendorDocuments([]);
+      return;
+    }
     setLoadingDocs(true);
     try {
       const res = await apiRequest<PaginatedVendorDocumentsDto>(`/vendors/${vendorId}/documents`);
@@ -129,6 +133,10 @@ export function VendorListView() {
   }
 
   function handleOpenDocuments(v: VendorDto) {
+    if (!v || !v.id) {
+      addToast('Please select a valid vendor.', 'error');
+      return;
+    }
     setSelectedVendorForDocs(v);
     setDocFile(null);
     setDocDescription('');
@@ -191,13 +199,24 @@ export function VendorListView() {
   }
 
   async function handleDownloadDocument(doc: VendorDocumentDto) {
+    if (!selectedVendorForDocs) return;
     try {
       const { accessToken } = getStoredTokens();
-      const response = await fetch(`${API_BASE_URL}/evidence/${doc.evidenceId}/download`, {
+      const vendorDownloadUrl = `${API_BASE_URL}/vendors/${selectedVendorForDocs.id}/documents/${doc.evidenceId}/download`;
+      let response = await fetch(vendorDownloadUrl, {
         headers: {
           ...(accessToken && { Authorization: `Bearer ${accessToken}` }),
         },
       });
+
+      if (!response.ok) {
+        // Fallback to vault evidence download endpoint
+        response = await fetch(`${API_BASE_URL}/evidence/${doc.evidenceId}/download`, {
+          headers: {
+            ...(accessToken && { Authorization: `Bearer ${accessToken}` }),
+          },
+        });
+      }
 
       if (!response.ok) {
         throw new Error(`Download failed with status ${response.status}`);
@@ -588,7 +607,7 @@ export function VendorListView() {
                       Attached Documents ({vendorDocuments.length})
                     </h3>
                   </div>
-                  {vendorDocuments.length > 3 && (
+                  {vendorDocuments.length > 1 && (
                     <div className="relative">
                       <Search className="w-3 h-3 absolute left-2.5 top-2.5 text-slate-400" />
                       <input

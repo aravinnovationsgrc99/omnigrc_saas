@@ -23,6 +23,7 @@ import {
   ControlEvidenceAssociationDto,
   PaginatedControlEvidenceAssociationsDto,
   ControlEvidenceQueryDto,
+  TargetResourceItemDto,
 } from '@omnigrc/shared';
 import { Response } from 'express';
 
@@ -253,6 +254,151 @@ export class EvidenceService {
       page,
       limit,
     };
+  }
+
+  async getTargetResources(
+    authCtx: ResourceAuthContext,
+    type: string,
+    search?: string,
+  ): Promise<TargetResourceItemDto[]> {
+    if (!type || type.toUpperCase() === 'NONE') {
+      return [];
+    }
+
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+    const searchTerm = search?.trim();
+    const upperType = type.toUpperCase().trim();
+
+    switch (upperType) {
+      case 'CONTROL': {
+        const where: any = { ...scopeWhere, deletedAt: null };
+        if (searchTerm) {
+          where.OR = [
+            { name: { contains: searchTerm, mode: 'insensitive' } },
+            { description: { contains: searchTerm, mode: 'insensitive' } },
+          ];
+        }
+        const controls = await this.prisma.control.findMany({
+          where,
+          select: { id: true, name: true, category: true, description: true },
+          take: 50,
+          orderBy: { name: 'asc' },
+        });
+        return controls.map((c) => ({
+          id: c.id,
+          name: c.name,
+          code: c.category || undefined,
+          type: 'CONTROL',
+          details: c.description ? c.description.slice(0, 80) : undefined,
+        }));
+      }
+
+      case 'RISK': {
+        const where: any = { ...scopeWhere, deletedAt: null };
+        if (searchTerm) {
+          where.title = { contains: searchTerm, mode: 'insensitive' };
+        }
+        const risks = await this.prisma.risk.findMany({
+          where,
+          select: { id: true, title: true, score: true, status: true },
+          take: 50,
+          orderBy: { score: 'desc' },
+        });
+        return risks.map((r) => ({
+          id: r.id,
+          name: r.title,
+          code: `Score: ${r.score}`,
+          type: 'RISK',
+          details: `Status: ${r.status}`,
+        }));
+      }
+
+      case 'POLICY': {
+        const where: any = { ...scopeWhere, deletedAt: null };
+        if (searchTerm) {
+          where.OR = [
+            { title: { contains: searchTerm, mode: 'insensitive' } },
+            { code: { contains: searchTerm, mode: 'insensitive' } },
+          ];
+        }
+        const policies = await this.prisma.policy.findMany({
+          where,
+          select: { id: true, title: true, code: true, status: true },
+          take: 50,
+          orderBy: { title: 'asc' },
+        });
+        return policies.map((p) => ({
+          id: p.id,
+          name: p.title,
+          code: p.code || undefined,
+          type: 'POLICY',
+          details: `Status: ${p.status}`,
+        }));
+      }
+
+      case 'VENDOR': {
+        const where: any = { ...scopeWhere, deletedAt: null };
+        if (searchTerm) {
+          where.name = { contains: searchTerm, mode: 'insensitive' };
+        }
+        const vendors = await this.prisma.vendor.findMany({
+          where,
+          select: { id: true, name: true, criticality: true, category: true },
+          take: 50,
+          orderBy: { name: 'asc' },
+        });
+        return vendors.map((v) => ({
+          id: v.id,
+          name: v.name,
+          code: v.criticality,
+          type: 'VENDOR',
+          details: v.category || undefined,
+        }));
+      }
+
+      case 'VULNERABILITY': {
+        const where: any = { ...scopeWhere, deletedAt: null };
+        if (searchTerm) {
+          where.title = { contains: searchTerm, mode: 'insensitive' };
+        }
+        const vulns = await this.prisma.vulnerability.findMany({
+          where,
+          select: { id: true, title: true, severity: true, status: true },
+          take: 50,
+          orderBy: { createdAt: 'desc' },
+        });
+        return vulns.map((v) => ({
+          id: v.id,
+          name: v.title,
+          code: v.severity,
+          type: 'VULNERABILITY',
+          details: `Status: ${v.status}`,
+        }));
+      }
+
+      case 'INCIDENT': {
+        const where: any = { ...scopeWhere, deletedAt: null };
+        if (searchTerm) {
+          where.title = { contains: searchTerm, mode: 'insensitive' };
+        }
+        const incidents = await this.prisma.incident.findMany({
+          where,
+          select: { id: true, title: true, severity: true, status: true },
+          take: 50,
+          orderBy: { createdAt: 'desc' },
+        });
+        return incidents.map((i) => ({
+          id: i.id,
+          name: i.title,
+          code: i.severity,
+          type: 'INCIDENT',
+          details: `Status: ${i.status}`,
+        }));
+      }
+
+      default:
+        throw new BadRequestException(`Unsupported resource type "${type}".`);
+    }
   }
 
   async findOne(authCtx: ResourceAuthContext, evidenceId: string): Promise<EvidenceDto> {

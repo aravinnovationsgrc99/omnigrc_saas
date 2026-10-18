@@ -314,7 +314,7 @@ export function ExecutiveKpiStrip({ metrics, onNavigateToView }: ExecutiveKpiStr
                 }}
                 className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5"
               >
-                <span>Manage Business Audits</span>
+                <span>Manage Audits</span>
                 <ExternalLink size={14} />
               </button>
             </div>
