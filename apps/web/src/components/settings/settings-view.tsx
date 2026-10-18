@@ -34,6 +34,7 @@ import { InlineErrorState } from '@/components/ui/inline-error-state';
 
 import { TeamInvitationsView } from './team-invitations-view';
 import { OrganizationHierarchyView } from '@/components/organization/organization-hierarchy-view';
+import { PolicyCategoriesSettingsCard } from './policy-categories-settings-card';
 
 export function SettingsView() {
   const { user, organization } = useAuth();
@@ -420,7 +421,10 @@ export function SettingsView() {
       {/* 4. TEAM & SECURE INVITATIONS MANAGEMENT */}
       <TeamInvitationsView />
 
-      {/* 5. USER PREFERENCES CARD */}
+      {/* 5. POLICY GOVERNANCE & CATEGORIES MANAGEMENT */}
+      <PolicyCategoriesSettingsCard />
+
+      {/* 6. USER PREFERENCES CARD */}
       <div className="bg-white border border-[#E2E6E4] rounded-lg p-5 shadow-sm">
         <h2 className="text-sm font-semibold text-[#1B2430] mb-3.5">User Preferences</h2>
         <div className="flex justify-between items-center py-2">

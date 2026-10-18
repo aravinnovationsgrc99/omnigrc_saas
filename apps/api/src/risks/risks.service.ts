@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
+import { FrameworkEntitlementsService } from '../frameworks/framework-entitlements.service';
 import { CreateRiskDto, UpdateRiskDto, RiskQueryDto } from './dto/risks.dto';
 import { RiskDto, PaginatedRisksDto, HeatmapSummaryDto, HeatmapCellDto, RiskStatus, RiskScoreBand } from '@omnigrc/shared';
 
@@ -11,6 +12,7 @@ export class RisksService {
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
     private readonly resourceAuthService: ResourceAuthorizationService,
+    @Optional() private readonly frameworkEntitlementsService?: FrameworkEntitlementsService,
   ) {}
 
   public static getScoreBand(score: number): RiskScoreBand {
@@ -195,12 +197,73 @@ export class RisksService {
     });
   }
 
+  private async validateFrameworkAndReference(
+    authCtx: ResourceAuthContext,
+    frameworkId?: string | null,
+    frameworkReferenceId?: string | null,
+  ): Promise<{ resolvedFrameworkId: string | null; resolvedFrameworkReferenceId: string | null }> {
+    if (!frameworkReferenceId && !frameworkId) {
+      return { resolvedFrameworkId: null, resolvedFrameworkReferenceId: null };
+    }
+
+    if (frameworkReferenceId) {
+      const ref = await this.prisma.frameworkReference.findUnique({
+        where: { id: frameworkReferenceId },
+        include: {
+          frameworkVersion: {
+            select: { id: true, frameworkId: true },
+          },
+        },
+      });
+
+      if (!ref) {
+        throw new NotFoundException(`Framework reference "${frameworkReferenceId}" not found.`);
+      }
+
+      const versionFwId = ref.frameworkVersion.frameworkId;
+
+      if (frameworkId && frameworkId !== versionFwId) {
+        throw new BadRequestException(
+          `Framework reference "${ref.identifier}" does not belong to the selected framework.`,
+        );
+      }
+
+      const targetFwId = frameworkId || versionFwId;
+      if (this.frameworkEntitlementsService) {
+        await this.frameworkEntitlementsService.assertEntitled(authCtx.organizationId, targetFwId);
+      }
+
+      return {
+        resolvedFrameworkId: targetFwId,
+        resolvedFrameworkReferenceId: ref.id,
+      };
+    }
+
+    if (frameworkId) {
+      if (this.frameworkEntitlementsService) {
+        await this.frameworkEntitlementsService.assertEntitled(authCtx.organizationId, frameworkId);
+      }
+      return {
+        resolvedFrameworkId: frameworkId,
+        resolvedFrameworkReferenceId: null,
+      };
+    }
+
+    return { resolvedFrameworkId: null, resolvedFrameworkReferenceId: null };
+  }
+
   async create(authCtx: ResourceAuthContext, dto: CreateRiskDto): Promise<RiskDto> {
     await this.resourceAuthService.authorize(authCtx, {
       action: 'WRITE',
       departmentId: dto.departmentId,
       projectId: dto.projectId,
     });
+
+    const { resolvedFrameworkId, resolvedFrameworkReferenceId } = await this.validateFrameworkAndReference(
+      authCtx,
+      dto.frameworkId,
+      dto.frameworkReferenceId,
+    );
 
     const score = dto.likelihood * dto.impact;
 
@@ -217,8 +280,8 @@ export class RisksService {
         status: dto.status || RiskStatus.OPEN,
         owner: dto.owner,
         assetId: dto.assetId || null,
-        frameworkId: dto.frameworkId || null,
-        frameworkReferenceId: dto.frameworkReferenceId || null,
+        frameworkId: resolvedFrameworkId,
+        frameworkReferenceId: resolvedFrameworkReferenceId,
         treatmentPlan: dto.treatmentPlan || null,
         createdById: authCtx.userId,
       },
@@ -267,6 +330,15 @@ export class RisksService {
       });
     }
 
+    let targetFwId = dto.frameworkId !== undefined ? dto.frameworkId : existing.frameworkId;
+    let targetRefId = dto.frameworkReferenceId !== undefined ? dto.frameworkReferenceId : existing.frameworkReferenceId;
+
+    if (dto.frameworkId !== undefined || dto.frameworkReferenceId !== undefined) {
+      const validated = await this.validateFrameworkAndReference(authCtx, targetFwId, targetRefId);
+      targetFwId = validated.resolvedFrameworkId;
+      targetRefId = validated.resolvedFrameworkReferenceId;
+    }
+
     const likelihood = dto.likelihood !== undefined ? dto.likelihood : existing.likelihood;
     const impact = dto.impact !== undefined ? dto.impact : existing.impact;
     const score = likelihood * impact;
@@ -280,8 +352,8 @@ export class RisksService {
     if (dto.assetId !== undefined && dto.assetId !== existing.assetId) changedFields.push('assetId');
     if (dto.departmentId !== undefined && dto.departmentId !== existing.departmentId) changedFields.push('departmentId');
     if (dto.projectId !== undefined && dto.projectId !== existing.projectId) changedFields.push('projectId');
-    if (dto.frameworkId !== undefined && dto.frameworkId !== existing.frameworkId) changedFields.push('frameworkId');
-    if (dto.frameworkReferenceId !== undefined && dto.frameworkReferenceId !== existing.frameworkReferenceId) changedFields.push('frameworkReferenceId');
+    if (targetFwId !== existing.frameworkId) changedFields.push('frameworkId');
+    if (targetRefId !== existing.frameworkReferenceId) changedFields.push('frameworkReferenceId');
     if (dto.treatmentPlan !== undefined && dto.treatmentPlan !== existing.treatmentPlan) changedFields.push('treatmentPlan');
 
     const updated = await this.prisma.risk.update({
@@ -297,8 +369,8 @@ export class RisksService {
         ...(dto.assetId !== undefined && { assetId: dto.assetId || null }),
         ...(dto.departmentId !== undefined && { departmentId: dto.departmentId || null }),
         ...(dto.projectId !== undefined && { projectId: dto.projectId || null }),
-        ...(dto.frameworkId !== undefined && { frameworkId: dto.frameworkId || null }),
-        ...(dto.frameworkReferenceId !== undefined && { frameworkReferenceId: dto.frameworkReferenceId || null }),
+        frameworkId: targetFwId || null,
+        frameworkReferenceId: targetRefId || null,
         ...(dto.treatmentPlan !== undefined && { treatmentPlan: dto.treatmentPlan }),
       },
       include: {

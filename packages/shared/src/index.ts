@@ -1391,9 +1391,18 @@ export interface VulnerabilityAssetDto {
   assetName?: string;
 }
 
+export interface PolicyCategoryDto {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  policyCount: number;
+}
+
 export interface VulnerabilityDto {
   id: string;
   organizationId: string;
+  departmentId?: string | null;
+  projectId?: string | null;
   cveId?: string | null;
   title: string;
   description?: string | null;
@@ -1402,12 +1411,18 @@ export interface VulnerabilityDto {
   discoveredAt: Date | string;
   lastSeenAt: Date | string;
   remediationOwner: string;
+  remediationOwnerId?: string | null;
+  remediationOwnerName?: string | null;
+  remediationOwnerEmail?: string | null;
+  remediationOwnerRole?: string | null;
+  remediationTeamName?: string | null;
   dueDate?: Date | string | null;
   remediationNotes?: string | null;
   createdById: string;
   createdAt: Date | string;
   updatedAt: Date | string;
   affectedAssets?: VulnerabilityAssetDto[];
+  evidences?: EvidenceDto[];
 }
 
 export interface PaginatedVulnerabilitiesDto {

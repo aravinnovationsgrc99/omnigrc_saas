@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { RisksService } from './risks.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
-import { NotFoundException } from '@nestjs/common';
+import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { RiskStatus, Role } from '@omnigrc/shared';
 
 import { ResourceAuthorizationService } from '../auth/resource-authorization.service';
@@ -25,6 +25,9 @@ describe('RisksService', () => {
         create: jest.fn(),
         update: jest.fn(),
       },
+      frameworkReference: {
+        findUnique: jest.fn(),
+      },
     };
 
     auditLogsService = {
@@ -38,12 +41,17 @@ describe('RisksService', () => {
       authorize: jest.fn().mockResolvedValue(undefined),
     };
 
+    const frameworkEntitlementsService = {
+      assertEntitled: jest.fn().mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         RisksService,
         { provide: PrismaService, useValue: prisma },
         { provide: AuditLogsService, useValue: auditLogsService },
         { provide: ResourceAuthorizationService, useValue: resourceAuthService },
+        { provide: 'FrameworkEntitlementsService', useValue: frameworkEntitlementsService },
       ],
     }).compile();
 
@@ -213,6 +221,43 @@ describe('RisksService', () => {
         }),
       }),
     );
+  });
+
+  it('should reject risk creation when framework reference does not exist', async () => {
+    prisma.frameworkReference.findUnique.mockResolvedValue(null);
+
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    await expect(
+      service.create(authCtx, {
+        title: 'GDPR Clause Risk',
+        owner: 'DPO',
+        likelihood: 3,
+        impact: 3,
+        frameworkId: 'fw-gdpr',
+        frameworkReferenceId: 'non-existent-ref',
+      }),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('should reject risk creation when framework reference belongs to a different framework', async () => {
+    prisma.frameworkReference.findUnique.mockResolvedValue({
+      id: 'ref-iso',
+      frameworkVersion: {
+        frameworkId: 'fw-iso27001',
+      },
+    });
+
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    await expect(
+      service.create(authCtx, {
+        title: 'Mismatched Risk',
+        owner: 'SecOps',
+        likelihood: 3,
+        impact: 3,
+        frameworkId: 'fw-gdpr',
+        frameworkReferenceId: 'ref-iso',
+      }),
+    ).rejects.toThrow(BadRequestException);
   });
 });
 

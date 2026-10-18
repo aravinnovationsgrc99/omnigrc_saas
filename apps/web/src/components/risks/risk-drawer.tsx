@@ -23,6 +23,7 @@ import { useToast } from '@/context/toast-context';
 import { useAuth } from '@/context/auth-context';
 import { ShieldAlert, X, Trash2, History, Clock, GitMerge, Plus, Lock, ShieldCheck } from 'lucide-react';
 import { WorkflowLifecyclePanel } from '@/components/workflow/workflow-lifecycle-panel';
+import { ComplianceScopeFilter } from '@/components/ui/compliance-scope-filter';
 
 export const getMitigationBadgeStyle = (type: RiskControlMitigationType) => {
   switch (type) {
@@ -87,12 +88,11 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
   const [owner, setOwner] = useState('');
   const [assetId, setAssetId] = useState<string>('');
   const [frameworkId, setFrameworkId] = useState<string>('');
+  const [frameworkVersionId, setFrameworkVersionId] = useState<string>('');
   const [frameworkReferenceId, setFrameworkReferenceId] = useState<string>('');
   const [treatmentPlan, setTreatmentPlan] = useState('');
 
   const [availableAssets, setAvailableAssets] = useState<AssetDto[]>([]);
-  const [availableFrameworks, setAvailableFrameworks] = useState<{ id: string; code: string; name: string }[]>([]);
-  const [availableReferences, setAvailableReferences] = useState<{ id: string; identifier: string; title: string }[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntryDto[]>([]);
   const [loadingAudit, setLoadingAudit] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -191,37 +191,14 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
     }
   };
 
-  // Fetch available assets and entitled frameworks for dropdown selection
+  // Fetch available assets for dropdown selection
   useEffect(() => {
     if (isOpen) {
       apiRequest<PaginatedAssetsDto>('/assets?limit=100')
         .then((res) => setAvailableAssets(res.items))
         .catch(() => setAvailableAssets([]));
-
-      apiRequest<{ id: string; code: string; name: string }[]>('/frameworks')
-        .then((res) => setAvailableFrameworks(res))
-        .catch(() => setAvailableFrameworks([]));
     }
   }, [isOpen]);
-
-  // Fetch references when frameworkId changes
-  useEffect(() => {
-    if (frameworkId) {
-      apiRequest<{ id: string }[]>(`/frameworks/${frameworkId}/versions`)
-        .then(async (versions) => {
-          if (versions && versions.length > 0) {
-            const refs = await apiRequest<{ id: string; identifier: string; title: string }[]>(`/frameworks/versions/${versions[0].id}/references`);
-            setAvailableReferences(refs);
-          } else {
-            setAvailableReferences([]);
-          }
-        })
-        .catch(() => setAvailableReferences([]));
-    } else {
-      setAvailableReferences([]);
-      setFrameworkReferenceId('');
-    }
-  }, [frameworkId]);
 
   useEffect(() => {
     if (risk) {
@@ -233,6 +210,7 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
       setOwner(risk.owner || '');
       setAssetId(risk.assetId || '');
       setFrameworkId(risk.frameworkId || '');
+      setFrameworkVersionId('');
       setFrameworkReferenceId(risk.frameworkReferenceId || '');
       setTreatmentPlan(risk.treatmentPlan || '');
 
@@ -250,6 +228,7 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
       setOwner('');
       setAssetId(defaultAssetId || '');
       setFrameworkId('');
+      setFrameworkVersionId('');
       setFrameworkReferenceId('');
       setTreatmentPlan('');
       setAuditLogs([]);
@@ -512,46 +491,28 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
               ))}
             </select>
 
-            <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
-              <div style={{ flex: 1 }}>
-                <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
-                  Target Framework
-                </label>
-                <select
-                  className="omni-input"
-                  value={frameworkId}
-                  onChange={(e) => {
-                    setFrameworkId(e.target.value);
-                    setFrameworkReferenceId('');
-                  }}
-                >
-                  <option value="">-- Select Framework --</option>
-                  {availableFrameworks.map((fw) => (
-                    <option key={fw.id} value={fw.id}>
-                      {fw.code} ({fw.name})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div style={{ flex: 1 }}>
-                <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
-                  Framework Reference / Clause
-                </label>
-                <select
-                  className="omni-input"
-                  value={frameworkReferenceId}
-                  onChange={(e) => setFrameworkReferenceId(e.target.value)}
-                  disabled={!frameworkId || availableReferences.length === 0}
-                >
-                  <option value="">-- Select Reference / Clause --</option>
-                  {availableReferences.map((ref) => (
-                    <option key={ref.id} value={ref.id}>
-                      {ref.identifier} — {ref.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <div style={{ marginBottom: 16 }}>
+              <ComplianceScopeFilter
+                frameworkId={frameworkId}
+                versionId={frameworkVersionId}
+                frameworkReferenceId={frameworkReferenceId}
+                onFrameworkChange={(fwId) => {
+                  setFrameworkId(fwId);
+                  setFrameworkVersionId('');
+                  setFrameworkReferenceId('');
+                }}
+                onVersionChange={(vId) => {
+                  setFrameworkVersionId(vId);
+                  setFrameworkReferenceId('');
+                }}
+                onReferenceChange={(refId) => setFrameworkReferenceId(refId)}
+                showReferenceFilter={true}
+                showVersionFilter={true}
+                frameworkPlaceholder="-- Select Target Framework (Optional) --"
+                versionPlaceholder="-- Select Version --"
+                clausePlaceholder="-- No Specific Reference / Clause (Optional) --"
+                layout="form"
+              />
             </div>
 
             <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>

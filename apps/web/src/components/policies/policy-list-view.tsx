@@ -1,30 +1,64 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { FileCheck, Plus, CheckCircle2, Clock, ShieldAlert, FileText } from 'lucide-react';
+import {
+  FileCheck,
+  Plus,
+  CheckCircle2,
+  Clock,
+  ShieldAlert,
+  FileText,
+  Download,
+  Edit2,
+  Save,
+  X,
+  RefreshCw,
+  FolderKanban,
+  Check,
+} from 'lucide-react';
 import { apiRequest } from '@/lib/api-client';
-import { PolicyDto, PolicyStatus, PaginatedPoliciesDto } from '@omnigrc/shared';
+import {
+  PolicyDto,
+  PolicyStatus,
+  PaginatedPoliciesDto,
+  PolicyCategoryDto,
+} from '@omnigrc/shared';
 import { useToast } from '@/context/toast-context';
+import { PolicyEditor } from './policy-editor';
 
 export function PolicyListView() {
   const { addToast } = useToast();
   const [policies, setPolicies] = useState<PolicyDto[]>([]);
+  const [categories, setCategories] = useState<PolicyCategoryDto[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingCategories, setLoadingCategories] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedPolicy, setSelectedPolicy] = useState<PolicyDto | null>(null);
 
-  // Form State
+  // Create Form State
   const [code, setCode] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('Information Security');
   const [ownerId, setOwnerId] = useState('CISO');
-  const [initialContent, setInitialContent] = useState('# Policy Title\n\n1. Objective\n2. Scope\n3. Compliance Rules');
+  const [initialContent, setInitialContent] = useState(
+    '# Policy Title\n\n1. Objective & Purpose\n2. Scope\n3. Compliance Rules and Controls\n4. Enforcement & Violations',
+  );
   const [submitting, setSubmitting] = useState(false);
+
+  // Edit Draft State
+  const [isEditingDraft, setIsEditingDraft] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editCode, setEditCode] = useState('');
+  const [editCategory, setEditCategory] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editContent, setEditContent] = useState('');
+  const [savingDraft, setSavingDraft] = useState(false);
 
   useEffect(() => {
     fetchPolicies();
+    fetchCategories();
   }, [filterStatus]);
 
   async function fetchPolicies() {
@@ -37,6 +71,31 @@ export function PolicyListView() {
       addToast(`Failed to load policies: ${err.message}`, 'error');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function fetchCategories() {
+    setLoadingCategories(true);
+    try {
+      const data = await apiRequest<PolicyCategoryDto[]>('/policies/categories');
+      setCategories(data || []);
+      if (data && data.length > 0 && !category) {
+        setCategory(data[0].name);
+      }
+    } catch {
+      // Fallback to default if endpoint unavailable
+      setCategories([
+        { id: '1', name: 'Information Security', isDefault: true, policyCount: 0 },
+        { id: '2', name: 'Data Privacy', isDefault: true, policyCount: 0 },
+        { id: '3', name: 'Access Control', isDefault: true, policyCount: 0 },
+        { id: '4', name: 'Acceptable Use', isDefault: true, policyCount: 0 },
+        { id: '5', name: 'Incident Response', isDefault: true, policyCount: 0 },
+        { id: '6', name: 'Business Continuity', isDefault: true, policyCount: 0 },
+        { id: '7', name: 'Vendor Management', isDefault: true, policyCount: 0 },
+        { id: '8', name: 'Compliance', isDefault: true, policyCount: 0 },
+      ]);
+    } finally {
+      setLoadingCategories(false);
     }
   }
 
@@ -60,11 +119,56 @@ export function PolicyListView() {
       setCode('');
       setTitle('');
       setDescription('');
+      setInitialContent(
+        '# Policy Title\n\n1. Objective & Purpose\n2. Scope\n3. Compliance Rules and Controls\n4. Enforcement & Violations',
+      );
       fetchPolicies();
+      fetchCategories();
     } catch (err: any) {
       addToast(`Failed to create policy: ${err.message}`, 'error');
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  function handleOpenPolicy(policy: PolicyDto) {
+    setSelectedPolicy(policy);
+    setIsEditingDraft(false);
+    setEditTitle(policy.title);
+    setEditCode(policy.code);
+    setEditCategory(policy.category);
+    setEditDescription(policy.description || '');
+
+    const currentContent =
+      policy.versions && policy.versions.length > 0
+        ? policy.versions[0].content
+        : policy.publishedVersion?.content || '';
+    setEditContent(currentContent);
+  }
+
+  async function handleSaveDraft() {
+    if (!selectedPolicy) return;
+    setSavingDraft(true);
+    try {
+      const updated = await apiRequest<PolicyDto>(`/policies/${selectedPolicy.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          title: editTitle,
+          code: editCode,
+          category: editCategory,
+          description: editDescription,
+          content: editContent,
+        }),
+      });
+      setSelectedPolicy(updated);
+      setIsEditingDraft(false);
+      addToast(`Draft policy "${editTitle}" updated successfully.`, 'success');
+      fetchPolicies();
+      fetchCategories();
+    } catch (err: any) {
+      addToast(`Failed to save draft: ${err.message}`, 'error');
+    } finally {
+      setSavingDraft(false);
     }
   }
 
@@ -89,6 +193,19 @@ export function PolicyListView() {
     } catch (err: any) {
       addToast(`Attestation failed: ${err.message}`, 'error');
     }
+  }
+
+  function downloadPolicyContent(p: PolicyDto, content: string) {
+    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${p.code || 'policy'}_${p.title.replace(/\s+/g, '_')}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    addToast('Downloaded policy document (.md).', 'success');
   }
 
   return (
@@ -138,33 +255,49 @@ export function PolicyListView() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {policies.map((p) => (
-            <div key={p.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:border-slate-300 transition-all flex flex-col justify-between">
+            <div
+              key={p.id}
+              className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:border-slate-300 transition-all flex flex-col justify-between"
+            >
               <div>
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <span className="omni-mono text-xs font-bold text-slate-500">{p.code}</span>
-                  <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${
-                    p.status === 'PUBLISHED' ? 'bg-emerald-100 text-emerald-800' :
-                    p.status === 'APPROVED' ? 'bg-blue-100 text-blue-800' :
-                    p.status === 'UNDER_REVIEW' ? 'bg-amber-100 text-amber-800' :
-                    'bg-slate-100 text-slate-700'
-                  }`}>
+                  <span
+                    className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${
+                      p.status === 'PUBLISHED'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : p.status === 'APPROVED'
+                        ? 'bg-blue-100 text-blue-800'
+                        : p.status === 'UNDER_REVIEW'
+                        ? 'bg-amber-100 text-amber-800'
+                        : 'bg-slate-100 text-slate-700'
+                    }`}
+                  >
                     {p.status}
                   </span>
                 </div>
                 <h3 className="font-semibold text-slate-900 text-base mb-1">{p.title}</h3>
-                <p className="text-xs text-slate-500 line-clamp-2 mb-3">{p.description || 'No description'}</p>
+                <p className="text-xs text-slate-500 line-clamp-2 mb-3">
+                  {p.description || 'No description'}
+                </p>
                 <div className="text-xs text-slate-600 space-y-1">
-                  <div><strong>Category:</strong> {p.category}</div>
-                  <div><strong>Owner:</strong> {p.ownerId}</div>
+                  <div>
+                    <strong>Category:</strong> {p.category}
+                  </div>
+                  <div>
+                    <strong>Owner:</strong> {p.ownerId}
+                  </div>
                   {p.publishedVersion && (
-                    <div><strong>Version:</strong> v{p.publishedVersion.versionNumber}</div>
+                    <div>
+                      <strong>Version:</strong> v{p.publishedVersion.versionNumber}
+                    </div>
                   )}
                 </div>
               </div>
 
               <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
                 <button
-                  onClick={() => setSelectedPolicy(p)}
+                  onClick={() => handleOpenPolicy(p)}
                   className="text-xs font-semibold text-teal-700 hover:text-teal-900"
                 >
                   View Details & Content
@@ -203,53 +336,97 @@ export function PolicyListView() {
 
       {/* Create Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl max-w-lg w-full p-6 shadow-xl max-h-[90vh] overflow-y-auto">
-            <h2 className="text-lg font-bold text-slate-900 mb-4">Create New Policy Draft</h2>
-            <form onSubmit={handleCreate} className="space-y-4">
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 omni-fade-in">
+          <div className="bg-white rounded-xl max-w-3xl w-full p-6 shadow-xl max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b pb-3 mb-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Policy Code</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. POL-SEC-001"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
-                />
+                <h2 className="text-lg font-bold text-slate-900">Create New Policy Draft</h2>
+                <p className="text-xs text-slate-500">
+                  Standardized GRC policy document with Markdown authoring, document import, and category assignment.
+                </p>
               </div>
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreate} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Policy Code
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. POL-SEC-001"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 omni-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Category
+                  </label>
+                  <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 bg-white"
+                  >
+                    {categories.map((c) => (
+                      <option key={c.id || c.name} value={c.name}>
+                        {c.name} {c.isDefault ? '(Default)' : ''}
+                      </option>
+                    ))}
+                    {!categories.some((c) => c.name === category) && category && (
+                      <option value={category}>{category}</option>
+                    )}
+                  </select>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Title</label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Information Security Policy"
+                  placeholder="e.g. Information Security & Acceptable Use Policy"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
                 />
               </div>
+
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Category</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Summary / Scope Description
+                </label>
                 <input
                   type="text"
-                  required
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
+                  placeholder="e.g. Defines mandatory controls, user obligations, and cryptographic standards across all company systems."
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
                   className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
                 />
               </div>
+
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Initial Content (Markdown)</label>
-                <textarea
-                  rows={5}
-                  required
-                  value={initialContent}
-                  onChange={(e) => setInitialContent(e.target.value)}
-                  className="w-full px-3 py-2 text-sm omni-mono border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Policy Content & Clauses
+                </label>
+                <PolicyEditor
+                  content={initialContent}
+                  onChange={setInitialContent}
+                  documentTitle={title || code || 'new-policy-draft'}
                 />
               </div>
-              <div className="flex justify-end gap-2 pt-2">
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
@@ -262,7 +439,7 @@ export function PolicyListView() {
                   disabled={submitting}
                   className="px-4 py-2 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg disabled:opacity-50"
                 >
-                  {submitting ? 'Creating...' : 'Create Draft'}
+                  {submitting ? 'Creating...' : 'Create Policy Draft'}
                 </button>
               </div>
             </form>
@@ -270,40 +447,223 @@ export function PolicyListView() {
         </div>
       )}
 
-      {/* Policy Reader Modal */}
+      {/* Policy Details & Editor Modal */}
       {selectedPolicy && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl max-w-2xl w-full p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 omni-fade-in">
+          <div className="bg-white rounded-xl max-w-3xl w-full p-6 shadow-xl max-h-[92vh] overflow-y-auto flex flex-col">
             <div className="flex items-center justify-between border-b pb-3 mb-4">
-              <div>
-                <span className="text-xs font-mono font-bold text-teal-800 bg-teal-100 px-2 py-0.5 rounded border border-teal-200">{selectedPolicy.code}</span>
-                <h2 className="text-lg font-bold text-slate-900">{selectedPolicy.title}</h2>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono font-bold text-teal-800 bg-teal-100 px-2 py-0.5 rounded border border-teal-200">
+                  {selectedPolicy.code}
+                </span>
+                <span
+                  className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                    selectedPolicy.status === 'PUBLISHED'
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : selectedPolicy.status === 'APPROVED'
+                      ? 'bg-blue-100 text-blue-800'
+                      : selectedPolicy.status === 'UNDER_REVIEW'
+                      ? 'bg-amber-100 text-amber-800'
+                      : 'bg-slate-100 text-slate-700'
+                  }`}
+                >
+                  {selectedPolicy.status}
+                </span>
               </div>
-              <button
-                onClick={() => setSelectedPolicy(null)}
-                className="text-xs font-semibold text-slate-500 hover:text-slate-800"
-              >
-                Close
-              </button>
-            </div>
-            {selectedPolicy.publishedVersion ? (
-              <div>
-                <div className="flex items-center justify-between text-xs text-slate-500 mb-4 bg-slate-50 p-3 rounded-lg">
-                  <div>Published Version: <strong>v{selectedPolicy.publishedVersion.versionNumber}</strong></div>
+              <div className="flex items-center gap-2">
+                {selectedPolicy.status === 'DRAFT' && !isEditingDraft && (
                   <button
-                    onClick={() => handleAttest(selectedPolicy.publishedVersion!.id)}
-                    className="px-3 py-1.5 bg-teal-700 text-white font-semibold rounded hover:bg-teal-800"
+                    onClick={() => setIsEditingDraft(true)}
+                    className="px-3 py-1 text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 rounded flex items-center gap-1"
                   >
-                    Attest Policy Compliance
+                    <Edit2 size={13} /> Edit Draft
                   </button>
+                )}
+                <button
+                  onClick={() => setSelectedPolicy(null)}
+                  className="text-slate-400 hover:text-slate-700 p-1"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* DRAFT EDIT MODE */}
+            {selectedPolicy.status === 'DRAFT' && isEditingDraft ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Policy Code
+                    </label>
+                    <input
+                      type="text"
+                      value={editCode}
+                      onChange={(e) => setEditCode(e.target.value)}
+                      className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Category
+                    </label>
+                    <select
+                      value={editCategory}
+                      onChange={(e) => setEditCategory(e.target.value)}
+                      className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded bg-white"
+                    >
+                      {categories.map((c) => (
+                        <option key={c.id || c.name} value={c.name}>
+                          {c.name}
+                        </option>
+                      ))}
+                      {!categories.some((c) => c.name === editCategory) && editCategory && (
+                        <option value={editCategory}>{editCategory}</option>
+                      )}
+                    </select>
+                  </div>
                 </div>
-                <div className="prose max-w-none text-xs text-slate-700 whitespace-pre-wrap omni-mono bg-slate-50/50 p-4 rounded-lg border">
-                  {selectedPolicy.publishedVersion.content}
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Title</label>
+                  <input
+                    type="text"
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Description
+                  </label>
+                  <input
+                    type="text"
+                    value={editDescription}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Content Editor
+                  </label>
+                  <PolicyEditor
+                    content={editContent}
+                    onChange={setEditContent}
+                    documentTitle={editTitle || editCode}
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-3 border-t">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingDraft(false)}
+                    className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveDraft}
+                    disabled={savingDraft}
+                    className="px-4 py-1.5 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded flex items-center gap-1.5"
+                  >
+                    <Save size={13} />
+                    {savingDraft ? 'Saving...' : 'Save Changes'}
+                  </button>
                 </div>
               </div>
             ) : (
-              <div className="text-xs text-slate-500 py-4 text-center">
-                This policy has not been published yet. Current status: <strong>{selectedPolicy.status}</strong>.
+              /* VIEW / READER MODE */
+              <div>
+                <h2 className="text-xl font-bold text-slate-900 mb-1">{selectedPolicy.title}</h2>
+                <p className="text-xs text-slate-500 mb-4">{selectedPolicy.description}</p>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3 bg-slate-50 rounded-lg text-xs mb-4">
+                  <div>
+                    <span className="text-slate-500 block">Category:</span>
+                    <strong className="text-slate-800">{selectedPolicy.category}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block">Owner:</span>
+                    <strong className="text-slate-800">{selectedPolicy.ownerId}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block">Cadence:</span>
+                    <strong className="text-slate-800">
+                      {selectedPolicy.reviewCadenceDays} days
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block">Status:</span>
+                    <strong className="text-slate-800">{selectedPolicy.status}</strong>
+                  </div>
+                </div>
+
+                {selectedPolicy.publishedVersion ? (
+                  <div>
+                    <div className="flex items-center justify-between text-xs text-slate-500 mb-3 bg-teal-50/50 border border-teal-100 p-3 rounded-lg">
+                      <div>
+                        Published Version: <strong>v{selectedPolicy.publishedVersion.versionNumber}</strong>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() =>
+                            downloadPolicyContent(
+                              selectedPolicy,
+                              selectedPolicy.publishedVersion?.content || '',
+                            )
+                          }
+                          className="px-2.5 py-1 text-xs text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50 flex items-center gap-1"
+                        >
+                          <Download size={13} /> Export .md
+                        </button>
+                        <button
+                          onClick={() => handleAttest(selectedPolicy.publishedVersion!.id)}
+                          className="px-3 py-1 bg-teal-700 text-white font-semibold rounded hover:bg-teal-800"
+                        >
+                          Attest Policy Compliance
+                        </button>
+                      </div>
+                    </div>
+                    <PolicyEditor
+                      content={selectedPolicy.publishedVersion.content}
+                      onChange={() => {}}
+                      readOnly={true}
+                    />
+                  </div>
+                ) : selectedPolicy.versions && selectedPolicy.versions.length > 0 ? (
+                  <div>
+                    <div className="flex items-center justify-between text-xs text-slate-500 mb-3 bg-amber-50 border border-amber-100 p-2.5 rounded-lg">
+                      <span>
+                        Draft Version <strong>v{selectedPolicy.versions[0].versionNumber}</strong> ({selectedPolicy.status})
+                      </span>
+                      <button
+                        onClick={() =>
+                          downloadPolicyContent(
+                            selectedPolicy,
+                            selectedPolicy.versions?.[0]?.content || '',
+                          )
+                        }
+                        className="px-2.5 py-1 text-xs text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50 flex items-center gap-1"
+                      >
+                        <Download size={13} /> Export .md
+                      </button>
+                    </div>
+                    <PolicyEditor
+                      content={selectedPolicy.versions[0].content}
+                      onChange={() => {}}
+                      readOnly={true}
+                    />
+                  </div>
+                ) : (
+                  <div className="text-xs text-slate-500 py-6 text-center">
+                    No content recorded for this policy document yet.
+                  </div>
+                )}
               </div>
             )}
           </div>

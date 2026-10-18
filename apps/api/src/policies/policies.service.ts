@@ -22,11 +22,32 @@ import {
   PolicyAttestationDto,
   PolicyExceptionDto,
   PolicyExceptionStatus,
+  PolicyCategoryDto,
   Role,
 } from '@omnigrc/shared';
 
+export const DEFAULT_POLICY_CATEGORIES = [
+  'Information Security',
+  'Data Privacy',
+  'Access Control',
+  'Acceptable Use',
+  'Incident Response',
+  'Business Continuity',
+  'Vendor Management',
+  'Compliance',
+];
+
 @Injectable()
 export class PoliciesService {
+  /**
+   * In-memory tenant custom category store.
+   * PERSISTENCE LIMITATION NOTE:
+   * Unused custom categories currently rely on this in-memory state and may disappear after server restarts.
+   * Categories assigned to one or more policies are dynamically preserved across restarts via the policy table aggregation.
+   * Introduction of a dedicated, durable `PolicyCategory` table is intentionally deferred to an authorized future schema migration.
+   */
+  private readonly tenantCustomCategories = new Map<string, Set<string>>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
@@ -209,6 +230,24 @@ export class PoliciesService {
       );
     }
 
+    if (dto.content !== undefined) {
+      if (existing.status !== PolicyStatus.DRAFT) {
+        throw new BadRequestException(
+          `Cannot directly update content of policy in "${existing.status}" status. Please create a new version.`,
+        );
+      }
+      const latestVersion = await this.prisma.policyVersion.findFirst({
+        where: { policyId: id },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (latestVersion) {
+        await this.prisma.policyVersion.update({
+          where: { id: latestVersion.id },
+          data: { content: dto.content },
+        });
+      }
+    }
+
     const updated = await this.prisma.policy.update({
       where: { id },
       data: {
@@ -238,6 +277,207 @@ export class PoliciesService {
     });
 
     return this.mapToDto(updated);
+  }
+
+  // --- POLICY CATEGORY MANAGEMENT ---
+
+  async listCategories(authCtx: ResourceAuthContext): Promise<PolicyCategoryDto[]> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+
+    const counts = await this.prisma.policy.groupBy({
+      by: ['category'],
+      where: {
+        ...scopeWhere,
+        deletedAt: null,
+      },
+      _count: {
+        id: true,
+      },
+    });
+
+    const countMap = new Map<string, number>();
+    counts.forEach((c) => countMap.set(c.category, c._count.id));
+
+    const custom = this.tenantCustomCategories.get(authCtx.organizationId) || new Set<string>();
+
+    const allCategoryNames = new Set<string>([
+      ...DEFAULT_POLICY_CATEGORIES,
+      ...Array.from(custom),
+      ...counts.map((c) => c.category),
+    ]);
+
+    return Array.from(allCategoryNames)
+      .filter((name) => Boolean(name && name.trim()))
+      .sort((a, b) => a.localeCompare(b))
+      .map((name) => ({
+        id: name,
+        name,
+        isDefault: DEFAULT_POLICY_CATEGORIES.some(
+          (def) => def.toLowerCase() === name.toLowerCase(),
+        ),
+        policyCount: countMap.get(name) || 0,
+      }));
+  }
+
+  async createCategory(authCtx: ResourceAuthContext, name: string): Promise<PolicyCategoryDto> {
+    const normalized = name ? name.trim() : '';
+    if (!normalized) {
+      throw new BadRequestException('Category name cannot be empty');
+    }
+
+    const existingCategories = await this.listCategories(authCtx);
+    const isDuplicate = existingCategories.some(
+      (c) => c.name.toLowerCase() === normalized.toLowerCase(),
+    );
+
+    if (isDuplicate) {
+      throw new BadRequestException(`Policy category "${normalized}" already exists in this organization`);
+    }
+
+    let customSet = this.tenantCustomCategories.get(authCtx.organizationId);
+    if (!customSet) {
+      customSet = new Set<string>();
+      this.tenantCustomCategories.set(authCtx.organizationId, customSet);
+    }
+    customSet.add(normalized);
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'POLICY_CATEGORY_CREATED',
+      entityType: 'PolicyCategory',
+      entityId: normalized,
+      metadata: { name: normalized },
+    });
+
+    return {
+      id: normalized,
+      name: normalized,
+      isDefault: false,
+      policyCount: 0,
+    };
+  }
+
+  async renameCategory(
+    authCtx: ResourceAuthContext,
+    currentName: string,
+    newName: string,
+  ): Promise<PolicyCategoryDto> {
+    const trimmedCurrent = currentName ? currentName.trim() : '';
+    const trimmedNew = newName ? newName.trim() : '';
+
+    if (!trimmedNew) {
+      throw new BadRequestException('New category name cannot be empty');
+    }
+
+    if (trimmedCurrent.toLowerCase() !== trimmedNew.toLowerCase()) {
+      const existingCategories = await this.listCategories(authCtx);
+      const isDuplicate = existingCategories.some(
+        (c) => c.name.toLowerCase() === trimmedNew.toLowerCase(),
+      );
+      if (isDuplicate) {
+        throw new BadRequestException(`Category "${trimmedNew}" already exists`);
+      }
+    }
+
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+    const updateResult = await this.prisma.policy.updateMany({
+      where: {
+        ...scopeWhere,
+        category: trimmedCurrent,
+        deletedAt: null,
+      },
+      data: {
+        category: trimmedNew,
+      },
+    });
+
+    // Update in-memory custom category set if applicable
+    const customSet = this.tenantCustomCategories.get(authCtx.organizationId);
+    if (customSet) {
+      customSet.delete(trimmedCurrent);
+      customSet.add(trimmedNew);
+    }
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'POLICY_CATEGORY_RENAMED',
+      entityType: 'PolicyCategory',
+      entityId: trimmedNew,
+      metadata: {
+        oldName: trimmedCurrent,
+        newName: trimmedNew,
+        updatedPoliciesCount: updateResult.count,
+      },
+    });
+
+    return {
+      id: trimmedNew,
+      name: trimmedNew,
+      isDefault: DEFAULT_POLICY_CATEGORIES.some(
+        (def) => def.toLowerCase() === trimmedNew.toLowerCase(),
+      ),
+      policyCount: updateResult.count,
+    };
+  }
+
+  async deleteCategory(
+    authCtx: ResourceAuthContext,
+    categoryName: string,
+  ): Promise<{ success: boolean; message: string }> {
+    const normalized = categoryName ? categoryName.trim() : '';
+    if (!normalized) {
+      throw new BadRequestException('Category name cannot be empty');
+    }
+
+    const isDefault = DEFAULT_POLICY_CATEGORIES.some(
+      (def) => def.toLowerCase() === normalized.toLowerCase(),
+    );
+    if (isDefault) {
+      throw new BadRequestException(
+        `System default category "${normalized}" cannot be removed.`,
+      );
+    }
+
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+
+    const activeCount = await this.prisma.policy.count({
+      where: {
+        ...scopeWhere,
+        category: normalized,
+        deletedAt: null,
+      },
+    });
+
+    if (activeCount > 0) {
+      throw new BadRequestException(
+        `Cannot delete category "${normalized}" because it is currently assigned to ${activeCount} active policy/policies. Please reassign or update these policies before deleting the category.`,
+      );
+    }
+
+    const customSet = this.tenantCustomCategories.get(authCtx.organizationId);
+    if (customSet) {
+      for (const item of Array.from(customSet)) {
+        if (item.toLowerCase() === normalized.toLowerCase()) {
+          customSet.delete(item);
+        }
+      }
+    }
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'POLICY_CATEGORY_DELETED',
+      entityType: 'PolicyCategory',
+      entityId: normalized,
+      metadata: { name: normalized },
+    });
+
+    return {
+      success: true,
+      message: `Policy category "${normalized}" successfully deleted.`,
+    };
   }
 
   async createVersion(

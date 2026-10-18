@@ -17,6 +17,8 @@ import {
   CreatePolicyVersionDto,
   CreatePolicyExceptionDto,
   PolicyQueryDto,
+  CreatePolicyCategoryDto,
+  RenamePolicyCategoryDto,
 } from './dto/policies.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -34,6 +36,62 @@ import { RequireCapability } from '../common/decorators/require-capability.decor
 @RequireCapability('POLICIES_MODULE')
 export class PoliciesController {
   constructor(private readonly policiesService: PoliciesService) {}
+
+  @Get('categories')
+  async listCategories(@CurrentUser() user: any) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.policiesService.listCategories(authCtx);
+  }
+
+  @Post('categories')
+  @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async createCategory(
+    @CurrentUser() user: any,
+    @Body() dto: CreatePolicyCategoryDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.policiesService.createCategory(authCtx, dto.name);
+  }
+
+  @Patch('categories/:categoryName')
+  @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async renameCategory(
+    @CurrentUser() user: any,
+    @Param('categoryName') categoryName: string,
+    @Body() dto: RenamePolicyCategoryDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.policiesService.renameCategory(authCtx, decodeURIComponent(categoryName), dto.newName);
+  }
+
+  @Delete('categories/:categoryName')
+  @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async deleteCategory(
+    @CurrentUser() user: any,
+    @Param('categoryName') categoryName: string,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.policiesService.deleteCategory(authCtx, decodeURIComponent(categoryName));
+  }
 
   @Get()
   async findAll(

@@ -103,4 +103,52 @@ export class VulnerabilitiesController {
     };
     await this.vulnerabilitiesService.softDelete(authCtx, id);
   }
+
+  @Get(':id/evidence')
+  async getEvidence(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.vulnerabilitiesService.getEvidence(authCtx, id);
+  }
+
+  @Post(':id/evidence/:evidenceId')
+  @RequiresActiveLicense()
+  @RequireCapability('VULNERABILITY_MGMT')
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async attachEvidence(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Param('evidenceId') evidenceId: string,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.vulnerabilitiesService.attachEvidence(authCtx, id, evidenceId);
+  }
+
+  @Delete(':id/evidence/:evidenceId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @RequiresActiveLicense()
+  @RequireCapability('VULNERABILITY_MGMT')
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async detachEvidence(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Param('evidenceId') evidenceId: string,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    await this.vulnerabilitiesService.detachEvidence(authCtx, id, evidenceId);
+  }
 }

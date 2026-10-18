@@ -84,6 +84,22 @@ export class UpdatePolicyDto {
   @IsString()
   @IsOptional()
   projectId?: string;
+
+  @IsString()
+  @IsOptional()
+  content?: string;
+}
+
+export class CreatePolicyCategoryDto {
+  @IsString()
+  @IsNotEmpty()
+  name!: string;
+}
+
+export class RenamePolicyCategoryDto {
+  @IsString()
+  @IsNotEmpty()
+  newName!: string;
 }
 
 export class CreatePolicyVersionDto {

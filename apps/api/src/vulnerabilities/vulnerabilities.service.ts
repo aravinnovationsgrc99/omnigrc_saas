@@ -69,13 +69,20 @@ export class VulnerabilitiesService {
           affectedAssets: {
             include: { asset: { select: { id: true, name: true } } },
           },
+          evidenceAssociations: {
+            include: { evidence: true },
+            orderBy: { attachedAt: 'desc' },
+          },
         },
       }),
       this.prisma.vulnerability.count({ where }),
     ]);
 
+    const ownerCandidates = items.map((i) => i.remediationOwner);
+    const { userMap, deptMap } = await this.resolveOwnerLookups(authCtx.organizationId, ownerCandidates);
+
     return {
-      items: items.map(this.mapToDto),
+      items: items.map((item) => this.mapToDto(item, userMap, deptMap)),
       total,
       page,
       limit,
@@ -94,6 +101,10 @@ export class VulnerabilitiesService {
         affectedAssets: {
           include: { asset: { select: { id: true, name: true } } },
         },
+        evidenceAssociations: {
+          include: { evidence: true },
+          orderBy: { attachedAt: 'desc' },
+        },
       },
     });
 
@@ -101,7 +112,12 @@ export class VulnerabilitiesService {
       throw new NotFoundException(`Vulnerability with ID "${id}" not found`);
     }
 
-    return this.mapToDto(vuln);
+    const { userMap, deptMap } = await this.resolveOwnerLookups(
+      authCtx.organizationId,
+      [vuln.remediationOwner],
+    );
+
+    return this.mapToDto(vuln, userMap, deptMap);
   }
 
   async create(authCtx: ResourceAuthContext, dto: CreateVulnerabilityDto): Promise<VulnerabilityDto> {
@@ -153,6 +169,10 @@ export class VulnerabilitiesService {
         affectedAssets: {
           include: { asset: { select: { id: true, name: true } } },
         },
+        evidenceAssociations: {
+          include: { evidence: true },
+          orderBy: { attachedAt: 'desc' },
+        },
       },
     });
 
@@ -172,7 +192,12 @@ export class VulnerabilitiesService {
       },
     });
 
-    return this.mapToDto(vuln);
+    const { userMap, deptMap } = await this.resolveOwnerLookups(
+      authCtx.organizationId,
+      [vuln.remediationOwner],
+    );
+
+    return this.mapToDto(vuln, userMap, deptMap);
   }
 
   async update(authCtx: ResourceAuthContext, id: string, dto: UpdateVulnerabilityDto): Promise<VulnerabilityDto> {
@@ -241,6 +266,10 @@ export class VulnerabilitiesService {
         affectedAssets: {
           include: { asset: { select: { id: true, name: true } } },
         },
+        evidenceAssociations: {
+          include: { evidence: true },
+          orderBy: { attachedAt: 'desc' },
+        },
       },
     });
 
@@ -256,7 +285,12 @@ export class VulnerabilitiesService {
       },
     });
 
-    return this.mapToDto(updated);
+    const { userMap, deptMap } = await this.resolveOwnerLookups(
+      authCtx.organizationId,
+      [updated.remediationOwner],
+    );
+
+    return this.mapToDto(updated, userMap, deptMap);
   }
 
   async softDelete(authCtx: ResourceAuthContext, id: string): Promise<{ success: boolean }> {
@@ -288,7 +322,186 @@ export class VulnerabilitiesService {
     return { success: true };
   }
 
-  private mapToDto(vuln: any): VulnerabilityDto {
+  // --- EVIDENCE ATTACHMENT & SUPPORTING DOCUMENTS ---
+
+  async getEvidence(authCtx: ResourceAuthContext, vulnerabilityId: string) {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+    const vuln = await this.prisma.vulnerability.findFirst({
+      where: { id: vulnerabilityId, ...scopeWhere, deletedAt: null },
+      include: {
+        evidenceAssociations: {
+          include: { evidence: true },
+          orderBy: { attachedAt: 'desc' },
+        },
+      },
+    });
+
+    if (!vuln) {
+      throw new NotFoundException(`Vulnerability with ID "${vulnerabilityId}" not found`);
+    }
+
+    return vuln.evidenceAssociations.map((ea) => ({
+      id: ea.evidence.id,
+      title: ea.evidence.title,
+      fileName: ea.evidence.fileName,
+      fileSize: ea.evidence.fileSize,
+      mimeType: ea.evidence.mimeType,
+      status: ea.evidence.status,
+      scanStatus: ea.evidence.scanStatus,
+      attachedAt: ea.attachedAt.toISOString(),
+    }));
+  }
+
+  async attachEvidence(authCtx: ResourceAuthContext, vulnerabilityId: string, evidenceId: string): Promise<VulnerabilityDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+    const [vuln, evidence] = await Promise.all([
+      this.prisma.vulnerability.findFirst({
+        where: { id: vulnerabilityId, ...scopeWhere, deletedAt: null },
+      }),
+      this.prisma.evidence.findFirst({
+        where: { id: evidenceId, ...scopeWhere, deletedAt: null },
+      }),
+    ]);
+
+    if (!vuln) {
+      throw new NotFoundException(`Vulnerability with ID "${vulnerabilityId}" not found`);
+    }
+    if (!evidence) {
+      throw new NotFoundException(`Evidence with ID "${evidenceId}" not found or out of scope`);
+    }
+
+    await this.prisma.vulnerabilityEvidence.upsert({
+      where: {
+        vulnerabilityId_evidenceId: {
+          vulnerabilityId,
+          evidenceId,
+        },
+      },
+      create: {
+        organizationId: authCtx.organizationId,
+        vulnerabilityId,
+        evidenceId,
+      },
+      update: {},
+    });
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'VULNERABILITY_EVIDENCE_ATTACHED',
+      entityType: 'Vulnerability',
+      entityId: vulnerabilityId,
+      metadata: { evidenceId, evidenceTitle: evidence.title },
+    });
+
+    return this.findOne(authCtx, vulnerabilityId);
+  }
+
+  async detachEvidence(authCtx: ResourceAuthContext, vulnerabilityId: string, evidenceId: string): Promise<{ success: boolean }> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+    const vuln = await this.prisma.vulnerability.findFirst({
+      where: { id: vulnerabilityId, ...scopeWhere, deletedAt: null },
+    });
+
+    if (!vuln) {
+      throw new NotFoundException(`Vulnerability with ID "${vulnerabilityId}" not found`);
+    }
+
+    await this.prisma.vulnerabilityEvidence.deleteMany({
+      where: {
+        vulnerabilityId,
+        evidenceId,
+      },
+    });
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'VULNERABILITY_EVIDENCE_DETACHED',
+      entityType: 'Vulnerability',
+      entityId: vulnerabilityId,
+      metadata: { evidenceId },
+    });
+
+    return { success: true };
+  }
+
+  private async resolveOwnerLookups(
+    organizationId: string,
+    ownerCandidateIds: string[],
+  ): Promise<{ userMap: Map<string, any>; deptMap: Map<string, any> }> {
+    const filtered = Array.from(new Set(ownerCandidateIds.filter(Boolean)));
+    if (filtered.length === 0) {
+      return { userMap: new Map(), deptMap: new Map() };
+    }
+
+    const [users, depts] = await Promise.all([
+      this.prisma.user.findMany({
+        where: { organizationId, id: { in: filtered } },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+        },
+      }),
+      this.prisma.department.findMany({
+        where: { organizationId, id: { in: filtered } },
+        select: { id: true, name: true },
+      }),
+    ]);
+
+    const userMap = new Map<string, any>((users || []).map((u) => [u.id, u]));
+    const deptMap = new Map<string, any>((depts || []).map((d) => [d.id, d]));
+    return { userMap, deptMap };
+  }
+
+  private toIsoString(date: any): string {
+    if (!date) return new Date().toISOString();
+    if (date instanceof Date) return date.toISOString();
+    return new Date(date).toISOString();
+  }
+
+  private mapToDto(
+    vuln: any,
+    userMap?: Map<string, any>,
+    deptMap?: Map<string, any>,
+  ): VulnerabilityDto {
+    let ownerId: string | null = null;
+    let ownerName: string = vuln.remediationOwner || 'Unassigned';
+    let ownerEmail: string | undefined = undefined;
+    let ownerRole: string | undefined = undefined;
+    let teamName: string | null = null;
+
+    if (vuln.remediationOwner) {
+      const user = userMap?.get(vuln.remediationOwner);
+      const dept = deptMap?.get(vuln.remediationOwner);
+      if (user) {
+        ownerId = user.id;
+        ownerName = user.name || user.email;
+        ownerEmail = user.email;
+        ownerRole = user.role;
+        teamName = user.department?.name || null;
+      } else if (dept) {
+        ownerId = dept.id;
+        ownerName = dept.name;
+        teamName = dept.name;
+      }
+    }
+
+    const evidences = vuln.evidenceAssociations
+      ? vuln.evidenceAssociations.map((ea: any) => ({
+          id: ea.evidence.id,
+          title: ea.evidence.title,
+          fileName: ea.evidence.fileName,
+          fileSize: ea.evidence.fileSize,
+          mimeType: ea.evidence.mimeType,
+          status: ea.evidence.status,
+          scanStatus: ea.evidence.scanStatus,
+          attachedAt: this.toIsoString(ea.attachedAt),
+        }))
+      : [];
+
     return {
       id: vuln.id,
       organizationId: vuln.organizationId,
@@ -299,19 +512,27 @@ export class VulnerabilitiesService {
       description: vuln.description,
       severity: vuln.severity as VulnerabilitySeverity,
       status: vuln.status as VulnerabilityStatus,
-      discoveredAt: vuln.discoveredAt.toISOString(),
-      lastSeenAt: vuln.lastSeenAt.toISOString(),
+      discoveredAt: this.toIsoString(vuln.discoveredAt),
+      lastSeenAt: this.toIsoString(vuln.lastSeenAt),
       remediationOwner: vuln.remediationOwner,
-      dueDate: vuln.dueDate ? vuln.dueDate.toISOString() : null,
+      remediationOwnerId: ownerId,
+      remediationOwnerName: ownerName,
+      remediationOwnerEmail: ownerEmail,
+      remediationOwnerRole: ownerRole,
+      remediationTeamName: teamName,
+      dueDate: vuln.dueDate ? this.toIsoString(vuln.dueDate) : null,
       remediationNotes: vuln.remediationNotes,
       createdById: vuln.createdById,
-      createdAt: vuln.createdAt.toISOString(),
-      updatedAt: vuln.updatedAt.toISOString(),
-      affectedAssets: vuln.affectedAssets ? vuln.affectedAssets.map((va: any) => ({
-        id: va.id,
-        assetId: va.assetId,
-        assetName: va.asset?.name || '',
-      })) : [],
+      createdAt: this.toIsoString(vuln.createdAt),
+      updatedAt: this.toIsoString(vuln.updatedAt),
+      affectedAssets: vuln.affectedAssets
+        ? vuln.affectedAssets.map((va: any) => ({
+            id: va.id,
+            assetId: va.assetId,
+            assetName: va.asset?.name || '',
+          }))
+        : [],
+      evidences,
     } as any;
   }
 }
