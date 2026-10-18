@@ -67,6 +67,14 @@ export class FrameworksController {
     return this.frameworksService.getReferences(organizationId, versionId);
   }
 
+  @Get('references/:refId')
+  async getReference(
+    @CurrentUser('organizationId') organizationId: string,
+    @Param('refId') refId: string,
+  ) {
+    return this.frameworksService.getReference(organizationId, refId);
+  }
+
   @Get(':idOrCode/coverage')
   @RequireFrameworkEntitlement('idOrCode')
   async getCoverage(

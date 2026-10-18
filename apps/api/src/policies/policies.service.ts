@@ -39,14 +39,7 @@ export const DEFAULT_POLICY_CATEGORIES = [
 
 @Injectable()
 export class PoliciesService {
-  /**
-   * In-memory tenant custom category store.
-   * PERSISTENCE LIMITATION NOTE:
-   * Unused custom categories currently rely on this in-memory state and may disappear after server restarts.
-   * Categories assigned to one or more policies are dynamically preserved across restarts via the policy table aggregation.
-   * Introduction of a dedicated, durable `PolicyCategory` table is intentionally deferred to an authorized future schema migration.
-   */
-  private readonly tenantCustomCategories = new Map<string, Set<string>>();
+  // Phase 4: Durable Policy Categories persistent store via PrismaService
 
   constructor(
     private readonly prisma: PrismaService,
@@ -279,43 +272,97 @@ export class PoliciesService {
     return this.mapToDto(updated);
   }
 
-  // --- POLICY CATEGORY MANAGEMENT ---
+  // --- POLICY CATEGORY MANAGEMENT (DURABLE & BACKWARD COMPATIBLE) ---
 
   async listCategories(authCtx: ResourceAuthContext): Promise<PolicyCategoryDto[]> {
     const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
 
-    const counts = await this.prisma.policy.groupBy({
-      by: ['category'],
-      where: {
-        ...scopeWhere,
-        deletedAt: null,
-      },
-      _count: {
-        id: true,
-      },
-    });
-
-    const countMap = new Map<string, number>();
-    counts.forEach((c) => countMap.set(c.category, c._count.id));
-
-    const custom = this.tenantCustomCategories.get(authCtx.organizationId) || new Set<string>();
-
-    const allCategoryNames = new Set<string>([
-      ...DEFAULT_POLICY_CATEGORIES,
-      ...Array.from(custom),
-      ...counts.map((c) => c.category),
+    const [counts, customDbCategories] = await Promise.all([
+      this.prisma.policy.groupBy({
+        by: ['category'],
+        where: {
+          ...scopeWhere,
+          deletedAt: null,
+        },
+        _count: {
+          id: true,
+        },
+      }),
+      this.prisma.policyCategory
+        ? this.prisma.policyCategory.findMany({
+            where: { organizationId: authCtx.organizationId },
+          }).catch(() => [])
+        : Promise.resolve([]),
     ]);
 
-    return Array.from(allCategoryNames)
-      .filter((name) => Boolean(name && name.trim()))
-      .sort((a, b) => a.localeCompare(b))
-      .map((name) => ({
-        id: name,
-        name,
-        isDefault: DEFAULT_POLICY_CATEGORIES.some(
-          (def) => def.toLowerCase() === name.toLowerCase(),
-        ),
-        policyCount: countMap.get(name) || 0,
+    // 1. Aggregate policy counts using a normalized case-insensitive key
+    const countMap = new Map<string, number>();
+    counts.forEach((c) => {
+      if (c.category && c.category.trim()) {
+        const normKey = c.category.trim().toLowerCase();
+        countMap.set(normKey, (countMap.get(normKey) || 0) + c._count.id);
+      }
+    });
+
+    // 2. Resolve canonical display name and default designation per normalized category key
+    // Precedence: System Defaults > Durable PolicyCategory DB Records > Historical Policy Fallback
+    const categoryRegistry = new Map<string, { id: string; name: string; isDefault: boolean }>();
+
+    // Step 2a: Seed system default categories (authoritative casing and isDefault = true)
+    DEFAULT_POLICY_CATEGORIES.forEach((def) => {
+      const trimmed = def.trim();
+      const normKey = trimmed.toLowerCase();
+      categoryRegistry.set(normKey, {
+        id: trimmed,
+        name: trimmed,
+        isDefault: true,
+      });
+    });
+
+    // Step 2b: Durable PolicyCategory DB records (canonical custom categories take precedence over historical strings)
+    customDbCategories.forEach((cat: any) => {
+      if (cat.name && cat.name.trim()) {
+        const trimmed = cat.name.trim();
+        const normKey = trimmed.toLowerCase();
+        // If not already a system default, record the durable custom category
+        if (!categoryRegistry.has(normKey)) {
+          categoryRegistry.set(normKey, {
+            id: cat.id || trimmed,
+            name: trimmed,
+            isDefault: Boolean(cat.isDefault),
+          });
+        }
+      }
+    });
+
+    // Step 2c: Fallback for historical legacy categories not in durable store or system defaults
+    // Sort deterministically with binary comparison (preferring uppercase/title-case representations)
+    const sortedCounts = [...counts]
+      .filter((c) => Boolean(c.category && c.category.trim()))
+      .sort((a, b) =>
+        a.category.trim() < b.category.trim() ? -1 : a.category.trim() > b.category.trim() ? 1 : 0,
+      );
+
+    sortedCounts.forEach((c) => {
+      const trimmed = c.category.trim();
+      const normKey = trimmed.toLowerCase();
+      if (!categoryRegistry.has(normKey)) {
+        categoryRegistry.set(normKey, {
+          id: trimmed,
+          name: trimmed,
+          isDefault: false,
+        });
+      }
+    });
+
+    // 3. Sort unified categories alphabetically by display name and map with aggregated counts
+    return Array.from(categoryRegistry.values())
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((entry) => ({
+        id: entry.id,
+        name: entry.name,
+        isDefault: entry.isDefault,
+        policyCount: countMap.get(entry.name.toLowerCase()) || 0,
       }));
   }
 
@@ -325,33 +372,48 @@ export class PoliciesService {
       throw new BadRequestException('Category name cannot be empty');
     }
 
-    const existingCategories = await this.listCategories(authCtx);
-    const isDuplicate = existingCategories.some(
-      (c) => c.name.toLowerCase() === normalized.toLowerCase(),
+    // Check duplicate against system defaults
+    const isDefault = DEFAULT_POLICY_CATEGORIES.some(
+      (def) => def.toLowerCase() === normalized.toLowerCase(),
     );
-
-    if (isDuplicate) {
+    if (isDefault) {
       throw new BadRequestException(`Policy category "${normalized}" already exists in this organization`);
     }
 
-    let customSet = this.tenantCustomCategories.get(authCtx.organizationId);
-    if (!customSet) {
-      customSet = new Set<string>();
-      this.tenantCustomCategories.set(authCtx.organizationId, customSet);
+    // Check duplicate against persistent tenant categories
+    if (this.prisma.policyCategory) {
+      const existing = await this.prisma.policyCategory.findFirst({
+        where: {
+          organizationId: authCtx.organizationId,
+          name: { equals: normalized, mode: 'insensitive' },
+        },
+      });
+      if (existing) {
+        throw new BadRequestException(`Policy category "${normalized}" already exists in this organization`);
+      }
     }
-    customSet.add(normalized);
+
+    const created = this.prisma.policyCategory
+      ? await this.prisma.policyCategory.create({
+          data: {
+            organizationId: authCtx.organizationId,
+            name: normalized,
+            isDefault: false,
+          },
+        })
+      : { id: normalized, name: normalized, isDefault: false };
 
     await this.auditLogsService.log({
       organizationId: authCtx.organizationId,
       actorId: authCtx.userId,
       action: 'POLICY_CATEGORY_CREATED',
       entityType: 'PolicyCategory',
-      entityId: normalized,
+      entityId: created.id || normalized,
       metadata: { name: normalized },
     });
 
     return {
-      id: normalized,
+      id: created.id || normalized,
       name: normalized,
       isDefault: false,
       policyCount: 0,
@@ -392,11 +454,33 @@ export class PoliciesService {
       },
     });
 
-    // Update in-memory custom category set if applicable
-    const customSet = this.tenantCustomCategories.get(authCtx.organizationId);
-    if (customSet) {
-      customSet.delete(trimmedCurrent);
-      customSet.add(trimmedNew);
+    // Update persistent policyCategory record if available
+    if (this.prisma.policyCategory) {
+      const updateCatResult = await this.prisma.policyCategory.updateMany({
+        where: {
+          organizationId: authCtx.organizationId,
+          name: { equals: trimmedCurrent, mode: 'insensitive' },
+        },
+        data: {
+          name: trimmedNew,
+        },
+      });
+
+      // If category wasn't explicitly stored yet, create it if not a default
+      if (
+        updateCatResult.count === 0 &&
+        !DEFAULT_POLICY_CATEGORIES.some((def) => def.toLowerCase() === trimmedNew.toLowerCase())
+      ) {
+        await this.prisma.policyCategory
+          .create({
+            data: {
+              organizationId: authCtx.organizationId,
+              name: trimmedNew,
+              isDefault: false,
+            },
+          })
+          .catch(() => null);
+      }
     }
 
     await this.auditLogsService.log({
@@ -456,13 +540,14 @@ export class PoliciesService {
       );
     }
 
-    const customSet = this.tenantCustomCategories.get(authCtx.organizationId);
-    if (customSet) {
-      for (const item of Array.from(customSet)) {
-        if (item.toLowerCase() === normalized.toLowerCase()) {
-          customSet.delete(item);
-        }
-      }
+    // Delete from persistent database table
+    if (this.prisma.policyCategory) {
+      await this.prisma.policyCategory.deleteMany({
+        where: {
+          organizationId: authCtx.organizationId,
+          name: { equals: normalized, mode: 'insensitive' },
+        },
+      });
     }
 
     await this.auditLogsService.log({

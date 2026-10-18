@@ -5,6 +5,7 @@ import { ComplianceScopeFilter } from '../src/components/ui/compliance-scope-fil
 import { PolicyEditor } from '../src/components/policies/policy-editor';
 import { PolicyCategoriesSettingsCard } from '../src/components/settings/policy-categories-settings-card';
 import { VulnerabilityListView } from '../src/components/vulnerabilities/vulnerability-list-view';
+import { RiskDrawer } from '../src/components/risks/risk-drawer';
 import { useAuth } from '../src/context/auth-context';
 import { useToast } from '../src/context/toast-context';
 import { apiRequest } from '../src/lib/api-client';
@@ -150,6 +151,133 @@ describe('Phase 3 Workflows: Risk Clause Dropdown, Policy Governance & Vulnerabi
       await waitFor(() => {
         expect(screen.getByText(/Network error loading references|Failed to load references/i)).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /Retry/i })).toBeInTheDocument();
+      });
+    });
+
+    it('correctly resolves and preselects authoritative framework version for older-version reference', async () => {
+      const mockMultipleVersions = [
+        { id: 'ver-iso-2022', version: '2022', referencesCount: 93 },
+        { id: 'ver-iso-2013', version: '2013', referencesCount: 114 },
+      ];
+
+      const mock2013References = [
+        { id: 'ref-a51-2013', identifier: 'A.5.1-2013', title: 'Management direction for info security' },
+      ];
+
+      mockedApiRequest.mockImplementation((endpoint: string) => {
+        if (endpoint === '/frameworks') return Promise.resolve(mockFrameworks);
+        if (endpoint === '/frameworks/fw-iso27001/versions') return Promise.resolve(mockMultipleVersions);
+        if (endpoint === '/frameworks/references/ref-a51-2013') {
+          return Promise.resolve({ id: 'ref-a51-2013', frameworkVersionId: 'ver-iso-2013', frameworkId: 'fw-iso27001' });
+        }
+        if (endpoint === '/frameworks/versions/ver-iso-2013/references') return Promise.resolve(mock2013References);
+        return Promise.resolve([]);
+      });
+
+      const onVersionChange = jest.fn();
+      const onReferenceChange = jest.fn();
+
+      render(
+        <ComplianceScopeFilter
+          selectedFrameworkId="fw-iso27001"
+          onFrameworkChange={jest.fn()}
+          selectedReferenceId="ref-a51-2013"
+          onReferenceChange={onReferenceChange}
+          onVersionChange={onVersionChange}
+          showReferenceFilter={true}
+          showVersionFilter={true}
+          layout="form"
+        />,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText(/A\.5\.1-2013 — Management direction for info security/i)).toBeInTheDocument();
+      });
+
+      expect(onVersionChange).toHaveBeenCalledWith('ver-iso-2013', expect.objectContaining({ id: 'ver-iso-2013' }));
+    });
+
+    it('RiskDrawer preselects authoritative framework version when editing a risk and submits consistent payload', async () => {
+      const existingRisk: any = {
+        id: 'risk-edit-test',
+        title: 'Legacy Access Control Risk',
+        description: 'Existing legacy description',
+        likelihood: 3,
+        impact: 4,
+        score: 12,
+        status: 'OPEN',
+        owner: 'SecOps Lead',
+        frameworkId: 'fw-iso27001',
+        frameworkVersionId: 'ver-iso-2013',
+        frameworkReferenceId: 'ref-a51-2013',
+      };
+
+      const mockMultipleVersions = [
+        { id: 'ver-iso-2022', version: '2022', referencesCount: 93 },
+        { id: 'ver-iso-2013', version: '2013', referencesCount: 114 },
+      ];
+
+      const mock2013References = [
+        { id: 'ref-a51-2013', identifier: 'A.5.1', title: 'Policies for information security' },
+      ];
+
+      const mock2022References = [
+        { id: 'ref-a51-2022', identifier: 'A.5.1-2022', title: 'Policies for information security 2022' },
+      ];
+
+      mockedApiRequest.mockImplementation((endpoint: string, options?: any) => {
+        if (endpoint === '/frameworks') return Promise.resolve(mockFrameworks);
+        if (endpoint === '/frameworks/fw-iso27001/versions') return Promise.resolve(mockMultipleVersions);
+        if (endpoint === '/frameworks/versions/ver-iso-2013/references') return Promise.resolve(mock2013References);
+        if (endpoint === '/frameworks/versions/ver-iso-2022/references') return Promise.resolve(mock2022References);
+        if (endpoint === '/assets?limit=100') return Promise.resolve({ items: [] });
+        if (endpoint.includes('/audit-log')) return Promise.resolve([]);
+        if (endpoint.includes('/controls')) return Promise.resolve({ items: [] });
+        if (endpoint.startsWith('/risks/') && options?.method === 'PATCH') {
+          return Promise.resolve({ success: true });
+        }
+        return Promise.resolve([]);
+      });
+
+      render(
+        <RiskDrawer
+          risk={existingRisk}
+          isOpen={true}
+          onClose={jest.fn()}
+          onSuccess={jest.fn()}
+        />,
+      );
+
+      // Verify authoritative version 2013 is preselected and reference is displayed
+      await waitFor(() => {
+        expect(screen.getByText(/A\.5\.1 — Policies for information security/i)).toBeInTheDocument();
+      });
+
+      // Change version to 2022
+      const versionSelect = screen.getByLabelText(/^Framework Version$/i);
+      fireEvent.change(versionSelect, { target: { value: 'ver-iso-2022' } });
+
+      // Verify references for 2022 are loaded
+      await waitFor(() => {
+        expect(screen.getByText(/A\.5\.1-2022 — Policies for information security 2022/i)).toBeInTheDocument();
+      });
+
+      // Select new reference
+      const clauseSelect = screen.getByLabelText(/Framework Reference or Clause/i);
+      fireEvent.change(clauseSelect, { target: { value: 'ref-a51-2022' } });
+
+      // Save form
+      const saveBtn = screen.getByRole('button', { name: /Save Changes/i });
+      fireEvent.click(saveBtn);
+
+      await waitFor(() => {
+        expect(mockedApiRequest).toHaveBeenCalledWith(
+          '/risks/risk-edit-test',
+          expect.objectContaining({
+            method: 'PATCH',
+            body: expect.stringContaining('"frameworkReferenceId":"ref-a51-2022"'),
+          }),
+        );
       });
     });
   });

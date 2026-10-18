@@ -96,7 +96,7 @@ export class RisksService {
         include: {
           asset: { select: { name: true } },
           framework: { select: { code: true, name: true } },
-          frameworkReference: { select: { identifier: true, title: true } },
+          frameworkReference: { select: { identifier: true, title: true, frameworkVersionId: true } },
         },
       }),
       this.prisma.risk.count({ where }),
@@ -166,7 +166,7 @@ export class RisksService {
       include: {
         asset: { select: { name: true } },
         framework: { select: { code: true, name: true } },
-        frameworkReference: { select: { identifier: true, title: true } },
+        frameworkReference: { select: { identifier: true, title: true, frameworkVersionId: true } },
       },
     });
 
@@ -288,7 +288,7 @@ export class RisksService {
       include: {
         asset: { select: { name: true } },
         framework: { select: { code: true, name: true } },
-        frameworkReference: { select: { identifier: true, title: true } },
+        frameworkReference: { select: { identifier: true, title: true, frameworkVersionId: true } },
       },
     });
 
@@ -376,7 +376,7 @@ export class RisksService {
       include: {
         asset: { select: { name: true } },
         framework: { select: { code: true, name: true } },
-        frameworkReference: { select: { identifier: true, title: true } },
+        frameworkReference: { select: { identifier: true, title: true, frameworkVersionId: true } },
       },
     });
 
@@ -447,6 +447,7 @@ export class RisksService {
       assetName: risk.asset?.name || null,
       frameworkId: risk.frameworkId || null,
       frameworkCode: risk.framework?.code || null,
+      frameworkVersionId: risk.frameworkReference?.frameworkVersionId || null,
       frameworkReferenceId: risk.frameworkReferenceId || null,
       referenceIdentifier: risk.frameworkReference?.identifier || null,
       referenceTitle: risk.frameworkReference?.title || null,

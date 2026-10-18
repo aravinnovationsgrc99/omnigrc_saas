@@ -7,6 +7,7 @@ import { ResendMailerService } from '../mailer/resend-mailer.service';
 import { NotificationType, Role, RiskStatus } from '@omnigrc/shared';
 import { LicenseVerificationService } from '../../license-verification/license-verification.service';
 import { EffectiveServiceStateResolver } from '../../service-control/effective-service-state-resolver.service';
+import { TenantContext } from '../../tenant/tenant.context';
 
 @Injectable()
 export class RiskEscalationCron {
@@ -22,11 +23,12 @@ export class RiskEscalationCron {
 
   @Cron('0 1 * * *', { timeZone: 'UTC' })
   async handleRiskEscalations() {
-    const licenseState = await this.licenseVerificationService.getEvaluatedState();
-    if (licenseState.state !== 'VALID') {
-      this.logger.debug(`Skipping daily High-Risk SLA Escalation cron job: license state is ${licenseState.state}.`);
-      return;
-    }
+    return TenantContext.runSystemContext(async () => {
+      const licenseState = await this.licenseVerificationService.getEvaluatedState();
+      if (licenseState.state !== 'VALID') {
+        this.logger.debug(`Skipping daily High-Risk SLA Escalation cron job: license state is ${licenseState.state}.`);
+        return;
+      }
 
     this.logger.log('Running daily High-Risk SLA Escalation cron job (UTC canonical timezone)...');
 
@@ -153,5 +155,6 @@ export class RiskEscalationCron {
     }
 
     this.logger.log('Completed daily High-Risk SLA Escalation cron execution.');
+    });
   }
 }

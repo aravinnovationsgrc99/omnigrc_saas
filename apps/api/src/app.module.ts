@@ -17,6 +17,7 @@ import { HealthModule } from './health/health.module';
 import { LicenseVerificationModule } from './license-verification/license-verification.module';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
 import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
+import { TenantTransactionInterceptor } from './tenant/tenant-transaction.interceptor';
 import { LicenseWriteGuard } from './common/guards/license-write.guard';
 import { RiskControlsModule } from './risk-controls/risk-controls.module';
 
@@ -102,6 +103,10 @@ import { ServiceCapabilityGuard } from './common/guards/service-capability.guard
     {
       provide: APP_INTERCEPTOR,
       useClass: SentryInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: TenantTransactionInterceptor,
     },
     // Phase 10 Security: Apply global rate limiting guard before other guards.
     {

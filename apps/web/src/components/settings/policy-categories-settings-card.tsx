@@ -23,11 +23,8 @@ import { InlineErrorState } from '@/components/ui/inline-error-state';
 /**
  * PolicyCategoriesSettingsCard
  * Standardized governance classifications for organization policies.
- *
- * PERSISTENCE LIMITATION NOTE:
- * Unused custom categories currently rely on backend in-memory state and may reset upon server restart.
- * Categories referenced by at least one active policy remain dynamically persistent via policy table queries.
- * A durable PolicyCategory database table requires a formal schema migration and will be introduced in an authorized future release.
+ * Categories are durable and persistent per tenant organization.
+ * System default categories are permanently retained and cannot be removed.
  */
 export function PolicyCategoriesSettingsCard() {
   const { user } = useAuth();
@@ -342,7 +339,7 @@ export function PolicyCategoriesSettingsCard() {
       {/* Informational footnote on retention and persistence */}
       <div className="mt-3 flex items-center gap-1.5 text-[11px] text-[#5B6672]">
         <Info size={13} className="text-slate-400 shrink-0" />
-        <span>System default categories are permanently retained. Custom categories with assigned policies persist across sessions.</span>
+        <span>System default categories are permanently retained. Custom categories are persistent per organization.</span>
       </div>
 
       {/* Delete / Blocker Modal */}

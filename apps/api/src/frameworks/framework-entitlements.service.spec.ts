@@ -98,5 +98,34 @@ describe('FrameworkEntitlementsService', () => {
       prisma.framework.findFirst.mockResolvedValue(null);
       await expect(service.assertEntitled('org-1', 'UNKNOWN_FW')).rejects.toThrow(NotFoundException);
     });
+
+    it('should enforce version-specific entitlement when organization is entitled to one version but not another', async () => {
+      prisma.framework.findFirst.mockResolvedValue({ id: 'fw-iso27001', code: 'ISO27001', name: 'ISO 27001' });
+      prisma.organizationFrameworkEntitlement.findMany.mockImplementation(async (args) => {
+        if (args?.where?.frameworkId === 'fw-iso27001') {
+          return [
+            {
+              frameworkId: 'fw-iso27001',
+              versionId: 'ver-iso-2022',
+              status: EntitlementStatus.ACTIVE,
+              expiresAt: null,
+            },
+            {
+              frameworkId: 'fw-iso27001',
+              versionId: 'ver-iso-2013',
+              status: EntitlementStatus.REVOKED,
+              expiresAt: null,
+            },
+          ];
+        }
+        return [];
+      });
+
+      // Allowed for entitled version 2022
+      await expect(service.assertEntitled('org-1', 'ISO27001', 'ver-iso-2022')).resolves.not.toThrow();
+
+      // Denied for unentitled/revoked version 2013
+      await expect(service.assertEntitled('org-1', 'ISO27001', 'ver-iso-2013')).rejects.toThrow(ForbiddenException);
+    });
   });
 });

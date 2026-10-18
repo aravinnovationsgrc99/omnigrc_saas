@@ -320,6 +320,7 @@ export interface RiskDto {
   assetName?: string | null;
   frameworkId?: string | null;
   frameworkCode?: string | null;
+  frameworkVersionId?: string | null;
   frameworkReferenceId?: string | null;
   referenceIdentifier?: string | null;
   referenceTitle?: string | null;

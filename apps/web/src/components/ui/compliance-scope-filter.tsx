@@ -137,11 +137,30 @@ export function ComplianceScopeFilter({
         setVersions(versionList);
 
         if (versionList.length > 0) {
-          // If activeVersionId is provided and valid, keep it; otherwise pick version with references > 0, else first
-          const currentValid = versionList.find((v) => v.id === activeVersionId);
-          const bestVersion = currentValid || versionList.find((v) => (v.referencesCount ?? 0) > 0) || versionList[0];
+          let targetVersion: VersionOption | undefined;
+
+          // 1. If activeVersionId is provided and matches a version in the list, use it
+          if (activeVersionId) {
+            targetVersion = versionList.find((v) => v.id === activeVersionId);
+          }
+
+          // 2. If activeVersionId is not valid or empty, but activeReferenceId is present,
+          // resolve the reference's authoritative version
+          if (!targetVersion && activeReferenceId) {
+            try {
+              const refData = await apiRequest<{ frameworkVersionId?: string }>(`/frameworks/references/${activeReferenceId}`);
+              if (refData?.frameworkVersionId) {
+                targetVersion = versionList.find((v) => v.id === refData.frameworkVersionId);
+              }
+            } catch {
+              // Ignore lookup failure and fall back
+            }
+          }
+
+          // 3. Fallback to version with references > 0, else first version
+          const bestVersion = targetVersion || versionList.find((v) => (v.referencesCount ?? 0) > 0) || versionList[0];
           setResolvedVersionId(bestVersion.id);
-          if (onVersionChange && (!activeVersionId || !currentValid)) {
+          if (onVersionChange && (!activeVersionId || activeVersionId !== bestVersion.id)) {
             onVersionChange(bestVersion.id, bestVersion);
           }
         } else {
@@ -167,7 +186,7 @@ export function ComplianceScopeFilter({
     return () => {
       isMounted = false;
     };
-  }, [activeFrameworkId]);
+  }, [activeFrameworkId, activeReferenceId]);
 
   // Fetch references when resolvedVersionId changes
   const loadReferencesForVersion = useCallback(async (vId: string) => {

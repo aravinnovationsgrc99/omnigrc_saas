@@ -239,25 +239,126 @@ describe('RisksService', () => {
     ).rejects.toThrow(NotFoundException);
   });
 
-  it('should reject risk creation when framework reference belongs to a different framework', async () => {
+  it('should resolve and map frameworkVersionId from authoritative frameworkReference', async () => {
+    const mockRiskWithRef = {
+      id: 'risk-fw-ver',
+      organizationId: 'org-1',
+      title: 'Cloud Access Risk',
+      likelihood: 3,
+      impact: 4,
+      score: 12,
+      scoreBand: 'MEDIUM',
+      status: RiskStatus.OPEN,
+      owner: 'SecOps',
+      frameworkId: 'fw-iso',
+      frameworkReferenceId: 'ref-a51',
+      framework: { code: 'ISO27001', name: 'ISO/IEC 27001' },
+      frameworkReference: {
+        identifier: 'A.5.1',
+        title: 'Policies for information security',
+        frameworkVersionId: 'ver-iso-2022',
+      },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      createdById: 'user-1',
+    };
+
+    prisma.risk.findFirst.mockResolvedValue(mockRiskWithRef);
+
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    const result = await service.findOne(authCtx, 'risk-fw-ver');
+
+    expect(result.frameworkId).toBe('fw-iso');
+    expect(result.frameworkReferenceId).toBe('ref-a51');
+    expect(result.frameworkVersionId).toBe('ver-iso-2022');
+    expect(result.referenceIdentifier).toBe('A.5.1');
+  });
+
+  it('should allow updating risk with a compatible framework reference from another version', async () => {
+    const existingRisk = {
+      id: 'risk-edit-ver',
+      organizationId: 'org-1',
+      title: 'Legacy Risk',
+      likelihood: 2,
+      impact: 3,
+      score: 6,
+      status: RiskStatus.OPEN,
+      owner: 'SecOps',
+      frameworkId: 'fw-iso',
+      frameworkReferenceId: 'ref-old',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      createdById: 'user-1',
+    };
+
+    prisma.risk.findFirst.mockResolvedValue(existingRisk);
     prisma.frameworkReference.findUnique.mockResolvedValue({
-      id: 'ref-iso',
+      id: 'ref-new-2022',
+      identifier: 'A.5.1',
       frameworkVersion: {
-        frameworkId: 'fw-iso27001',
+        id: 'ver-2022',
+        frameworkId: 'fw-iso',
+      },
+    });
+    prisma.risk.update.mockResolvedValue({
+      ...existingRisk,
+      frameworkReferenceId: 'ref-new-2022',
+      frameworkReference: {
+        identifier: 'A.5.1',
+        title: 'Policies for information security',
+        frameworkVersionId: 'ver-2022',
+      },
+    });
+
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+    const updated = await service.update(authCtx, 'risk-edit-ver', {
+      frameworkId: 'fw-iso',
+      frameworkReferenceId: 'ref-new-2022',
+    });
+
+    expect(updated.frameworkReferenceId).toBe('ref-new-2022');
+    expect(updated.frameworkVersionId).toBe('ver-2022');
+    expect(prisma.risk.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'risk-edit-ver' },
+        data: expect.objectContaining({
+          frameworkId: 'fw-iso',
+          frameworkReferenceId: 'ref-new-2022',
+        }),
+      }),
+    );
+  });
+
+  it('should reject risk update when new framework reference belongs to a different framework', async () => {
+    const existingRisk = {
+      id: 'risk-mismatch',
+      organizationId: 'org-1',
+      title: 'Risk to Update',
+      likelihood: 2,
+      impact: 3,
+      score: 6,
+      status: RiskStatus.OPEN,
+      owner: 'SecOps',
+      frameworkId: 'fw-iso',
+      frameworkReferenceId: 'ref-iso',
+    };
+
+    prisma.risk.findFirst.mockResolvedValue(existingRisk);
+    prisma.frameworkReference.findUnique.mockResolvedValue({
+      id: 'ref-gdpr-art5',
+      identifier: 'Art.5',
+      frameworkVersion: {
+        frameworkId: 'fw-gdpr',
       },
     });
 
     const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
     await expect(
-      service.create(authCtx, {
-        title: 'Mismatched Risk',
-        owner: 'SecOps',
-        likelihood: 3,
-        impact: 3,
-        frameworkId: 'fw-gdpr',
-        frameworkReferenceId: 'ref-iso',
+      service.update(authCtx, 'risk-mismatch', {
+        frameworkId: 'fw-iso',
+        frameworkReferenceId: 'ref-gdpr-art5',
       }),
-    ).rejects.toThrow(BadRequestException);
+    ).rejects.toThrow('Framework reference "Art.5" does not belong to the selected framework.');
   });
 });
 

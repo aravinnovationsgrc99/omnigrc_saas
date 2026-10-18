@@ -14,6 +14,7 @@ import { ResendMailerService } from '../notifications/mailer/resend-mailer.servi
 import { LicenseVerificationService } from '../license-verification/license-verification.service';
 import { EffectiveServiceStateResolver } from '../service-control/effective-service-state-resolver.service';
 import { renderInvitationEmailHtml, PriorityLevel } from '../notifications/templates/email-templates';
+import { TenantContext } from '../tenant/tenant.context';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import {
@@ -62,10 +63,11 @@ export class AuthService {
   }
 
   async login(dto: LoginDto): Promise<AuthResponseDto> {
-    const user = await this.prisma.user.findUnique({
-      where: { email: dto.email.toLowerCase().trim() },
-      include: { organization: true },
-    });
+    return TenantContext.runSystemContext(async () => {
+      const user = await this.prisma.user.findUnique({
+        where: { email: dto.email.toLowerCase().trim() },
+        include: { organization: true },
+      });
 
     if (!user) {
       throw new UnauthorizedException('Invalid email or password');
@@ -182,26 +184,29 @@ export class AuthService {
       tokens,
       capabilities,
     };
+    });
   }
 
   async refreshToken(refreshTokenStr: string): Promise<{ accessToken: string; refreshToken: string }> {
-    try {
-      const payload = this.jwtService.verify(refreshTokenStr, {
-        secret: process.env.JWT_REFRESH_SECRET || 'omnigrc-dev-refresh-secret-key',
-      });
+    return TenantContext.runSystemContext(async () => {
+      try {
+        const payload = this.jwtService.verify(refreshTokenStr, {
+          secret: process.env.JWT_REFRESH_SECRET || 'omnigrc-dev-refresh-secret-key',
+        });
 
-      const user = await this.prisma.user.findUnique({
-        where: { id: payload.sub },
-      });
+        const user = await this.prisma.user.findUnique({
+          where: { id: payload.sub },
+        });
 
-      if (!user) {
-        throw new UnauthorizedException('User not found');
+        if (!user) {
+          throw new UnauthorizedException('User not found');
+        }
+
+        return this.generateTokens(user.id, user.email, user.organizationId, user.role);
+      } catch {
+        throw new UnauthorizedException('Invalid or expired refresh token');
       }
-
-      return this.generateTokens(user.id, user.email, user.organizationId, user.role);
-    } catch {
-      throw new UnauthorizedException('Invalid or expired refresh token');
-    }
+    });
   }
 
   async getMe(userId: string): Promise<AuthResponseDto> {
@@ -488,173 +493,177 @@ export class AuthService {
   }
 
   async validateInvitation(rawToken: string): Promise<ValidateInvitationResponseDto> {
-    if (!rawToken || rawToken.trim() === '') {
-      return { valid: false, reason: 'Invitation token is missing' };
-    }
-
-    const tokenHash = crypto.createHash('sha256').update(rawToken.trim()).digest('hex');
-
-    const invitation = await this.prisma.invitation.findUnique({
-      where: { tokenHash },
-      include: { organization: true },
-    });
-
-    if (!invitation) {
-      return { valid: false, reason: 'Invalid or non-existent invitation token' };
-    }
-
-    if (invitation.status !== InvitationStatus.PENDING) {
-      return { valid: false, reason: `Invitation token has been ${invitation.status.toLowerCase()}` };
-    }
-
-    if (invitation.expiresAt <= new Date()) {
-      await this.prisma.invitation.update({
-        where: { id: invitation.id },
-        data: { status: InvitationStatus.EXPIRED },
-      });
-      return { valid: false, reason: 'Invitation token has expired' };
-    }
-
-    return {
-      valid: true,
-      organizationName: invitation.organization.name,
-      email: invitation.email,
-      role: invitation.role as Role,
-      expiresAt: invitation.expiresAt.toISOString(),
-    };
-  }
-
-  async acceptInvitation(dto: AcceptInvitationDto): Promise<AuthResponseDto> {
-    if (!dto.token || dto.token.trim() === '') {
-      throw new BadRequestException('Invitation token is required');
-    }
-
-    const tokenHash = crypto.createHash('sha256').update(dto.token.trim()).digest('hex');
-    const now = new Date();
-
-    // 100% Atomic Transaction: User creation/lookup & invitation acceptance run in a single DB transaction
-    const result = await this.prisma.$transaction(async (tx) => {
-      // 1. Atomic status transition PENDING -> ACCEPTED to prevent concurrent double acceptance
-      const updateResult = await tx.invitation.updateMany({
-        where: {
-          tokenHash,
-          status: InvitationStatus.PENDING,
-          expiresAt: { gt: now },
-        },
-        data: {
-          status: InvitationStatus.ACCEPTED,
-          acceptedAt: now,
-        },
-      });
-
-      if (updateResult.count === 0) {
-        const existing = await tx.invitation.findUnique({ where: { tokenHash } });
-        if (!existing) {
-          throw new BadRequestException('Invalid invitation token');
-        }
-        if (existing.status !== InvitationStatus.PENDING) {
-          throw new BadRequestException(`Invitation is no longer valid (status: ${existing.status})`);
-        }
-        if (existing.expiresAt <= now) {
-          await tx.invitation.update({
-            where: { id: existing.id },
-            data: { status: InvitationStatus.EXPIRED },
-          });
-          throw new BadRequestException('Invitation token has expired');
-        }
-        throw new BadRequestException('Invitation is no longer valid or has already been accepted');
+    return TenantContext.runSystemContext(async () => {
+      if (!rawToken || rawToken.trim() === '') {
+        return { valid: false, reason: 'Invitation token is missing' };
       }
 
-      const invitation = await tx.invitation.findUnique({
+      const tokenHash = crypto.createHash('sha256').update(rawToken.trim()).digest('hex');
+
+      const invitation = await this.prisma.invitation.findUnique({
         where: { tokenHash },
         include: { organization: true },
       });
 
       if (!invitation) {
-        throw new BadRequestException('Invitation not found');
+        return { valid: false, reason: 'Invalid or non-existent invitation token' };
       }
 
-      // Derive recipient properties EXCLUSIVELY from trusted DB Invitation record
-      const email = invitation.email;
-      const organizationId = invitation.organizationId;
-      const role = invitation.role;
+      if (invitation.status !== InvitationStatus.PENDING) {
+        return { valid: false, reason: `Invitation token has been ${invitation.status.toLowerCase()}` };
+      }
 
-      const existingUser = await tx.user.findUnique({
-        where: { email },
-        include: { organization: true },
-      });
+      if (invitation.expiresAt <= new Date()) {
+        await this.prisma.invitation.update({
+          where: { id: invitation.id },
+          data: { status: InvitationStatus.EXPIRED },
+        });
+        return { valid: false, reason: 'Invitation token has expired' };
+      }
 
-      let userToAuth: any;
+      return {
+        valid: true,
+        organizationName: invitation.organization.name,
+        email: invitation.email,
+        role: invitation.role as Role,
+        expiresAt: invitation.expiresAt.toISOString(),
+      };
+    });
+  }
 
-      if (existingUser) {
-        if (existingUser.organizationId !== organizationId) {
-          throw new ConflictException(
-            'Your user account belongs to another organization and cannot join this organization',
-          );
-        }
-        // Preserve existing user's role: do NOT overwrite existingUser.role silently!
-        userToAuth = existingUser;
-      } else {
-        if (!dto.password || dto.password.trim().length < 6) {
-          throw new BadRequestException('Password must be at least 6 characters long');
-        }
+  async acceptInvitation(dto: AcceptInvitationDto): Promise<AuthResponseDto> {
+    return TenantContext.runSystemContext(async () => {
+      if (!dto.token || dto.token.trim() === '') {
+        throw new BadRequestException('Invitation token is required');
+      }
 
-        const passwordHash = await bcrypt.hash(dto.password, 10);
-        const userName = dto.name || email.split('@')[0];
+      const tokenHash = crypto.createHash('sha256').update(dto.token.trim()).digest('hex');
+      const now = new Date();
 
-        userToAuth = await tx.user.create({
-          data: {
-            organizationId,
-            name: userName,
-            email,
-            passwordHash,
-            role: role as Role,
-            passwordSetupRequired: false,
+      // 100% Atomic Transaction: User creation/lookup & invitation acceptance run in a single DB transaction
+      const result = await this.prisma.$transaction(async (tx) => {
+        // 1. Atomic status transition PENDING -> ACCEPTED to prevent concurrent double acceptance
+        const updateResult = await tx.invitation.updateMany({
+          where: {
+            tokenHash,
+            status: InvitationStatus.PENDING,
+            expiresAt: { gt: now },
           },
+          data: {
+            status: InvitationStatus.ACCEPTED,
+            acceptedAt: now,
+          },
+        });
+
+        if (updateResult.count === 0) {
+          const existing = await tx.invitation.findUnique({ where: { tokenHash } });
+          if (!existing) {
+            throw new BadRequestException('Invalid invitation token');
+          }
+          if (existing.status !== InvitationStatus.PENDING) {
+            throw new BadRequestException(`Invitation is no longer valid (status: ${existing.status})`);
+          }
+          if (existing.expiresAt <= now) {
+            await tx.invitation.update({
+              where: { id: existing.id },
+              data: { status: InvitationStatus.EXPIRED },
+            });
+            throw new BadRequestException('Invitation token has expired');
+          }
+          throw new BadRequestException('Invitation is no longer valid or has already been accepted');
+        }
+
+        const invitation = await tx.invitation.findUnique({
+          where: { tokenHash },
           include: { organization: true },
         });
-      }
 
-      return { userToAuth, invitation };
+        if (!invitation) {
+          throw new BadRequestException('Invitation not found');
+        }
+
+        // Derive recipient properties EXCLUSIVELY from trusted DB Invitation record
+        const email = invitation.email;
+        const organizationId = invitation.organizationId;
+        const role = invitation.role;
+
+        const existingUser = await tx.user.findUnique({
+          where: { email },
+          include: { organization: true },
+        });
+
+        let userToAuth: any;
+
+        if (existingUser) {
+          if (existingUser.organizationId !== organizationId) {
+            throw new ConflictException(
+              'Your user account belongs to another organization and cannot join this organization',
+            );
+          }
+          // Preserve existing user's role: do NOT overwrite existingUser.role silently!
+          userToAuth = existingUser;
+        } else {
+          if (!dto.password || dto.password.trim().length < 6) {
+            throw new BadRequestException('Password must be at least 6 characters long');
+          }
+
+          const passwordHash = await bcrypt.hash(dto.password, 10);
+          const userName = dto.name || email.split('@')[0];
+
+          userToAuth = await tx.user.create({
+            data: {
+              organizationId,
+              name: userName,
+              email,
+              passwordHash,
+              role: role as Role,
+              passwordSetupRequired: false,
+            },
+            include: { organization: true },
+          });
+        }
+
+        return { userToAuth, invitation };
+      });
+
+      const { userToAuth, invitation } = result;
+
+      await this.auditLogsService.log({
+        organizationId: invitation.organizationId,
+        actorId: userToAuth.id,
+        action: 'INVITATION_ACCEPTED',
+        entityType: 'Invitation',
+        entityId: invitation.id,
+        metadata: {
+          userEmail: invitation.email,
+          role: invitation.role,
+        },
+      });
+
+      const tokens = this.generateTokens(userToAuth.id, userToAuth.email, userToAuth.organizationId, userToAuth.role);
+
+      return {
+        user: {
+          id: userToAuth.id,
+          organizationId: userToAuth.organizationId,
+          name: userToAuth.name,
+          email: userToAuth.email,
+          role: userToAuth.role as Role,
+          emailNotifications: userToAuth.emailNotifications ?? true,
+          passwordSetupRequired: userToAuth.passwordSetupRequired ?? false,
+          createdAt: userToAuth.createdAt.toISOString(),
+        },
+        organization: {
+          id: userToAuth.organization.id,
+          name: userToAuth.organization.name,
+          primaryRegion: userToAuth.organization.primaryRegion,
+          primaryFramework: userToAuth.organization.primaryFramework,
+          onboardingCompleted: userToAuth.organization.onboardingCompleted,
+          createdAt: userToAuth.organization.createdAt.toISOString(),
+        },
+        tokens,
+      };
     });
-
-    const { userToAuth, invitation } = result;
-
-    await this.auditLogsService.log({
-      organizationId: invitation.organizationId,
-      actorId: userToAuth.id,
-      action: 'INVITATION_ACCEPTED',
-      entityType: 'Invitation',
-      entityId: invitation.id,
-      metadata: {
-        userEmail: invitation.email,
-        role: invitation.role,
-      },
-    });
-
-    const tokens = this.generateTokens(userToAuth.id, userToAuth.email, userToAuth.organizationId, userToAuth.role);
-
-    return {
-      user: {
-        id: userToAuth.id,
-        organizationId: userToAuth.organizationId,
-        name: userToAuth.name,
-        email: userToAuth.email,
-        role: userToAuth.role as Role,
-        emailNotifications: userToAuth.emailNotifications ?? true,
-        passwordSetupRequired: userToAuth.passwordSetupRequired ?? false,
-        createdAt: userToAuth.createdAt.toISOString(),
-      },
-      organization: {
-        id: userToAuth.organization.id,
-        name: userToAuth.organization.name,
-        primaryRegion: userToAuth.organization.primaryRegion,
-        primaryFramework: userToAuth.organization.primaryFramework,
-        onboardingCompleted: userToAuth.organization.onboardingCompleted,
-        createdAt: userToAuth.organization.createdAt.toISOString(),
-      },
-      tokens,
-    };
   }
 
   async revokeInvitation(adminUserId: string, invitationId: string) {

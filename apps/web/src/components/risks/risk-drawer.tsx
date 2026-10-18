@@ -208,10 +208,26 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
       setImpact(risk.impact || 3);
       setStatus(risk.status || RiskStatus.OPEN);
       setOwner(risk.owner || '');
-      setAssetId(risk.assetId || '');
       setFrameworkId(risk.frameworkId || '');
-      setFrameworkVersionId('');
       setFrameworkReferenceId(risk.frameworkReferenceId || '');
+
+      if (risk.frameworkVersionId) {
+        setFrameworkVersionId(risk.frameworkVersionId);
+      } else if (risk.frameworkReferenceId) {
+        apiRequest<{ frameworkVersionId?: string; frameworkId?: string }>(`/frameworks/references/${risk.frameworkReferenceId}`)
+          .then((ref) => {
+            if (ref?.frameworkVersionId) {
+              setFrameworkVersionId(ref.frameworkVersionId);
+            }
+            if (ref?.frameworkId && !risk.frameworkId) {
+              setFrameworkId(ref.frameworkId);
+            }
+          })
+          .catch(() => setFrameworkVersionId(''));
+      } else {
+        setFrameworkVersionId('');
+      }
+
       setTreatmentPlan(risk.treatmentPlan || '');
 
       setLoadingAudit(true);
@@ -263,6 +279,8 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
 
     try {
       if (isEdit && risk) {
+        const effectiveFrameworkId = frameworkId || null;
+        const effectiveReferenceId = effectiveFrameworkId && frameworkReferenceId ? frameworkReferenceId : null;
         const payload: UpdateRiskDto = {
           title: title.trim(),
           description: description.trim() || undefined,
@@ -271,8 +289,8 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
           status,
           owner: owner.trim(),
           assetId: assetId || null,
-          frameworkId: frameworkId || null,
-          frameworkReferenceId: frameworkReferenceId || null,
+          frameworkId: effectiveFrameworkId,
+          frameworkReferenceId: effectiveReferenceId,
           treatmentPlan: treatmentPlan.trim() || undefined,
         };
         await apiRequest(`/risks/${risk.id}`, {
@@ -281,6 +299,8 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
         });
         showToast('Risk updated');
       } else {
+        const effectiveFrameworkId = frameworkId || undefined;
+        const effectiveReferenceId = effectiveFrameworkId && frameworkReferenceId ? frameworkReferenceId : undefined;
         const payload: CreateRiskDto = {
           title: title.trim(),
           description: description.trim() || undefined,
@@ -289,8 +309,8 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
           status,
           owner: owner.trim(),
           assetId: assetId || undefined,
-          frameworkId: frameworkId || undefined,
-          frameworkReferenceId: frameworkReferenceId || undefined,
+          frameworkId: effectiveFrameworkId,
+          frameworkReferenceId: effectiveReferenceId,
           treatmentPlan: treatmentPlan.trim() || undefined,
         };
         await apiRequest('/risks', {
@@ -503,7 +523,6 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
                 }}
                 onVersionChange={(vId) => {
                   setFrameworkVersionId(vId);
-                  setFrameworkReferenceId('');
                 }}
                 onReferenceChange={(refId) => setFrameworkReferenceId(refId)}
                 showReferenceFilter={true}

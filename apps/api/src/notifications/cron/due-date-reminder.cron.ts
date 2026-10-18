@@ -5,6 +5,7 @@ import { NotificationsService } from '../notifications.service';
 import { NotificationType, TaskStatus } from '@omnigrc/shared';
 import { LicenseVerificationService } from '../../license-verification/license-verification.service';
 import { EffectiveServiceStateResolver } from '../../service-control/effective-service-state-resolver.service';
+import { TenantContext } from '../../tenant/tenant.context';
 
 @Injectable()
 export class DueDateReminderCron {
@@ -19,11 +20,12 @@ export class DueDateReminderCron {
 
   @Cron('0 0 * * *', { timeZone: 'UTC' })
   async handleDueDateReminders() {
-    const licenseState = await this.licenseVerificationService.getEvaluatedState();
-    if (licenseState.state !== 'VALID') {
-      this.logger.debug(`Skipping daily due date reminder cron job: license state is ${licenseState.state}.`);
-      return;
-    }
+    return TenantContext.runSystemContext(async () => {
+      const licenseState = await this.licenseVerificationService.getEvaluatedState();
+      if (licenseState.state !== 'VALID') {
+        this.logger.debug(`Skipping daily due date reminder cron job: license state is ${licenseState.state}.`);
+        return;
+      }
 
     this.logger.log('Running daily due date reminder cron job (UTC canonical timezone)...');
 
@@ -123,5 +125,6 @@ export class DueDateReminderCron {
     }
 
     this.logger.log('Completed daily due date reminder cron execution.');
+    });
   }
 }

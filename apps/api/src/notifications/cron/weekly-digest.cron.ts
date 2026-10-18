@@ -6,6 +6,7 @@ import { renderWeeklyDigestHtml, PriorityLevel } from '../templates/email-templa
 import { NotificationType, Role, TaskStatus, RiskStatus } from '@omnigrc/shared';
 import { LicenseVerificationService } from '../../license-verification/license-verification.service';
 import { EffectiveServiceStateResolver } from '../../service-control/effective-service-state-resolver.service';
+import { TenantContext } from '../../tenant/tenant.context';
 
 @Injectable()
 export class WeeklyDigestCron {
@@ -20,11 +21,12 @@ export class WeeklyDigestCron {
 
   @Cron('0 8 * * 1', { timeZone: 'UTC' })
   async handleWeeklyDigest() {
-    const licenseState = await this.licenseVerificationService.getEvaluatedState();
-    if (licenseState.state !== 'VALID') {
-      this.logger.debug(`Skipping Monday Weekly Executive Digest cron job: license state is ${licenseState.state}.`);
-      return;
-    }
+    return TenantContext.runSystemContext(async () => {
+      const licenseState = await this.licenseVerificationService.getEvaluatedState();
+      if (licenseState.state !== 'VALID') {
+        this.logger.debug(`Skipping Monday Weekly Executive Digest cron job: license state is ${licenseState.state}.`);
+        return;
+      }
 
     this.logger.log('Running Monday Weekly Executive Digest cron job (UTC canonical timezone)...');
 
@@ -144,5 +146,6 @@ export class WeeklyDigestCron {
     }
 
     this.logger.log('Completed Monday Weekly Executive Digest cron execution.');
+    });
   }
 }

@@ -147,6 +147,40 @@ export class FrameworksService {
     }));
   }
 
+  async getReference(organizationId: string, refId: string) {
+    const ref = await this.prisma.frameworkReference.findUnique({
+      where: { id: refId },
+      include: {
+        frameworkVersion: {
+          select: { id: true, frameworkId: true, version: true, name: true },
+        },
+      },
+    });
+
+    if (!ref) {
+      throw new NotFoundException(`Framework reference "${refId}" not found.`);
+    }
+
+    await this.frameworkEntitlementsService.assertEntitled(
+      organizationId,
+      ref.frameworkVersion.frameworkId,
+      ref.frameworkVersionId,
+    );
+
+    return {
+      id: ref.id,
+      frameworkVersionId: ref.frameworkVersionId,
+      frameworkId: ref.frameworkVersion.frameworkId,
+      version: ref.frameworkVersion.version,
+      versionName: ref.frameworkVersion.name,
+      identifier: ref.identifier,
+      title: ref.title,
+      description: ref.description,
+      normativeText: ref.normativeText,
+      sortOrder: ref.sortOrder,
+    };
+  }
+
   async importCustomFramework(
     dto: CustomFrameworkImportDto,
   ): Promise<FrameworkItemDto> {
