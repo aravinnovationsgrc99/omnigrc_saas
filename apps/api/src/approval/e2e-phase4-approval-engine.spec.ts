@@ -221,8 +221,8 @@ describe('E2E Phase 4: Universal Approval & Decision Workflow Engine Suite', () 
     singleStepInstanceId = multiStepInstanceId;
 
     // Verify Policy status was updated to APPROVED via transition callback
-    const updatedPol = await TenantContext.run({ organizationId: ORG_A_ID, userId: USER_ADMIN_A }, () =>
-      prisma.policy.findUnique({ where: { id: policyAId } })
+    const updatedPol = await TenantContext.run({ organizationId: ORG_A_ID, userId: USER_ADMIN_A }, async () =>
+      await prisma.policy.findUnique({ where: { id: policyAId } })
     );
     expect(updatedPol?.status).toBe('APPROVED');
   });

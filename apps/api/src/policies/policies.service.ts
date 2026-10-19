@@ -29,7 +29,9 @@ import {
   PolicyCategoryDto,
   PolicyAttestationSummaryDto,
   Role,
+  NotificationType,
 } from '@omnigrc/shared';
+import { NotificationsService } from '../notifications/notifications.service';
 
 export const DEFAULT_POLICY_CATEGORIES = [
   'Information Security',
@@ -51,6 +53,7 @@ export class PoliciesService {
     private readonly auditLogsService: AuditLogsService,
     private readonly resourceAuthService: ResourceAuthorizationService,
     @Optional() private readonly approvalEngineService?: ApprovalEngineService,
+    @Optional() private readonly notificationsService?: NotificationsService,
   ) {}
 
   async findAll(authCtx: ResourceAuthContext, query: PolicyQueryDto): Promise<PaginatedPoliciesDto> {
@@ -199,6 +202,17 @@ export class PoliciesService {
       },
     });
 
+    if (this.notificationsService && policy.ownerId) {
+      await this.notificationsService.notify({
+        organizationId: authCtx.organizationId,
+        userId: policy.ownerId,
+        type: NotificationType.TASK_ASSIGNED,
+        message: `You have been assigned as the owner of Policy "${policy.title}" (${policy.code}).`,
+        entityType: 'Policy',
+        entityId: policy.id,
+      });
+    }
+
     return this.mapToDto(policy);
   }
 
@@ -274,6 +288,17 @@ export class PoliciesService {
       entityId: updated.id,
       metadata: { code: updated.code, title: updated.title },
     });
+
+    if (this.notificationsService && dto.ownerId && dto.ownerId !== existing.ownerId) {
+      await this.notificationsService.notify({
+        organizationId: authCtx.organizationId,
+        userId: dto.ownerId,
+        type: NotificationType.TASK_ASSIGNED,
+        message: `You have been assigned as the owner of Policy "${updated.title}" (${updated.code}).`,
+        entityType: 'Policy',
+        entityId: updated.id,
+      });
+    }
 
     return this.mapToDto(updated);
   }
@@ -694,6 +719,17 @@ export class PoliciesService {
       metadata: { code: updated.code, newStatus: updated.status },
     });
 
+    if (this.notificationsService && updated.ownerId) {
+      await this.notificationsService.notify({
+        organizationId: authCtx.organizationId,
+        userId: updated.ownerId,
+        type: NotificationType.TASK_ASSIGNED,
+        message: `Policy "${updated.title}" (${updated.code}) has been approved.`,
+        entityType: 'Policy',
+        entityId: id,
+      });
+    }
+
     return this.mapToDto(updated);
   }
 
@@ -1090,6 +1126,17 @@ export class PoliciesService {
       entityId: policy.id,
       metadata: { approvalInstanceId: instance.id },
     });
+
+    if (this.notificationsService && policy.ownerId) {
+      await this.notificationsService.notify({
+        organizationId: authCtx.organizationId,
+        userId: policy.ownerId,
+        type: NotificationType.TASK_ASSIGNED,
+        message: `Policy "${policy.title}" (${policy.code}) has been submitted for approval.`,
+        entityType: 'Policy',
+        entityId: policy.id,
+      });
+    }
 
     return instance;
   }

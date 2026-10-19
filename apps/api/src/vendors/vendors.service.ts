@@ -31,7 +31,9 @@ import {
   VendorQuestionnaireDto,
   VendorQuestionnaireSubmissionDto,
   VendorAssessmentActionDto,
+  NotificationType,
 } from '@omnigrc/shared';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class VendorsService {
@@ -41,6 +43,7 @@ export class VendorsService {
     private readonly resourceAuthService: ResourceAuthorizationService,
     private readonly evidenceService: EvidenceService,
     @Optional() private readonly approvalEngineService?: ApprovalEngineService,
+    @Optional() private readonly notificationsService?: NotificationsService,
   ) {}
 
   async findAll(authCtx: ResourceAuthContext, query: VendorQueryDto): Promise<PaginatedVendorsDto> {
@@ -176,6 +179,17 @@ export class VendorsService {
         projectId: vendor.projectId,
       },
     });
+
+    if (this.notificationsService && vendor.owner) {
+      await this.notificationsService.notify({
+        organizationId: authCtx.organizationId,
+        userId: vendor.owner,
+        type: NotificationType.TASK_ASSIGNED,
+        message: `Vendor "${vendor.name}" has been onboarded/registered.`,
+        entityType: 'Vendor',
+        entityId: vendor.id,
+      });
+    }
 
     return this.mapToDto(vendor);
   }
@@ -324,6 +338,17 @@ export class VendorsService {
         status: assessment.status,
       },
     });
+
+    if (this.notificationsService && dto.evaluatorId) {
+      await this.notificationsService.notify({
+        organizationId: authCtx.organizationId,
+        userId: dto.evaluatorId,
+        type: NotificationType.TASK_ASSIGNED,
+        message: `You have been assigned as evaluator for Vendor Assessment "${assessment.title}" (${vendor.name}).`,
+        entityType: 'VendorAssessment',
+        entityId: assessment.id,
+      });
+    }
 
     return {
       id: assessment.id,
@@ -763,6 +788,23 @@ export class VendorsService {
       metadata: { vendorId, questionnaireId: dto.questionnaireId, status: submission.status },
     });
 
+    if (this.notificationsService) {
+      const vendor = await this.prisma.vendor.findUnique({
+        where: { id: vendorId },
+        select: { owner: true, name: true },
+      });
+      if (vendor?.owner) {
+        await this.notificationsService.notify({
+          organizationId: authCtx.organizationId,
+          userId: vendor.owner,
+          type: NotificationType.TASK_ASSIGNED,
+          message: `Questionnaire "${submission.questionnaire.title}" submitted for vendor "${vendor.name}".`,
+          entityType: 'VendorQuestionnaireSubmission',
+          entityId: submission.id,
+        });
+      }
+    }
+
     return {
       id: submission.id,
       organizationId: submission.organizationId,
@@ -856,6 +898,23 @@ export class VendorsService {
       entityId: updated.id,
       metadata: { vendorId, status: updated.status, score: updated.score },
     });
+
+    if (this.notificationsService) {
+      const vendor = await this.prisma.vendor.findUnique({
+        where: { id: vendorId },
+        select: { owner: true, name: true },
+      });
+      if (vendor?.owner) {
+        await this.notificationsService.notify({
+          organizationId: authCtx.organizationId,
+          userId: vendor.owner,
+          type: NotificationType.TASK_ASSIGNED,
+          message: `Questionnaire "${updated.questionnaire.title}" for vendor "${vendor.name}" reviewed: status ${updated.status}.`,
+          entityType: 'VendorQuestionnaireSubmission',
+          entityId: updated.id,
+        });
+      }
+    }
 
     return {
       id: updated.id,

@@ -14,7 +14,9 @@ import {
   IncidentActionDto,
   CreateIncidentActionDto,
   UpdateIncidentActionDto,
+  NotificationType,
 } from '@omnigrc/shared';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class IncidentsService {
@@ -23,6 +25,7 @@ export class IncidentsService {
     private readonly auditLogsService: AuditLogsService,
     private readonly resourceAuthService: ResourceAuthorizationService,
     @Optional() private readonly approvalEngineService?: ApprovalEngineService,
+    @Optional() private readonly notificationsService?: NotificationsService,
   ) {}
 
   async findAll(
@@ -190,6 +193,17 @@ export class IncidentsService {
       },
     });
 
+    if (this.notificationsService && incident.owner && incident.owner !== 'Unassigned') {
+      await this.notificationsService.notify({
+        organizationId: authCtx.organizationId,
+        userId: incident.owner,
+        type: NotificationType.TASK_ASSIGNED,
+        message: `New incident assigned: "${incident.title}" (Severity: ${incident.severity}).`,
+        entityType: 'Incident',
+        entityId: incident.id,
+      });
+    }
+
     return this.mapToDto(incident);
   }
 
@@ -299,6 +313,34 @@ export class IncidentsService {
       entityId: updated.id,
       metadata: { status: updated.status, severity: updated.severity, category: updated.category },
     });
+
+    if (this.notificationsService && dto.status !== undefined && dto.status !== existing.status) {
+      const recipient = updated.owner && updated.owner !== 'Unassigned' ? updated.owner : existing.createdById;
+      if (recipient) {
+        await this.notificationsService.notify({
+          organizationId: authCtx.organizationId,
+          userId: recipient,
+          type: NotificationType.TASK_ASSIGNED,
+          message: `Incident "${updated.title}" status changed from ${existing.status} to ${updated.status}.`,
+          entityType: 'Incident',
+          entityId: updated.id,
+        });
+      }
+    }
+
+    if (this.notificationsService && dto.status === IncidentStatus.CLOSED && existing.status !== IncidentStatus.CLOSED) {
+      const recipient = updated.owner && updated.owner !== 'Unassigned' ? updated.owner : existing.createdById;
+      if (recipient) {
+        await this.notificationsService.notify({
+          organizationId: authCtx.organizationId,
+          userId: recipient,
+          type: NotificationType.TASK_ASSIGNED,
+          message: `Incident "${updated.title}" has been closed.`,
+          entityType: 'Incident',
+          entityId: updated.id,
+        });
+      }
+    }
 
     return this.mapToDto(updated);
   }

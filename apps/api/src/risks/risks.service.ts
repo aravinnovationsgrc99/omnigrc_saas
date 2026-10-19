@@ -5,7 +5,8 @@ import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resou
 import { FrameworkEntitlementsService } from '../frameworks/framework-entitlements.service';
 import { ApprovalEngineService } from '../approval/approval-engine.service';
 import { CreateRiskDto, UpdateRiskDto, RiskQueryDto, SubmitRiskApprovalDto } from './dto/risks.dto';
-import { RiskDto, PaginatedRisksDto, HeatmapSummaryDto, HeatmapCellDto, RiskStatus, RiskScoreBand } from '@omnigrc/shared';
+import { RiskDto, PaginatedRisksDto, HeatmapSummaryDto, HeatmapCellDto, RiskStatus, RiskScoreBand, NotificationType } from '@omnigrc/shared';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class RisksService {
@@ -15,6 +16,7 @@ export class RisksService {
     private readonly resourceAuthService: ResourceAuthorizationService,
     @Optional() private readonly frameworkEntitlementsService?: FrameworkEntitlementsService,
     @Optional() private readonly approvalEngineService?: ApprovalEngineService,
+    @Optional() private readonly notificationsService?: NotificationsService,
   ) {}
 
   public static getScoreBand(score: number): RiskScoreBand {
@@ -338,6 +340,26 @@ export class RisksService {
       },
     });
 
+    if (this.notificationsService && risk.owner) {
+      await this.notificationsService.notify({
+        organizationId: authCtx.organizationId,
+        userId: risk.owner,
+        type: NotificationType.TASK_ASSIGNED,
+        message: `You have been assigned as the owner of Risk "${risk.title}".`,
+        entityType: 'Risk',
+        entityId: risk.id,
+      });
+
+      await this.notificationsService.notify({
+        organizationId: authCtx.organizationId,
+        userId: risk.owner,
+        type: NotificationType.TASK_ASSIGNED,
+        message: `Risk assessment conducted for "${risk.title}" (Score: ${risk.score}).`,
+        entityType: 'Risk',
+        entityId: risk.id,
+      });
+    }
+
     return this.mapToDto(risk);
   }
 
@@ -461,6 +483,48 @@ export class RisksService {
       });
     }
 
+    if (this.notificationsService && dto.owner && dto.owner !== existing.owner) {
+      await this.notificationsService.notify({
+        organizationId: authCtx.organizationId,
+        userId: dto.owner,
+        type: NotificationType.TASK_ASSIGNED,
+        message: `You have been assigned as the owner of Risk "${updated.title}".`,
+        entityType: 'Risk',
+        entityId: updated.id,
+      });
+    }
+
+    const isReassessed =
+      dto.likelihood !== undefined ||
+      dto.impact !== undefined ||
+      dto.residualLikelihood !== undefined ||
+      dto.residualImpact !== undefined;
+    if (this.notificationsService && isReassessed && updated.owner) {
+      await this.notificationsService.notify({
+        organizationId: authCtx.organizationId,
+        userId: updated.owner,
+        type: NotificationType.TASK_ASSIGNED,
+        message: `Risk "${updated.title}" has been reassessed (Score: ${updated.score}, Residual: ${updated.residualScore ?? 'N/A'}).`,
+        entityType: 'Risk',
+        entityId: updated.id,
+      });
+    }
+
+    if (
+      this.notificationsService &&
+      (dto.status === RiskStatus.ACCEPTED || dto.status === RiskStatus.CLOSED) &&
+      updated.owner
+    ) {
+      await this.notificationsService.notify({
+        organizationId: authCtx.organizationId,
+        userId: updated.owner,
+        type: NotificationType.TASK_ASSIGNED,
+        message: `Risk "${updated.title}" status updated to ${updated.status}.`,
+        entityType: 'Risk',
+        entityId: updated.id,
+      });
+    }
+
     return this.mapToDto(updated);
   }
 
@@ -508,6 +572,17 @@ export class RisksService {
         purpose: dto.purpose,
       },
     });
+
+    if (this.notificationsService && risk.owner) {
+      await this.notificationsService.notify({
+        organizationId: authCtx.organizationId,
+        userId: risk.owner,
+        type: NotificationType.TASK_ASSIGNED,
+        message: `Risk "${risk.title}" has been submitted for approval (${dto.purpose}).`,
+        entityType: 'Risk',
+        entityId: risk.id,
+      });
+    }
 
     return instance;
   }

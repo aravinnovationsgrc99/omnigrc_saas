@@ -2043,6 +2043,34 @@ export enum ReportType {
   COMPLIANCE_OBLIGATION_REPORT = "compliance_obligation_report",
   BUSINESS_AUDIT_REPORT = "business_audit_report",
   RISK_REGISTER_REPORT = "risk_register_report",
+
+  // Phase 4B: Workbook-required reports (Reports sheet criteria)
+  // Audit Management
+  AUDIT_STATUS_SUMMARY = "audit_status_summary",
+  AUDIT_FINDINGS = "audit_findings",
+  AUDIT_COMPLIANCE_CLOSURE = "audit_compliance_closure",
+
+  // Policy Management
+  POLICY_STATUS = "policy_status",
+  POLICY_REVIEW_EXPIRY = "policy_review_expiry",
+  POLICY_ACKNOWLEDGEMENT = "policy_acknowledgement",
+
+  // Risk Management
+  RISK_HEATMAP = "risk_heatmap",
+  RISK_TREATMENT_AGEING = "risk_treatment_ageing",
+
+  // Vendor Management
+  VENDOR_ASSESSMENT = "vendor_assessment",
+  VENDOR_REVIEW_RENEWAL = "vendor_review_renewal",
+
+  // Vulnerability Management
+  VULNERABILITY_SUMMARY = "vulnerability_summary",
+  VULNERABILITY_SLA_AGEING = "vulnerability_sla_ageing",
+
+  // Incident Management
+  INCIDENT_SUMMARY = "incident_summary",
+  INCIDENT_SLA_AGEING = "incident_sla_ageing",
+  INCIDENT_RCA_CLOSURE = "incident_rca_closure",
 }
 
 export type ExportFormat = "csv" | "xlsx";

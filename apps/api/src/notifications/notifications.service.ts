@@ -2,7 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ResendMailerService } from './mailer/resend-mailer.service';
 import { SlackNotifierService } from './slack/slack-notifier.service';
-import { NotificationType, NotificationDto } from '@omnigrc/shared';
+import { NotificationType, NotificationDto, Role } from '@omnigrc/shared';
 import { renderAlertEmailHtml, PriorityLevel } from './templates/email-templates';
 
 export interface NotifyParams {
@@ -39,16 +39,40 @@ export class NotificationsService {
 
     if (userId) {
       const u = await this.prisma.user.findFirst({
-        where: { id: userId, organizationId },
+        where: {
+          organizationId,
+          OR: [{ id: userId }, { email: userId }],
+        },
         select: { id: true, email: true, name: true, emailNotifications: true },
       });
-      if (u) targetUsers.push(u);
+      if (u) {
+        targetUsers.push(u);
+      } else {
+        const admins = await this.prisma.user.findMany({
+          where: { organizationId, role: Role.ADMIN },
+          select: { id: true, email: true, name: true, emailNotifications: true },
+        });
+        targetUsers.push(...admins);
+      }
     } else {
       targetUsers = await this.prisma.user.findMany({
-        where: { organizationId },
+        where: { organizationId, role: Role.ADMIN },
         select: { id: true, email: true, name: true, emailNotifications: true },
       });
+      if (targetUsers.length === 0) {
+        targetUsers = await this.prisma.user.findMany({
+          where: { organizationId },
+          select: { id: true, email: true, name: true, emailNotifications: true },
+        });
+      }
     }
+
+    // Deduplicate target users by id
+    const uniqueMap = new Map<string, { id: string; email: string; name: string; emailNotifications: boolean }>();
+    for (const u of targetUsers) {
+      uniqueMap.set(u.id, u);
+    }
+    targetUsers = Array.from(uniqueMap.values());
 
     if (targetUsers.length === 0) {
       this.logger.warn(`No target users found for notification in org ${organizationId}`);
@@ -84,7 +108,7 @@ export class NotificationsService {
     const priority = priorityMap[type] || PriorityLevel.P0;
 
     // 3. Fan-out to Resend Email for users with emailNotifications enabled
-    const emailRecipients = targetUsers.filter((u) => u.emailNotifications);
+    const emailRecipients = targetUsers.filter((u) => u.emailNotifications !== false);
     for (const u of emailRecipients) {
       const notifRecord = notificationRecords.find((n) => n.userId === u.id);
       if (notifRecord?.emailSentAt) {
@@ -101,21 +125,28 @@ export class NotificationsService {
         entityId,
       });
 
-      const sentSuccess = await this.resendMailerService.sendEmail(
-        {
-          to: u.email,
-          subject: `[OMNiGRC Alert] ${type.replace(/_/g, ' ')}`,
-          html,
-        },
-        priority,
-      );
+      try {
+        const sentSuccess = await this.resendMailerService.sendEmail(
+          {
+            to: u.email,
+            subject: `[OMNiGRC Alert] ${type.replace(/_/g, ' ')}`,
+            html,
+            organizationId,
+          },
+          priority,
+        );
 
-      // On verified delivery success, durably persist emailSentAt timestamp in DB
-      if (sentSuccess && notifRecord) {
-        await this.prisma.notification.update({
-          where: { id: notifRecord.id },
-          data: { emailSentAt: new Date() },
-        });
+        // On verified delivery success, durably persist emailSentAt timestamp in DB
+        if (sentSuccess && notifRecord) {
+          await this.prisma.notification.update({
+            where: { id: notifRecord.id },
+            data: { emailSentAt: new Date() },
+          });
+        } else if (!sentSuccess) {
+          this.logger.warn(`Email delivery suppressed or rejected by provider for ${u.email}`);
+        }
+      } catch (err: any) {
+        this.logger.error(`Failed to send email to ${u.email}: ${err.message}`);
       }
     }
 

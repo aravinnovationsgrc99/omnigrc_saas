@@ -5,9 +5,10 @@ import { AuthModule } from '../auth/auth.module';
 import { RiskControlsModule } from '../risk-controls/risk-controls.module';
 import { FrameworksModule } from '../frameworks/frameworks.module';
 import { ApprovalEngineModule } from '../approval/approval-engine.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [AuthModule, RiskControlsModule, FrameworksModule, ApprovalEngineModule],
+  imports: [AuthModule, RiskControlsModule, FrameworksModule, ApprovalEngineModule, NotificationsModule],
   controllers: [RisksController],
   providers: [RisksService],
   exports: [RisksService],

@@ -41,14 +41,23 @@ export interface InvitationEmailTemplateParams {
 
 export function renderAlertEmailHtml(params: AlertEmailTemplateParams): string {
   const { userName, message, type, entityType, entityId } = params;
+  const safeName = escapeHtml(userName || 'User');
+  const safeMessage = escapeHtml(message);
+  const safeType = escapeHtml(type);
+  const entitySnippet = entityType && entityId
+    ? `<div><strong>Entity:</strong> ${escapeHtml(entityType)} (${escapeHtml(entityId)})</div>`
+    : entityType
+    ? `<div><strong>Entity:</strong> ${escapeHtml(entityType)}</div>`
+    : '';
+
   return `
     <div style="font-family: sans-serif; max-width: 560px; margin: 0 auto; padding: 20px; border: 1px solid #e2e6e4; border-radius: 8px;">
       <h2 style="color: #0F6E6A; font-size: 18px; margin-top: 0;">OMNiGRC Platform Alert</h2>
-      <p style="font-size: 14px; color: #1B2430;">Hello <strong>${escapeHtml(userName)}</strong>,</p>
-      <p style="font-size: 14px; color: #5B6672; line-height: 1.5;">${escapeHtml(message)}</p>
+      <p style="font-size: 14px; color: #1B2430;">Hello <strong>${safeName}</strong>,</p>
+      <p style="font-size: 14px; color: #5B6672; line-height: 1.5;">${safeMessage}</p>
       <div style="background: #FAFBFB; border: 1px solid #EDEFED; border-radius: 6px; padding: 12px; font-size: 12px; color: #6E7A8A; margin: 16px 0;">
-        <div><strong>Event Type:</strong> ${escapeHtml(type)}</div>
-        <div><strong>Entity:</strong> ${escapeHtml(entityType)} (${escapeHtml(entityId)})</div>
+        <div><strong>Event Type:</strong> ${safeType}</div>
+        ${entitySnippet}
       </div>
       <p style="font-size: 12px; color: #8B95A1; margin-bottom: 0;">You received this because email notifications are enabled in your OMNiGRC profile settings.</p>
     </div>
@@ -121,8 +130,9 @@ export function renderInvitationEmailHtml(params: InvitationEmailTemplateParams)
   `;
 }
 
-function escapeHtml(str: string): string {
-  return str
+function escapeHtml(str?: string | null): string {
+  if (!str) return '';
+  return String(str)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')

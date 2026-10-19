@@ -235,6 +235,17 @@ export class BusinessAuditsService {
       },
     });
 
+    if (this.notificationsService?.notify && plan.ownerId) {
+      await this.notificationsService.notify({
+        organizationId: authCtx.organizationId,
+        userId: plan.ownerId,
+        type: NotificationType.TASK_ASSIGNED,
+        message: `Audit plan "${plan.title}" has been submitted/created.`,
+        entityType: 'AuditPlan',
+        entityId: plan.id,
+      });
+    }
+
     const userMap = await this.resolveUserMap(authCtx.organizationId, [(created || plan).ownerId]);
     return this.mapPlanToDto(created || plan, userMap);
   }
@@ -578,6 +589,32 @@ export class BusinessAuditsService {
       },
     });
 
+    if (this.notificationsService?.notify && dto.status === AuditPlanStatus.PLANNED && existing.status !== AuditPlanStatus.PLANNED) {
+      if (updated.ownerId) {
+        await this.notificationsService.notify({
+          organizationId: authCtx.organizationId,
+          userId: updated.ownerId,
+          type: NotificationType.TASK_ASSIGNED,
+          message: `Audit plan "${updated.title}" has been approved/planned.`,
+          entityType: 'AuditPlan',
+          entityId: id,
+        });
+      }
+    }
+
+    if (this.notificationsService?.notify && dto.status === AuditPlanStatus.COMPLETED && existing.status !== AuditPlanStatus.COMPLETED) {
+      if (updated.ownerId) {
+        await this.notificationsService.notify({
+          organizationId: authCtx.organizationId,
+          userId: updated.ownerId,
+          type: NotificationType.TASK_ASSIGNED,
+          message: `Audit plan "${updated.title}" has been completed/closed.`,
+          entityType: 'AuditPlan',
+          entityId: id,
+        });
+      }
+    }
+
     const userMap = await this.resolveUserMap(authCtx.organizationId, [(reloaded || updated).ownerId]);
     return this.mapPlanToDto(reloaded || updated, userMap);
   }
@@ -637,14 +674,16 @@ export class BusinessAuditsService {
       },
     });
 
-    await this.notificationsService.notify({
-      organizationId: authCtx.organizationId,
-      userId: dto.leadAuditorId,
-      type: NotificationType.TASK_ASSIGNED,
-      message: `You have been assigned as Lead Auditor for an upcoming Audit Schedule.`,
-      entityType: 'AuditSchedule',
-      entityId: schedule.id,
-    });
+    if (this.notificationsService?.notify) {
+      await this.notificationsService.notify({
+        organizationId: authCtx.organizationId,
+        userId: dto.leadAuditorId,
+        type: NotificationType.TASK_ASSIGNED,
+        message: `You have been assigned as Lead Auditor for an upcoming Audit Schedule.`,
+        entityType: 'AuditSchedule',
+        entityId: schedule.id,
+      });
+    }
 
     await this.auditLogsService.log({
       organizationId: authCtx.organizationId,
@@ -719,6 +758,17 @@ export class BusinessAuditsService {
       entityId: assessment!.id,
       metadata: { auditorId: dto.auditorId },
     });
+
+    if (this.notificationsService?.notify && dto.auditorId) {
+      await this.notificationsService.notify({
+        organizationId: authCtx.organizationId,
+        userId: dto.auditorId,
+        type: NotificationType.TASK_ASSIGNED,
+        message: `You have been assigned as Auditor for an upcoming Audit Assessment.`,
+        entityType: 'AuditAssessment',
+        entityId: assessment!.id,
+      });
+    }
 
     return this.mapAssessmentToDto(assessment);
   }

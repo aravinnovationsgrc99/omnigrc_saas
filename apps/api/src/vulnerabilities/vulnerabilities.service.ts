@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
 import { CreateVulnerabilityDto, UpdateVulnerabilityDto, VulnerabilityQueryDto } from './dto/vulnerabilities.dto';
-import { VulnerabilityDto, PaginatedVulnerabilitiesDto, VulnerabilitySeverity, VulnerabilityStatus } from '@omnigrc/shared';
+import { VulnerabilityDto, PaginatedVulnerabilitiesDto, VulnerabilitySeverity, VulnerabilityStatus, NotificationType } from '@omnigrc/shared';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class VulnerabilitiesService {
@@ -11,6 +12,7 @@ export class VulnerabilitiesService {
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
     private readonly resourceAuthService: ResourceAuthorizationService,
+    @Optional() private readonly notificationsService?: NotificationsService,
   ) {}
 
   async findAll(authCtx: ResourceAuthContext, query: VulnerabilityQueryDto): Promise<PaginatedVulnerabilitiesDto> {
@@ -197,6 +199,17 @@ export class VulnerabilitiesService {
       [vuln.remediationOwner],
     );
 
+    if (this.notificationsService && vuln.remediationOwner) {
+      await this.notificationsService.notify({
+        organizationId: authCtx.organizationId,
+        userId: vuln.remediationOwner,
+        type: NotificationType.TASK_ASSIGNED,
+        message: `You have been assigned to remediate Vulnerability "${vuln.title}" (Severity: ${vuln.severity}).`,
+        entityType: 'Vulnerability',
+        entityId: vuln.id,
+      });
+    }
+
     return this.mapToDto(vuln, userMap, deptMap);
   }
 
@@ -289,6 +302,35 @@ export class VulnerabilitiesService {
       authCtx.organizationId,
       [updated.remediationOwner],
     );
+
+    if (this.notificationsService && dto.remediationOwner && dto.remediationOwner !== existing.remediationOwner) {
+      await this.notificationsService.notify({
+        organizationId: authCtx.organizationId,
+        userId: dto.remediationOwner,
+        type: NotificationType.TASK_ASSIGNED,
+        message: `You have been assigned to remediate Vulnerability "${updated.title}" (Severity: ${updated.severity}).`,
+        entityType: 'Vulnerability',
+        entityId: updated.id,
+      });
+    }
+
+    if (
+      this.notificationsService &&
+      (updated.status === VulnerabilityStatus.RESOLVED || updated.status === VulnerabilityStatus.RISK_ACCEPTED) &&
+      (existing.status !== VulnerabilityStatus.RESOLVED && existing.status !== VulnerabilityStatus.RISK_ACCEPTED)
+    ) {
+      const recipient = updated.remediationOwner || existing.createdById;
+      if (recipient) {
+        await this.notificationsService.notify({
+          organizationId: authCtx.organizationId,
+          userId: recipient,
+          type: NotificationType.TASK_ASSIGNED,
+          message: `Vulnerability "${updated.title}" has been closed/resolved.`,
+          entityType: 'Vulnerability',
+          entityId: updated.id,
+        });
+      }
+    }
 
     return this.mapToDto(updated, userMap, deptMap);
   }

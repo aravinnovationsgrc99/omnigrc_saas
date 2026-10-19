@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { TenantContext } from '../tenant/tenant.context';
 import {
   ApprovalWorkflowDto,
   CreateApprovalWorkflowDto,
@@ -193,6 +194,18 @@ export class ApprovalEngineService {
       entityId: instance.id,
       metadata: { title: instance.title, resourceType: dto.resourceType, resourceId: dto.resourceId },
     });
+
+    const firstStep = instance.steps?.find((s) => s.stepNumber === 1);
+    if (firstStep?.specificUserId) {
+      await this.notificationsService.notify({
+        organizationId,
+        userId: firstStep.specificUserId,
+        type: NotificationType.TASK_ASSIGNED,
+        message: `New approval request assigned: "${instance.title}"`,
+        entityType: 'ApprovalInstance',
+        entityId: instance.id,
+      });
+    }
 
     return this.mapInstanceToDto(instance.id, requesterId);
   }
@@ -455,97 +468,99 @@ export class ApprovalEngineService {
     instance: { resourceType: string; resourceId: string; purpose?: string | null },
     action: DecisionAction,
   ): Promise<void> {
-    try {
-      const { resourceType, resourceId, purpose } = instance;
+    return TenantContext.run({ organizationId }, async () => {
+      try {
+        const { resourceType, resourceId, purpose } = instance;
 
-      if (resourceType === 'POLICY') {
-        let targetStatus = 'APPROVED';
-        if (action === DecisionAction.REJECT) targetStatus = 'DRAFT';
-        else if (action === DecisionAction.REQUEST_CHANGES) targetStatus = 'UNDER_REVIEW';
-        await this.prisma.policy.updateMany({
-          where: { id: resourceId, organizationId },
-          data: { status: targetStatus as any },
-        });
-      } else if (resourceType === 'POLICY_EXCEPTION') {
-        let targetStatus = 'APPROVED';
-        if (action === DecisionAction.REJECT) targetStatus = 'REJECTED';
-        else if (action === DecisionAction.REQUEST_CHANGES) targetStatus = 'PENDING';
-        await this.prisma.policyException.updateMany({
-          where: { id: resourceId, organizationId },
-          data: { status: targetStatus as any },
-        });
-      } else if (resourceType === 'RISK') {
-        let targetStatus = 'IN_TREATMENT';
-        if (purpose === 'RISK_ACCEPTANCE') {
-          targetStatus = action === DecisionAction.APPROVE ? 'ACCEPTED' : 'OPEN';
-        } else {
-          targetStatus = action === DecisionAction.APPROVE ? 'IN_TREATMENT' : 'OPEN';
+        if (resourceType === 'POLICY') {
+          let targetStatus = 'APPROVED';
+          if (action === DecisionAction.REJECT) targetStatus = 'DRAFT';
+          else if (action === DecisionAction.REQUEST_CHANGES) targetStatus = 'UNDER_REVIEW';
+          await this.prisma.policy.updateMany({
+            where: { id: resourceId, organizationId },
+            data: { status: targetStatus as any },
+          });
+        } else if (resourceType === 'POLICY_EXCEPTION') {
+          let targetStatus = 'APPROVED';
+          if (action === DecisionAction.REJECT) targetStatus = 'REJECTED';
+          else if (action === DecisionAction.REQUEST_CHANGES) targetStatus = 'PENDING';
+          await this.prisma.policyException.updateMany({
+            where: { id: resourceId, organizationId },
+            data: { status: targetStatus as any },
+          });
+        } else if (resourceType === 'RISK') {
+          let targetStatus = 'IN_TREATMENT';
+          if (purpose === 'RISK_ACCEPTANCE') {
+            targetStatus = action === DecisionAction.APPROVE ? 'ACCEPTED' : 'OPEN';
+          } else {
+            targetStatus = action === DecisionAction.APPROVE ? 'IN_TREATMENT' : 'OPEN';
+          }
+          await this.prisma.risk.updateMany({
+            where: { id: resourceId, organizationId },
+            data: { status: targetStatus as any },
+          });
+        } else if (resourceType === 'CONTROL' || resourceType === 'CONTROL_MAPPING') {
+          let targetStatus = 'APPROVED';
+          if (action === DecisionAction.REJECT) targetStatus = 'REJECTED';
+          else if (action === DecisionAction.REQUEST_CHANGES) targetStatus = 'OVERRIDDEN';
+          await this.prisma.controlFrameworkMapping.updateMany({
+            where: { controlId: resourceId, control: { organizationId } },
+            data: { status: targetStatus as any },
+          });
+        } else if (resourceType === 'AUDIT_FINDING') {
+          let targetStatus = 'VERIFIED';
+          if (purpose === 'FINDING_CLOSURE') {
+            targetStatus = action === DecisionAction.APPROVE ? 'CLOSED' : 'IN_REMEDIATION';
+          } else {
+            targetStatus = action === DecisionAction.APPROVE ? 'VERIFIED' : 'IN_REMEDIATION';
+          }
+          await this.prisma.auditFinding.updateMany({
+            where: { id: resourceId, organizationId },
+            data: { status: targetStatus as any, ...(action === DecisionAction.APPROVE ? { verifiedAt: new Date() } : {}) },
+          });
+        } else if (resourceType === 'VENDOR_ASSESSMENT') {
+          let targetStatus = 'COMPLETED';
+          if (action === DecisionAction.REJECT || action === DecisionAction.REQUEST_CHANGES) {
+            targetStatus = 'IN_PROGRESS';
+          }
+          await this.prisma.vendorAssessment.updateMany({
+            where: { id: resourceId, organizationId },
+            data: { status: targetStatus as any, ...(action === DecisionAction.APPROVE ? { completedAt: new Date() } : {}) },
+          });
+        } else if (resourceType === 'VULNERABILITY') {
+          let targetStatus = 'RESOLVED';
+          if (purpose === 'VULNERABILITY_RISK_ACCEPTANCE') {
+            targetStatus = action === DecisionAction.APPROVE ? 'RISK_ACCEPTED' : 'OPEN';
+          } else {
+            targetStatus = action === DecisionAction.APPROVE ? 'RESOLVED' : 'IN_REMEDIATION';
+          }
+          await this.prisma.vulnerability.updateMany({
+            where: { id: resourceId, organizationId },
+            data: { status: targetStatus as any },
+          });
+        } else if (resourceType === 'INCIDENT') {
+          let targetStatus = 'RESOLVED';
+          if (purpose === 'INCIDENT_CLOSURE') {
+            targetStatus = action === DecisionAction.APPROVE ? 'CLOSED' : 'IN_PROGRESS';
+          } else {
+            targetStatus = action === DecisionAction.APPROVE ? 'RESOLVED' : 'IN_PROGRESS';
+          }
+          await this.prisma.incident.updateMany({
+            where: { id: resourceId, organizationId },
+            data: { status: targetStatus as any, ...(action === DecisionAction.APPROVE ? { resolvedAt: new Date() } : {}) },
+          });
+        } else if (resourceType === 'EVIDENCE') {
+          let targetStatus = 'ACTIVE';
+          if (action === DecisionAction.REJECT) targetStatus = 'QUARANTINED';
+          await this.prisma.evidence.updateMany({
+            where: { id: resourceId, organizationId },
+            data: { status: targetStatus as any },
+          });
         }
-        await this.prisma.risk.updateMany({
-          where: { id: resourceId, organizationId },
-          data: { status: targetStatus as any },
-        });
-      } else if (resourceType === 'CONTROL' || resourceType === 'CONTROL_MAPPING') {
-        let targetStatus = 'APPROVED';
-        if (action === DecisionAction.REJECT) targetStatus = 'REJECTED';
-        else if (action === DecisionAction.REQUEST_CHANGES) targetStatus = 'OVERRIDDEN';
-        await this.prisma.controlFrameworkMapping.updateMany({
-          where: { controlId: resourceId, control: { organizationId } },
-          data: { status: targetStatus as any },
-        });
-      } else if (resourceType === 'AUDIT_FINDING') {
-        let targetStatus = 'VERIFIED';
-        if (purpose === 'FINDING_CLOSURE') {
-          targetStatus = action === DecisionAction.APPROVE ? 'CLOSED' : 'IN_REMEDIATION';
-        } else {
-          targetStatus = action === DecisionAction.APPROVE ? 'VERIFIED' : 'IN_REMEDIATION';
-        }
-        await this.prisma.auditFinding.updateMany({
-          where: { id: resourceId, organizationId },
-          data: { status: targetStatus as any, ...(action === DecisionAction.APPROVE ? { verifiedAt: new Date() } : {}) },
-        });
-      } else if (resourceType === 'VENDOR_ASSESSMENT') {
-        let targetStatus = 'COMPLETED';
-        if (action === DecisionAction.REJECT || action === DecisionAction.REQUEST_CHANGES) {
-          targetStatus = 'IN_PROGRESS';
-        }
-        await this.prisma.vendorAssessment.updateMany({
-          where: { id: resourceId, organizationId },
-          data: { status: targetStatus as any, ...(action === DecisionAction.APPROVE ? { completedAt: new Date() } : {}) },
-        });
-      } else if (resourceType === 'VULNERABILITY') {
-        let targetStatus = 'RESOLVED';
-        if (purpose === 'VULNERABILITY_RISK_ACCEPTANCE') {
-          targetStatus = action === DecisionAction.APPROVE ? 'RISK_ACCEPTED' : 'OPEN';
-        } else {
-          targetStatus = action === DecisionAction.APPROVE ? 'RESOLVED' : 'IN_REMEDIATION';
-        }
-        await this.prisma.vulnerability.updateMany({
-          where: { id: resourceId, organizationId },
-          data: { status: targetStatus as any },
-        });
-      } else if (resourceType === 'INCIDENT') {
-        let targetStatus = 'RESOLVED';
-        if (purpose === 'INCIDENT_CLOSURE') {
-          targetStatus = action === DecisionAction.APPROVE ? 'CLOSED' : 'IN_PROGRESS';
-        } else {
-          targetStatus = action === DecisionAction.APPROVE ? 'RESOLVED' : 'IN_PROGRESS';
-        }
-        await this.prisma.incident.updateMany({
-          where: { id: resourceId, organizationId },
-          data: { status: targetStatus as any, ...(action === DecisionAction.APPROVE ? { resolvedAt: new Date() } : {}) },
-        });
-      } else if (resourceType === 'EVIDENCE') {
-        let targetStatus = 'ACTIVE';
-        if (action === DecisionAction.REJECT) targetStatus = 'QUARANTINED';
-        await this.prisma.evidence.updateMany({
-          where: { id: resourceId, organizationId },
-          data: { status: targetStatus as any },
-        });
+      } catch {
+        // Non-fatal callback execution
       }
-    } catch {
-      // Non-fatal callback execution
-    }
+    });
   }
 
   private async verifyResourceBelongsToOrg(organizationId: string, resourceType: string, resourceId: string): Promise<void> {

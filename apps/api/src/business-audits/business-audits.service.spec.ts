@@ -97,6 +97,7 @@ describe('BusinessAuditsService', () => {
     };
 
     notificationsService = {
+      notify: jest.fn().mockResolvedValue({}),
       createNotification: jest.fn().mockResolvedValue({}),
     };
 

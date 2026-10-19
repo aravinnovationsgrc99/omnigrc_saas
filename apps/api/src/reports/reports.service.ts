@@ -523,8 +523,819 @@ export class ReportsService {
         break;
       }
 
+      // ─── Phase 4B: Workbook-required reports ──────────────────────────────
+
+      // Criterion 1: Audit Status & Summary Report
+      case ReportType.AUDIT_STATUS_SUMMARY: {
+        const where: any = { organizationId };
+        if (query.status) where.status = query.status;
+        if (query.frameworkId) where.frameworkId = query.frameworkId;
+        else if (query.frameworkCode) {
+          where.OR = [
+            { frameworkCode: query.frameworkCode },
+            { frameworkRef: { code: query.frameworkCode } },
+          ];
+        }
+        if (query.search) {
+          const sc = [
+            { title: { contains: query.search, mode: 'insensitive' } },
+            { objective: { contains: query.search, mode: 'insensitive' } },
+          ];
+          if (where.OR) { where.AND = [{ OR: where.OR }, { OR: sc }]; delete where.OR; }
+          else where.OR = sc;
+        }
+
+        const [count, plans] = await Promise.all([
+          this.prisma.auditPlan.count({ where }),
+          this.prisma.auditPlan.findMany({
+            where,
+            include: {
+              frameworkRef: { select: { code: true } },
+              assessments: {
+                include: { findings: { select: { id: true, status: true, dueDate: true } } },
+                orderBy: { createdAt: 'desc' },
+              },
+            },
+            orderBy: validatedSortBy ? { [validatedSortBy]: sortDirection } : { createdAt: 'desc' },
+            skip,
+            take: limit,
+          }),
+        ]);
+
+        const now = new Date();
+        total = count;
+        rows = plans.map((p) => {
+          const assessments = p.assessments || [];
+          const completedAssessments = assessments.filter((a) => a.status === 'COMPLETED').length;
+          const inProgressAssessments = assessments.filter((a) => a.status === 'IN_PROGRESS').length;
+          const latestScore = assessments[0]?.score ?? 0;
+
+          let findingsTotal = 0;
+          let findingsOpen = 0;
+          assessments.forEach((a) => {
+            (a.findings || []).forEach((f) => {
+              findingsTotal++;
+              if (f.status !== 'CLOSED' && f.status !== 'VERIFIED') findingsOpen++;
+            });
+          });
+
+          return {
+            id: p.id,
+            title: p.title,
+            frameworkCode: p.frameworkRef?.code || p.frameworkCode || 'N/A',
+            status: p.status,
+            ownerId: p.ownerId,
+            plannedStartDate: p.plannedStartDate ? new Date(p.plannedStartDate).toISOString().split('T')[0] : 'N/A',
+            plannedEndDate: p.plannedEndDate ? new Date(p.plannedEndDate).toISOString().split('T')[0] : 'N/A',
+            assessmentCount: assessments.length,
+            completedAssessments,
+            inProgressAssessments,
+            findingsTotal,
+            findingsOpen,
+            latestScore,
+          };
+        });
+        break;
+      }
+
+      // Criterion 2: Audit Findings Report
+      case ReportType.AUDIT_FINDINGS: {
+        const where: any = { organizationId };
+        if (query.status) where.status = query.status;
+        if (query.severity) where.severity = query.severity;
+        if (query.search) {
+          where.OR = [
+            { title: { contains: query.search, mode: 'insensitive' } },
+            { description: { contains: query.search, mode: 'insensitive' } },
+          ];
+        }
+
+        const now = new Date();
+        if (query.overdue) {
+          where.dueDate = { lt: now };
+          where.status = { notIn: ['CLOSED', 'VERIFIED'] };
+        }
+
+        const [count, findings] = await Promise.all([
+          this.prisma.auditFinding.count({ where }),
+          this.prisma.auditFinding.findMany({
+            where,
+            include: {
+              assessment: { include: { auditPlan: { select: { title: true } } } },
+              capas: { select: { id: true } },
+            },
+            orderBy: validatedSortBy && ['createdAt', 'severity', 'status', 'dueDate'].includes(validatedSortBy)
+              ? { [validatedSortBy]: sortDirection }
+              : { createdAt: 'desc' },
+            skip,
+            take: limit,
+          }),
+        ]);
+
+        total = count;
+        rows = findings.map((f) => {
+          const ageingDays = Math.floor((now.getTime() - new Date(f.createdAt).getTime()) / 86400000);
+          const isOverdue = Boolean(f.dueDate) && new Date(f.dueDate!) < now && f.status !== 'CLOSED' && f.status !== 'VERIFIED';
+          return {
+            id: f.id,
+            title: f.title,
+            severity: f.severity,
+            status: f.status,
+            ownerId: f.ownerId,
+            auditPlanTitle: f.assessment?.auditPlan?.title || 'N/A',
+            dueDate: f.dueDate ? new Date(f.dueDate).toISOString().split('T')[0] : 'N/A',
+            ageingDays,
+            isOverdue,
+            capaCount: f.capas?.length || 0,
+            createdAt: new Date(f.createdAt).toISOString().split('T')[0],
+          };
+        });
+        break;
+      }
+
+      // Criterion 3: Audit Compliance/Closure Report
+      case ReportType.AUDIT_COMPLIANCE_CLOSURE: {
+        const where: any = { organizationId };
+        if (query.status) where.status = query.status;
+        if (query.search) {
+          where.OR = [
+            { title: { contains: query.search, mode: 'insensitive' } },
+          ];
+        }
+
+        const now = new Date();
+        if (query.overdue) {
+          where.dueDate = { lt: now };
+          where.status = { notIn: ['CLOSED', 'VERIFIED'] };
+        }
+
+        const [count, findings] = await Promise.all([
+          this.prisma.auditFinding.count({ where }),
+          this.prisma.auditFinding.findMany({
+            where,
+            include: {
+              assessment: { include: { auditPlan: { select: { title: true } } } },
+              capas: { select: { id: true, status: true } },
+            },
+            orderBy: validatedSortBy && ['createdAt', 'status', 'dueDate'].includes(validatedSortBy)
+              ? { [validatedSortBy]: sortDirection }
+              : { createdAt: 'desc' },
+            skip,
+            take: limit,
+          }),
+        ]);
+
+        total = count;
+        rows = findings.map((f) => {
+          const isOverdue = Boolean(f.dueDate) && new Date(f.dueDate!) < now && f.status !== 'CLOSED' && f.status !== 'VERIFIED';
+          const openCapaCount = (f.capas || []).filter((c) => c.status !== 'CLOSED' && c.status !== 'VERIFIED').length;
+          const closedCapaCount = (f.capas || []).filter((c) => c.status === 'CLOSED' || c.status === 'VERIFIED').length;
+          const closedAt = (f.status === 'CLOSED' || f.status === 'VERIFIED') ? f.verifiedAt ?? f.updatedAt : null;
+
+          return {
+            id: f.id,
+            title: f.title,
+            auditPlanTitle: f.assessment?.auditPlan?.title || 'N/A',
+            severity: f.severity,
+            status: f.status,
+            ownerId: f.ownerId,
+            dueDate: f.dueDate ? new Date(f.dueDate).toISOString().split('T')[0] : 'N/A',
+            isOverdue,
+            openCapaCount,
+            closedCapaCount,
+            closedAt: closedAt ? new Date(closedAt).toISOString().split('T')[0] : 'N/A',
+            createdAt: new Date(f.createdAt).toISOString().split('T')[0],
+          };
+        });
+        break;
+      }
+
+      // Criterion 4: Policy Status Report
+      case ReportType.POLICY_STATUS: {
+        const where: any = { organizationId, deletedAt: null };
+        if (query.status) where.status = query.status;
+        if (query.search) {
+          where.OR = [
+            { title: { contains: query.search, mode: 'insensitive' } },
+            { code: { contains: query.search, mode: 'insensitive' } },
+            { category: { contains: query.search, mode: 'insensitive' } },
+          ];
+        }
+
+        const [count, policies] = await Promise.all([
+          this.prisma.policy.count({ where }),
+          this.prisma.policy.findMany({
+            where,
+            include: {
+              publishedVersion: { select: { versionNumber: true } },
+              versions: { orderBy: { createdAt: 'desc' }, take: 1, select: { versionNumber: true } },
+            },
+            orderBy: validatedSortBy ? { [validatedSortBy]: sortDirection } : { createdAt: 'desc' },
+            skip,
+            take: limit,
+          }),
+        ]);
+
+        total = count;
+        rows = policies.map((p) => ({
+          id: p.id,
+          code: p.code,
+          title: p.title,
+          category: p.category,
+          status: p.status,
+          currentVersionNumber: (p as any).versions?.[0]?.versionNumber || 'N/A',
+          publishedVersionNumber: p.publishedVersion?.versionNumber || 'N/A',
+          createdAt: new Date(p.createdAt).toISOString().split('T')[0],
+        }));
+        break;
+      }
+
+      // Criterion 5: Policy Review & Expiry Report
+      case ReportType.POLICY_REVIEW_EXPIRY: {
+        const where: any = { organizationId, deletedAt: null };
+        if (query.status) where.status = query.status;
+        if (query.search) {
+          where.OR = [
+            { title: { contains: query.search, mode: 'insensitive' } },
+            { code: { contains: query.search, mode: 'insensitive' } },
+          ];
+        }
+
+        const policies = await this.prisma.policy.findMany({
+          where,
+          include: { publishedVersion: { select: { versionNumber: true } } },
+          orderBy: { createdAt: 'desc' },
+        });
+
+        const now = new Date();
+        const mapped = policies.map((p) => {
+          // Determine last review date and next review date
+          const lastReviewDate = p.reviewDate ? new Date(p.reviewDate) : null;
+          let nextReviewDate: Date;
+          if (lastReviewDate) {
+            nextReviewDate = new Date(lastReviewDate);
+            nextReviewDate.setDate(nextReviewDate.getDate() + (p.reviewCadenceDays || 365));
+          } else {
+            nextReviewDate = new Date(p.createdAt);
+            nextReviewDate.setDate(nextReviewDate.getDate() + (p.reviewCadenceDays || 365));
+          }
+          const isReviewOverdue = nextReviewDate < now;
+          const daysUntilNextReview = Math.ceil((nextReviewDate.getTime() - now.getTime()) / 86400000);
+
+          return {
+            id: p.id,
+            code: p.code,
+            title: p.title,
+            status: p.status,
+            reviewCadenceDays: p.reviewCadenceDays,
+            lastReviewDate: lastReviewDate ? lastReviewDate.toISOString().split('T')[0] : 'N/A',
+            nextReviewDate: nextReviewDate.toISOString().split('T')[0],
+            isReviewOverdue,
+            daysUntilNextReview,
+          };
+        });
+
+        const filtered = query.overdueReview ? mapped.filter((p) => p.isReviewOverdue) : mapped;
+        total = filtered.length;
+        rows = filtered.slice(skip, skip + limit);
+        break;
+      }
+
+      // Criterion 6: Policy Acknowledgement Report
+      case ReportType.POLICY_ACKNOWLEDGEMENT: {
+        const where: any = { organizationId, deletedAt: null };
+        if (query.status) where.status = query.status;
+        if (query.search) {
+          where.OR = [
+            { title: { contains: query.search, mode: 'insensitive' } },
+            { code: { contains: query.search, mode: 'insensitive' } },
+          ];
+        }
+
+        // Count total org members (denominators for acknowledgement rates)
+        const [totalOrgMembers, policies] = await Promise.all([
+          this.prisma.organizationMembership.count({
+            where: { organizationId, status: 'ACTIVE' },
+          }),
+          this.prisma.policy.findMany({
+            where,
+            include: {
+              publishedVersion: {
+                select: {
+                  versionNumber: true,
+                  attestations: { select: { userId: true } },
+                },
+              },
+            },
+            orderBy: validatedSortBy ? { [validatedSortBy]: sortDirection } : { createdAt: 'desc' },
+          }),
+        ]);
+
+        const all = policies.map((p) => {
+          const attestations = p.publishedVersion?.attestations || [];
+          const acknowledgedCount = attestations.length;
+          const pendingCount = Math.max(0, totalOrgMembers - acknowledgedCount);
+          // Safe division: denominator is totalOrgMembers
+          const acknowledgementRate = totalOrgMembers > 0
+            ? Math.round((acknowledgedCount / totalOrgMembers) * 10000) / 100
+            : 0;
+
+          return {
+            id: p.id,
+            code: p.code,
+            title: p.title,
+            status: p.status,
+            publishedVersionNumber: p.publishedVersion?.versionNumber || 'N/A',
+            totalOrgMembers,
+            acknowledgedCount,
+            pendingCount,
+            acknowledgementRate,
+          };
+        });
+
+        total = all.length;
+        rows = all.slice(skip, skip + limit);
+        break;
+      }
+
+      // Criterion 7: Risk Heatmap / Risk Summary Report
+      // Returns aggregated rows grouped by (likelihood, impact) bucket, ordered by score desc.
+      // Each row represents a matrix cell in the heatmap.
+      case ReportType.RISK_HEATMAP: {
+        const where: any = { organizationId, deletedAt: null };
+        if (query.status) where.status = query.status;
+
+        // Use Prisma groupBy to aggregate at DB level (avoids full table scan in memory)
+        const grouped = await this.prisma.risk.groupBy({
+          by: ['likelihood', 'impact'],
+          where,
+          _count: { id: true },
+          orderBy: [{ likelihood: 'desc' }, { impact: 'desc' }],
+        });
+
+        rows = grouped.map((g) => {
+          const score = g.likelihood * g.impact;
+          let scoreBand: string;
+          if (score >= 15) scoreBand = RiskScoreBand.HIGH;
+          else if (score >= 8) scoreBand = RiskScoreBand.MEDIUM;
+          else scoreBand = RiskScoreBand.LOW;
+
+          return {
+            likelihood: g.likelihood,
+            impact: g.impact,
+            scoreBand,
+            count: g._count.id,
+          };
+        });
+
+        total = rows.length;
+        // Sort by descending combined score as default
+        rows.sort((a, b) => (b.likelihood * b.impact) - (a.likelihood * a.impact));
+        // Apply pagination to aggregated results
+        total = rows.length;
+        rows = rows.slice(skip, skip + limit);
+        break;
+      }
+
+      // Criterion 8: Risk Treatment & Ageing Report
+      case ReportType.RISK_TREATMENT_AGEING: {
+        const where: any = { organizationId, deletedAt: null };
+        if (query.status) where.status = query.status;
+        if (query.search) {
+          where.OR = [
+            { title: { contains: query.search, mode: 'insensitive' } },
+            { owner: { contains: query.search, mode: 'insensitive' } },
+            { treatmentOwner: { contains: query.search, mode: 'insensitive' } },
+          ];
+        }
+
+        const now = new Date();
+        if (query.overdue) {
+          // Overdue treatments: dueDate < now and treatment not completed/accepted
+          where.treatmentDueDate = { lt: now };
+          where.treatmentStatus = { notIn: ['ACCEPTED', 'COMPLETED', 'CLOSED'] };
+        }
+
+        const [count, risks] = await Promise.all([
+          this.prisma.risk.count({ where }),
+          this.prisma.risk.findMany({
+            where,
+            include: { asset: { select: { name: true } } },
+            orderBy: validatedSortBy && ['createdAt', 'title', 'treatmentDueDate', 'score'].includes(validatedSortBy)
+              ? { [validatedSortBy]: sortDirection }
+              : { treatmentDueDate: 'asc' },
+            skip,
+            take: limit,
+          }),
+        ]);
+
+        total = count;
+        rows = risks.map((r) => {
+          let band: string;
+          if (r.score >= 15) band = RiskScoreBand.HIGH;
+          else if (r.score >= 8) band = RiskScoreBand.MEDIUM;
+          else band = RiskScoreBand.LOW;
+
+          const ageingDays = Math.floor((now.getTime() - new Date(r.createdAt).getTime()) / 86400000);
+          const isTreatmentOverdue = Boolean(r.treatmentDueDate) &&
+            new Date(r.treatmentDueDate!) < now &&
+            !['ACCEPTED', 'COMPLETED', 'CLOSED'].includes(r.treatmentStatus || '');
+
+          return {
+            id: r.id,
+            title: r.title,
+            owner: r.owner,
+            score: r.score,
+            scoreBand: band,
+            residualScore: r.residualScore ?? 'N/A',
+            treatmentStrategy: r.treatmentStrategy || 'N/A',
+            treatmentOwner: r.treatmentOwner || 'N/A',
+            treatmentStatus: r.treatmentStatus || 'N/A',
+            treatmentDueDate: r.treatmentDueDate ? new Date(r.treatmentDueDate).toISOString().split('T')[0] : 'N/A',
+            isTreatmentOverdue,
+            ageingDays,
+          };
+        });
+        break;
+      }
+
+      // Criterion 9: Vendor Assessment Report
+      case ReportType.VENDOR_ASSESSMENT: {
+        const assessmentWhere: any = { organizationId };
+        if (query.status) assessmentWhere.status = query.status;
+        if (query.search) {
+          assessmentWhere.OR = [
+            { title: { contains: query.search, mode: 'insensitive' } },
+            { vendor: { name: { contains: query.search, mode: 'insensitive' } } },
+          ];
+        }
+
+        // Criticality filter goes to vendor
+        const vendorFilter = query.criticality ? { criticality: query.criticality, deletedAt: null } : { deletedAt: null };
+
+        const [count, assessments] = await Promise.all([
+          this.prisma.vendorAssessment.count({
+            where: { ...assessmentWhere, vendor: vendorFilter },
+          }),
+          this.prisma.vendorAssessment.findMany({
+            where: { ...assessmentWhere, vendor: vendorFilter },
+            include: {
+              vendor: { select: { name: true, criticality: true } },
+              actions: { select: { id: true, status: true } },
+              questionnaireSubmissions: { select: { id: true, status: true } },
+            },
+            orderBy: validatedSortBy && ['createdAt', 'status', 'score'].includes(validatedSortBy)
+              ? { [validatedSortBy]: sortDirection }
+              : { createdAt: 'desc' },
+            skip,
+            take: limit,
+          }),
+        ]);
+
+        total = count;
+        rows = assessments.map((a) => {
+          const openActionCount = (a.actions || []).filter(
+            (act) => act.status !== 'CLOSED' && act.status !== 'VERIFIED',
+          ).length;
+          const submittedQuestionnaires = (a.questionnaireSubmissions || []).filter(
+            (q) => q.status === 'SUBMITTED' || q.status === 'REVIEWED',
+          ).length;
+
+          return {
+            id: a.id,
+            vendorName: a.vendor?.name || 'N/A',
+            vendorCriticality: a.vendor?.criticality || 'N/A',
+            title: a.title,
+            status: a.status,
+            score: a.score ?? 'N/A',
+            questionnaireCount: a.questionnaireSubmissions?.length || 0,
+            submittedQuestionnaires,
+            openActionCount,
+            completedAt: a.completedAt ? new Date(a.completedAt).toISOString().split('T')[0] : 'N/A',
+            createdAt: new Date(a.createdAt).toISOString().split('T')[0],
+          };
+        });
+        break;
+      }
+
+      // Criterion 10: Vendor Review & Renewal Report
+      case ReportType.VENDOR_REVIEW_RENEWAL: {
+        const where: any = { organizationId, deletedAt: null };
+        if (query.criticality) where.criticality = query.criticality;
+        if (query.status) where.status = query.status;
+        if (query.search) {
+          where.OR = [
+            { name: { contains: query.search, mode: 'insensitive' } },
+            { category: { contains: query.search, mode: 'insensitive' } },
+          ];
+        }
+
+        const vendors = await this.prisma.vendor.findMany({
+          where,
+          include: {
+            assessments: {
+              where: { status: { notIn: ['COMPLETED', 'CANCELLED'] as any } },
+              select: { id: true },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+
+        const now = new Date();
+        const mapped = vendors.map((v) => {
+          let nextReviewDate: Date;
+          if (v.nextReviewDate) {
+            nextReviewDate = new Date(v.nextReviewDate);
+          } else {
+            const base = v.lastReviewedAt ? new Date(v.lastReviewedAt) : new Date(v.createdAt);
+            nextReviewDate = new Date(base);
+            nextReviewDate.setDate(nextReviewDate.getDate() + (v.reviewCadenceDays || 365));
+          }
+
+          const isReviewOverdue = nextReviewDate < now;
+          const daysUntilReview = Math.ceil((nextReviewDate.getTime() - now.getTime()) / 86400000);
+
+          return {
+            id: v.id,
+            name: v.name,
+            category: v.category || 'N/A',
+            criticality: v.criticality,
+            status: v.status,
+            owner: v.owner,
+            lastReviewedAt: v.lastReviewedAt ? new Date(v.lastReviewedAt).toISOString().split('T')[0] : 'N/A',
+            nextReviewDate: nextReviewDate.toISOString().split('T')[0],
+            isReviewOverdue,
+            daysUntilReview,
+            openAssessmentCount: v.assessments?.length || 0,
+          };
+        });
+
+        const filtered = query.requiringReview ? mapped.filter((v) => v.isReviewOverdue) : mapped;
+        total = filtered.length;
+        rows = filtered.slice(skip, skip + limit);
+        break;
+      }
+
+      // Criterion 11: Vulnerability Summary Report (grouped by severity)
+      case ReportType.VULNERABILITY_SUMMARY: {
+        const where: any = { organizationId, deletedAt: null };
+        // Note: severity/status filters narrow which severities are shown (display all by default)
+
+        // Use groupBy to aggregate counts at database level
+        const allSeverities = [
+          VulnerabilitySeverity.CRITICAL,
+          VulnerabilitySeverity.HIGH,
+          VulnerabilitySeverity.MEDIUM,
+          VulnerabilitySeverity.LOW,
+        ];
+
+        const now = new Date();
+
+        // Parallel queries for each status bucket
+        const [bySeverityGroups, overdueGroups] = await Promise.all([
+          // Group by severity × status to build the full matrix in one round-trip
+          this.prisma.vulnerability.groupBy({
+            by: ['severity', 'status'],
+            where,
+            _count: { id: true },
+          }),
+          // Overdue: dueDate < now AND not terminal
+          this.prisma.vulnerability.groupBy({
+            by: ['severity'],
+            where: {
+              ...where,
+              dueDate: { lt: now },
+              status: { notIn: [VulnerabilityStatus.RESOLVED, VulnerabilityStatus.RISK_ACCEPTED] },
+            },
+            _count: { id: true },
+          }),
+        ]);
+
+        // Build lookup maps
+        const overdueMap = new Map(overdueGroups.map((g) => [g.severity, g._count.id]));
+
+        // Build one row per severity
+        const severityRows = allSeverities.map((sev) => {
+          const rowGroups = bySeverityGroups.filter((g) => g.severity === sev);
+          const total = rowGroups.reduce((s, g) => s + g._count.id, 0);
+          const openCount = rowGroups.filter((g) => g.status === VulnerabilityStatus.OPEN).reduce((s, g) => s + g._count.id, 0);
+          const inRemediationCount = rowGroups.filter((g) => g.status === VulnerabilityStatus.IN_REMEDIATION).reduce((s, g) => s + g._count.id, 0);
+          const resolvedCount = rowGroups.filter((g) => g.status === VulnerabilityStatus.RESOLVED).reduce((s, g) => s + g._count.id, 0);
+          const riskAcceptedCount = rowGroups.filter((g) => g.status === VulnerabilityStatus.RISK_ACCEPTED).reduce((s, g) => s + g._count.id, 0);
+          const overdueCount = overdueMap.get(sev) || 0;
+
+          return { severity: sev, count: total, openCount, inRemediationCount, resolvedCount, riskAcceptedCount, overdueCount };
+        });
+
+        // Apply optional severity filter after aggregation
+        const filtered = query.severity ? severityRows.filter((r) => r.severity === query.severity) : severityRows;
+        total = filtered.length;
+        rows = filtered.slice(skip, skip + limit);
+        break;
+      }
+
+      // Criterion 12: Vulnerability SLA & Ageing Report
+      case ReportType.VULNERABILITY_SLA_AGEING: {
+        const where: any = { organizationId, deletedAt: null };
+        if (query.severity) where.severity = query.severity;
+        if (query.status) where.status = query.status;
+        const now = new Date();
+        if (query.overdue) {
+          where.dueDate = { lt: now };
+          where.status = { notIn: [VulnerabilityStatus.RESOLVED, VulnerabilityStatus.RISK_ACCEPTED] };
+        }
+        if (query.search) {
+          where.OR = [
+            { title: { contains: query.search, mode: 'insensitive' } },
+            { cveId: { contains: query.search, mode: 'insensitive' } },
+          ];
+        }
+
+        const [count, vulns] = await Promise.all([
+          this.prisma.vulnerability.count({ where }),
+          this.prisma.vulnerability.findMany({
+            where,
+            orderBy: validatedSortBy && ['createdAt', 'severity', 'dueDate'].includes(validatedSortBy)
+              ? { [validatedSortBy]: sortDirection }
+              : { dueDate: 'asc' },
+            skip,
+            take: limit,
+          }),
+        ]);
+
+        total = count;
+        rows = vulns.map((v) => {
+          const ageingDays = Math.floor((now.getTime() - new Date(v.discoveredAt).getTime()) / 86400000);
+          const isOverdue = Boolean(v.dueDate) &&
+            new Date(v.dueDate!) < now &&
+            v.status !== VulnerabilityStatus.RESOLVED &&
+            v.status !== VulnerabilityStatus.RISK_ACCEPTED;
+
+          return {
+            id: v.id,
+            title: v.title,
+            cveId: v.cveId || 'N/A',
+            severity: v.severity,
+            status: v.status,
+            remediationOwner: v.remediationOwner || 'N/A',
+            discoveredAt: new Date(v.discoveredAt).toISOString().split('T')[0],
+            dueDate: v.dueDate ? new Date(v.dueDate).toISOString().split('T')[0] : 'N/A',
+            ageingDays,
+            isOverdue,
+          };
+        });
+        break;
+      }
+
+      // Criterion 13: Incident Summary Report (grouped by severity)
+      case ReportType.INCIDENT_SUMMARY: {
+        const baseWhere: any = { organizationId, deletedAt: null };
+
+        const allSeverities = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
+
+        const groupedIncidents = await this.prisma.incident.groupBy({
+          by: ['severity', 'status'],
+          where: baseWhere,
+          _count: { id: true },
+        });
+
+        const severityRows = allSeverities.map((sev) => {
+          const rowGroups = groupedIncidents.filter((g) => g.severity === sev);
+          const count = rowGroups.reduce((s, g) => s + g._count.id, 0);
+          const openCount = rowGroups.filter((g) => g.status === 'OPEN').reduce((s, g) => s + g._count.id, 0);
+          const inProgressCount = rowGroups.filter((g) => g.status === 'IN_PROGRESS').reduce((s, g) => s + g._count.id, 0);
+          const containedCount = rowGroups.filter((g) => g.status === 'CONTAINED').reduce((s, g) => s + g._count.id, 0);
+          const resolvedCount = rowGroups.filter((g) => g.status === 'RESOLVED').reduce((s, g) => s + g._count.id, 0);
+          const closedCount = rowGroups.filter((g) => g.status === 'CLOSED').reduce((s, g) => s + g._count.id, 0);
+
+          return { severity: sev, count, openCount, inProgressCount, containedCount, resolvedCount, closedCount };
+        });
+
+        const filtered = query.severity ? severityRows.filter((r) => r.severity === query.severity) : severityRows;
+        total = filtered.length;
+        rows = filtered.slice(skip, skip + limit);
+        break;
+      }
+
+      // Criterion 14: Incident SLA & Ageing Report
+      case ReportType.INCIDENT_SLA_AGEING: {
+        const where: any = { organizationId, deletedAt: null };
+        if (query.status) where.status = query.status;
+        if (query.severity) where.severity = query.severity;
+        const now = new Date();
+        if (query.overdue) {
+          where.dueDate = { lt: now };
+          where.status = { notIn: ['RESOLVED', 'CLOSED'] };
+        }
+        if (query.search) {
+          where.OR = [
+            { title: { contains: query.search, mode: 'insensitive' } },
+            { category: { contains: query.search, mode: 'insensitive' } },
+            { owner: { contains: query.search, mode: 'insensitive' } },
+          ];
+        }
+
+        const [count, incidents] = await Promise.all([
+          this.prisma.incident.count({ where }),
+          this.prisma.incident.findMany({
+            where,
+            orderBy: validatedSortBy && ['createdAt', 'severity', 'dueDate'].includes(validatedSortBy)
+              ? { [validatedSortBy]: sortDirection }
+              : { dueDate: 'asc' },
+            skip,
+            take: limit,
+          }),
+        ]);
+
+        total = count;
+        rows = incidents.map((i) => {
+          const ageingDays = Math.floor((now.getTime() - new Date(i.detectedAt).getTime()) / 86400000);
+          const isOverdue = Boolean(i.dueDate) &&
+            new Date(i.dueDate!) < now &&
+            i.status !== 'RESOLVED' &&
+            i.status !== 'CLOSED';
+
+          return {
+            id: i.id,
+            title: i.title,
+            category: i.category || 'N/A',
+            severity: i.severity,
+            priority: i.priority || 'N/A',
+            status: i.status,
+            owner: i.owner,
+            businessUnit: i.businessUnit || 'N/A',
+            detectedAt: new Date(i.detectedAt).toISOString().split('T')[0],
+            dueDate: i.dueDate ? new Date(i.dueDate).toISOString().split('T')[0] : 'N/A',
+            ageingDays,
+            isOverdue,
+          };
+        });
+        break;
+      }
+
+      // Criterion 15: Incident RCA & Closure Report
+      case ReportType.INCIDENT_RCA_CLOSURE: {
+        const where: any = { organizationId, deletedAt: null };
+        if (query.status) where.status = query.status;
+        if (query.severity) where.severity = query.severity;
+        if (query.search) {
+          where.OR = [
+            { title: { contains: query.search, mode: 'insensitive' } },
+            { owner: { contains: query.search, mode: 'insensitive' } },
+          ];
+        }
+
+        const [count, incidents] = await Promise.all([
+          this.prisma.incident.count({ where }),
+          this.prisma.incident.findMany({
+            where,
+            include: {
+              actions: { select: { id: true, status: true, actionType: true } },
+            },
+            orderBy: validatedSortBy && ['createdAt', 'severity', 'status', 'resolvedAt'].includes(validatedSortBy)
+              ? { [validatedSortBy]: sortDirection }
+              : { resolvedAt: 'desc' },
+            skip,
+            take: limit,
+          }),
+        ]);
+
+        total = count;
+        rows = incidents.map((i) => {
+          const allActions = i.actions || [];
+          const correctiveActionCount = allActions.length;
+          const openActionCount = allActions.filter(
+            (a) => a.status !== 'CLOSED' && a.status !== 'VERIFIED',
+          ).length;
+
+          // rootCause field holds the investigation root cause text
+          const rootCauseProvided = Boolean(i.rootCause && i.rootCause.trim().length > 0);
+          // Truncate to 120 chars for the summary column
+          const rootCauseSummary = rootCauseProvided
+            ? i.rootCause!.length > 120 ? `${i.rootCause!.substring(0, 120)}…` : i.rootCause!
+            : 'N/A';
+
+          return {
+            id: i.id,
+            title: i.title,
+            severity: i.severity,
+            status: i.status,
+            owner: i.owner,
+            rootCauseProvided,
+            rootCauseSummary,
+            correctiveActionCount,
+            openActionCount,
+            resolvedAt: i.resolvedAt ? new Date(i.resolvedAt).toISOString().split('T')[0] : 'N/A',
+            closedAt: i.status === 'CLOSED' ? new Date(i.updatedAt).toISOString().split('T')[0] : 'N/A',
+            detectedAt: new Date(i.detectedAt).toISOString().split('T')[0],
+          };
+        });
+        break;
+      }
+
       default:
         throw new BadRequestException(`Report type '${reportType}' is not implemented.`);
+
     }
 
     return {
