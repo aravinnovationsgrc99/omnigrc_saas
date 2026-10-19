@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications.service';
@@ -6,6 +6,7 @@ import { NotificationType, TaskStatus } from '@omnigrc/shared';
 import { LicenseVerificationService } from '../../license-verification/license-verification.service';
 import { EffectiveServiceStateResolver } from '../../service-control/effective-service-state-resolver.service';
 import { TenantContext } from '../../tenant/tenant.context';
+import { SchedulerLockService, SCHEDULER_LOCKS } from './scheduler-lock.service';
 
 @Injectable()
 export class DueDateReminderCron {
@@ -16,18 +17,20 @@ export class DueDateReminderCron {
     private readonly notificationsService: NotificationsService,
     private readonly licenseVerificationService: LicenseVerificationService,
     private readonly effectiveServiceStateResolver: EffectiveServiceStateResolver,
+    @Optional() private readonly schedulerLockService?: SchedulerLockService,
   ) {}
 
   @Cron('0 0 * * *', { timeZone: 'UTC' })
   async handleDueDateReminders() {
-    return TenantContext.runSystemContext(async () => {
-      const licenseState = await this.licenseVerificationService.getEvaluatedState();
-      if (licenseState.state !== 'VALID') {
-        this.logger.debug(`Skipping daily due date reminder cron job: license state is ${licenseState.state}.`);
-        return;
-      }
+    const executeJob = async () => {
+      return TenantContext.runSystemContext(async () => {
+        const licenseState = await this.licenseVerificationService.getEvaluatedState();
+        if (licenseState.state !== 'VALID') {
+          this.logger.debug(`Skipping daily due date reminder cron job: license state is ${licenseState.state}.`);
+          return;
+        }
 
-    this.logger.log('Running daily due date reminder cron job (UTC canonical timezone)...');
+        this.logger.log('Running daily due date reminder cron job (UTC canonical timezone)...');
 
     const now = new Date();
     const inThreeDays = new Date();
@@ -137,7 +140,19 @@ export class DueDateReminderCron {
 
     // 5. Vulnerability Remediation Due-Date Reminders (Criterion 19)
     await this.handleVulnerabilityRemediationReminders(now, startOfToday);
-    });
+      });
+    };
+
+    if (this.schedulerLockService) {
+      const lockRes = await this.schedulerLockService.withLock(
+        SCHEDULER_LOCKS.DUE_DATE_REMINDER,
+        'Due Date Reminders',
+        executeJob,
+      );
+      return lockRes.result;
+    }
+
+    return executeJob();
   }
 
   private async handlePolicyReviewReminders(now: Date, startOfToday: Date): Promise<void> {

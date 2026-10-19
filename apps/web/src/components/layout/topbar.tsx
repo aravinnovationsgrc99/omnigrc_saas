@@ -260,11 +260,35 @@ export function Topbar({ onToggleMobileSidebar, mobileSidebarOpen, onNavigateToV
                           </span>
                         </div>
                         {n.title && n.title !== n.message && (
-                          <div style={{ fontSize: 12, fontWeight: 600, color: '#1B2430', marginBottom: 2 }}>
+                          <div
+                            title={n.title}
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 600,
+                              color: '#1B2430',
+                              marginBottom: 2,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              maxWidth: '100%',
+                            }}
+                          >
                             {n.title}
                           </div>
                         )}
-                        <div style={{ fontSize: 12, color: n.read ? '#5B6672' : '#1B2430', fontWeight: n.read ? 400 : 500, lineHeight: 1.4 }}>
+                        <div
+                          title={n.message || n.body || n.title}
+                          style={{
+                            fontSize: 12,
+                            color: n.read ? '#5B6672' : '#1B2430',
+                            fontWeight: n.read ? 400 : 500,
+                            lineHeight: 1.4,
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                          }}
+                        >
                           {n.message || n.body || n.title}
                         </div>
                       </div>

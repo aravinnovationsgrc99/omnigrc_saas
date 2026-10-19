@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications.service';
@@ -8,6 +8,7 @@ import { NotificationType, Role, RiskStatus } from '@omnigrc/shared';
 import { LicenseVerificationService } from '../../license-verification/license-verification.service';
 import { EffectiveServiceStateResolver } from '../../service-control/effective-service-state-resolver.service';
 import { TenantContext } from '../../tenant/tenant.context';
+import { SchedulerLockService, SCHEDULER_LOCKS } from './scheduler-lock.service';
 
 @Injectable()
 export class RiskEscalationCron {
@@ -19,20 +20,22 @@ export class RiskEscalationCron {
     private readonly resendMailerService: ResendMailerService,
     private readonly licenseVerificationService: LicenseVerificationService,
     private readonly effectiveServiceStateResolver: EffectiveServiceStateResolver,
+    @Optional() private readonly schedulerLockService?: SchedulerLockService,
   ) {}
 
   @Cron('0 1 * * *', { timeZone: 'UTC' })
   async handleRiskEscalations() {
-    return TenantContext.runSystemContext(async () => {
-      const licenseState = await this.licenseVerificationService.getEvaluatedState();
-      if (licenseState.state !== 'VALID') {
-        this.logger.debug(`Skipping daily High-Risk SLA Escalation cron job: license state is ${licenseState.state}.`);
-        return;
-      }
+    const executeJob = async () => {
+      return TenantContext.runSystemContext(async () => {
+        const licenseState = await this.licenseVerificationService.getEvaluatedState();
+        if (licenseState.state !== 'VALID') {
+          this.logger.debug(`Skipping daily High-Risk SLA Escalation cron job: license state is ${licenseState.state}.`);
+          return;
+        }
 
-    this.logger.log('Running daily High-Risk SLA Escalation cron job (UTC canonical timezone)...');
+        this.logger.log('Running daily High-Risk SLA Escalation cron job (UTC canonical timezone)...');
 
-    const now = new Date();
+        const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
     const highRisksRaw = await this.prisma.risk.findMany({
@@ -170,7 +173,19 @@ export class RiskEscalationCron {
 
     // 6. Incident SLA Breach Escalation (Criterion 29)
     await this.handleIncidentSlaBreachEscalations(now, startOfToday);
-    });
+      });
+    };
+
+    if (this.schedulerLockService) {
+      const lockRes = await this.schedulerLockService.withLock(
+        SCHEDULER_LOCKS.RISK_ESCALATION,
+        'Risk Escalation',
+        executeJob,
+      );
+      return lockRes.result;
+    }
+
+    return executeJob();
   }
 
   private async handleOverdueAuditEscalations(now: Date, startOfToday: Date): Promise<void> {

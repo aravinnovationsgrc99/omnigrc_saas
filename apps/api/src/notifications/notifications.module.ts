@@ -6,6 +6,7 @@ import { SlackNotifierService } from './slack/slack-notifier.service';
 import { DueDateReminderCron } from './cron/due-date-reminder.cron';
 import { WeeklyDigestCron } from './cron/weekly-digest.cron';
 import { RiskEscalationCron } from './cron/risk-escalation.cron';
+import { SchedulerLockService } from './cron/scheduler-lock.service';
 
 import { ServiceControlModule } from '../service-control/service-control.module';
 
@@ -17,10 +18,11 @@ import { ServiceControlModule } from '../service-control/service-control.module'
     NotificationsService,
     ResendMailerService,
     SlackNotifierService,
+    SchedulerLockService,
     DueDateReminderCron,
     WeeklyDigestCron,
     RiskEscalationCron,
   ],
-  exports: [NotificationsService, ResendMailerService, SlackNotifierService],
+  exports: [NotificationsService, ResendMailerService, SlackNotifierService, SchedulerLockService],
 })
 export class NotificationsModule {}
