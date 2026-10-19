@@ -917,6 +917,8 @@ export interface NotificationDto {
   userId: string;
   type: NotificationType;
   message: string;
+  title?: string;
+  body?: string;
   entityType: string;
   entityId: string;
   read: boolean;

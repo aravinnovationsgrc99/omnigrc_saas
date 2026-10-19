@@ -31,6 +31,7 @@ export function RiskListView({ initialAssetId, onClearAssetFilter, onNavigateToV
 
   // Filters & Search
   const [search, setSearch] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [scoreBandFilter, setScoreBandFilter] = useState<string>('');
   const [frameworkFilter, setFrameworkFilter] = useState<string>('');
@@ -54,6 +55,7 @@ export function RiskListView({ initialAssetId, onClearAssetFilter, onNavigateToV
     try {
       const params = new URLSearchParams();
       if (search.trim()) params.set('search', search.trim());
+      if (categoryFilter) params.set('category', categoryFilter);
       if (statusFilter) params.set('status', statusFilter);
       if (scoreBandFilter) params.set('scoreBand', scoreBandFilter);
       if (cellLikelihood) params.set('likelihood', cellLikelihood.toString());
@@ -72,7 +74,7 @@ export function RiskListView({ initialAssetId, onClearAssetFilter, onNavigateToV
     } finally {
       setLoading(false);
     }
-  }, [search, statusFilter, scoreBandFilter, frameworkFilter, cellLikelihood, cellImpact, assetIdFilter]);
+  }, [search, categoryFilter, statusFilter, scoreBandFilter, frameworkFilter, cellLikelihood, cellImpact, assetIdFilter]);
 
   useEffect(() => {
     fetchRisks();
@@ -188,9 +190,26 @@ export function RiskListView({ initialAssetId, onClearAssetFilter, onNavigateToV
             />
           </div>
 
-          {/* Status Filter */}
+          {/* Category Filter */}
           <select
             className="omni-input w-full md:w-36"
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            aria-label="Filter by category"
+          >
+            <option value="">All Categories</option>
+            <option value="Information Security">Information Security</option>
+            <option value="Compliance">Compliance</option>
+            <option value="Operational">Operational</option>
+            <option value="Financial">Financial</option>
+            <option value="Third Party">Third Party</option>
+            <option value="Reputational">Reputational</option>
+            <option value="Strategic">Strategic</option>
+          </select>
+
+          {/* Status Filter */}
+          <select
+            className="omni-input w-full md:w-32"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
             aria-label="Filter by risk status"
@@ -300,10 +319,11 @@ export function RiskListView({ initialAssetId, onClearAssetFilter, onNavigateToV
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
             <thead>
               <tr style={{ background: '#F6F7F6', borderBottom: '1px solid #E2E6E4', color: '#5B6672' }}>
-                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Risk Title</th>
-                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Score</th>
+                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Risk Title & Category</th>
+                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Inherent Score</th>
+                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Residual Score</th>
                 <th style={{ padding: '12px 16px', fontWeight: 600 }}>Status</th>
-                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Owner</th>
+                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Owner & Treatment</th>
                 <th style={{ padding: '12px 16px', fontWeight: 600 }}>Framework / Reference</th>
                 <th style={{ padding: '12px 16px', fontWeight: 600 }}>Linked Asset</th>
                 <th style={{ padding: '12px 16px', fontWeight: 600 }}>Updated</th>
@@ -314,6 +334,10 @@ export function RiskListView({ initialAssetId, onClearAssetFilter, onNavigateToV
                 const scoreBadgeClass = getScoreBadgeClass(risk.scoreBand);
                 const statusBadgeClass = getStatusBadgeClass(risk.status);
                 const isLast = index === risks.length - 1;
+                const isOverdue = risk.treatmentDueDate &&
+                  new Date(risk.treatmentDueDate) < new Date() &&
+                  risk.treatmentStatus !== 'COMPLETED' &&
+                  risk.treatmentStatus !== 'CLOSED';
 
                 return (
                   <tr
@@ -327,7 +351,14 @@ export function RiskListView({ initialAssetId, onClearAssetFilter, onNavigateToV
                     className="omni-table-row focus:outline-none"
                   >
                     <td style={{ padding: '14px 16px', fontWeight: 600, color: '#1B2430' }}>
-                      {risk.title}
+                      <div className="flex items-center gap-2">
+                        <span>{risk.title}</span>
+                        {risk.category && (
+                          <span style={{ fontSize: 10.5, background: '#EDEFED', color: '#4A5568', padding: '1px 6px', borderRadius: 4, fontWeight: 500 }}>
+                            {risk.category}
+                          </span>
+                        )}
+                      </div>
                       {risk.treatmentPlan && (
                         <div style={{ fontSize: 11.5, fontWeight: 400, color: '#5B6672', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 380 }}>
                           📋 {risk.treatmentPlan}
@@ -343,11 +374,39 @@ export function RiskListView({ initialAssetId, onClearAssetFilter, onNavigateToV
                       />
                     </td>
                     <td style={{ padding: '14px 16px' }}>
+                      {risk.residualScore ? (
+                        <RagStatusBadge
+                          status={getRiskRag(risk.residualScore).status}
+                          label={`${risk.residualScoreBand || ''} (${risk.residualScore})`}
+                          detail={`Residual L:${risk.residualLikelihood} × I:${risk.residualImpact}`}
+                          size="sm"
+                        />
+                      ) : (
+                        <span style={{ fontSize: 11, color: '#8B95A1' }}>—</span>
+                      )}
+                    </td>
+                    <td style={{ padding: '14px 16px' }}>
                       <span className={statusBadgeClass}>
                         {risk.status}
                       </span>
                     </td>
-                    <td style={{ padding: '14px 16px', color: '#1B2430' }}>{risk.owner}</td>
+                    <td style={{ padding: '14px 16px', color: '#1B2430' }}>
+                      <div style={{ fontWeight: 600 }}>{risk.owner}</div>
+                      {(risk.treatmentStrategy || risk.treatmentOwner || isOverdue) && (
+                        <div className="flex items-center gap-1.5 mt-1" style={{ fontSize: 11, color: '#5B6672' }}>
+                          {risk.treatmentStrategy && (
+                            <span style={{ background: '#E0E7FF', color: '#3730A3', padding: '1px 5px', borderRadius: 3, fontWeight: 600, fontSize: 10 }}>
+                              {risk.treatmentStrategy}
+                            </span>
+                          )}
+                          {isOverdue && (
+                            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                              OVERDUE
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </td>
                     <td style={{ padding: '14px 16px', color: '#0F6E6A', fontWeight: 600 }}>
                       {risk.frameworkCode ? (
                         <span style={{ background: '#E4F1F0', padding: '2px 8px', borderRadius: 4, fontSize: 11.5 }}>

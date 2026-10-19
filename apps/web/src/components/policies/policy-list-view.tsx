@@ -45,7 +45,13 @@ export function PolicyListView() {
   const [initialContent, setInitialContent] = useState(
     '# Policy Title\n\n1. Objective & Purpose\n2. Scope\n3. Compliance Rules and Controls\n4. Enforcement & Violations',
   );
+  const [reviewCadenceDays, setReviewCadenceDays] = useState(365);
   const [submitting, setSubmitting] = useState(false);
+
+  // Acknowledgement Summary & Approval State
+  const [ackSummary, setAckSummary] = useState<any | null>(null);
+  const [loadingAckSummary, setLoadingAckSummary] = useState(false);
+  const [submittingApproval, setSubmittingApproval] = useState(false);
 
   // Edit Draft State
   const [isEditingDraft, setIsEditingDraft] = useState(false);
@@ -111,6 +117,7 @@ export function PolicyListView() {
           description,
           category,
           ownerId,
+          reviewCadenceDays: Number(reviewCadenceDays),
           initialContent,
         }),
       });
@@ -119,6 +126,7 @@ export function PolicyListView() {
       setCode('');
       setTitle('');
       setDescription('');
+      setReviewCadenceDays(365);
       setInitialContent(
         '# Policy Title\n\n1. Objective & Purpose\n2. Scope\n3. Compliance Rules and Controls\n4. Enforcement & Violations',
       );
@@ -144,6 +152,33 @@ export function PolicyListView() {
         ? policy.versions[0].content
         : policy.publishedVersion?.content || '';
     setEditContent(currentContent);
+
+    // Fetch acknowledgement summary for attestation metrics
+    setLoadingAckSummary(true);
+    apiRequest<any>(`/policies/${policy.id}/acknowledgement-summary`)
+      .then((data) => setAckSummary(data))
+      .catch(() => setAckSummary(null))
+      .finally(() => setLoadingAckSummary(false));
+  }
+
+  async function handleSubmitApproval() {
+    if (!selectedPolicy) return;
+    setSubmittingApproval(true);
+    try {
+      await apiRequest(`/policies/${selectedPolicy.id}/submit-approval`, {
+        method: 'POST',
+        body: JSON.stringify({
+          title: `Formal Approval for Policy: ${selectedPolicy.title}`,
+          dueDays: 14,
+        }),
+      });
+      addToast('Submitted policy for formal approval.', 'success');
+      fetchPolicies();
+    } catch (err: any) {
+      addToast(`Failed to submit approval: ${err.message}`, 'error');
+    } finally {
+      setSubmittingApproval(false);
+    }
   }
 
   async function handleSaveDraft() {
@@ -402,17 +437,32 @@ export function PolicyListView() {
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Summary / Scope Description
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Defines mandatory controls, user obligations, and cryptographic standards across all company systems."
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Summary / Scope Description
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Mandatory user obligations and security rules"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Review Cadence (Days)
+                  </label>
+                  <input
+                    type="number"
+                    min="30"
+                    max="730"
+                    value={reviewCadenceDays}
+                    onChange={(e) => setReviewCadenceDays(Number(e.target.value))}
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+                  />
+                </div>
               </div>
 
               <div>
@@ -601,6 +651,48 @@ export function PolicyListView() {
                     <span className="text-slate-500 block">Status:</span>
                     <strong className="text-slate-800">{selectedPolicy.status}</strong>
                   </div>
+                </div>
+
+                {/* Acknowledgement Tracking & Formal Approval Panel */}
+                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl mb-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                      Attestation & Acknowledgement Tracking
+                    </span>
+                    <button
+                      onClick={handleSubmitApproval}
+                      disabled={submittingApproval}
+                      className="px-3 py-1 text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white rounded-lg flex items-center gap-1.5 transition"
+                    >
+                      <CheckCircle2 size={13} />
+                      {submittingApproval ? 'Submitting...' : 'Submit for Formal Approval'}
+                    </button>
+                  </div>
+
+                  {loadingAckSummary ? (
+                    <div className="text-xs text-slate-500 py-1">Loading acknowledgement metrics...</div>
+                  ) : ackSummary ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                      <div className="p-2 bg-white rounded-lg border border-slate-200">
+                        <span className="text-slate-500 block text-[11px]">Compliance Rate</span>
+                        <span className="text-sm font-bold text-teal-800">{ackSummary.compliancePercentage || 0}%</span>
+                      </div>
+                      <div className="p-2 bg-white rounded-lg border border-slate-200">
+                        <span className="text-slate-500 block text-[11px]">Acknowledged</span>
+                        <span className="text-sm font-bold text-emerald-800">{ackSummary.attestedUsersCount || 0} users</span>
+                      </div>
+                      <div className="p-2 bg-white rounded-lg border border-slate-200">
+                        <span className="text-slate-500 block text-[11px]">Pending</span>
+                        <span className="text-sm font-bold text-amber-800">{ackSummary.pendingUsersCount || 0} users</span>
+                      </div>
+                      <div className="p-2 bg-white rounded-lg border border-slate-200">
+                        <span className="text-slate-500 block text-[11px]">Eligible Total</span>
+                        <span className="text-sm font-bold text-slate-800">{ackSummary.totalEligibleUsers || 0}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-slate-500">No active attestation campaign recorded.</div>
+                  )}
                 </div>
 
                 {selectedPolicy.publishedVersion ? (

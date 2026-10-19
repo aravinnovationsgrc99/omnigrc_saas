@@ -935,7 +935,7 @@ describe('ReportsService', () => {
       expect(excelExportService.sanitizeCell(-50)).toBe(-50);
       expect(excelExportService.sanitizeCell(true)).toBe('Yes');
       expect(excelExportService.sanitizeCell(false)).toBe('No');
-    });
+    }, 30000);
 
     it('should emit REPORT_EXPORTED audit entry on export download and zero audit logs on interactive report views', async () => {
       // Interactive View

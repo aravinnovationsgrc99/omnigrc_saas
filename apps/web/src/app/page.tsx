@@ -111,6 +111,7 @@ export default function MainPage() {
           <Topbar
             onToggleMobileSidebar={() => setMobileSidebarOpen((v) => !v)}
             mobileSidebarOpen={mobileSidebarOpen}
+            onNavigateToView={(v) => navigateToView(v)}
           />
           <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }} className="omni-scroll w-full max-w-full p-3.5 sm:p-6">
             {!isLicensed && activeItem?.capabilityCode ? (

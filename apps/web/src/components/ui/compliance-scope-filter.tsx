@@ -96,9 +96,9 @@ export function ComplianceScopeFilter({
       setLoadingFrameworks(true);
       setError(null);
       try {
-        const data = await apiRequest<FrameworkOption[]>('/frameworks');
+        const data = await apiRequest<any>('/frameworks');
         if (isMounted) {
-          setFrameworks(data || []);
+          setFrameworks(Array.isArray(data) ? data : (data?.items || []));
         }
       } catch (err: any) {
         if (isMounted) {

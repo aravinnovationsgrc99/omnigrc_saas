@@ -82,8 +82,11 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [category, setCategory] = useState<string>('Information Security');
   const [likelihood, setLikelihood] = useState<number>(3);
   const [impact, setImpact] = useState<number>(3);
+  const [residualLikelihood, setResidualLikelihood] = useState<number>(0);
+  const [residualImpact, setResidualImpact] = useState<number>(0);
   const [status, setStatus] = useState<RiskStatus>(RiskStatus.OPEN);
   const [owner, setOwner] = useState('');
   const [assetId, setAssetId] = useState<string>('');
@@ -91,6 +94,10 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
   const [frameworkVersionId, setFrameworkVersionId] = useState<string>('');
   const [frameworkReferenceId, setFrameworkReferenceId] = useState<string>('');
   const [treatmentPlan, setTreatmentPlan] = useState('');
+  const [treatmentStrategy, setTreatmentStrategy] = useState<string>('MITIGATE');
+  const [treatmentOwner, setTreatmentOwner] = useState<string>('');
+  const [treatmentDueDate, setTreatmentDueDate] = useState<string>('');
+  const [treatmentStatus, setTreatmentStatus] = useState<string>('OPEN');
 
   const [availableAssets, setAvailableAssets] = useState<AssetDto[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntryDto[]>([]);
@@ -204,8 +211,11 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
     if (risk) {
       setTitle(risk.title || '');
       setDescription(risk.description || '');
+      setCategory(risk.category || 'Information Security');
       setLikelihood(risk.likelihood || 3);
       setImpact(risk.impact || 3);
+      setResidualLikelihood(risk.residualLikelihood || 0);
+      setResidualImpact(risk.residualImpact || 0);
       setStatus(risk.status || RiskStatus.OPEN);
       setOwner(risk.owner || '');
       setFrameworkId(risk.frameworkId || '');
@@ -229,6 +239,10 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
       }
 
       setTreatmentPlan(risk.treatmentPlan || '');
+      setTreatmentStrategy(risk.treatmentStrategy || 'MITIGATE');
+      setTreatmentOwner(risk.treatmentOwner || '');
+      setTreatmentDueDate(risk.treatmentDueDate ? new Date(risk.treatmentDueDate).toISOString().substring(0, 10) : '');
+      setTreatmentStatus(risk.treatmentStatus || 'OPEN');
 
       setLoadingAudit(true);
       apiRequest<AuditLogEntryDto[]>(`/risks/${risk.id}/audit-log`)
@@ -238,8 +252,11 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
     } else {
       setTitle('');
       setDescription('');
+      setCategory('Information Security');
       setLikelihood(3);
       setImpact(3);
+      setResidualLikelihood(0);
+      setResidualImpact(0);
       setStatus(RiskStatus.OPEN);
       setOwner('');
       setAssetId(defaultAssetId || '');
@@ -247,6 +264,10 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
       setFrameworkVersionId('');
       setFrameworkReferenceId('');
       setTreatmentPlan('');
+      setTreatmentStrategy('MITIGATE');
+      setTreatmentOwner('');
+      setTreatmentDueDate('');
+      setTreatmentStatus('OPEN');
       setAuditLogs([]);
     }
     setErrorMsg(null);
@@ -261,6 +282,14 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
   const badgeClass = currentScoreBand === RiskScoreBand.HIGH
     ? 'omni-badge-rose'
     : currentScoreBand === RiskScoreBand.MEDIUM
+    ? 'omni-badge-amber'
+    : 'omni-badge-teal';
+
+  const residualScore = (residualLikelihood > 0 && residualImpact > 0) ? residualLikelihood * residualImpact : null;
+  const residualScoreBand = residualScore ? (residualScore >= 15 ? RiskScoreBand.HIGH : residualScore >= 8 ? RiskScoreBand.MEDIUM : RiskScoreBand.LOW) : null;
+  const residualBadgeClass = residualScoreBand === RiskScoreBand.HIGH
+    ? 'omni-badge-rose'
+    : residualScoreBand === RiskScoreBand.MEDIUM
     ? 'omni-badge-amber'
     : 'omni-badge-teal';
 
@@ -284,14 +313,21 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
         const payload: UpdateRiskDto = {
           title: title.trim(),
           description: description.trim() || undefined,
+          category: category.trim() || undefined,
           likelihood,
           impact,
+          residualLikelihood: residualLikelihood > 0 ? residualLikelihood : undefined,
+          residualImpact: residualImpact > 0 ? residualImpact : undefined,
           status,
           owner: owner.trim(),
           assetId: assetId || null,
           frameworkId: effectiveFrameworkId,
           frameworkReferenceId: effectiveReferenceId,
           treatmentPlan: treatmentPlan.trim() || undefined,
+          treatmentStrategy: treatmentStrategy || undefined,
+          treatmentOwner: treatmentOwner.trim() || undefined,
+          treatmentDueDate: treatmentDueDate ? new Date(treatmentDueDate).toISOString() : undefined,
+          treatmentStatus: treatmentStatus || undefined,
         };
         await apiRequest(`/risks/${risk.id}`, {
           method: 'PATCH',
@@ -304,14 +340,21 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
         const payload: CreateRiskDto = {
           title: title.trim(),
           description: description.trim() || undefined,
+          category: category.trim() || undefined,
           likelihood,
           impact,
+          residualLikelihood: residualLikelihood > 0 ? residualLikelihood : undefined,
+          residualImpact: residualImpact > 0 ? residualImpact : undefined,
           status,
           owner: owner.trim(),
           assetId: assetId || undefined,
           frameworkId: effectiveFrameworkId,
           frameworkReferenceId: effectiveReferenceId,
           treatmentPlan: treatmentPlan.trim() || undefined,
+          treatmentStrategy: treatmentStrategy || undefined,
+          treatmentOwner: treatmentOwner.trim() || undefined,
+          treatmentDueDate: treatmentDueDate ? new Date(treatmentDueDate).toISOString() : undefined,
+          treatmentStatus: treatmentStatus || undefined,
         };
         await apiRequest('/risks', {
           method: 'POST',
@@ -395,44 +438,85 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
           )}
 
           <form id="risk-form" onSubmit={handleSave}>
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
-                Risk Title *
-              </label>
-              <input
-                className={`omni-input ${isTitleInvalid ? 'border-rose-500' : ''}`}
-                placeholder="e.g. Unencrypted Patient Health Data in Transit"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                onBlur={() => setTitleTouched(true)}
-                required
-              />
-              {isTitleInvalid && (
-                <span className="text-xs text-rose-600 font-medium mt-1 block">Risk title is required.</span>
-              )}
-            </div>
-
-            <div style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              background: '#F6F7F6', padding: '12px 14px', borderRadius: 8, border: '1px solid #E2E6E4', marginBottom: 16,
-            }}>
-              <span style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672' }}>Calculated Risk Score</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span className="omni-mono" style={{ fontSize: 16, fontWeight: 700 }}>
-                  {currentScore}
-                </span>
-                <span className={badgeClass}>
-                  {currentScoreBand}
-                </span>
+            <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+              <div style={{ flex: 1.5 }}>
+                <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
+                  Risk Title *
+                </label>
+                <input
+                  className={`omni-input ${isTitleInvalid ? 'border-rose-500' : ''}`}
+                  placeholder="e.g. Unencrypted Patient Health Data in Transit"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  onBlur={() => setTitleTouched(true)}
+                  required
+                />
+                {isTitleInvalid && (
+                  <span className="text-xs text-rose-600 font-medium mt-1 block">Risk title is required.</span>
+                )}
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
+                  Risk Category
+                </label>
+                <select
+                  aria-label="Risk Category"
+                  className="omni-input"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                >
+                  <option value="Information Security">Information Security</option>
+                  <option value="Compliance">Compliance</option>
+                  <option value="Operational">Operational</option>
+                  <option value="Financial">Financial</option>
+                  <option value="Third Party">Third Party</option>
+                  <option value="Reputational">Reputational</option>
+                  <option value="Strategic">Strategic</option>
+                </select>
               </div>
             </div>
 
+            {/* Inherent vs Residual Score Summary */}
+            <div style={{
+              display: 'flex', gap: 12, marginBottom: 16,
+            }}>
+              <div style={{
+                flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                background: '#F6F7F6', padding: '10px 14px', borderRadius: 8, border: '1px solid #E2E6E4',
+              }}>
+                <div>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: '#5B6672', display: 'block' }}>Inherent Risk Score</span>
+                  <span className="omni-mono" style={{ fontSize: 16, fontWeight: 700 }}>{currentScore}</span>
+                </div>
+                <span className={badgeClass}>{currentScoreBand}</span>
+              </div>
+
+              <div style={{
+                flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                background: '#F6F7F6', padding: '10px 14px', borderRadius: 8, border: '1px solid #E2E6E4',
+              }}>
+                <div>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: '#5B6672', display: 'block' }}>Residual Risk Score</span>
+                  <span className="omni-mono" style={{ fontSize: 16, fontWeight: 700 }}>
+                    {residualScore !== null ? residualScore : '—'}
+                  </span>
+                </div>
+                {residualScoreBand ? (
+                  <span className={residualBadgeClass}>{residualScoreBand}</span>
+                ) : (
+                  <span style={{ fontSize: 11, color: '#8B95A1' }}>Not Assessed</span>
+                )}
+              </div>
+            </div>
+
+            {/* Inherent Likelihood & Impact */}
             <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
               <div style={{ flex: 1 }}>
                 <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
-                  Likelihood (1–5) *
+                  Inherent Likelihood (1–5) *
                 </label>
                 <select
+                  aria-label="Inherent Likelihood"
                   className="omni-input"
                   value={likelihood}
                   onChange={(e) => setLikelihood(Number(e.target.value))}
@@ -445,13 +529,51 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
 
               <div style={{ flex: 1 }}>
                 <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
-                  Impact (1–5) *
+                  Inherent Impact (1–5) *
                 </label>
                 <select
+                  aria-label="Inherent Impact"
                   className="omni-input"
                   value={impact}
                   onChange={(e) => setImpact(Number(e.target.value))}
                 >
+                  {[1, 2, 3, 4, 5].map((val) => (
+                    <option key={val} value={val}>{IMPACT_LABELS[val]}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Residual Likelihood & Impact */}
+            <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
+                  Residual Likelihood (Post-treatment)
+                </label>
+                <select
+                  aria-label="Residual Likelihood"
+                  className="omni-input"
+                  value={residualLikelihood}
+                  onChange={(e) => setResidualLikelihood(Number(e.target.value))}
+                >
+                  <option value={0}>-- Not Evaluated --</option>
+                  {[1, 2, 3, 4, 5].map((val) => (
+                    <option key={val} value={val}>{LIKELIHOOD_LABELS[val]}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
+                  Residual Impact (Post-treatment)
+                </label>
+                <select
+                  aria-label="Residual Impact"
+                  className="omni-input"
+                  value={residualImpact}
+                  onChange={(e) => setResidualImpact(Number(e.target.value))}
+                >
+                  <option value={0}>-- Not Evaluated --</option>
                   {[1, 2, 3, 4, 5].map((val) => (
                     <option key={val} value={val}>{IMPACT_LABELS[val]}</option>
                   ))}
@@ -546,17 +668,87 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
               style={{ marginBottom: 16, resize: 'vertical' }}
             />
 
-            <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
-              Treatment & Mitigation Plan
-            </label>
-            <textarea
-              className="omni-input"
-              rows={3}
-              placeholder="Action plan, control steps, target dates, or acceptance rationale..."
-              value={treatmentPlan}
-              onChange={(e) => setTreatmentPlan(e.target.value)}
-              style={{ marginBottom: 20, resize: 'vertical' }}
-            />
+            {/* Treatment & Mitigation Plan Section */}
+            <div style={{ borderTop: '1px solid #E2E6E4', paddingTop: 14, marginBottom: 16 }}>
+              <h4 style={{ fontSize: 13, fontWeight: 600, color: '#1B2430', marginBottom: 10 }}>
+                Risk Treatment & Mitigation Details
+              </h4>
+
+              <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 4 }}>
+                    Treatment Strategy
+                  </label>
+                  <select
+                    aria-label="Treatment Strategy"
+                    className="omni-input"
+                    value={treatmentStrategy}
+                    onChange={(e) => setTreatmentStrategy(e.target.value)}
+                  >
+                    <option value="MITIGATE">MITIGATE</option>
+                    <option value="AVOID">AVOID</option>
+                    <option value="TRANSFER">TRANSFER</option>
+                    <option value="ACCEPT">ACCEPT</option>
+                  </select>
+                </div>
+
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 4 }}>
+                    Treatment Status
+                  </label>
+                  <select
+                    aria-label="Treatment Status"
+                    className="omni-input"
+                    value={treatmentStatus}
+                    onChange={(e) => setTreatmentStatus(e.target.value)}
+                  >
+                    <option value="OPEN">OPEN</option>
+                    <option value="IN_PROGRESS">IN PROGRESS</option>
+                    <option value="COMPLETED">COMPLETED</option>
+                    <option value="ACCEPTED">ACCEPTED</option>
+                    <option value="CLOSED">CLOSED</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 4 }}>
+                    Treatment Owner
+                  </label>
+                  <input
+                    className="omni-input"
+                    placeholder="e.g. DevOps Engineer / SecOps"
+                    value={treatmentOwner}
+                    onChange={(e) => setTreatmentOwner(e.target.value)}
+                  />
+                </div>
+
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 4 }}>
+                    Treatment Due Date
+                  </label>
+                  <input
+                    type="date"
+                    className="omni-input"
+                    value={treatmentDueDate}
+                    onChange={(e) => setTreatmentDueDate(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 4 }}>
+                Treatment Action Plan
+              </label>
+              <textarea
+                className="omni-input"
+                rows={3}
+                placeholder="Action plan, control steps, target dates, or acceptance rationale..."
+                value={treatmentPlan}
+                onChange={(e) => setTreatmentPlan(e.target.value)}
+                style={{ resize: 'vertical' }}
+              />
+            </div>
           </form>
 
           {/* Workflow Lifecycle, Next Actions & Prerequisites (Edit mode only) */}

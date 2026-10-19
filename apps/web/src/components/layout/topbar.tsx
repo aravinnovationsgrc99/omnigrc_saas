@@ -9,9 +9,10 @@ import { NotificationDto, PaginatedNotificationsDto, NotificationType } from '@o
 interface TopbarProps {
   onToggleMobileSidebar?: () => void;
   mobileSidebarOpen?: boolean;
+  onNavigateToView?: (view: string) => void;
 }
 
-export function Topbar({ onToggleMobileSidebar, mobileSidebarOpen }: TopbarProps) {
+export function Topbar({ onToggleMobileSidebar, mobileSidebarOpen, onNavigateToView }: TopbarProps) {
   const { user, organization, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -42,9 +43,10 @@ export function Topbar({ onToggleMobileSidebar, mobileSidebarOpen }: TopbarProps
   const fetchNotifications = async () => {
     setLoadingNotifs(true);
     try {
-      const res = await apiRequest<PaginatedNotificationsDto>('/notifications?limit=10');
-      setNotifications(res.items);
-      setUnreadCount(res.unreadCount);
+      const res = await apiRequest<any>('/notifications?limit=10');
+      const items = Array.isArray(res) ? res : (res?.items || []);
+      setNotifications(items);
+      setUnreadCount(typeof res?.unreadCount === 'number' ? res.unreadCount : items.filter((n: any) => !n.read).length);
     } catch {
       setNotifications([]);
     } finally {
@@ -66,8 +68,8 @@ export function Topbar({ onToggleMobileSidebar, mobileSidebarOpen }: TopbarProps
     setMenuOpen(false);
   };
 
-  const handleMarkRead = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleMarkRead = async (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     try {
       await apiRequest(`/notifications/${id}/read`, { method: 'PATCH' });
       setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
@@ -87,6 +89,31 @@ export function Topbar({ onToggleMobileSidebar, mobileSidebarOpen }: TopbarProps
     }
   };
 
+  const resolveEntityView = (n: NotificationDto): string | null => {
+    const et = (n.entityType || '').toUpperCase();
+    if (et === 'RISK') return 'risk';
+    if (et === 'POLICY') return 'policies';
+    if (et === 'INCIDENT') return 'incidents';
+    if (et === 'VULNERABILITY') return 'vulnerabilities';
+    if (et === 'AUDIT' || et === 'AUDITPLAN' || et === 'AUDITASSESSMENT') return 'audits';
+    if (et === 'VENDOR') return 'vendors';
+    if (et === 'TASK' || et === 'COMPLIANCETASK') return 'board';
+    if (et === 'CONTROL') return 'controls';
+    if (et === 'APPROVAL' || et === 'APPROVALINSTANCE') return 'approvals';
+    return null;
+  };
+
+  const handleNotificationClick = (n: NotificationDto, e: React.MouseEvent) => {
+    if (!n.read) {
+      handleMarkRead(n.id, e);
+    }
+    const targetView = resolveEntityView(n);
+    if (targetView && onNavigateToView) {
+      onNavigateToView(targetView);
+      setNotifOpen(false);
+    }
+  };
+
   const getNotifBadgeStyle = (type: NotificationType) => {
     switch (type) {
       case NotificationType.MAPPING_OVERRIDDEN:
@@ -97,6 +124,10 @@ export function Topbar({ onToggleMobileSidebar, mobileSidebarOpen }: TopbarProps
         return { bg: '#EBF3FF', color: '#1E64D4', label: 'Task' };
       case NotificationType.DUE_DATE_REMINDER:
         return { bg: '#F8E6E8', color: '#801F2B', label: 'Due Soon' };
+      case NotificationType.WEEKLY_DIGEST:
+        return { bg: '#EBF3FF', color: '#1E64D4', label: 'Digest' };
+      case NotificationType.RISK_ESCALATION:
+        return { bg: '#FEEFC3', color: '#B06000', label: 'Escalation' };
       default:
         return { bg: '#EDEFED', color: '#5B6672', label: 'System' };
     }
@@ -193,7 +224,7 @@ export function Topbar({ onToggleMobileSidebar, mobileSidebarOpen }: TopbarProps
                   <div style={{ padding: '24px', textAlign: 'center', fontSize: 12.5, color: '#8B95A1' }}>
                     Loading notifications...
                   </div>
-                ) : notifications.length === 0 ? (
+                ) : (!notifications || notifications.length === 0) ? (
                   <div style={{ padding: '24px', textAlign: 'center', fontSize: 12.5, color: '#8B95A1' }}>
                     No notifications yet.
                   </div>
@@ -203,7 +234,7 @@ export function Topbar({ onToggleMobileSidebar, mobileSidebarOpen }: TopbarProps
                     return (
                       <div
                         key={n.id}
-                        onClick={(e) => !n.read && handleMarkRead(n.id, e)}
+                        onClick={(e) => handleNotificationClick(n, e)}
                         style={{
                           padding: '12px 14px', borderBottom: '1px solid #EDEFED',
                           background: n.read ? '#FFFFFF' : '#F9FCFC', cursor: 'pointer',
@@ -228,8 +259,13 @@ export function Topbar({ onToggleMobileSidebar, mobileSidebarOpen }: TopbarProps
                             {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </span>
                         </div>
+                        {n.title && n.title !== n.message && (
+                          <div style={{ fontSize: 12, fontWeight: 600, color: '#1B2430', marginBottom: 2 }}>
+                            {n.title}
+                          </div>
+                        )}
                         <div style={{ fontSize: 12, color: n.read ? '#5B6672' : '#1B2430', fontWeight: n.read ? 400 : 500, lineHeight: 1.4 }}>
-                          {n.message}
+                          {n.message || n.body || n.title}
                         </div>
                       </div>
                     );
