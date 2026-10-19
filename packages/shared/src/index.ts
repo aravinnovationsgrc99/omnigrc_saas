@@ -310,10 +310,15 @@ export interface RiskDto {
   projectId?: string | null;
   title: string;
   description?: string | null;
+  category?: string | null;
   likelihood: number;
   impact: number;
   score: number;
   scoreBand: RiskScoreBand;
+  residualLikelihood?: number | null;
+  residualImpact?: number | null;
+  residualScore?: number | null;
+  residualScoreBand?: RiskScoreBand | null;
   status: RiskStatus;
   owner: string;
   assetId?: string | null;
@@ -325,6 +330,10 @@ export interface RiskDto {
   referenceIdentifier?: string | null;
   referenceTitle?: string | null;
   treatmentPlan?: string | null;
+  treatmentStrategy?: string | null;
+  treatmentOwner?: string | null;
+  treatmentDueDate?: string | null;
+  treatmentStatus?: string | null;
   createdAt: string;
   updatedAt: string;
   createdById: string;
@@ -334,8 +343,11 @@ export interface RiskDto {
 export interface CreateRiskDto {
   title: string;
   description?: string;
+  category?: string;
   likelihood: number;
   impact: number;
+  residualLikelihood?: number;
+  residualImpact?: number;
   status?: RiskStatus;
   owner: string;
   assetId?: string;
@@ -344,13 +356,20 @@ export interface CreateRiskDto {
   frameworkId?: string;
   frameworkReferenceId?: string;
   treatmentPlan?: string;
+  treatmentStrategy?: string;
+  treatmentOwner?: string;
+  treatmentDueDate?: string;
+  treatmentStatus?: string;
 }
 
 export interface UpdateRiskDto {
   title?: string;
   description?: string;
+  category?: string;
   likelihood?: number;
   impact?: number;
+  residualLikelihood?: number;
+  residualImpact?: number;
   status?: RiskStatus;
   owner?: string;
   assetId?: string | null;
@@ -359,12 +378,17 @@ export interface UpdateRiskDto {
   frameworkId?: string | null;
   frameworkReferenceId?: string | null;
   treatmentPlan?: string;
+  treatmentStrategy?: string;
+  treatmentOwner?: string;
+  treatmentDueDate?: string;
+  treatmentStatus?: string;
 }
 
 export interface RiskQueryDto {
   page?: number;
   limit?: number;
   search?: string;
+  category?: string;
   status?: RiskStatus;
   scoreBand?: RiskScoreBand;
   likelihood?: number;
@@ -2097,55 +2121,109 @@ export enum IncidentStatus {
 export interface IncidentDto {
   id: string;
   organizationId: string;
+  departmentId?: string | null;
+  projectId?: string | null;
   title: string;
   description?: string | null;
+  category?: string | null;
+  priority?: string | null;
   severity: IncidentSeverity;
   status: IncidentStatus;
   owner?: string | null;
+  businessUnit?: string | null;
   detectedAt: Date | string;
   containedAt?: Date | string | null;
   resolvedAt?: Date | string | null;
   dueDate?: Date | string | null;
   rootCause?: string | null;
+  investigationDetails?: string | null;
   affectedAssetId?: string | null;
   affectedAssetName?: string | null;
+  actions?: IncidentActionDto[];
   createdById: string;
   createdAt: Date | string;
   updatedAt: Date | string;
 }
 
+export interface IncidentActionDto {
+  id: string;
+  organizationId: string;
+  incidentId: string;
+  title: string;
+  description?: string | null;
+  actionType: string;
+  owner: string;
+  dueDate?: string | null;
+  status: string;
+  completedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateIncidentActionDto {
+  title: string;
+  description?: string;
+  actionType?: string;
+  owner: string;
+  dueDate?: string;
+  status?: string;
+}
+
+export interface UpdateIncidentActionDto {
+  title?: string;
+  description?: string;
+  actionType?: string;
+  owner?: string;
+  dueDate?: string;
+  status?: string;
+}
+
 export interface CreateIncidentDto {
   title: string;
   description?: string;
+  category?: string;
+  priority?: string;
   severity?: IncidentSeverity;
   status?: IncidentStatus;
   owner?: string;
+  businessUnit?: string;
   detectedAt?: Date | string;
   containedAt?: Date | string;
   resolvedAt?: Date | string;
   dueDate?: Date | string;
   rootCause?: string;
+  investigationDetails?: string;
   affectedAssetId?: string;
+  departmentId?: string;
+  projectId?: string;
 }
 
 export interface UpdateIncidentDto {
   title?: string;
   description?: string;
+  category?: string;
+  priority?: string;
   severity?: IncidentSeverity;
   status?: IncidentStatus;
   owner?: string;
+  businessUnit?: string;
   detectedAt?: Date | string;
   containedAt?: Date | string | null;
   resolvedAt?: Date | string | null;
   dueDate?: Date | string | null;
   rootCause?: string;
+  investigationDetails?: string;
   affectedAssetId?: string | null;
+  departmentId?: string;
+  projectId?: string;
 }
 
 export interface IncidentQueryDto {
   page?: number;
   limit?: number;
   search?: string;
+  category?: string;
+  priority?: string;
   severity?: IncidentSeverity;
   status?: IncidentStatus;
 }
@@ -2159,7 +2237,7 @@ export interface PaginatedIncidentsDto {
 
 export interface RemediationActionDto {
   id: string;
-  sourceType: 'AUDIT_CAPA' | 'VULNERABILITY' | 'RISK_TREATMENT';
+  sourceType: 'AUDIT_CAPA' | 'VULNERABILITY' | 'RISK_TREATMENT' | 'INCIDENT_ACTION' | 'VENDOR_ACTION';
   sourceId: string;
   title: string;
   description?: string | null;
@@ -2169,7 +2247,7 @@ export interface RemediationActionDto {
   priorityOrSeverity: string;
   dueDate?: Date | string | null;
   isOverdue: boolean;
-  originatingDomain: 'Audit' | 'Vulnerability' | 'Risk';
+  originatingDomain: 'Audit' | 'Vulnerability' | 'Risk' | 'Incident' | 'Vendor';
   sourceReferenceUrl: string;
 }
 
@@ -2180,7 +2258,7 @@ export interface RemediationQueryDto {
   status?: string;
   owner?: string;
   overdueOnly?: boolean;
-  sourceType?: 'AUDIT_CAPA' | 'VULNERABILITY' | 'RISK_TREATMENT';
+  sourceType?: 'AUDIT_CAPA' | 'VULNERABILITY' | 'RISK_TREATMENT' | 'INCIDENT_ACTION' | 'VENDOR_ACTION';
 }
 
 export interface PaginatedRemediationActionsDto {
@@ -2188,6 +2266,99 @@ export interface PaginatedRemediationActionsDto {
   total: number;
   page: number;
   limit: number;
+}
+
+export interface VendorQuestionnaireDto {
+  id: string;
+  organizationId: string;
+  title: string;
+  description?: string | null;
+  version: string;
+  status: string;
+  questions: any[];
+  createdById: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateVendorQuestionnaireDto {
+  title: string;
+  description?: string;
+  version?: string;
+  questions: Array<{
+    id: string;
+    text: string;
+    type: 'TEXT' | 'BOOLEAN' | 'CHOICE' | 'FILE';
+    required: boolean;
+    options?: string[];
+  }>;
+}
+
+export interface VendorQuestionnaireSubmissionDto {
+  id: string;
+  organizationId: string;
+  vendorId: string;
+  questionnaireId: string;
+  questionnaireTitle?: string;
+  questionnaireVersion?: string;
+  assessmentId?: string | null;
+  status: string;
+  answers: any;
+  submittedAt?: string | null;
+  submittedBy?: string | null;
+  reviewedAt?: string | null;
+  reviewedById?: string | null;
+  reviewNotes?: string | null;
+  score?: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SubmitVendorQuestionnaireDto {
+  answers: Array<{
+    questionId: string;
+    answer: any;
+    comments?: string;
+  }>;
+  submittedBy?: string;
+  assessmentId?: string;
+}
+
+export interface VendorAssessmentActionDto {
+  id: string;
+  organizationId: string;
+  assessmentId: string;
+  title: string;
+  description?: string | null;
+  actionType: string;
+  owner: string;
+  dueDate?: string | null;
+  status: string;
+  completedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateVendorAssessmentActionDto {
+  title: string;
+  description?: string;
+  actionType?: string;
+  owner: string;
+  dueDate?: string;
+  status?: string;
+}
+
+export interface PolicyAttestationSummaryDto {
+  policyId: string;
+  policyCode: string;
+  policyTitle: string;
+  versionId: string;
+  versionNumber: string;
+  totalEligibleUsers: number;
+  attestedUsersCount: number;
+  pendingUsersCount: number;
+  compliancePercentage: number;
+  attestations: any[];
 }
 
 export interface EvidenceVaultItemDto {

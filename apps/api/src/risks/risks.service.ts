@@ -3,7 +3,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
 import { FrameworkEntitlementsService } from '../frameworks/framework-entitlements.service';
-import { CreateRiskDto, UpdateRiskDto, RiskQueryDto } from './dto/risks.dto';
+import { ApprovalEngineService } from '../approval/approval-engine.service';
+import { CreateRiskDto, UpdateRiskDto, RiskQueryDto, SubmitRiskApprovalDto } from './dto/risks.dto';
 import { RiskDto, PaginatedRisksDto, HeatmapSummaryDto, HeatmapCellDto, RiskStatus, RiskScoreBand } from '@omnigrc/shared';
 
 @Injectable()
@@ -13,6 +14,7 @@ export class RisksService {
     private readonly auditLogsService: AuditLogsService,
     private readonly resourceAuthService: ResourceAuthorizationService,
     @Optional() private readonly frameworkEntitlementsService?: FrameworkEntitlementsService,
+    @Optional() private readonly approvalEngineService?: ApprovalEngineService,
   ) {}
 
   public static getScoreBand(score: number): RiskScoreBand {
@@ -39,6 +41,10 @@ export class RisksService {
 
     if (query.status) {
       where.status = query.status;
+    }
+
+    if (query.category) {
+      where.category = query.category;
     }
 
     if (query.likelihood) {
@@ -73,7 +79,10 @@ export class RisksService {
         { title: { contains: searchTerm, mode: 'insensitive' } },
         { owner: { contains: searchTerm, mode: 'insensitive' } },
         { description: { contains: searchTerm, mode: 'insensitive' } },
+        { category: { contains: searchTerm, mode: 'insensitive' } },
         { treatmentPlan: { contains: searchTerm, mode: 'insensitive' } },
+        { treatmentStrategy: { contains: searchTerm, mode: 'insensitive' } },
+        { treatmentOwner: { contains: searchTerm, mode: 'insensitive' } },
       ];
 
       if (where.OR) {
@@ -267,6 +276,16 @@ export class RisksService {
 
     const score = dto.likelihood * dto.impact;
 
+    let residualScore: number | null = null;
+    if (dto.residualLikelihood && dto.residualImpact) {
+      residualScore = dto.residualLikelihood * dto.residualImpact;
+    }
+
+    const initialStatus = dto.status || RiskStatus.OPEN;
+    if (initialStatus === RiskStatus.IN_TREATMENT && !dto.treatmentPlan && !dto.treatmentStrategy) {
+      throw new BadRequestException('Cannot set risk status to IN_TREATMENT without a defined treatment plan or strategy.');
+    }
+
     const risk = await this.prisma.risk.create({
       data: {
         organizationId: authCtx.organizationId,
@@ -274,15 +293,23 @@ export class RisksService {
         projectId: dto.projectId || null,
         title: dto.title,
         description: dto.description || null,
+        category: dto.category || null,
         likelihood: dto.likelihood,
         impact: dto.impact,
         score,
-        status: dto.status || RiskStatus.OPEN,
+        residualLikelihood: dto.residualLikelihood || null,
+        residualImpact: dto.residualImpact || null,
+        residualScore,
+        status: initialStatus,
         owner: dto.owner,
         assetId: dto.assetId || null,
         frameworkId: resolvedFrameworkId,
         frameworkReferenceId: resolvedFrameworkReferenceId,
         treatmentPlan: dto.treatmentPlan || null,
+        treatmentStrategy: dto.treatmentStrategy || null,
+        treatmentOwner: dto.treatmentOwner || null,
+        treatmentDueDate: dto.treatmentDueDate ? new Date(dto.treatmentDueDate) : null,
+        treatmentStatus: dto.treatmentStatus || (initialStatus === RiskStatus.IN_TREATMENT ? 'IN_PROGRESS' : 'NOT_STARTED'),
         createdById: authCtx.userId,
       },
       include: {
@@ -302,6 +329,8 @@ export class RisksService {
         title: risk.title,
         score: risk.score,
         status: risk.status,
+        category: risk.category,
+        residualScore: risk.residualScore,
         departmentId: risk.departmentId,
         projectId: risk.projectId,
         frameworkId: risk.frameworkId,
@@ -330,6 +359,20 @@ export class RisksService {
       });
     }
 
+    // Permitted state transitions validation
+    if (dto.status !== undefined && dto.status !== existing.status) {
+      if (existing.status === RiskStatus.CLOSED && dto.status !== RiskStatus.OPEN) {
+        throw new BadRequestException('Closed risks can only be transitioned to OPEN (reopened).');
+      }
+      if (dto.status === RiskStatus.IN_TREATMENT) {
+        const plan = dto.treatmentPlan !== undefined ? dto.treatmentPlan : existing.treatmentPlan;
+        const strategy = dto.treatmentStrategy !== undefined ? dto.treatmentStrategy : existing.treatmentStrategy;
+        if (!plan && !strategy) {
+          throw new BadRequestException('Cannot transition risk to IN_TREATMENT without a defined treatment plan or strategy.');
+        }
+      }
+    }
+
     let targetFwId = dto.frameworkId !== undefined ? dto.frameworkId : existing.frameworkId;
     let targetRefId = dto.frameworkReferenceId !== undefined ? dto.frameworkReferenceId : existing.frameworkReferenceId;
 
@@ -343,10 +386,20 @@ export class RisksService {
     const impact = dto.impact !== undefined ? dto.impact : existing.impact;
     const score = likelihood * impact;
 
+    const resLikelihood = dto.residualLikelihood !== undefined ? dto.residualLikelihood : existing.residualLikelihood;
+    const resImpact = dto.residualImpact !== undefined ? dto.residualImpact : existing.residualImpact;
+    let residualScore: number | null = null;
+    if (resLikelihood && resImpact) {
+      residualScore = resLikelihood * resImpact;
+    }
+
     const changedFields: string[] = [];
     if (dto.title !== undefined && dto.title !== existing.title) changedFields.push('title');
+    if (dto.category !== undefined && dto.category !== existing.category) changedFields.push('category');
     if (dto.likelihood !== undefined && dto.likelihood !== existing.likelihood) changedFields.push('likelihood');
     if (dto.impact !== undefined && dto.impact !== existing.impact) changedFields.push('impact');
+    if (dto.residualLikelihood !== undefined && dto.residualLikelihood !== existing.residualLikelihood) changedFields.push('residualLikelihood');
+    if (dto.residualImpact !== undefined && dto.residualImpact !== existing.residualImpact) changedFields.push('residualImpact');
     if (dto.status !== undefined && dto.status !== existing.status) changedFields.push('status');
     if (dto.owner !== undefined && dto.owner !== existing.owner) changedFields.push('owner');
     if (dto.assetId !== undefined && dto.assetId !== existing.assetId) changedFields.push('assetId');
@@ -355,15 +408,23 @@ export class RisksService {
     if (targetFwId !== existing.frameworkId) changedFields.push('frameworkId');
     if (targetRefId !== existing.frameworkReferenceId) changedFields.push('frameworkReferenceId');
     if (dto.treatmentPlan !== undefined && dto.treatmentPlan !== existing.treatmentPlan) changedFields.push('treatmentPlan');
+    if (dto.treatmentStrategy !== undefined && dto.treatmentStrategy !== existing.treatmentStrategy) changedFields.push('treatmentStrategy');
+    if (dto.treatmentOwner !== undefined && dto.treatmentOwner !== existing.treatmentOwner) changedFields.push('treatmentOwner');
+    if (dto.treatmentDueDate !== undefined) changedFields.push('treatmentDueDate');
+    if (dto.treatmentStatus !== undefined && dto.treatmentStatus !== existing.treatmentStatus) changedFields.push('treatmentStatus');
 
     const updated = await this.prisma.risk.update({
       where: { id },
       data: {
         ...(dto.title !== undefined && { title: dto.title }),
         ...(dto.description !== undefined && { description: dto.description }),
+        ...(dto.category !== undefined && { category: dto.category }),
         likelihood,
         impact,
         score,
+        ...(dto.residualLikelihood !== undefined && { residualLikelihood: dto.residualLikelihood }),
+        ...(dto.residualImpact !== undefined && { residualImpact: dto.residualImpact }),
+        residualScore,
         ...(dto.status !== undefined && { status: dto.status }),
         ...(dto.owner !== undefined && { owner: dto.owner }),
         ...(dto.assetId !== undefined && { assetId: dto.assetId || null }),
@@ -372,6 +433,10 @@ export class RisksService {
         frameworkId: targetFwId || null,
         frameworkReferenceId: targetRefId || null,
         ...(dto.treatmentPlan !== undefined && { treatmentPlan: dto.treatmentPlan }),
+        ...(dto.treatmentStrategy !== undefined && { treatmentStrategy: dto.treatmentStrategy }),
+        ...(dto.treatmentOwner !== undefined && { treatmentOwner: dto.treatmentOwner }),
+        ...(dto.treatmentDueDate !== undefined && { treatmentDueDate: dto.treatmentDueDate ? new Date(dto.treatmentDueDate) : null }),
+        ...(dto.treatmentStatus !== undefined && { treatmentStatus: dto.treatmentStatus }),
       },
       include: {
         asset: { select: { name: true } },
@@ -397,6 +462,54 @@ export class RisksService {
     }
 
     return this.mapToDto(updated);
+  }
+
+  async submitForApproval(
+    authCtx: ResourceAuthContext,
+    riskId: string,
+    dto: SubmitRiskApprovalDto,
+  ) {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+    const risk = await this.prisma.risk.findFirst({
+      where: { id: riskId, ...scopeWhere, deletedAt: null },
+    });
+
+    if (!risk) {
+      throw new NotFoundException(`Risk with ID "${riskId}" not found`);
+    }
+
+    if (!this.approvalEngineService) {
+      throw new BadRequestException('Approval engine service is not available.');
+    }
+
+    const title = dto.title?.trim() || `Risk Approval: ${risk.title} (${dto.purpose})`;
+    const instance = await this.approvalEngineService.createApprovalInstance(
+      authCtx.organizationId,
+      authCtx.userId,
+      {
+        title,
+        description: dto.description?.trim() || risk.description || undefined,
+        resourceType: 'RISK',
+        resourceId: risk.id,
+        workflowId: dto.workflowId,
+        purpose: dto.purpose as any,
+        dueDays: dto.dueDays || 14,
+      },
+    );
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'RISK_APPROVAL_SUBMITTED',
+      entityType: 'Risk',
+      entityId: risk.id,
+      metadata: {
+        approvalInstanceId: instance.id,
+        purpose: dto.purpose,
+      },
+    });
+
+    return instance;
   }
 
   async softDelete(authCtx: ResourceAuthContext, id: string): Promise<{ success: boolean }> {
@@ -430,6 +543,7 @@ export class RisksService {
 
   private mapToDto(risk: any): RiskDto {
     const score = risk.score;
+    const residualScore = risk.residualScore;
     return {
       id: risk.id,
       organizationId: risk.organizationId,
@@ -437,10 +551,15 @@ export class RisksService {
       projectId: risk.projectId || null,
       title: risk.title,
       description: risk.description,
+      category: risk.category || null,
       likelihood: risk.likelihood,
       impact: risk.impact,
       score,
       scoreBand: RisksService.getScoreBand(score),
+      residualLikelihood: risk.residualLikelihood ?? null,
+      residualImpact: risk.residualImpact ?? null,
+      residualScore: residualScore ?? null,
+      residualScoreBand: residualScore ? RisksService.getScoreBand(residualScore) : null,
       status: risk.status as RiskStatus,
       owner: risk.owner,
       assetId: risk.assetId,
@@ -452,10 +571,14 @@ export class RisksService {
       referenceIdentifier: risk.frameworkReference?.identifier || null,
       referenceTitle: risk.frameworkReference?.title || null,
       treatmentPlan: risk.treatmentPlan,
-      createdAt: risk.createdAt.toISOString(),
-      updatedAt: risk.updatedAt.toISOString(),
+      treatmentStrategy: risk.treatmentStrategy || null,
+      treatmentOwner: risk.treatmentOwner || null,
+      treatmentDueDate: risk.treatmentDueDate ? (typeof risk.treatmentDueDate === 'string' ? risk.treatmentDueDate : risk.treatmentDueDate.toISOString()) : null,
+      treatmentStatus: risk.treatmentStatus || null,
+      createdAt: typeof risk.createdAt === 'string' ? risk.createdAt : risk.createdAt.toISOString(),
+      updatedAt: typeof risk.updatedAt === 'string' ? risk.updatedAt : risk.updatedAt.toISOString(),
       createdById: risk.createdById,
-      deletedAt: risk.deletedAt ? risk.deletedAt.toISOString() : null,
+      deletedAt: risk.deletedAt ? (typeof risk.deletedAt === 'string' ? risk.deletedAt : risk.deletedAt.toISOString()) : null,
     };
   }
 }

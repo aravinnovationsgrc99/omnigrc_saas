@@ -179,4 +179,20 @@ export class RisksController {
     };
     return this.riskControlsService.disassociate(authCtx, id, controlId);
   }
+
+  @Post(':id/submit-approval')
+  @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async submitForApproval(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() dto: any,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.risksService.submitForApproval(authCtx, id, dto);
+  }
 }

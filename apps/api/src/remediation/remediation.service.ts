@@ -27,10 +27,12 @@ export class RemediationService {
     const sourceTypeFilter = query.sourceType;
 
     // Check optional module capabilities in parallel
-    const [auditState, vulnState, riskState] = await Promise.all([
+    const [auditState, vulnState, riskState, incidentState, vendorState] = await Promise.all([
       this.effectiveResolver.resolveEffectiveState(organizationId, 'BUSINESS_AUDITS'),
       this.effectiveResolver.resolveEffectiveState(organizationId, 'VULNERABILITY_MGMT'),
       this.effectiveResolver.resolveEffectiveState(organizationId, 'GRC_CORE_RISKS'),
+      this.effectiveResolver.resolveEffectiveState(organizationId, 'INCIDENT_MGMT'),
+      this.effectiveResolver.resolveEffectiveState(organizationId, 'VENDOR_RISK'),
     ]);
 
     const now = new Date();
@@ -115,6 +117,7 @@ export class RemediationService {
       });
 
       for (const r of risks) {
+        const isOverdue = r.treatmentDueDate ? new Date(r.treatmentDueDate) < now : false;
         actions.push({
           id: `risk-${r.id}`,
           sourceType: 'RISK_TREATMENT',
@@ -122,13 +125,79 @@ export class RemediationService {
           title: `Risk Treatment: ${r.title}`,
           description: r.treatmentPlan || r.description || 'Risk treatment plan in progress.',
           organizationId: r.organizationId,
-          owner: r.owner,
-          status: r.status,
+          owner: r.treatmentOwner || r.owner,
+          status: r.treatmentStatus || r.status,
           priorityOrSeverity: r.score >= 15 ? 'HIGH' : r.score >= 8 ? 'MEDIUM' : 'LOW',
-          dueDate: null,
-          isOverdue: false,
+          dueDate: r.treatmentDueDate ? r.treatmentDueDate.toISOString() : null,
+          isOverdue,
           originatingDomain: 'Risk',
           sourceReferenceUrl: `/risks?id=${r.id}`,
+        });
+      }
+    }
+
+    // 4. Incident Actions (CAPA)
+    if (incidentState.isAvailable && (!sourceTypeFilter || sourceTypeFilter === 'INCIDENT_ACTION')) {
+      const incActions = await this.prisma.incidentAction.findMany({
+        where: {
+          organizationId,
+          status: { in: ['OPEN', 'IN_PROGRESS'] },
+        },
+        include: {
+          incident: { select: { id: true, title: true, severity: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      for (const a of incActions) {
+        const isOverdue = a.dueDate ? new Date(a.dueDate) < now : false;
+        actions.push({
+          id: `incident-action-${a.id}`,
+          sourceType: 'INCIDENT_ACTION',
+          sourceId: a.id,
+          title: `Incident Action: ${a.title}`,
+          description: a.description || `Corrective action for incident: ${a.incident.title}`,
+          organizationId: a.organizationId,
+          owner: a.owner,
+          status: a.status,
+          priorityOrSeverity: a.incident.severity || 'MEDIUM',
+          dueDate: a.dueDate ? a.dueDate.toISOString() : null,
+          isOverdue,
+          originatingDomain: 'Incident',
+          sourceReferenceUrl: `/incidents?id=${a.incidentId}`,
+        });
+      }
+    }
+
+    // 5. Vendor Assessment Remediation Actions
+    if (vendorState.isAvailable && (!sourceTypeFilter || sourceTypeFilter === 'VENDOR_ACTION')) {
+      const vendorActions = await this.prisma.vendorAssessmentAction.findMany({
+        where: {
+          organizationId,
+          status: { in: ['OPEN', 'IN_PROGRESS'] },
+        },
+        include: {
+          assessment: { select: { id: true, title: true, vendor: { select: { id: true, name: true } } } },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      for (const va of vendorActions) {
+        const isOverdue = va.dueDate ? new Date(va.dueDate) < now : false;
+        actions.push({
+          id: `vendor-action-${va.id}`,
+          sourceType: 'VENDOR_ACTION',
+          sourceId: va.id,
+          title: `Vendor Remediation: ${va.title}`,
+          description: va.description || `Remediation action for vendor ${va.assessment.vendor.name}`,
+          organizationId: va.organizationId,
+          owner: va.owner,
+          status: va.status,
+          priorityOrSeverity: 'MEDIUM',
+          dueDate: va.dueDate ? va.dueDate.toISOString() : null,
+          isOverdue,
+          originatingDomain: 'Vendor',
+          sourceReferenceUrl: `/vendors/assessments?id=${va.assessmentId}`,
         });
       }
     }

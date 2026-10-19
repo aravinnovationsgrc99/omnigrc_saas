@@ -3,16 +3,20 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
+import { ApprovalEngineService } from '../approval/approval-engine.service';
 import {
   CreatePolicyDto,
   UpdatePolicyDto,
   CreatePolicyVersionDto,
   CreatePolicyExceptionDto,
   PolicyQueryDto,
+  AttestPolicyDto,
+  SubmitPolicyApprovalDto,
 } from './dto/policies.dto';
 import {
   PolicyDto,
@@ -23,6 +27,7 @@ import {
   PolicyExceptionDto,
   PolicyExceptionStatus,
   PolicyCategoryDto,
+  PolicyAttestationSummaryDto,
   Role,
 } from '@omnigrc/shared';
 
@@ -45,6 +50,7 @@ export class PoliciesService {
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
     private readonly resourceAuthService: ResourceAuthorizationService,
+    @Optional() private readonly approvalEngineService?: ApprovalEngineService,
   ) {}
 
   async findAll(authCtx: ResourceAuthContext, query: PolicyQueryDto): Promise<PaginatedPoliciesDto> {
@@ -832,6 +838,260 @@ export class PoliciesService {
       attestedAt: attestation.attestedAt.toISOString(),
       ipAddress: attestation.ipAddress,
     };
+  }
+
+  async attestPolicy(
+    authCtx: ResourceAuthContext,
+    policyId: string,
+    ipAddress?: string,
+  ): Promise<PolicyAttestationDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+    const policy = await this.prisma.policy.findFirst({
+      where: { id: policyId, ...scopeWhere, deletedAt: null },
+      include: { publishedVersion: true },
+    });
+
+    if (!policy) {
+      throw new NotFoundException(`Policy with ID "${policyId}" not found`);
+    }
+
+    if (policy.status !== PolicyStatus.PUBLISHED || !policy.publishedVersionId) {
+      throw new BadRequestException(`Policy "${policy.code}" is not published or has no published version.`);
+    }
+
+    // Check duplicate attestation for this specific published version
+    const existing = await this.prisma.policyAttestation.findUnique({
+      where: {
+        policyVersionId_userId: {
+          policyVersionId: policy.publishedVersionId,
+          userId: authCtx.userId,
+        },
+      },
+    });
+
+    if (existing) {
+      // Idempotent return of existing acknowledgement
+      return {
+        id: existing.id,
+        organizationId: existing.organizationId,
+        policyVersionId: existing.policyVersionId,
+        userId: existing.userId,
+        attestedAt: existing.attestedAt.toISOString(),
+        ipAddress: existing.ipAddress,
+      };
+    }
+
+    const attestation = await this.prisma.policyAttestation.create({
+      data: {
+        organizationId: authCtx.organizationId,
+        policyVersionId: policy.publishedVersionId,
+        userId: authCtx.userId,
+        ipAddress: ipAddress || null,
+      },
+    });
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'POLICY_ATTESTED',
+      entityType: 'PolicyAttestation',
+      entityId: attestation.id,
+      metadata: {
+        policyCode: policy.code,
+        versionId: policy.publishedVersionId,
+      },
+    });
+
+    return {
+      id: attestation.id,
+      organizationId: attestation.organizationId,
+      policyVersionId: attestation.policyVersionId,
+      userId: attestation.userId,
+      attestedAt: attestation.attestedAt.toISOString(),
+      ipAddress: attestation.ipAddress,
+    };
+  }
+
+  async getPolicyAttestations(
+    authCtx: ResourceAuthContext,
+    policyId: string,
+    versionId?: string,
+  ): Promise<PolicyAttestationDto[]> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+    const policy = await this.prisma.policy.findFirst({
+      where: { id: policyId, ...scopeWhere, deletedAt: null },
+      include: { versions: true },
+    });
+
+    if (!policy) {
+      throw new NotFoundException(`Policy with ID "${policyId}" not found`);
+    }
+
+    const targetVersionIds = versionId
+      ? [versionId]
+      : policy.versions.map((v) => v.id);
+
+    const attestations = await this.prisma.policyAttestation.findMany({
+      where: {
+        organizationId: authCtx.organizationId,
+        policyVersionId: { in: targetVersionIds },
+      },
+      orderBy: { attestedAt: 'desc' },
+    });
+
+    return attestations.map((a) => ({
+      id: a.id,
+      organizationId: a.organizationId,
+      policyVersionId: a.policyVersionId,
+      userId: a.userId,
+      attestedAt: a.attestedAt.toISOString(),
+      ipAddress: a.ipAddress,
+    }));
+  }
+
+  async getPolicyAcknowledgementSummary(
+    authCtx: ResourceAuthContext,
+    policyId: string,
+  ): Promise<PolicyAttestationSummaryDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+    const policy = await this.prisma.policy.findFirst({
+      where: { id: policyId, ...scopeWhere, deletedAt: null },
+      include: { publishedVersion: true },
+    });
+
+    if (!policy) {
+      throw new NotFoundException(`Policy with ID "${policyId}" not found`);
+    }
+
+    if (!policy.publishedVersionId || !policy.publishedVersion) {
+      return {
+        policyId: policy.id,
+        policyCode: policy.code,
+        policyTitle: policy.title,
+        versionId: '',
+        versionNumber: 'None',
+        totalEligibleUsers: 0,
+        attestedUsersCount: 0,
+        pendingUsersCount: 0,
+        compliancePercentage: 0,
+        attestations: [],
+      };
+    }
+
+    const [totalUsers, attestations] = await Promise.all([
+      this.prisma.organizationMembership.count({
+        where: { organizationId: authCtx.organizationId },
+      }),
+      this.prisma.policyAttestation.findMany({
+        where: {
+          organizationId: authCtx.organizationId,
+          policyVersionId: policy.publishedVersionId,
+        },
+        orderBy: { attestedAt: 'desc' },
+      }),
+    ]);
+
+    const attestedCount = attestations.length;
+    const totalEligible = Math.max(totalUsers, attestedCount);
+    const pendingCount = Math.max(0, totalEligible - attestedCount);
+    const compliancePct = totalEligible > 0 ? Math.round((attestedCount / totalEligible) * 100) : 0;
+
+    return {
+      policyId: policy.id,
+      policyCode: policy.code,
+      policyTitle: policy.title,
+      versionId: policy.publishedVersion.id,
+      versionNumber: policy.publishedVersion.versionNumber,
+      totalEligibleUsers: totalEligible,
+      attestedUsersCount: attestedCount,
+      pendingUsersCount: pendingCount,
+      compliancePercentage: compliancePct,
+      attestations: attestations.map((a) => ({
+        id: a.id,
+        userId: a.userId,
+        attestedAt: a.attestedAt.toISOString(),
+        ipAddress: a.ipAddress,
+      })),
+    };
+  }
+
+  async getMyPendingPolicies(authCtx: ResourceAuthContext): Promise<PolicyDto[]> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+
+    // 1. All published policies for organization
+    const publishedPolicies = await this.prisma.policy.findMany({
+      where: {
+        ...scopeWhere,
+        status: PolicyStatus.PUBLISHED,
+        publishedVersionId: { not: null },
+        deletedAt: null,
+      },
+      include: {
+        publishedVersion: true,
+        versions: { orderBy: { createdAt: 'desc' } },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    // 2. All attestations for this user in this organization
+    const myAttestations = await this.prisma.policyAttestation.findMany({
+      where: {
+        organizationId: authCtx.organizationId,
+        userId: authCtx.userId,
+      },
+      select: { policyVersionId: true },
+    });
+    const attestedVersionIds = new Set(myAttestations.map((a) => a.policyVersionId));
+
+    // 3. Filter to policies where current published version is NOT attested
+    const pending = publishedPolicies.filter(
+      (p) => p.publishedVersionId && !attestedVersionIds.has(p.publishedVersionId),
+    );
+
+    return pending.map((p) => this.mapToDto(p));
+  }
+
+  async submitForApproval(
+    authCtx: ResourceAuthContext,
+    policyId: string,
+    dto: SubmitPolicyApprovalDto,
+  ) {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+    const policy = await this.prisma.policy.findFirst({
+      where: { id: policyId, ...scopeWhere, deletedAt: null },
+    });
+
+    if (!policy) throw new NotFoundException(`Policy with ID "${policyId}" not found`);
+
+    if (!this.approvalEngineService) {
+      throw new BadRequestException('Approval engine service is not available.');
+    }
+
+    const title = dto.title?.trim() || `Policy Approval: ${policy.code} - ${policy.title}`;
+    const instance = await this.approvalEngineService.createApprovalInstance(
+      authCtx.organizationId,
+      authCtx.userId,
+      {
+        title,
+        description: policy.description || `Approval request for policy ${policy.code}`,
+        resourceType: 'POLICY',
+        resourceId: policy.id,
+        workflowId: dto.workflowId,
+        purpose: 'POLICY_APPROVAL' as any,
+        dueDays: dto.dueDays || 7,
+      },
+    );
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'POLICY_APPROVAL_SUBMITTED',
+      entityType: 'Policy',
+      entityId: policy.id,
+      metadata: { approvalInstanceId: instance.id },
+    });
+
+    return instance;
   }
 
   async createException(

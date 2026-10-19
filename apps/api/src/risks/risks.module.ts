@@ -4,9 +4,10 @@ import { RisksController } from './risks.controller';
 import { AuthModule } from '../auth/auth.module';
 import { RiskControlsModule } from '../risk-controls/risk-controls.module';
 import { FrameworksModule } from '../frameworks/frameworks.module';
+import { ApprovalEngineModule } from '../approval/approval-engine.module';
 
 @Module({
-  imports: [AuthModule, RiskControlsModule, FrameworksModule],
+  imports: [AuthModule, RiskControlsModule, FrameworksModule, ApprovalEngineModule],
   controllers: [RisksController],
   providers: [RisksService],
   exports: [RisksService],

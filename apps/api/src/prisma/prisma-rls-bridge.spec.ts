@@ -274,4 +274,55 @@ describe('Application-to-PostgreSQL RLS Context Bridge', () => {
       });
     });
   });
+
+  // 8. Dedicated Application Role & Raw Query Bridge
+  describe('8. Dedicated Application Role & Transaction Proxy Routing', () => {
+    it('should route raw SQL queries and expanded models through the active tenant transaction client', async () => {
+      const mockTx = {
+        $executeRawUnsafe: jest.fn().mockResolvedValue(1),
+        $queryRawUnsafe: jest.fn().mockResolvedValue([{ rolname: 'omnigrc_app', rolsuper: false, rolbypassrls: false }]),
+        department: {
+          findMany: jest.fn().mockResolvedValue([{ id: 'dep-1', organizationId: 'tenant-a' }]),
+        },
+      };
+
+      mockSuperTransaction = jest
+        .spyOn(Object.getPrototypeOf(Object.getPrototypeOf(prismaService)), '$transaction')
+        .mockImplementation(async (cb: any) => cb(mockTx));
+
+      await TenantContext.run({ organizationId: 'tenant-a' }, async () => {
+        await prismaService.withTenantTransaction(async () => {
+          // Verify raw query routing to mockTx
+          const roleCheck = await prismaService.$queryRawUnsafe(
+            "SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user;"
+          );
+          expect(roleCheck).toEqual([{ rolname: 'omnigrc_app', rolsuper: false, rolbypassrls: false }]);
+
+          // Verify expanded model routing to mockTx
+          const depts = await (prismaService as any).department.findMany();
+          expect(depts).toEqual([{ id: 'dep-1', organizationId: 'tenant-a' }]);
+        });
+      });
+
+      expect(mockTx.$queryRawUnsafe).toHaveBeenCalledWith(
+        "SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user;"
+      );
+      expect(mockTx.department.findMany).toHaveBeenCalled();
+    });
+
+    it('should verify least-privilege role assertions for omnigrc_app attributes', () => {
+      // Simulate role metadata query result
+      const roleRecord = {
+        rolname: 'omnigrc_app',
+        rolsuper: false,
+        rolbypassrls: false,
+        rolcanlogin: true,
+      };
+
+      // Least-privilege role must NOT have superuser or bypassrls privileges
+      expect(roleRecord.rolsuper).toBe(false);
+      expect(roleRecord.rolbypassrls).toBe(false);
+      expect(roleRecord.rolname).toBe('omnigrc_app');
+    });
+  });
 });

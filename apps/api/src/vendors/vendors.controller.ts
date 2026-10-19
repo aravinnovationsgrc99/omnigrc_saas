@@ -23,6 +23,13 @@ import {
   CreateVendorAssessmentDto,
   UploadVendorDocumentDto,
   VendorDocumentQueryDto,
+  CreateVendorQuestionnaireDto,
+  UpdateVendorQuestionnaireDto,
+  SubmitVendorQuestionnaireDto,
+  ReviewVendorQuestionnaireSubmissionDto,
+  CreateVendorAssessmentActionDto,
+  UpdateVendorAssessmentActionDto,
+  SubmitVendorAssessmentApprovalDto,
 } from './dto/vendors.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -50,6 +57,64 @@ export class VendorsController {
       role: user.role,
     };
     return this.vendorsService.findAll(authCtx, query);
+  }
+
+  // --- QUESTIONNAIRE DEFINITION ENDPOINTS (Placed before :id to prevent route clash) ---
+
+  @Post('questionnaires')
+  @RequiresActiveLicense()
+  @RequireCapability('VENDOR_RISK')
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async createQuestionnaire(
+    @CurrentUser() user: any,
+    @Body() dto: CreateVendorQuestionnaireDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.vendorsService.createQuestionnaire(authCtx, dto);
+  }
+
+  @Get('questionnaires')
+  async getQuestionnaires(@CurrentUser() user: any) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.vendorsService.getQuestionnaires(authCtx);
+  }
+
+  @Get('questionnaires/:questionnaireId')
+  async getQuestionnaireById(
+    @CurrentUser() user: any,
+    @Param('questionnaireId') questionnaireId: string,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.vendorsService.getQuestionnaireById(authCtx, questionnaireId);
+  }
+
+  @Patch('questionnaires/:questionnaireId')
+  @RequiresActiveLicense()
+  @RequireCapability('VENDOR_RISK')
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async updateQuestionnaire(
+    @CurrentUser() user: any,
+    @Param('questionnaireId') questionnaireId: string,
+    @Body() dto: UpdateVendorQuestionnaireDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.vendorsService.updateQuestionnaire(authCtx, questionnaireId, dto);
   }
 
   @Get(':id')
@@ -211,5 +276,147 @@ export class VendorsController {
       role: user.role,
     };
     await this.vendorsService.downloadDocument(authCtx, id, evidenceId, res);
+  }
+
+  // --- QUESTIONNAIRE SUBMISSIONS & RESPONSES ---
+
+  @Post(':id/questionnaires/submit')
+  @RequiresActiveLicense()
+  @RequireCapability('VENDOR_RISK')
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async submitQuestionnaire(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() dto: SubmitVendorQuestionnaireDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.vendorsService.submitQuestionnaire(authCtx, id, dto);
+  }
+
+  @Get(':id/questionnaires/submissions')
+  async getQuestionnaireSubmissions(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.vendorsService.getQuestionnaireSubmissions(authCtx, id);
+  }
+
+  @Patch(':id/questionnaires/submissions/:submissionId/review')
+  @RequiresActiveLicense()
+  @RequireCapability('VENDOR_RISK')
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async reviewQuestionnaireSubmission(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Param('submissionId') submissionId: string,
+    @Body() dto: ReviewVendorQuestionnaireSubmissionDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.vendorsService.reviewQuestionnaireSubmission(authCtx, id, submissionId, dto);
+  }
+
+  // --- VENDOR ASSESSMENT ACTIONS (REMEDIATION) ---
+
+  @Post(':id/assessments/:assessmentId/actions')
+  @RequiresActiveLicense()
+  @RequireCapability('VENDOR_RISK')
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async createAssessmentAction(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Param('assessmentId') assessmentId: string,
+    @Body() dto: CreateVendorAssessmentActionDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.vendorsService.createAssessmentAction(authCtx, id, assessmentId, dto);
+  }
+
+  @Get(':id/assessments/:assessmentId/actions')
+  async getAssessmentActions(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Param('assessmentId') assessmentId: string,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.vendorsService.getAssessmentActions(authCtx, id, assessmentId);
+  }
+
+  @Patch(':id/assessments/:assessmentId/actions/:actionId')
+  @RequiresActiveLicense()
+  @RequireCapability('VENDOR_RISK')
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async updateAssessmentAction(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Param('assessmentId') assessmentId: string,
+    @Param('actionId') actionId: string,
+    @Body() dto: UpdateVendorAssessmentActionDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.vendorsService.updateAssessmentAction(authCtx, id, assessmentId, actionId, dto);
+  }
+
+  @Delete(':id/assessments/:assessmentId/actions/:actionId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @RequiresActiveLicense()
+  @RequireCapability('VENDOR_RISK')
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async deleteAssessmentAction(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Param('assessmentId') assessmentId: string,
+    @Param('actionId') actionId: string,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    await this.vendorsService.deleteAssessmentAction(authCtx, id, assessmentId, actionId);
+  }
+
+  // --- APPROVAL WORKFLOW INTEGRATION ---
+
+  @Post(':id/assessments/:assessmentId/submit-approval')
+  @RequiresActiveLicense()
+  @RequireCapability('VENDOR_RISK')
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async submitAssessmentForApproval(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Param('assessmentId') assessmentId: string,
+    @Body() dto: SubmitVendorAssessmentApprovalDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.vendorsService.submitAssessmentForApproval(authCtx, id, assessmentId, dto);
   }
 }

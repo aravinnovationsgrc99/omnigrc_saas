@@ -19,6 +19,8 @@ import {
   PolicyQueryDto,
   CreatePolicyCategoryDto,
   RenamePolicyCategoryDto,
+  AttestPolicyDto,
+  SubmitPolicyApprovalDto,
 } from './dto/policies.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -91,6 +93,16 @@ export class PoliciesController {
       role: user.role,
     };
     return this.policiesService.deleteCategory(authCtx, decodeURIComponent(categoryName));
+  }
+
+  @Get('pending-acknowledgements')
+  async getMyPendingPolicies(@CurrentUser() user: any) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.policiesService.getMyPendingPolicies(authCtx);
   }
 
   @Get()
@@ -260,5 +272,65 @@ export class PoliciesController {
       role: user.role,
     };
     return this.policiesService.createException(authCtx, id, dto);
+  }
+
+  @Post(':id/attest')
+  @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async attestPolicy(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Req() req: Request,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    const ipAddress = req.ip || (req.headers['x-forwarded-for'] as string);
+    return this.policiesService.attestPolicy(authCtx, id, ipAddress);
+  }
+
+  @Get(':id/attestations')
+  async getPolicyAttestations(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Query('versionId') versionId?: string,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.policiesService.getPolicyAttestations(authCtx, id, versionId);
+  }
+
+  @Get(':id/acknowledgement-summary')
+  async getPolicyAcknowledgementSummary(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.policiesService.getPolicyAcknowledgementSummary(authCtx, id);
+  }
+
+  @Post(':id/submit-approval')
+  @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async submitForApproval(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() dto: SubmitPolicyApprovalDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.policiesService.submitForApproval(authCtx, id, dto);
   }
 }

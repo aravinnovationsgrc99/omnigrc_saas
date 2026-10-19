@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   Query,
@@ -23,6 +24,9 @@ import {
   UpdateIncidentDto,
   IncidentQueryDto,
   PaginatedIncidentsDto,
+  IncidentActionDto,
+  CreateIncidentActionDto,
+  UpdateIncidentActionDto,
 } from '@omnigrc/shared';
 
 @Controller('incidents')
@@ -87,5 +91,115 @@ export class IncidentsController {
       role: user.role,
     };
     return this.incidentsService.update(authCtx, id, dto);
+  }
+
+  @Post(':id/actions')
+  @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async createAction(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() dto: CreateIncidentActionDto,
+  ): Promise<IncidentActionDto> {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.incidentsService.createAction(authCtx, id, dto);
+  }
+
+  @Get(':id/actions')
+  async getActions(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+  ): Promise<IncidentActionDto[]> {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.incidentsService.getActions(authCtx, id);
+  }
+
+  @Patch(':id/actions/:actionId')
+  @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async updateAction(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Param('actionId') actionId: string,
+    @Body() dto: UpdateIncidentActionDto,
+  ): Promise<IncidentActionDto> {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.incidentsService.updateAction(authCtx, id, actionId, dto);
+  }
+
+  @Delete(':id/actions/:actionId')
+  @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async deleteAction(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Param('actionId') actionId: string,
+  ): Promise<{ success: boolean }> {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.incidentsService.deleteAction(authCtx, id, actionId);
+  }
+
+  @Post(':id/evidence/:evidenceId')
+  @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async attachEvidence(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Param('evidenceId') evidenceId: string,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.incidentsService.attachEvidence(authCtx, id, evidenceId);
+  }
+
+  @Delete(':id/evidence/:evidenceId')
+  @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async detachEvidence(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Param('evidenceId') evidenceId: string,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.incidentsService.detachEvidence(authCtx, id, evidenceId);
+  }
+
+  @Post(':id/submit-approval')
+  @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async submitForApproval(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() dto: { purpose: 'INCIDENT_RESOLUTION' | 'INCIDENT_CLOSURE'; workflowId?: string; title?: string; dueDays?: number },
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.incidentsService.submitForApproval(authCtx, id, dto);
   }
 }

@@ -156,3 +156,25 @@ export class PolicyQueryDto {
   @IsOptional()
   limit?: number = 20;
 }
+
+export class AttestPolicyDto {
+  @IsString()
+  @IsOptional()
+  versionId?: string;
+}
+
+export class SubmitPolicyApprovalDto {
+  @IsString()
+  @IsOptional()
+  workflowId?: string;
+
+  @IsString()
+  @IsOptional()
+  title?: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  dueDays?: number = 7;
+}

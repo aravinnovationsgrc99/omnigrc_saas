@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
+import { ApprovalEngineService } from '../approval/approval-engine.service';
 import {
   IncidentDto,
   CreateIncidentDto,
@@ -10,6 +11,9 @@ import {
   PaginatedIncidentsDto,
   IncidentSeverity,
   IncidentStatus,
+  IncidentActionDto,
+  CreateIncidentActionDto,
+  UpdateIncidentActionDto,
 } from '@omnigrc/shared';
 
 @Injectable()
@@ -18,6 +22,7 @@ export class IncidentsService {
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
     private readonly resourceAuthService: ResourceAuthorizationService,
+    @Optional() private readonly approvalEngineService?: ApprovalEngineService,
   ) {}
 
   async findAll(
@@ -43,13 +48,25 @@ export class IncidentsService {
       where.status = query.status;
     }
 
+    if (query.category) {
+      where.category = query.category;
+    }
+
+    if (query.priority) {
+      where.priority = query.priority;
+    }
+
     if (query.search?.trim()) {
       const search = query.search.trim();
       const searchConditions = [
         { title: { contains: search, mode: 'insensitive' } },
         { description: { contains: search, mode: 'insensitive' } },
+        { category: { contains: search, mode: 'insensitive' } },
+        { priority: { contains: search, mode: 'insensitive' } },
         { rootCause: { contains: search, mode: 'insensitive' } },
+        { investigationDetails: { contains: search, mode: 'insensitive' } },
         { owner: { contains: search, mode: 'insensitive' } },
+        { businessUnit: { contains: search, mode: 'insensitive' } },
       ];
 
       if (where.OR) {
@@ -68,6 +85,7 @@ export class IncidentsService {
         where,
         include: {
           affectedAsset: { select: { id: true, name: true } },
+          actions: true,
         },
         orderBy: { createdAt: 'desc' },
         skip,
@@ -90,6 +108,7 @@ export class IncidentsService {
       where: { id, ...scopeWhere, deletedAt: null },
       include: {
         affectedAsset: { select: { id: true, name: true } },
+        actions: true,
       },
     });
 
@@ -102,7 +121,7 @@ export class IncidentsService {
 
   async create(
     authCtx: ResourceAuthContext,
-    dto: CreateIncidentDto & { departmentId?: string; projectId?: string },
+    dto: CreateIncidentDto,
   ): Promise<IncidentDto> {
     await this.resourceAuthService.authorize(authCtx, {
       action: 'WRITE',
@@ -126,6 +145,8 @@ export class IncidentsService {
       }
     }
 
+    const initialStatus = (dto.status || IncidentStatus.OPEN) as any;
+
     const incident = await this.prisma.incident.create({
       data: {
         organizationId: authCtx.organizationId,
@@ -134,18 +155,23 @@ export class IncidentsService {
         createdById: authCtx.userId,
         title: dto.title,
         description: dto.description || null,
+        category: dto.category || null,
+        priority: dto.priority || null,
         severity: (dto.severity || IncidentSeverity.MEDIUM) as any,
-        status: (dto.status || IncidentStatus.OPEN) as any,
+        status: initialStatus,
         owner: dto.owner || 'Unassigned',
+        businessUnit: dto.businessUnit || null,
         detectedAt: dto.detectedAt ? new Date(dto.detectedAt) : new Date(),
-        containedAt: dto.containedAt ? new Date(dto.containedAt) : null,
-        resolvedAt: dto.resolvedAt ? new Date(dto.resolvedAt) : null,
+        containedAt: dto.containedAt ? new Date(dto.containedAt) : (initialStatus === IncidentStatus.CONTAINED ? new Date() : null),
+        resolvedAt: dto.resolvedAt ? new Date(dto.resolvedAt) : (initialStatus === IncidentStatus.RESOLVED ? new Date() : null),
         dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
         rootCause: dto.rootCause || null,
+        investigationDetails: dto.investigationDetails || null,
         affectedAssetId: dto.affectedAssetId || null,
       },
       include: {
         affectedAsset: { select: { id: true, name: true } },
+        actions: true,
       },
     });
 
@@ -155,7 +181,13 @@ export class IncidentsService {
       action: 'INCIDENT_CREATED',
       entityType: 'Incident',
       entityId: incident.id,
-      metadata: { title: incident.title, severity: incident.severity },
+      metadata: {
+        title: incident.title,
+        severity: incident.severity,
+        status: incident.status,
+        category: incident.category,
+        priority: incident.priority,
+      },
     });
 
     return this.mapToDto(incident);
@@ -164,7 +196,7 @@ export class IncidentsService {
   async update(
     authCtx: ResourceAuthContext,
     id: string,
-    dto: UpdateIncidentDto & { departmentId?: string; projectId?: string },
+    dto: UpdateIncidentDto,
   ): Promise<IncidentDto> {
     const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const existing = await this.prisma.incident.findFirst({
@@ -192,12 +224,34 @@ export class IncidentsService {
       );
     }
 
+    // Lifecycle State Transition & RCA Invariant Validation
+    if (dto.status !== undefined && dto.status !== existing.status) {
+      if (existing.status === IncidentStatus.CLOSED && dto.status !== IncidentStatus.OPEN) {
+        throw new BadRequestException('Closed incidents can only be transitioned to OPEN (reopened).');
+      }
+
+      if (dto.status === IncidentStatus.CLOSED && existing.status !== IncidentStatus.RESOLVED) {
+        throw new BadRequestException('Incident must be in RESOLVED status before it can be closed.');
+      }
+
+      if (dto.status === IncidentStatus.RESOLVED) {
+        const rootCause = dto.rootCause !== undefined ? dto.rootCause : existing.rootCause;
+        const invDetails = dto.investigationDetails !== undefined ? dto.investigationDetails : existing.investigationDetails;
+        if (!rootCause && !invDetails) {
+          throw new BadRequestException('Cannot mark incident as RESOLVED without recording root cause analysis or investigation details.');
+        }
+      }
+    }
+
     const data: any = {};
     if (dto.title !== undefined) data.title = dto.title;
     if (dto.description !== undefined) data.description = dto.description;
+    if (dto.category !== undefined) data.category = dto.category;
+    if (dto.priority !== undefined) data.priority = dto.priority;
     if (dto.severity !== undefined) data.severity = dto.severity;
     if (dto.status !== undefined) data.status = dto.status;
     if (dto.owner !== undefined) data.owner = dto.owner;
+    if (dto.businessUnit !== undefined) data.businessUnit = dto.businessUnit;
     if (dto.detectedAt !== undefined) data.detectedAt = new Date(dto.detectedAt);
     if (dto.containedAt !== undefined)
       data.containedAt = dto.containedAt ? new Date(dto.containedAt) : null;
@@ -205,6 +259,7 @@ export class IncidentsService {
       data.resolvedAt = dto.resolvedAt ? new Date(dto.resolvedAt) : null;
     if (dto.dueDate !== undefined) data.dueDate = dto.dueDate ? new Date(dto.dueDate) : null;
     if (dto.rootCause !== undefined) data.rootCause = dto.rootCause;
+    if (dto.investigationDetails !== undefined) data.investigationDetails = dto.investigationDetails;
     if (dto.departmentId !== undefined) data.departmentId = dto.departmentId;
     if (dto.projectId !== undefined) data.projectId = dto.projectId;
 
@@ -232,6 +287,7 @@ export class IncidentsService {
       data,
       include: {
         affectedAsset: { select: { id: true, name: true } },
+        actions: true,
       },
     });
 
@@ -241,10 +297,238 @@ export class IncidentsService {
       action: 'INCIDENT_UPDATED',
       entityType: 'Incident',
       entityId: updated.id,
-      metadata: { status: updated.status, severity: updated.severity },
+      metadata: { status: updated.status, severity: updated.severity, category: updated.category },
     });
 
     return this.mapToDto(updated);
+  }
+
+  // --- INCIDENT ACTIONS / CAPA ---
+
+  async createAction(
+    authCtx: ResourceAuthContext,
+    incidentId: string,
+    dto: CreateIncidentActionDto,
+  ): Promise<IncidentActionDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+    const incident = await this.prisma.incident.findFirst({
+      where: { id: incidentId, ...scopeWhere, deletedAt: null },
+    });
+    if (!incident) throw new NotFoundException(`Incident with ID "${incidentId}" not found.`);
+
+    const action = await this.prisma.incidentAction.create({
+      data: {
+        organizationId: authCtx.organizationId,
+        incidentId,
+        title: dto.title.trim(),
+        description: dto.description?.trim() || null,
+        actionType: dto.actionType || 'CORRECTIVE',
+        owner: dto.owner.trim(),
+        dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
+        status: (dto.status as any) || 'OPEN',
+      },
+    });
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'INCIDENT_ACTION_CREATED',
+      entityType: 'IncidentAction',
+      entityId: action.id,
+      metadata: { incidentId, title: action.title, actionType: action.actionType },
+    });
+
+    return {
+      id: action.id,
+      organizationId: action.organizationId,
+      incidentId: action.incidentId,
+      title: action.title,
+      description: action.description,
+      actionType: action.actionType,
+      owner: action.owner,
+      dueDate: action.dueDate ? action.dueDate.toISOString() : null,
+      status: action.status,
+      completedAt: action.completedAt ? action.completedAt.toISOString() : null,
+      createdAt: action.createdAt.toISOString(),
+      updatedAt: action.updatedAt.toISOString(),
+    };
+  }
+
+  async getActions(authCtx: ResourceAuthContext, incidentId: string): Promise<IncidentActionDto[]> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+    const incident = await this.prisma.incident.findFirst({
+      where: { id: incidentId, ...scopeWhere, deletedAt: null },
+    });
+    if (!incident) throw new NotFoundException(`Incident with ID "${incidentId}" not found.`);
+
+    const actions = await this.prisma.incidentAction.findMany({
+      where: { incidentId, organizationId: authCtx.organizationId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return actions.map((a) => ({
+      id: a.id,
+      organizationId: a.organizationId,
+      incidentId: a.incidentId,
+      title: a.title,
+      description: a.description,
+      actionType: a.actionType,
+      owner: a.owner,
+      dueDate: a.dueDate ? a.dueDate.toISOString() : null,
+      status: a.status,
+      completedAt: a.completedAt ? a.completedAt.toISOString() : null,
+      createdAt: a.createdAt.toISOString(),
+      updatedAt: a.updatedAt.toISOString(),
+    }));
+  }
+
+  async updateAction(
+    authCtx: ResourceAuthContext,
+    incidentId: string,
+    actionId: string,
+    dto: UpdateIncidentActionDto,
+  ): Promise<IncidentActionDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+    const incident = await this.prisma.incident.findFirst({
+      where: { id: incidentId, ...scopeWhere, deletedAt: null },
+    });
+    if (!incident) throw new NotFoundException(`Incident with ID "${incidentId}" not found.`);
+
+    const existing = await this.prisma.incidentAction.findFirst({
+      where: { id: actionId, incidentId, organizationId: authCtx.organizationId },
+    });
+    if (!existing) throw new NotFoundException(`Action with ID "${actionId}" not found on incident.`);
+
+    const completedAt = dto.status === 'COMPLETED' || dto.status === 'CLOSED'
+      ? (existing.completedAt || new Date())
+      : (dto.status ? null : existing.completedAt);
+
+    const updated = await this.prisma.incidentAction.update({
+      where: { id: actionId },
+      data: {
+        ...(dto.title !== undefined && { title: dto.title.trim() }),
+        ...(dto.description !== undefined && { description: dto.description?.trim() }),
+        ...(dto.actionType !== undefined && { actionType: dto.actionType }),
+        ...(dto.owner !== undefined && { owner: dto.owner.trim() }),
+        ...(dto.dueDate !== undefined && { dueDate: dto.dueDate ? new Date(dto.dueDate) : null }),
+        ...(dto.status !== undefined && { status: dto.status as any }),
+        completedAt,
+      },
+    });
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'INCIDENT_ACTION_UPDATED',
+      entityType: 'IncidentAction',
+      entityId: updated.id,
+      metadata: { incidentId, status: updated.status },
+    });
+
+    return {
+      id: updated.id,
+      organizationId: updated.organizationId,
+      incidentId: updated.incidentId,
+      title: updated.title,
+      description: updated.description,
+      actionType: updated.actionType,
+      owner: updated.owner,
+      dueDate: updated.dueDate ? updated.dueDate.toISOString() : null,
+      status: updated.status,
+      completedAt: updated.completedAt ? updated.completedAt.toISOString() : null,
+      createdAt: updated.createdAt.toISOString(),
+      updatedAt: updated.updatedAt.toISOString(),
+    };
+  }
+
+  async deleteAction(authCtx: ResourceAuthContext, incidentId: string, actionId: string): Promise<{ success: boolean }> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+    const incident = await this.prisma.incident.findFirst({
+      where: { id: incidentId, ...scopeWhere, deletedAt: null },
+    });
+    if (!incident) throw new NotFoundException(`Incident with ID "${incidentId}" not found.`);
+
+    await this.prisma.incidentAction.deleteMany({
+      where: { id: actionId, incidentId, organizationId: authCtx.organizationId },
+    });
+
+    return { success: true };
+  }
+
+  // --- EVIDENCE ASSOCIATIONS ---
+
+  async attachEvidence(authCtx: ResourceAuthContext, incidentId: string, evidenceId: string) {
+    await this.findOne(authCtx, incidentId);
+    const evidence = await this.prisma.evidence.findFirst({
+      where: { id: evidenceId, organizationId: authCtx.organizationId, deletedAt: null },
+    });
+    if (!evidence) throw new NotFoundException(`Evidence "${evidenceId}" not found.`);
+
+    const assoc = await this.prisma.incidentEvidence.create({
+      data: {
+        organizationId: authCtx.organizationId,
+        incidentId,
+        evidenceId,
+      },
+    });
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'INCIDENT_EVIDENCE_ATTACHED',
+      entityType: 'Incident',
+      entityId: incidentId,
+      metadata: { evidenceId },
+    });
+
+    return assoc;
+  }
+
+  async detachEvidence(authCtx: ResourceAuthContext, incidentId: string, evidenceId: string) {
+    await this.findOne(authCtx, incidentId);
+    await this.prisma.incidentEvidence.deleteMany({
+      where: { incidentId, evidenceId, organizationId: authCtx.organizationId },
+    });
+    return { success: true };
+  }
+
+  // --- APPROVAL WORKFLOW INTEGRATION ---
+
+  async submitForApproval(
+    authCtx: ResourceAuthContext,
+    incidentId: string,
+    dto: { purpose: 'INCIDENT_RESOLUTION' | 'INCIDENT_CLOSURE'; workflowId?: string; title?: string; dueDays?: number },
+  ) {
+    const incident = await this.findOne(authCtx, incidentId);
+    if (!this.approvalEngineService) {
+      throw new BadRequestException('Approval engine service is not available.');
+    }
+
+    const title = dto.title?.trim() || `Incident Approval: ${incident.title} (${dto.purpose})`;
+    const instance = await this.approvalEngineService.createApprovalInstance(
+      authCtx.organizationId,
+      authCtx.userId,
+      {
+        title,
+        description: incident.description || undefined,
+        resourceType: 'INCIDENT',
+        resourceId: incident.id,
+        workflowId: dto.workflowId,
+        purpose: dto.purpose as any,
+        dueDays: dto.dueDays || 7,
+      },
+    );
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'INCIDENT_APPROVAL_SUBMITTED',
+      entityType: 'Incident',
+      entityId: incident.id,
+      metadata: { approvalInstanceId: instance.id, purpose: dto.purpose },
+    });
+
+    return instance;
   }
 
   private mapToDto(inc: any): IncidentDto {
@@ -255,19 +539,37 @@ export class IncidentsService {
       projectId: inc.projectId || null,
       title: inc.title,
       description: inc.description,
+      category: inc.category || null,
+      priority: inc.priority || null,
       severity: inc.severity as IncidentSeverity,
       status: inc.status as IncidentStatus,
       owner: inc.owner,
-      detectedAt: inc.detectedAt.toISOString(),
-      containedAt: inc.containedAt ? inc.containedAt.toISOString() : null,
-      resolvedAt: inc.resolvedAt ? inc.resolvedAt.toISOString() : null,
-      dueDate: inc.dueDate ? inc.dueDate.toISOString() : null,
+      businessUnit: inc.businessUnit || null,
+      detectedAt: inc.detectedAt ? (typeof inc.detectedAt === 'string' ? inc.detectedAt : inc.detectedAt.toISOString()) : new Date().toISOString(),
+      containedAt: inc.containedAt ? (typeof inc.containedAt === 'string' ? inc.containedAt : inc.containedAt.toISOString()) : null,
+      resolvedAt: inc.resolvedAt ? (typeof inc.resolvedAt === 'string' ? inc.resolvedAt : inc.resolvedAt.toISOString()) : null,
+      dueDate: inc.dueDate ? (typeof inc.dueDate === 'string' ? inc.dueDate : inc.dueDate.toISOString()) : null,
       rootCause: inc.rootCause,
+      investigationDetails: inc.investigationDetails || null,
       affectedAssetId: inc.affectedAssetId,
       affectedAssetName: inc.affectedAsset?.name || null,
+      actions: inc.actions ? inc.actions.map((a: any) => ({
+        id: a.id,
+        organizationId: a.organizationId,
+        incidentId: a.incidentId,
+        title: a.title,
+        description: a.description,
+        actionType: a.actionType,
+        owner: a.owner,
+        dueDate: a.dueDate ? (typeof a.dueDate === 'string' ? a.dueDate : a.dueDate.toISOString()) : null,
+        status: a.status,
+        completedAt: a.completedAt ? (typeof a.completedAt === 'string' ? a.completedAt : a.completedAt.toISOString()) : null,
+        createdAt: typeof a.createdAt === 'string' ? a.createdAt : a.createdAt.toISOString(),
+        updatedAt: typeof a.updatedAt === 'string' ? a.updatedAt : a.updatedAt.toISOString(),
+      })) : [],
       createdById: inc.createdById,
-      createdAt: inc.createdAt.toISOString(),
-      updatedAt: inc.updatedAt.toISOString(),
-    } as any;
+      createdAt: inc.createdAt ? (typeof inc.createdAt === 'string' ? inc.createdAt : inc.createdAt.toISOString()) : new Date().toISOString(),
+      updatedAt: inc.updatedAt ? (typeof inc.updatedAt === 'string' ? inc.updatedAt : inc.updatedAt.toISOString()) : new Date().toISOString(),
+    };
   }
 }

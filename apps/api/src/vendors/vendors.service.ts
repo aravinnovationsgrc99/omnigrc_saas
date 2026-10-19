@@ -1,9 +1,22 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
 import { EvidenceService } from '../evidence/evidence.service';
-import { CreateVendorDto, UpdateVendorDto, VendorQueryDto, CreateVendorAssessmentDto } from './dto/vendors.dto';
+import { ApprovalEngineService } from '../approval/approval-engine.service';
+import {
+  CreateVendorDto,
+  UpdateVendorDto,
+  VendorQueryDto,
+  CreateVendorAssessmentDto,
+  CreateVendorQuestionnaireDto,
+  UpdateVendorQuestionnaireDto,
+  SubmitVendorQuestionnaireDto,
+  ReviewVendorQuestionnaireSubmissionDto,
+  CreateVendorAssessmentActionDto,
+  UpdateVendorAssessmentActionDto,
+  SubmitVendorAssessmentApprovalDto,
+} from './dto/vendors.dto';
 import {
   VendorDto,
   PaginatedVendorsDto,
@@ -15,6 +28,9 @@ import {
   PaginatedVendorDocumentsDto,
   EvidenceStatus,
   EvidenceScanStatus,
+  VendorQuestionnaireDto,
+  VendorQuestionnaireSubmissionDto,
+  VendorAssessmentActionDto,
 } from '@omnigrc/shared';
 
 @Injectable()
@@ -24,6 +40,7 @@ export class VendorsService {
     private readonly auditLogsService: AuditLogsService,
     private readonly resourceAuthService: ResourceAuthorizationService,
     private readonly evidenceService: EvidenceService,
+    @Optional() private readonly approvalEngineService?: ApprovalEngineService,
   ) {}
 
   async findAll(authCtx: ResourceAuthContext, query: VendorQueryDto): Promise<PaginatedVendorsDto> {
@@ -140,6 +157,7 @@ export class VendorsService {
         reviewCadenceDays: dto.reviewCadenceDays || 365,
         nextReviewDate,
         websiteUrl: dto.websiteUrl || null,
+        dueDiligenceStatus: dto.dueDiligenceStatus || 'PENDING',
         createdById: authCtx.userId,
       },
     });
@@ -203,6 +221,7 @@ export class VendorsService {
         ...(dto.websiteUrl !== undefined && { websiteUrl: dto.websiteUrl }),
         ...(dto.departmentId !== undefined && { departmentId: dto.departmentId }),
         ...(dto.projectId !== undefined && { projectId: dto.projectId }),
+        ...(dto.dueDiligenceStatus !== undefined && { dueDiligenceStatus: dto.dueDiligenceStatus }),
       },
       include: {
         assessments: true,
@@ -383,9 +402,10 @@ export class VendorsService {
       lastReviewedAt: vendor.lastReviewedAt ? vendor.lastReviewedAt.toISOString() : null,
       nextReviewDate: vendor.nextReviewDate ? vendor.nextReviewDate.toISOString() : null,
       websiteUrl: vendor.websiteUrl,
+      dueDiligenceStatus: vendor.dueDiligenceStatus || 'PENDING',
       createdById: vendor.createdById,
-      createdAt: vendor.createdAt.toISOString(),
-      updatedAt: vendor.updatedAt.toISOString(),
+      createdAt: vendor.createdAt ? (typeof vendor.createdAt === 'string' ? vendor.createdAt : vendor.createdAt.toISOString()) : new Date().toISOString(),
+      updatedAt: vendor.updatedAt ? (typeof vendor.updatedAt === 'string' ? vendor.updatedAt : vendor.updatedAt.toISOString()) : new Date().toISOString(),
       assessments: vendor.assessments ? vendor.assessments.map((a: any) => ({
         id: a.id,
         organizationId: a.organizationId,
@@ -578,5 +598,484 @@ export class VendorsService {
     }
 
     await this.evidenceService.downloadEvidence(authCtx, evidenceId, res);
+  }
+
+  // --- VENDOR QUESTIONNAIRES (DEFINITIONS) ---
+
+  async createQuestionnaire(authCtx: ResourceAuthContext, dto: CreateVendorQuestionnaireDto): Promise<VendorQuestionnaireDto> {
+    const questionnaire = await this.prisma.vendorQuestionnaire.create({
+      data: {
+        organizationId: authCtx.organizationId,
+        title: dto.title.trim(),
+        description: dto.description?.trim() || null,
+        version: dto.version || '1.0',
+        status: 'PUBLISHED',
+        questions: dto.questions || [],
+        createdById: authCtx.userId,
+      },
+    });
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'VENDOR_QUESTIONNAIRE_CREATED',
+      entityType: 'VendorQuestionnaire',
+      entityId: questionnaire.id,
+      metadata: { title: questionnaire.title, version: questionnaire.version },
+    });
+
+    return {
+      id: questionnaire.id,
+      organizationId: questionnaire.organizationId,
+      title: questionnaire.title,
+      description: questionnaire.description,
+      version: questionnaire.version,
+      status: questionnaire.status,
+      questions: questionnaire.questions as any,
+      createdById: questionnaire.createdById,
+      createdAt: questionnaire.createdAt.toISOString(),
+      updatedAt: questionnaire.updatedAt.toISOString(),
+    };
+  }
+
+  async getQuestionnaires(authCtx: ResourceAuthContext): Promise<VendorQuestionnaireDto[]> {
+    const items = await this.prisma.vendorQuestionnaire.findMany({
+      where: { organizationId: authCtx.organizationId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return items.map((q) => ({
+      id: q.id,
+      organizationId: q.organizationId,
+      title: q.title,
+      description: q.description,
+      version: q.version,
+      status: q.status,
+      questions: q.questions as any,
+      createdById: q.createdById,
+      createdAt: q.createdAt.toISOString(),
+      updatedAt: q.updatedAt.toISOString(),
+    }));
+  }
+
+  async getQuestionnaireById(authCtx: ResourceAuthContext, id: string): Promise<VendorQuestionnaireDto> {
+    const q = await this.prisma.vendorQuestionnaire.findFirst({
+      where: { id, organizationId: authCtx.organizationId },
+    });
+    if (!q) throw new NotFoundException(`Questionnaire "${id}" not found.`);
+
+    return {
+      id: q.id,
+      organizationId: q.organizationId,
+      title: q.title,
+      description: q.description,
+      version: q.version,
+      status: q.status,
+      questions: q.questions as any,
+      createdById: q.createdById,
+      createdAt: q.createdAt.toISOString(),
+      updatedAt: q.updatedAt.toISOString(),
+    };
+  }
+
+  async updateQuestionnaire(authCtx: ResourceAuthContext, id: string, dto: UpdateVendorQuestionnaireDto): Promise<VendorQuestionnaireDto> {
+    const existing = await this.prisma.vendorQuestionnaire.findFirst({
+      where: { id, organizationId: authCtx.organizationId },
+    });
+    if (!existing) throw new NotFoundException(`Questionnaire "${id}" not found.`);
+
+    const updated = await this.prisma.vendorQuestionnaire.update({
+      where: { id },
+      data: {
+        ...(dto.title !== undefined && { title: dto.title.trim() }),
+        ...(dto.description !== undefined && { description: dto.description?.trim() || null }),
+        ...(dto.version !== undefined && { version: dto.version }),
+        ...(dto.status !== undefined && { status: dto.status }),
+        ...(dto.questions !== undefined && { questions: dto.questions }),
+      },
+    });
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'VENDOR_QUESTIONNAIRE_UPDATED',
+      entityType: 'VendorQuestionnaire',
+      entityId: updated.id,
+      metadata: { title: updated.title, status: updated.status },
+    });
+
+    return {
+      id: updated.id,
+      organizationId: updated.organizationId,
+      title: updated.title,
+      description: updated.description,
+      version: updated.version,
+      status: updated.status,
+      questions: updated.questions as any,
+      createdById: updated.createdById,
+      createdAt: updated.createdAt.toISOString(),
+      updatedAt: updated.updatedAt.toISOString(),
+    };
+  }
+
+  // --- VENDOR QUESTIONNAIRE SUBMISSIONS & RESPONSES ---
+
+  async submitQuestionnaire(
+    authCtx: ResourceAuthContext,
+    vendorId: string,
+    dto: SubmitVendorQuestionnaireDto,
+  ): Promise<VendorQuestionnaireSubmissionDto> {
+    await this.findOne(authCtx, vendorId);
+
+    const questionnaire = await this.prisma.vendorQuestionnaire.findFirst({
+      where: { id: dto.questionnaireId, organizationId: authCtx.organizationId },
+    });
+    if (!questionnaire) throw new NotFoundException(`Questionnaire "${dto.questionnaireId}" not found.`);
+
+    if (dto.assessmentId) {
+      const assessment = await this.prisma.vendorAssessment.findFirst({
+        where: { id: dto.assessmentId, vendorId, organizationId: authCtx.organizationId },
+      });
+      if (!assessment) throw new NotFoundException(`Assessment "${dto.assessmentId}" not found for vendor.`);
+    }
+
+    const submission = await this.prisma.vendorQuestionnaireSubmission.create({
+      data: {
+        organizationId: authCtx.organizationId,
+        vendorId,
+        questionnaireId: dto.questionnaireId,
+        assessmentId: dto.assessmentId || null,
+        answers: dto.answers || {},
+        status: 'SUBMITTED',
+        submittedAt: new Date(),
+      },
+      include: {
+        questionnaire: { select: { title: true, version: true } },
+      },
+    });
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'VENDOR_QUESTIONNAIRE_SUBMITTED',
+      entityType: 'VendorQuestionnaireSubmission',
+      entityId: submission.id,
+      metadata: { vendorId, questionnaireId: dto.questionnaireId, status: submission.status },
+    });
+
+    return {
+      id: submission.id,
+      organizationId: submission.organizationId,
+      vendorId: submission.vendorId,
+      questionnaireId: submission.questionnaireId,
+      questionnaireTitle: submission.questionnaire.title,
+      questionnaireVersion: submission.questionnaire.version,
+      assessmentId: submission.assessmentId,
+      status: submission.status,
+      answers: submission.answers as any,
+      score: submission.score,
+      submittedAt: submission.submittedAt ? submission.submittedAt.toISOString() : null,
+      reviewedAt: submission.reviewedAt ? submission.reviewedAt.toISOString() : null,
+      reviewedById: submission.reviewedById,
+      reviewNotes: submission.reviewNotes,
+      createdAt: submission.createdAt.toISOString(),
+      updatedAt: submission.updatedAt.toISOString(),
+    };
+  }
+
+  async getQuestionnaireSubmissions(authCtx: ResourceAuthContext, vendorId: string): Promise<VendorQuestionnaireSubmissionDto[]> {
+    await this.findOne(authCtx, vendorId);
+
+    const submissions = await this.prisma.vendorQuestionnaireSubmission.findMany({
+      where: { vendorId, organizationId: authCtx.organizationId },
+      include: { questionnaire: { select: { title: true, version: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return submissions.map((s) => ({
+      id: s.id,
+      organizationId: s.organizationId,
+      vendorId: s.vendorId,
+      questionnaireId: s.questionnaireId,
+      questionnaireTitle: s.questionnaire.title,
+      questionnaireVersion: s.questionnaire.version,
+      assessmentId: s.assessmentId,
+      status: s.status,
+      answers: s.answers as any,
+      score: s.score,
+      submittedAt: s.submittedAt ? s.submittedAt.toISOString() : null,
+      reviewedAt: s.reviewedAt ? s.reviewedAt.toISOString() : null,
+      reviewedById: s.reviewedById,
+      reviewNotes: s.reviewNotes,
+      createdAt: s.createdAt.toISOString(),
+      updatedAt: s.updatedAt.toISOString(),
+    }));
+  }
+
+  async reviewQuestionnaireSubmission(
+    authCtx: ResourceAuthContext,
+    vendorId: string,
+    submissionId: string,
+    dto: ReviewVendorQuestionnaireSubmissionDto,
+  ): Promise<VendorQuestionnaireSubmissionDto> {
+    await this.findOne(authCtx, vendorId);
+
+    const existing = await this.prisma.vendorQuestionnaireSubmission.findFirst({
+      where: { id: submissionId, vendorId, organizationId: authCtx.organizationId },
+      include: { questionnaire: { select: { title: true, version: true } } },
+    });
+    if (!existing) throw new NotFoundException(`Submission "${submissionId}" not found for vendor.`);
+
+    const updated = await this.prisma.vendorQuestionnaireSubmission.update({
+      where: { id: submissionId },
+      data: {
+        status: dto.status,
+        ...(dto.score !== undefined && { score: dto.score }),
+        ...(dto.reviewNotes !== undefined && { reviewNotes: dto.reviewNotes }),
+        reviewedById: authCtx.userId,
+        reviewedAt: new Date(),
+      },
+      include: { questionnaire: { select: { title: true, version: true } } },
+    });
+
+    if (dto.status === 'ACCEPTED') {
+      await this.prisma.vendor.update({
+        where: { id: vendorId },
+        data: {
+          dueDiligenceStatus: 'APPROVED',
+          lastReviewedAt: new Date(),
+        },
+      });
+    }
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'VENDOR_QUESTIONNAIRE_REVIEWED',
+      entityType: 'VendorQuestionnaireSubmission',
+      entityId: updated.id,
+      metadata: { vendorId, status: updated.status, score: updated.score },
+    });
+
+    return {
+      id: updated.id,
+      organizationId: updated.organizationId,
+      vendorId: updated.vendorId,
+      questionnaireId: updated.questionnaireId,
+      questionnaireTitle: updated.questionnaire.title,
+      questionnaireVersion: updated.questionnaire.version,
+      assessmentId: updated.assessmentId,
+      status: updated.status,
+      answers: updated.answers as any,
+      score: updated.score,
+      submittedAt: updated.submittedAt ? updated.submittedAt.toISOString() : null,
+      reviewedAt: updated.reviewedAt ? updated.reviewedAt.toISOString() : null,
+      reviewedById: updated.reviewedById,
+      reviewNotes: updated.reviewNotes,
+      createdAt: updated.createdAt.toISOString(),
+      updatedAt: updated.updatedAt.toISOString(),
+    };
+  }
+
+  // --- VENDOR ASSESSMENT ACTIONS (REMEDIATION) ---
+
+  async createAssessmentAction(
+    authCtx: ResourceAuthContext,
+    vendorId: string,
+    assessmentId: string,
+    dto: CreateVendorAssessmentActionDto,
+  ): Promise<VendorAssessmentActionDto> {
+    await this.findOne(authCtx, vendorId);
+
+    const assessment = await this.prisma.vendorAssessment.findFirst({
+      where: { id: assessmentId, vendorId, organizationId: authCtx.organizationId },
+    });
+    if (!assessment) throw new NotFoundException(`Assessment "${assessmentId}" not found for vendor.`);
+
+    const action = await this.prisma.vendorAssessmentAction.create({
+      data: {
+        organizationId: authCtx.organizationId,
+        assessmentId,
+        title: dto.title.trim(),
+        description: dto.description?.trim() || null,
+        actionType: (dto as any).actionType || 'REMEDIATION',
+        owner: dto.owner.trim(),
+        dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
+        status: (dto.status as any) || 'OPEN',
+      },
+    });
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'VENDOR_ASSESSMENT_ACTION_CREATED',
+      entityType: 'VendorAssessmentAction',
+      entityId: action.id,
+      metadata: { vendorId, assessmentId, title: action.title },
+    });
+
+    return {
+      id: action.id,
+      organizationId: action.organizationId,
+      assessmentId: action.assessmentId,
+      title: action.title,
+      description: action.description,
+      actionType: action.actionType,
+      owner: action.owner,
+      dueDate: action.dueDate ? action.dueDate.toISOString() : null,
+      status: action.status,
+      completedAt: action.completedAt ? action.completedAt.toISOString() : null,
+      createdAt: action.createdAt.toISOString(),
+      updatedAt: action.updatedAt.toISOString(),
+    };
+  }
+
+  async getAssessmentActions(
+    authCtx: ResourceAuthContext,
+    vendorId: string,
+    assessmentId: string,
+  ): Promise<VendorAssessmentActionDto[]> {
+    await this.findOne(authCtx, vendorId);
+
+    const assessment = await this.prisma.vendorAssessment.findFirst({
+      where: { id: assessmentId, vendorId, organizationId: authCtx.organizationId },
+    });
+    if (!assessment) throw new NotFoundException(`Assessment "${assessmentId}" not found for vendor.`);
+
+    const actions = await this.prisma.vendorAssessmentAction.findMany({
+      where: { assessmentId, organizationId: authCtx.organizationId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return actions.map((a) => ({
+      id: a.id,
+      organizationId: a.organizationId,
+      assessmentId: a.assessmentId,
+      title: a.title,
+      description: a.description,
+      actionType: a.actionType,
+      owner: a.owner,
+      dueDate: a.dueDate ? a.dueDate.toISOString() : null,
+      status: a.status,
+      completedAt: a.completedAt ? a.completedAt.toISOString() : null,
+      createdAt: a.createdAt.toISOString(),
+      updatedAt: a.updatedAt.toISOString(),
+    }));
+  }
+
+  async updateAssessmentAction(
+    authCtx: ResourceAuthContext,
+    vendorId: string,
+    assessmentId: string,
+    actionId: string,
+    dto: UpdateVendorAssessmentActionDto,
+  ): Promise<VendorAssessmentActionDto> {
+    await this.findOne(authCtx, vendorId);
+
+    const existing = await this.prisma.vendorAssessmentAction.findFirst({
+      where: { id: actionId, assessmentId, organizationId: authCtx.organizationId },
+    });
+    if (!existing) throw new NotFoundException(`Action "${actionId}" not found on assessment.`);
+
+    const completedAt = (dto.status === 'COMPLETED' || dto.status === 'CLOSED')
+      ? (existing.completedAt || new Date())
+      : (dto.status ? null : existing.completedAt);
+
+    const updated = await this.prisma.vendorAssessmentAction.update({
+      where: { id: actionId },
+      data: {
+        ...(dto.title !== undefined && { title: dto.title.trim() }),
+        ...(dto.description !== undefined && { description: dto.description?.trim() || null }),
+        ...(dto.owner !== undefined && { owner: dto.owner.trim() }),
+        ...(dto.dueDate !== undefined && { dueDate: dto.dueDate ? new Date(dto.dueDate) : null }),
+        ...(dto.status !== undefined && { status: dto.status as any }),
+        completedAt,
+      },
+    });
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'VENDOR_ASSESSMENT_ACTION_UPDATED',
+      entityType: 'VendorAssessmentAction',
+      entityId: updated.id,
+      metadata: { vendorId, assessmentId, status: updated.status },
+    });
+
+    return {
+      id: updated.id,
+      organizationId: updated.organizationId,
+      assessmentId: updated.assessmentId,
+      title: updated.title,
+      description: updated.description,
+      actionType: updated.actionType,
+      owner: updated.owner,
+      dueDate: updated.dueDate ? updated.dueDate.toISOString() : null,
+      status: updated.status,
+      completedAt: updated.completedAt ? updated.completedAt.toISOString() : null,
+      createdAt: updated.createdAt.toISOString(),
+      updatedAt: updated.updatedAt.toISOString(),
+    };
+  }
+
+  async deleteAssessmentAction(
+    authCtx: ResourceAuthContext,
+    vendorId: string,
+    assessmentId: string,
+    actionId: string,
+  ): Promise<{ success: boolean }> {
+    await this.findOne(authCtx, vendorId);
+
+    await this.prisma.vendorAssessmentAction.deleteMany({
+      where: { id: actionId, assessmentId, organizationId: authCtx.organizationId },
+    });
+
+    return { success: true };
+  }
+
+  // --- APPROVAL WORKFLOW INTEGRATION ---
+
+  async submitAssessmentForApproval(
+    authCtx: ResourceAuthContext,
+    vendorId: string,
+    assessmentId: string,
+    dto: SubmitVendorAssessmentApprovalDto,
+  ) {
+    const vendor = await this.findOne(authCtx, vendorId);
+
+    const assessment = await this.prisma.vendorAssessment.findFirst({
+      where: { id: assessmentId, vendorId, organizationId: authCtx.organizationId },
+    });
+    if (!assessment) throw new NotFoundException(`Assessment "${assessmentId}" not found for vendor.`);
+
+    if (!this.approvalEngineService) {
+      throw new BadRequestException('Approval engine service is not available.');
+    }
+
+    const title = dto.title?.trim() || `Vendor Assessment Approval: ${vendor.name} - ${assessment.title}`;
+    const instance = await this.approvalEngineService.createApprovalInstance(
+      authCtx.organizationId,
+      authCtx.userId,
+      {
+        title,
+        description: `Approval for vendor risk assessment "${assessment.title}" (Score: ${assessment.score ?? 'N/A'})`,
+        resourceType: 'VENDOR_ASSESSMENT',
+        resourceId: assessment.id,
+        workflowId: dto.workflowId,
+        purpose: 'VENDOR_APPROVAL' as any,
+        dueDays: dto.dueDays || 7,
+      },
+    );
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'VENDOR_ASSESSMENT_APPROVAL_SUBMITTED',
+      entityType: 'VendorAssessment',
+      entityId: assessment.id,
+      metadata: { approvalInstanceId: instance.id, vendorId },
+    });
+
+    return instance;
   }
 }

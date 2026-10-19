@@ -554,4 +554,155 @@ describe('PrismaService Tenant Scoping Middleware (Phase 4.4 Hardened)', () => {
       expect(capturedParams.model).toBe('Framework');
     });
   });
+
+  // 11. Expanded Direct and Child Tenant Models (Phase 1 Security Foundation)
+  describe('11. Expanded Direct and Child Tenant Models Coverage', () => {
+    it('should include newly discovered direct models in TENANT_SCOPED_MODELS', () => {
+      expect(TENANT_SCOPED_MODELS).toContain('Department');
+      expect(TENANT_SCOPED_MODELS).toContain('Project');
+      expect(TENANT_SCOPED_MODELS).toContain('OrganizationMembership');
+      expect(TENANT_SCOPED_MODELS).toContain('Evidence');
+      expect(TENANT_SCOPED_MODELS).toContain('ApprovalWorkflow');
+      expect(TENANT_SCOPED_MODELS).toContain('ApprovalInstance');
+      expect(TENANT_SCOPED_MODELS).toContain('RiskControl');
+      expect(TENANT_SCOPED_MODELS).toContain('DocumentAnalysis');
+    });
+
+    it('should auto-inject organizationId on findMany for Department', async () => {
+      let capturedParams: any;
+      const mockParams = {
+        model: 'Department',
+        action: 'findMany',
+        args: { where: { name: 'Engineering' } },
+      };
+
+      const next = jest.fn().mockImplementation(async (p) => {
+        capturedParams = p;
+        return [];
+      });
+
+      await TenantContext.run({ organizationId: 'org-tenant-alpha' }, async () => {
+        await tenantScopingMiddleware(mockParams, next);
+      });
+
+      expect(next).toHaveBeenCalled();
+      expect(capturedParams.args.where.organizationId).toBe('org-tenant-alpha');
+      expect(capturedParams.args.where.name).toBe('Engineering');
+    });
+
+    it('should auto-inject organizationId on create for Evidence', async () => {
+      let capturedParams: any;
+      const mockParams = {
+        model: 'Evidence',
+        action: 'create',
+        args: { data: { title: 'SOC2 Evidence Report' } },
+      };
+
+      const next = jest.fn().mockImplementation(async (p) => {
+        capturedParams = p;
+        return { id: 'ev-1', ...p.args.data };
+      });
+
+      await TenantContext.run({ organizationId: 'org-tenant-alpha' }, async () => {
+        await tenantScopingMiddleware(mockParams, next);
+      });
+
+      expect(next).toHaveBeenCalled();
+      expect(capturedParams.args.data.organizationId).toBe('org-tenant-alpha');
+    });
+
+    it('should scope PolicyVersion via policy relation on findMany', async () => {
+      let capturedParams: any;
+      const mockParams = {
+        model: 'PolicyVersion',
+        action: 'findMany',
+        args: { where: { versionNumber: '1.0' } },
+      };
+
+      const next = jest.fn().mockImplementation(async (p) => {
+        capturedParams = p;
+        return [];
+      });
+
+      await TenantContext.run({ organizationId: 'org-tenant-alpha' }, async () => {
+        await tenantScopingMiddleware(mockParams, next);
+      });
+
+      expect(next).toHaveBeenCalled();
+      expect(capturedParams.args.where.policy).toEqual({ organizationId: 'org-tenant-alpha' });
+      expect(capturedParams.args.where.versionNumber).toBe('1.0');
+      // Must not inject scalar organizationId into where
+      expect(capturedParams.args.where.organizationId).toBeUndefined();
+    });
+
+    it('should NOT inject scalar organizationId into data on PolicyVersion create', async () => {
+      let capturedParams: any;
+      const mockParams = {
+        model: 'PolicyVersion',
+        action: 'create',
+        args: {
+          data: {
+            policyId: 'pol-123',
+            versionNumber: '2.0',
+            content: 'Updated policy body',
+            createdById: 'usr-1',
+          },
+        },
+      };
+
+      const next = jest.fn().mockImplementation(async (p) => {
+        capturedParams = p;
+        return { id: 'pv-1', ...p.args.data };
+      });
+
+      await TenantContext.run({ organizationId: 'org-tenant-alpha' }, async () => {
+        await tenantScopingMiddleware(mockParams, next);
+      });
+
+      expect(next).toHaveBeenCalled();
+      // Scalar organizationId must not be added to data payload
+      expect(capturedParams.args.data.organizationId).toBeUndefined();
+      expect(capturedParams.args.data.policyId).toBe('pol-123');
+    });
+
+    it('should reject PolicyVersion with foreign policy.organizationId in where clause', async () => {
+      const mockParams = {
+        model: 'PolicyVersion',
+        action: 'findMany',
+        args: {
+          where: {
+            policy: { organizationId: 'foreign-org' },
+          },
+        },
+      };
+      const next = jest.fn();
+
+      await TenantContext.run({ organizationId: 'org-tenant-alpha' }, async () => {
+        await expect(tenantScopingMiddleware(mockParams, next)).rejects.toThrow(ForbiddenException);
+      });
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('should scope ApprovalWorkflowStep via workflow relation on findMany', async () => {
+      let capturedParams: any;
+      const mockParams = {
+        model: 'ApprovalWorkflowStep',
+        action: 'findMany',
+        args: { where: { stepNumber: 1 } },
+      };
+
+      const next = jest.fn().mockImplementation(async (p) => {
+        capturedParams = p;
+        return [];
+      });
+
+      await TenantContext.run({ organizationId: 'org-tenant-alpha' }, async () => {
+        await tenantScopingMiddleware(mockParams, next);
+      });
+
+      expect(next).toHaveBeenCalled();
+      expect(capturedParams.args.where.workflow).toEqual({ organizationId: 'org-tenant-alpha' });
+      expect(capturedParams.args.where.stepNumber).toBe(1);
+    });
+  });
 });

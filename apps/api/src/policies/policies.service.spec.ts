@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { PoliciesService } from './policies.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { ApprovalEngineService } from '../approval/approval-engine.service';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { PolicyStatus, Role } from '@omnigrc/shared';
 import { ResourceAuthorizationService } from '../auth/resource-authorization.service';
@@ -10,6 +11,7 @@ describe('PoliciesService', () => {
   let service: PoliciesService;
   let prisma: jest.Mocked<any>;
   let auditLogsService: jest.Mocked<any>;
+  let approvalEngineService: jest.Mocked<any>;
 
   beforeEach(async () => {
     prisma = {
@@ -24,11 +26,17 @@ describe('PoliciesService', () => {
       },
       policyVersion: {
         findFirst: jest.fn(),
+        findUnique: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
       },
       policyAttestation: {
         create: jest.fn(),
+        findUnique: jest.fn(),
+        findMany: jest.fn(),
+      },
+      organizationMembership: {
+        count: jest.fn().mockResolvedValue(10),
       },
       policyException: {
         findMany: jest.fn(),
@@ -53,12 +61,21 @@ describe('PoliciesService', () => {
       log: jest.fn().mockResolvedValue({}),
     };
 
+    approvalEngineService = {
+      createApprovalInstance: jest.fn().mockResolvedValue({
+        id: 'appr-pol-1',
+        status: 'PENDING',
+        resourceType: 'POLICY',
+      }),
+    };
+
     const resourceAuthService = {
       getScopeWhereClause: jest.fn().mockImplementation(async (ctx: any) => ({
         organizationId: ctx.organizationId,
       })),
       authorize: jest.fn().mockResolvedValue(undefined),
       validateHierarchyInvariants: jest.fn().mockResolvedValue(undefined),
+      assertResourceAccess: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -67,6 +84,7 @@ describe('PoliciesService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: AuditLogsService, useValue: auditLogsService },
         { provide: ResourceAuthorizationService, useValue: resourceAuthService },
+        { provide: ApprovalEngineService, useValue: approvalEngineService },
       ],
     }).compile();
 
@@ -435,6 +453,181 @@ describe('PoliciesService', () => {
         expect.objectContaining({
           where: { id: 'ver-draft-1' },
           data: { content: '# New Updated Content' },
+        }),
+      );
+    });
+  });
+
+  describe('Policy Acknowledgement Tracking & Approvals (Phase 2)', () => {
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+
+    it('should attest to published policy version and create attestation record', async () => {
+      const publishedPolicy = {
+        id: 'pol-pub-1',
+        code: 'POL-SEC-01',
+        title: 'Information Security Policy',
+        status: PolicyStatus.PUBLISHED,
+        publishedVersionId: 'ver-pub-1',
+        publishedVersion: { id: 'ver-pub-1', versionNumber: '1.0' },
+        organizationId: 'org-1',
+      };
+
+      prisma.policy.findFirst.mockResolvedValue(publishedPolicy);
+      prisma.policyAttestation.findUnique.mockResolvedValue(null);
+
+      const mockAttestation = {
+        id: 'att-1',
+        organizationId: 'org-1',
+        policyVersionId: 'ver-pub-1',
+        userId: 'user-1',
+        attestedAt: new Date(),
+        ipAddress: '127.0.0.1',
+      };
+      prisma.policyAttestation.create.mockResolvedValue(mockAttestation);
+
+      const res = await service.attestPolicy(authCtx, 'pol-pub-1', '127.0.0.1');
+
+      expect(res.id).toBe('att-1');
+      expect(res.policyVersionId).toBe('ver-pub-1');
+      expect(prisma.policyAttestation.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          organizationId: 'org-1',
+          policyVersionId: 'ver-pub-1',
+          userId: 'user-1',
+          ipAddress: '127.0.0.1',
+        }),
+      });
+      expect(auditLogsService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'POLICY_ATTESTED',
+          entityId: 'att-1',
+        }),
+      );
+    });
+
+    it('should be idempotent and return existing attestation without creating duplicate', async () => {
+      const publishedPolicy = {
+        id: 'pol-pub-1',
+        code: 'POL-SEC-01',
+        status: PolicyStatus.PUBLISHED,
+        publishedVersionId: 'ver-pub-1',
+        organizationId: 'org-1',
+      };
+      const existing = {
+        id: 'att-existing',
+        organizationId: 'org-1',
+        policyVersionId: 'ver-pub-1',
+        userId: 'user-1',
+        attestedAt: new Date('2026-10-15'),
+        ipAddress: '127.0.0.1',
+      };
+
+      prisma.policy.findFirst.mockResolvedValue(publishedPolicy);
+      prisma.policyAttestation.findUnique.mockResolvedValue(existing);
+
+      const res = await service.attestPolicy(authCtx, 'pol-pub-1');
+
+      expect(res.id).toBe('att-existing');
+      expect(prisma.policyAttestation.create).not.toHaveBeenCalled();
+    });
+
+    it('should prevent attesting to unpublished policy', async () => {
+      prisma.policy.findFirst.mockResolvedValue({
+        id: 'pol-draft-2',
+        code: 'POL-DRAFT',
+        status: PolicyStatus.DRAFT,
+        publishedVersionId: null,
+        organizationId: 'org-1',
+      });
+
+      await expect(service.attestPolicy(authCtx, 'pol-draft-2')).rejects.toThrow(BadRequestException);
+    });
+
+    it('should compute acknowledgement summary with compliance rate', async () => {
+      const publishedPolicy = {
+        id: 'pol-summary-1',
+        code: 'POL-DATA-01',
+        title: 'Data Protection Policy',
+        status: PolicyStatus.PUBLISHED,
+        publishedVersionId: 'ver-pub-2',
+        publishedVersion: { id: 'ver-pub-2', versionNumber: '2.0' },
+        organizationId: 'org-1',
+      };
+
+      prisma.policy.findFirst.mockResolvedValue(publishedPolicy);
+      prisma.organizationMembership.count.mockResolvedValue(20);
+      prisma.policyAttestation.findMany.mockResolvedValue([
+        { id: 'att-1', userId: 'user-1', attestedAt: new Date(), ipAddress: null },
+        { id: 'att-2', userId: 'user-2', attestedAt: new Date(), ipAddress: null },
+      ]);
+
+      const summary = await service.getPolicyAcknowledgementSummary(authCtx, 'pol-summary-1');
+
+      expect(summary.totalEligibleUsers).toBe(20);
+      expect(summary.attestedUsersCount).toBe(2);
+      expect(summary.pendingUsersCount).toBe(18);
+      expect(summary.compliancePercentage).toBe(10);
+      expect(summary.versionNumber).toBe('2.0');
+    });
+
+    it('should find pending published policies for user where published version has not been acknowledged', async () => {
+      const pol1 = {
+        id: 'pol-1',
+        code: 'POL-01',
+        title: 'Policy 1',
+        status: PolicyStatus.PUBLISHED,
+        publishedVersionId: 'ver-1',
+        publishedVersion: { id: 'ver-1', versionNumber: '1.0' },
+        versions: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      const pol2 = {
+        id: 'pol-2',
+        code: 'POL-02',
+        title: 'Policy 2 (Updated to 2.0)',
+        status: PolicyStatus.PUBLISHED,
+        publishedVersionId: 'ver-2',
+        publishedVersion: { id: 'ver-2', versionNumber: '2.0' },
+        versions: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      prisma.policy.findMany.mockResolvedValue([pol1, pol2]);
+      // User has only attested to ver-1 (meaning ver-2 on pol2 is still pending!)
+      prisma.policyAttestation.findMany.mockResolvedValue([
+        { policyVersionId: 'ver-1' },
+      ]);
+
+      const pending = await service.getMyPendingPolicies(authCtx);
+
+      expect(pending.length).toBe(1);
+      expect(pending[0].id).toBe('pol-2');
+    });
+
+    it('should submit policy for approval via ApprovalEngineService', async () => {
+      prisma.policy.findFirst.mockResolvedValue({
+        id: 'pol-appr-1',
+        code: 'POL-FIN-01',
+        title: 'Financial Controls Policy',
+        description: 'Covers internal financial controls',
+        organizationId: 'org-1',
+      });
+
+      const approval = await service.submitForApproval(authCtx, 'pol-appr-1', {
+        dueDays: 14,
+      });
+
+      expect(approval.id).toBe('appr-pol-1');
+      expect(approvalEngineService.createApprovalInstance).toHaveBeenCalledWith(
+        'org-1',
+        'user-1',
+        expect.objectContaining({
+          resourceType: 'POLICY',
+          resourceId: 'pol-appr-1',
+          purpose: 'POLICY_APPROVAL',
+          dueDays: 14,
         }),
       );
     });

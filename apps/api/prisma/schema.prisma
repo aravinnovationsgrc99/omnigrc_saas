@@ -236,6 +236,8 @@ model Organization {
   evidences           Evidence[]
   approvalWorkflows   ApprovalWorkflow[]
   approvalInstances   ApprovalInstance[]
+  vendorQuestionnaires VendorQuestionnaire[]
+  vendorQuestionnaireSubmissions VendorQuestionnaireSubmission[]
   documentAnalyses    DocumentAnalysis[]
   extractedFindings   ExtractedFinding[]
   deployment          Deployment?
@@ -367,6 +369,14 @@ model Risk {
   frameworkId          String?
   frameworkReferenceId String?
   treatmentPlan        String?
+  category             String?
+  residualLikelihood   Int?
+  residualImpact       Int?
+  residualScore        Int?
+  treatmentStrategy    String?
+  treatmentOwner       String?
+  treatmentDueDate     DateTime?
+  treatmentStatus      String?
   createdAt            DateTime            @default(now())
   updatedAt            DateTime            @updatedAt
   createdById          String
@@ -391,6 +401,7 @@ model Risk {
   @@index([deletedAt])
   @@index([status])
   @@index([score])
+  @@index([category])
   @@index([assetId])
   @@index([frameworkId])
   @@index([frameworkReferenceId])
@@ -783,6 +794,7 @@ model Vendor {
   lastReviewedAt    DateTime?
   nextReviewDate    DateTime?
   websiteUrl        String?
+  dueDiligenceStatus String?
   createdById       String
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
@@ -794,6 +806,7 @@ model Vendor {
   assets       Asset[]
   assessments  VendorAssessment[]
   evidenceAssociations VendorEvidence[]
+  questionnaireSubmissions VendorQuestionnaireSubmission[]
 
   @@index([organizationId])
   @@index([departmentId])
@@ -821,10 +834,83 @@ model VendorAssessment {
   risk           Risk?           @relation(fields: [riskId], references: [id], onDelete: SetNull)
   complianceTask ComplianceTask? @relation(fields: [complianceTaskId], references: [id], onDelete: SetNull)
   approvalAssociations VendorAssessmentApproval[]
+  actions              VendorAssessmentAction[]
+  questionnaireSubmissions VendorQuestionnaireSubmission[]
 
   @@index([organizationId])
   @@index([vendorId])
   @@map("vendor_assessments")
+}
+
+model VendorQuestionnaire {
+  id             String   @id @default(uuid())
+  organizationId String
+  title          String
+  description    String?
+  version        String   @default("1.0")
+  status         String   @default("ACTIVE")
+  questions      Json
+  createdById    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  submissions    VendorQuestionnaireSubmission[]
+
+  @@index([organizationId])
+  @@index([status])
+  @@map("vendor_questionnaires")
+}
+
+model VendorQuestionnaireSubmission {
+  id              String   @id @default(uuid())
+  organizationId  String
+  vendorId        String
+  questionnaireId String
+  assessmentId    String?
+  status          String   @default("PENDING")
+  answers         Json
+  submittedAt     DateTime?
+  submittedBy     String?
+  reviewedAt      DateTime?
+  reviewedById    String?
+  score           Int?
+  reviewNotes     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization    Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  vendor          Vendor              @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  questionnaire   VendorQuestionnaire @relation(fields: [questionnaireId], references: [id], onDelete: Cascade)
+  assessment      VendorAssessment?   @relation(fields: [assessmentId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([vendorId])
+  @@index([questionnaireId])
+  @@index([status])
+  @@map("vendor_questionnaire_submissions")
+}
+
+model VendorAssessmentAction {
+  id             String     @id @default(uuid())
+  organizationId String
+  assessmentId   String
+  title          String
+  description    String?
+  actionType     String     @default("REMEDIATION")
+  owner          String
+  dueDate        DateTime?
+  status         CapaStatus @default(OPEN)
+  completedAt    DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  assessment     VendorAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([assessmentId])
+  @@index([status])
+  @@map("vendor_assessment_actions")
 }
 
 model Vulnerability {
@@ -1278,30 +1364,35 @@ enum IncidentStatus {
 }
 
 model Incident {
-  id              String           @id @default(uuid())
-  organizationId  String
-  departmentId    String?
-  projectId       String?
-  title           String
-  description     String?
-  severity        IncidentSeverity @default(MEDIUM)
-  status          IncidentStatus   @default(OPEN)
-  owner           String
-  detectedAt      DateTime         @default(now())
-  containedAt     DateTime?
-  resolvedAt      DateTime?
-  dueDate         DateTime?
-  rootCause       String?
-  affectedAssetId String?
-  createdById     String
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  deletedAt       DateTime?
+  id                   String           @id @default(uuid())
+  organizationId       String
+  departmentId         String?
+  projectId            String?
+  title                String
+  description          String?
+  category             String?
+  priority             String?
+  severity             IncidentSeverity @default(MEDIUM)
+  status               IncidentStatus   @default(OPEN)
+  owner                String
+  businessUnit         String?
+  detectedAt           DateTime         @default(now())
+  containedAt          DateTime?
+  resolvedAt           DateTime?
+  dueDate              DateTime?
+  rootCause            String?
+  investigationDetails String?
+  affectedAssetId      String?
+  createdById          String
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  deletedAt            DateTime?
 
   organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   departmentRef Department?   @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   projectRef    Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
   affectedAsset Asset?       @relation(fields: [affectedAssetId], references: [id], onDelete: SetNull)
+  actions       IncidentAction[]
   evidenceAssociations IncidentEvidence[]
   approvalAssociations IncidentApproval[]
 
@@ -1310,8 +1401,31 @@ model Incident {
   @@index([projectId])
   @@index([status])
   @@index([severity])
+  @@index([category])
   @@index([deletedAt])
   @@map("incidents")
+}
+
+model IncidentAction {
+  id             String     @id @default(uuid())
+  organizationId String
+  incidentId     String
+  title          String
+  description    String?
+  actionType     String     @default("CORRECTIVE")
+  owner          String
+  dueDate        DateTime?
+  status         CapaStatus @default(OPEN)
+  completedAt    DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  incident       Incident   @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([incidentId])
+  @@index([status])
+  @@map("incident_actions")
 }
 
 model OrganizationMembership {

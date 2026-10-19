@@ -13,8 +13,10 @@ if [ -z "$REDIS_URL" ]; then
   exit 1
 fi
 
-# In standard non-Supabase PostgreSQL deployments, DIRECT_URL equals DATABASE_URL if omitted
+# DIRECT_URL is required for schema migrations (DDL privileges).
+# If omitted, it falls back to DATABASE_URL (which must have migration privileges if so configured).
 if [ -z "$DIRECT_URL" ]; then
+  echo "[OMNiGRC WARNING] DIRECT_URL not set; falling back to DATABASE_URL for migrations."
   export DIRECT_URL="$DATABASE_URL"
 fi
 

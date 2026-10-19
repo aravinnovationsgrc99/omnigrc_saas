@@ -2,7 +2,8 @@ import { Injectable, OnModuleInit, OnModuleDestroy, ForbiddenException, BadReque
 import { PrismaClient } from '@prisma/client';
 import { TenantContext } from '../tenant/tenant.context';
 
-export const TENANT_SCOPED_MODELS = [
+export const DIRECT_TENANT_MODELS = [
+  // Core Identity & Scoping
   'User',
   'RegionalPod',
   'AuditLogEntry',
@@ -17,12 +18,13 @@ export const TENANT_SCOPED_MODELS = [
   'Vulnerability',
   'VulnerabilityAsset',
   'Policy',
-  'PolicyVersion',
   'PolicyAttestation',
   'PolicyException',
   'PolicyCategory',
   'Incident',
   'UserDashboardPreference',
+
+  // Business Audits & Findings
   'AuditPlan',
   'AuditSchedule',
   'AuditAssessment',
@@ -30,6 +32,71 @@ export const TENANT_SCOPED_MODELS = [
   'AuditEvidence',
   'AuditFinding',
   'AuditCapa',
+
+  // Hierarchy & Access Control
+  'Department',
+  'Project',
+  'OrganizationMembership',
+
+  // Universal Evidence Vault
+  'Evidence',
+  'ControlEvidence',
+  'RiskEvidence',
+  'PolicyEvidence',
+  'AuditCheckItemEvidence',
+  'AuditFindingEvidence',
+  'VendorEvidence',
+  'VulnerabilityEvidence',
+  'IncidentEvidence',
+
+  // Universal Approval Engine
+  'ApprovalWorkflow',
+  'ApprovalInstance',
+  'ApprovalDecision',
+  'ControlApproval',
+  'RiskApproval',
+  'PolicyApproval',
+  'AuditFindingApproval',
+  'VendorAssessmentApproval',
+  'VulnerabilityApproval',
+  'IncidentApproval',
+  'PolicyExceptionApproval',
+  'EvidenceApproval',
+
+  // Document Intelligence
+  'DocumentAnalysis',
+  'ExtractedFinding',
+
+  // Cross-Model Associations & Projections
+  'RiskControl',
+  'OrganizationFrameworkEntitlement',
+  'OrganizationControlStateProjection',
+  'OrganizationServiceOverrideProjection',
+  'Deployment',
+  'SystemLicenseState',
+
+  // Phase 2 Workflows: Domain Actions & Vendor Questionnaires
+  'IncidentAction',
+  'VendorQuestionnaire',
+  'VendorQuestionnaireSubmission',
+  'VendorAssessmentAction',
+];
+
+export const CHILD_TENANT_MODELS: Record<string, string> = {
+  PolicyVersion: 'policy',
+  ApprovalWorkflowStep: 'workflow',
+  ApprovalInstanceStep: 'approvalInstance',
+  AnalysisRun: 'documentAnalysis',
+  ControlFrameworkMapping: 'control',
+  AuditPlanFrameworkReference: 'auditPlan',
+  EvidenceFrameworkReference: 'evidence',
+  UserDepartment: 'department',
+  UserProject: 'project',
+};
+
+export const TENANT_SCOPED_MODELS = [
+  ...DIRECT_TENANT_MODELS,
+  ...Object.keys(CHILD_TENANT_MODELS),
 ];
 
 export async function tenantScopingMiddleware(params: any, next: (params: any) => Promise<any>) {
@@ -73,6 +140,46 @@ export async function tenantScopingMiddleware(params: any, next: (params: any) =
     'upsert',
   ].includes(params.action);
 
+  const parentRel = CHILD_TENANT_MODELS[params.model];
+
+  if (parentRel) {
+    // Child model relation-based tenant scoping
+    if (isWhereScopedAction) {
+      params.args = params.args || {};
+      params.args.where = params.args.where || {};
+
+      const existingParent = params.args.where[parentRel];
+      if (existingParent?.organizationId !== undefined && existingParent?.organizationId !== null) {
+        if (existingParent.organizationId !== orgId) {
+          throw new ForbiddenException(
+            `Cross-tenant access violation: organizationId mismatch for child model "${params.model}".`
+          );
+        }
+      } else {
+        params.args.where[parentRel] = {
+          ...(typeof existingParent === 'object' ? existingParent : {}),
+          organizationId: orgId,
+        };
+      }
+    }
+
+    if (params.action === 'create' || params.action === 'update' || params.action === 'upsert') {
+      // Child records do not possess direct organizationId column; do not inject organizationId scalar.
+      // If caller explicitly provides an invalid foreign organizationId in data payload, reject it.
+      const dataPayload = params.args?.data || params.args?.create;
+      if (dataPayload?.organizationId !== undefined && dataPayload?.organizationId !== null) {
+        if (dataPayload.organizationId !== orgId) {
+          throw new ForbiddenException(
+            `Cross-tenant mutation violation: foreign organizationId specified for child model "${params.model}".`
+          );
+        }
+      }
+    }
+
+    return next(params);
+  }
+
+  // Direct tenant model organizationId scoping
   if (isWhereScopedAction) {
     params.args = params.args || {};
     params.args.where = params.args.where || {};

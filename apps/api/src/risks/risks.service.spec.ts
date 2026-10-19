@@ -360,6 +360,160 @@ describe('RisksService', () => {
       }),
     ).rejects.toThrow('Framework reference "Art.5" does not belong to the selected framework.');
   });
+
+  describe('Phase 2: Risk Taxonomy, Residual Risk & Treatment Workflows', () => {
+    it('should calculate inherent and residual risk scores on creation', async () => {
+      const mockCreated = {
+        id: 'risk-res-1',
+        organizationId: 'org-1',
+        title: 'Residual Risk Test',
+        category: 'INFORMATION_SECURITY',
+        likelihood: 4,
+        impact: 4,
+        score: 16,
+        residualLikelihood: 2,
+        residualImpact: 3,
+        residualScore: 6,
+        status: RiskStatus.OPEN,
+        owner: 'SecOps',
+        treatmentPlan: 'Implement MFA and EDR',
+        treatmentStrategy: 'MITIGATE',
+        treatmentOwner: 'SecLead',
+        treatmentDueDate: new Date('2026-12-31'),
+        treatmentStatus: 'IN_PROGRESS',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        createdById: 'user-1',
+      };
+
+      prisma.risk.create.mockResolvedValue(mockCreated);
+
+      const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+      const result = await service.create(authCtx, {
+        title: 'Residual Risk Test',
+        category: 'INFORMATION_SECURITY',
+        likelihood: 4,
+        impact: 4,
+        residualLikelihood: 2,
+        residualImpact: 3,
+        owner: 'SecOps',
+        treatmentPlan: 'Implement MFA and EDR',
+        treatmentStrategy: 'MITIGATE',
+        treatmentOwner: 'SecLead',
+      });
+
+      expect(result.score).toBe(16);
+      expect(result.scoreBand).toBe('HIGH');
+      expect(result.residualScore).toBe(6);
+      expect(result.residualScoreBand).toBe('LOW');
+      expect(result.category).toBe('INFORMATION_SECURITY');
+      expect(result.treatmentStrategy).toBe('MITIGATE');
+      expect(result.treatmentOwner).toBe('SecLead');
+    });
+
+    it('should reject transition to IN_TREATMENT without a treatment plan or strategy', async () => {
+      const existing = {
+        id: 'risk-no-plan',
+        organizationId: 'org-1',
+        title: 'Unplanned Risk',
+        likelihood: 3,
+        impact: 3,
+        score: 9,
+        status: RiskStatus.OPEN,
+        treatmentPlan: null,
+        treatmentStrategy: null,
+      };
+      prisma.risk.findFirst.mockResolvedValue(existing);
+
+      const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+      await expect(
+        service.update(authCtx, 'risk-no-plan', {
+          status: RiskStatus.IN_TREATMENT,
+        }),
+      ).rejects.toThrow('Cannot transition risk to IN_TREATMENT without a defined treatment plan or strategy.');
+    });
+
+    it('should reject invalid transition from CLOSED to non-OPEN status', async () => {
+      const closedRisk = {
+        id: 'risk-closed',
+        organizationId: 'org-1',
+        title: 'Closed Risk',
+        likelihood: 1,
+        impact: 1,
+        score: 1,
+        status: RiskStatus.CLOSED,
+        treatmentPlan: 'Done',
+      };
+      prisma.risk.findFirst.mockResolvedValue(closedRisk);
+
+      const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+      await expect(
+        service.update(authCtx, 'risk-closed', {
+          status: RiskStatus.IN_TREATMENT,
+        }),
+      ).rejects.toThrow('Closed risks can only be transitioned to OPEN (reopened).');
+    });
+
+    it('should filter risks by category in findAll', async () => {
+      prisma.risk.findMany.mockResolvedValue([]);
+      prisma.risk.count.mockResolvedValue(0);
+
+      const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+      await service.findAll(authCtx, { category: 'FINANCIAL' });
+
+      expect(prisma.risk.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ category: 'FINANCIAL' }),
+        }),
+      );
+    });
+
+    it('should submit risk for approval when approvalEngineService is available', async () => {
+      const mockRisk = {
+        id: 'risk-app-1',
+        organizationId: 'org-1',
+        title: 'Risk for Signoff',
+        description: 'Requires executive acceptance',
+        likelihood: 5,
+        impact: 4,
+        score: 20,
+        status: RiskStatus.OPEN,
+      };
+      prisma.risk.findFirst.mockResolvedValue(mockRisk);
+
+      const mockApprovalEngine = {
+        createApprovalInstance: jest.fn().mockResolvedValue({
+          id: 'app-ins-1',
+          status: 'PENDING',
+          title: 'Risk Approval: Risk for Signoff (RISK_ACCEPTANCE)',
+        }),
+      };
+
+      (service as any).approvalEngineService = mockApprovalEngine;
+
+      const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+      const res = await service.submitForApproval(authCtx, 'risk-app-1', {
+        purpose: 'RISK_ACCEPTANCE' as any,
+      });
+
+      expect(res.id).toBe('app-ins-1');
+      expect(mockApprovalEngine.createApprovalInstance).toHaveBeenCalledWith(
+        'org-1',
+        'user-1',
+        expect.objectContaining({
+          resourceType: 'RISK',
+          resourceId: 'risk-app-1',
+          purpose: 'RISK_ACCEPTANCE',
+        }),
+      );
+      expect(auditLogsService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'RISK_APPROVAL_SUBMITTED',
+          entityId: 'risk-app-1',
+        }),
+      );
+    });
+  });
 });
 
 describe('RiskQueryDto validation', () => {
