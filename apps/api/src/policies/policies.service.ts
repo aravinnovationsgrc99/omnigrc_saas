@@ -54,7 +54,9 @@ export class PoliciesService {
     private readonly resourceAuthService: ResourceAuthorizationService,
     @Optional() private readonly approvalEngineService?: ApprovalEngineService,
     @Optional() private readonly notificationsService?: NotificationsService,
-  ) {}
+  ) {
+    this.mapToDto = this.mapToDto.bind(this);
+  }
 
   async findAll(authCtx: ResourceAuthContext, query: PolicyQueryDto): Promise<PaginatedPoliciesDto> {
     const page = query.page || 1;
@@ -112,7 +114,7 @@ export class PoliciesService {
     ]);
 
     return {
-      items: items.map(this.mapToDto),
+      items: items.map((p) => this.mapToDto(p)),
       total,
       page,
       limit,

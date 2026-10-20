@@ -95,6 +95,67 @@ describe('PoliciesService', () => {
     expect(service).toBeDefined();
   });
 
+  describe('findAll', () => {
+    it('should retrieve and map policies correctly without unbound context errors', async () => {
+      const mockPolicy = {
+        id: 'pol-100',
+        organizationId: 'org-1',
+        departmentId: null,
+        projectId: null,
+        code: 'POL-100',
+        title: 'Network Security Policy',
+        description: 'Covers firewalls and network segmentation',
+        category: 'Information Security',
+        status: PolicyStatus.PUBLISHED,
+        ownerId: 'user-1',
+        businessUnit: 'Engineering',
+        publishedVersionId: 'ver-100',
+        publishedVersion: {
+          id: 'ver-100',
+          policyId: 'pol-100',
+          versionNumber: '1.0',
+          content: '# Network Security',
+          changeLog: 'Initial release',
+          createdById: 'user-1',
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        },
+        versions: [
+          {
+            id: 'ver-100',
+            policyId: 'pol-100',
+            versionNumber: '1.0',
+            content: '# Network Security',
+            changeLog: 'Initial release',
+            createdById: 'user-1',
+            createdAt: new Date('2026-01-01T00:00:00.000Z'),
+          },
+        ],
+        effectiveDate: new Date('2026-01-01T00:00:00.000Z'),
+        reviewDate: new Date('2027-01-01T00:00:00.000Z'),
+        reviewCadenceDays: 365,
+        createdById: 'user-1',
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-02T00:00:00.000Z'),
+        exceptions: [],
+      };
+
+      prisma.policy.findMany.mockResolvedValue([mockPolicy]);
+      prisma.policy.count.mockResolvedValue(1);
+
+      const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+      const result = await service.findAll(authCtx, { page: 1, limit: 10 });
+
+      expect(result).toBeDefined();
+      expect(result.total).toBe(1);
+      expect(result.items.length).toBe(1);
+      expect(result.items[0].id).toBe('pol-100');
+      expect(result.items[0].code).toBe('POL-100');
+      expect(result.items[0].publishedVersion?.versionNumber).toBe('1.0');
+      expect(result.items[0].createdAt).toBe('2026-01-01T00:00:00.000Z');
+      expect(result.items[0].updatedAt).toBe('2026-01-02T00:00:00.000Z');
+    });
+  });
+
   it('should create policy draft and initial policy version', async () => {
     const mockCreatedPolicy = {
       id: 'pol-1',
