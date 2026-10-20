@@ -11,29 +11,33 @@ export class NotificationsController {
 
   @Get()
   async getNotifications(
-    @CurrentUser() user: JwtPayload,
+    @CurrentUser() user: any,
     @Query('page') page?: number,
     @Query('limit') limit?: number,
   ) {
-    return this.notificationsService.getUserNotifications(user.organizationId, user.sub, { page, limit });
+    const userId = user.userId || user.id || user.sub;
+    return this.notificationsService.getUserNotifications(user.organizationId, userId, { page, limit });
   }
 
   @Get('unread-count')
-  async getUnreadCount(@CurrentUser() user: JwtPayload) {
-    const count = await this.notificationsService.getUnreadCount(user.organizationId, user.sub);
+  async getUnreadCount(@CurrentUser() user: any) {
+    const userId = user.userId || user.id || user.sub;
+    const count = await this.notificationsService.getUnreadCount(user.organizationId, userId);
     return { unreadCount: count };
   }
 
   @Patch(':id/read')
   async markRead(
-    @CurrentUser() user: JwtPayload,
+    @CurrentUser() user: any,
     @Param('id') id: string,
   ) {
-    return this.notificationsService.markRead(user.organizationId, user.sub, id);
+    const userId = user.userId || user.id || user.sub;
+    return this.notificationsService.markRead(user.organizationId, userId, id);
   }
 
   @Patch('mark-all-read')
-  async markAllRead(@CurrentUser() user: JwtPayload) {
-    return this.notificationsService.markAllRead(user.organizationId, user.sub);
+  async markAllRead(@CurrentUser() user: any) {
+    const userId = user.userId || user.id || user.sub;
+    return this.notificationsService.markAllRead(user.organizationId, userId);
   }
 }

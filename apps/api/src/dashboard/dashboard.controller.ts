@@ -15,8 +15,11 @@ export class DashboardController {
   async getUserPreference(
     @CurrentUser('id') userId: string,
     @CurrentUser('organizationId') organizationId: string,
+    @CurrentUser() user?: any,
   ): Promise<UserDashboardPreferenceDto> {
-    return this.dashboardService.getUserPreference(userId, organizationId);
+    const effectiveUserId = userId || user?.userId || user?.id || user?.sub;
+    const effectiveOrgId = organizationId || user?.organizationId;
+    return this.dashboardService.getUserPreference(effectiveUserId, effectiveOrgId);
   }
 
   @Put('preferences')
@@ -25,7 +28,10 @@ export class DashboardController {
     @CurrentUser('id') userId: string,
     @CurrentUser('organizationId') organizationId: string,
     @Body() dto: UpdateDashboardPreferenceDto,
+    @CurrentUser() user?: any,
   ): Promise<UserDashboardPreferenceDto> {
-    return this.dashboardService.updateUserPreference(userId, organizationId, dto);
+    const effectiveUserId = userId || user?.userId || user?.id || user?.sub;
+    const effectiveOrgId = organizationId || user?.organizationId;
+    return this.dashboardService.updateUserPreference(effectiveUserId, effectiveOrgId, dto);
   }
 }

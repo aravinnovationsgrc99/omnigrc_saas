@@ -328,6 +328,61 @@ describe('PrismaService Tenant Scoping Middleware (Phase 4.4 Hardened)', () => {
       });
       expect(next).not.toHaveBeenCalled();
     });
+
+    it('should permit upsert when compound unique selector organizationId matches tenant and NOT inject duplicate top-level organizationId', async () => {
+      let capturedParams: any;
+      const mockParams = {
+        model: 'UserDashboardPreference',
+        action: 'upsert',
+        args: {
+          where: {
+            userId_organizationId: {
+              userId: 'user-1',
+              organizationId: 'org-tenant-alpha',
+            },
+          },
+          create: { userId: 'user-1', configJson: {} },
+          update: { configJson: {} },
+        },
+      };
+
+      const next = jest.fn().mockImplementation(async (p) => {
+        capturedParams = p;
+        return { id: 'pref-1', ...p.args.create };
+      });
+
+      await TenantContext.run({ organizationId: 'org-tenant-alpha' }, async () => {
+        await tenantScopingMiddleware(mockParams, next);
+      });
+
+      expect(next).toHaveBeenCalled();
+      expect(capturedParams.args.where.userId_organizationId.organizationId).toBe('org-tenant-alpha');
+      expect(capturedParams.args.where.organizationId).toBeUndefined();
+      expect(capturedParams.args.create.organizationId).toBe('org-tenant-alpha');
+    });
+
+    it('should reject upsert when compound unique selector organizationId mismatches tenant', async () => {
+      const mockParams = {
+        model: 'UserDashboardPreference',
+        action: 'upsert',
+        args: {
+          where: {
+            userId_organizationId: {
+              userId: 'user-1',
+              organizationId: 'foreign-org',
+            },
+          },
+          create: {},
+          update: {},
+        },
+      };
+      const next = jest.fn();
+
+      await TenantContext.run({ organizationId: 'org-tenant-alpha' }, async () => {
+        await expect(tenantScopingMiddleware(mockParams, next)).rejects.toThrow(ForbiddenException);
+      });
+      expect(next).not.toHaveBeenCalled();
+    });
   });
 
   // 6. findUnique Conversion to findFirst
@@ -353,6 +408,120 @@ describe('PrismaService Tenant Scoping Middleware (Phase 4.4 Hardened)', () => {
       expect(capturedParams.action).toBe('findFirst');
       expect(capturedParams.args.where.organizationId).toBe('org-tenant-alpha');
       expect(capturedParams.args.where.id).toBe('pol-123');
+    });
+
+    it('should flatten compound unique selector organizationId_userId on findUnique for OrganizationMembership', async () => {
+      let capturedParams: any;
+      const mockParams = {
+        model: 'OrganizationMembership',
+        action: 'findUnique',
+        args: {
+          where: {
+            organizationId_userId: {
+              organizationId: 'org-tenant-alpha',
+              userId: 'user-123',
+            },
+          },
+        },
+      };
+
+      const next = jest.fn().mockImplementation(async (p) => {
+        capturedParams = p;
+        return { id: 'mem-1' };
+      });
+
+      await TenantContext.run({ organizationId: 'org-tenant-alpha' }, async () => {
+        await tenantScopingMiddleware(mockParams, next);
+      });
+
+      expect(next).toHaveBeenCalled();
+      expect(capturedParams.action).toBe('findFirst');
+      expect(capturedParams.args.where.organizationId_userId).toBeUndefined();
+      expect(capturedParams.args.where.organizationId).toBe('org-tenant-alpha');
+      expect(capturedParams.args.where.userId).toBe('user-123');
+    });
+
+    it('should flatten compound unique selector organizationId_capabilityCode on findUnique for OrganizationServiceOverrideProjection', async () => {
+      let capturedParams: any;
+      const mockParams = {
+        model: 'OrganizationServiceOverrideProjection',
+        action: 'findUnique',
+        args: {
+          where: {
+            organizationId_capabilityCode: {
+              organizationId: 'org-tenant-alpha',
+              capabilityCode: 'BUSINESS_AUDITS',
+            },
+          },
+        },
+      };
+
+      const next = jest.fn().mockImplementation(async (p) => {
+        capturedParams = p;
+        return null;
+      });
+
+      await TenantContext.run({ organizationId: 'org-tenant-alpha' }, async () => {
+        await tenantScopingMiddleware(mockParams, next);
+      });
+
+      expect(next).toHaveBeenCalled();
+      expect(capturedParams.action).toBe('findFirst');
+      expect(capturedParams.args.where.organizationId_capabilityCode).toBeUndefined();
+      expect(capturedParams.args.where.organizationId).toBe('org-tenant-alpha');
+      expect(capturedParams.args.where.capabilityCode).toBe('BUSINESS_AUDITS');
+    });
+
+    it('should flatten compound unique selector userId_organizationId on findUnique for UserDashboardPreference', async () => {
+      let capturedParams: any;
+      const mockParams = {
+        model: 'UserDashboardPreference',
+        action: 'findUnique',
+        args: {
+          where: {
+            userId_organizationId: {
+              userId: 'user-123',
+              organizationId: 'org-tenant-alpha',
+            },
+          },
+        },
+      };
+
+      const next = jest.fn().mockImplementation(async (p) => {
+        capturedParams = p;
+        return { id: 'pref-1' };
+      });
+
+      await TenantContext.run({ organizationId: 'org-tenant-alpha' }, async () => {
+        await tenantScopingMiddleware(mockParams, next);
+      });
+
+      expect(next).toHaveBeenCalled();
+      expect(capturedParams.action).toBe('findFirst');
+      expect(capturedParams.args.where.userId_organizationId).toBeUndefined();
+      expect(capturedParams.args.where.organizationId).toBe('org-tenant-alpha');
+      expect(capturedParams.args.where.userId).toBe('user-123');
+    });
+
+    it('should reject findUnique when flattened compound unique selector specifies foreign organizationId', async () => {
+      const mockParams = {
+        model: 'OrganizationMembership',
+        action: 'findUnique',
+        args: {
+          where: {
+            organizationId_userId: {
+              organizationId: 'foreign-org',
+              userId: 'user-123',
+            },
+          },
+        },
+      };
+      const next = jest.fn();
+
+      await TenantContext.run({ organizationId: 'org-tenant-alpha' }, async () => {
+        await expect(tenantScopingMiddleware(mockParams, next)).rejects.toThrow(ForbiddenException);
+      });
+      expect(next).not.toHaveBeenCalled();
     });
   });
 

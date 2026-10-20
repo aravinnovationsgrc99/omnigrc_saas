@@ -15,7 +15,7 @@ export class MetricsController {
     @CurrentUser() user: any,
   ): Promise<OverviewMetricsDto> {
     const authCtx: ResourceAuthContext = {
-      userId: user.userId,
+      userId: user.userId || user.id || user.sub,
       organizationId: user.organizationId,
       role: user.role,
     };
@@ -29,7 +29,7 @@ export class MetricsController {
     @Query('impact', ParseIntPipe) impact: number,
   ): Promise<HeatmapCellDetailsDto> {
     const authCtx: ResourceAuthContext = {
-      userId: user.userId,
+      userId: user.userId || user.id || user.sub,
       organizationId: user.organizationId,
       role: user.role,
     };

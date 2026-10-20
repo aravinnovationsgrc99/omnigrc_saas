@@ -125,6 +125,16 @@ export async function tenantScopingMiddleware(params: any, next: (params: any) =
   // on models that do not have composite @@unique([id, organizationId]) constraints.
   if (params.action === 'findUnique') {
     params.action = 'findFirst';
+    if (params.args && params.args.where) {
+      // Flatten compound unique selector keys (e.g. organizationId_userId, userId_organizationId, organizationId_capabilityCode)
+      for (const key of Object.keys(params.args.where)) {
+        const val = params.args.where[key];
+        if (val && typeof val === 'object' && !Array.isArray(val) && !(val instanceof Date)) {
+          delete params.args.where[key];
+          Object.assign(params.args.where, val);
+        }
+      }
+    }
   }
 
   const isWhereScopedAction = [
@@ -137,7 +147,6 @@ export async function tenantScopingMiddleware(params: any, next: (params: any) =
     'updateMany',
     'delete',
     'deleteMany',
-    'upsert',
   ].includes(params.action);
 
   const parentRel = CHILD_TENANT_MODELS[params.model];
@@ -300,7 +309,33 @@ export async function tenantScopingMiddleware(params: any, next: (params: any) =
 
   if (params.action === 'upsert') {
     params.args = params.args || {};
+    params.args.where = params.args.where || {};
     params.args.create = params.args.create || {};
+
+    // Validate where clause: check compound unique key or top-level organizationId
+    let hasCompoundOrgId = false;
+    for (const key of Object.keys(params.args.where)) {
+      const val = params.args.where[key];
+      if (val && typeof val === 'object' && val.organizationId !== undefined && val.organizationId !== null) {
+        hasCompoundOrgId = true;
+        if (val.organizationId !== orgId) {
+          throw new ForbiddenException(
+            `Cross-tenant access violation: organizationId mismatch in upsert where for model "${params.model}".`
+          );
+        }
+      }
+    }
+
+    if (params.args.where.organizationId !== undefined && params.args.where.organizationId !== null) {
+      if (params.args.where.organizationId !== orgId) {
+        throw new ForbiddenException(
+          `Cross-tenant access violation: organizationId mismatch in upsert where for model "${params.model}".`
+        );
+      }
+    } else if (!hasCompoundOrgId) {
+      params.args.where.organizationId = orgId;
+    }
+
     if (
       params.args.create.organizationId !== undefined &&
       params.args.create.organizationId !== null

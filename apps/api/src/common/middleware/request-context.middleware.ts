@@ -22,6 +22,10 @@ export class RequestContextMiddleware implements NestMiddleware {
         const token = authHeader.split(' ')[1];
         const secret = process.env.JWT_SECRET || 'omnigrc-dev-secret-key-change-in-prod';
         const verified = jwt.verify(token, secret) as any;
+        if (verified && typeof verified === 'object') {
+          if (!verified.id && verified.sub) verified.id = verified.sub;
+          if (!verified.userId && verified.sub) verified.userId = verified.sub;
+        }
         (req as any).user = verified;
       } catch {
         // Token invalid, expired, or tampered — req.user remains undefined
