@@ -5,6 +5,9 @@ import { AuthProvider } from '@/context/auth-context';
 export const metadata: Metadata = {
   title: 'OMNiGRC — Enterprise GRC Platform',
   description: 'Risk, assets, and controls — one register, four frameworks, no spreadsheets.',
+  icons: {
+    icon: '/favicon.ico',
+  },
 };
 
 export const viewport: Viewport = {

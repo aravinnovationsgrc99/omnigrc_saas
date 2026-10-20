@@ -154,7 +154,17 @@ export function AuditListView() {
     apiRequest<any[]>('/organization-members')
       .then((res) => {
         if (Array.isArray(res)) {
-          setOrgMembers(res);
+          const normalized: OrgMemberOption[] = res.map((m: any, idx: number) => {
+            const id = m.id || m.user?.id || m.userId || `mem-${idx}`;
+            const firstName = m.user?.firstName || m.firstName || '';
+            const lastName = m.user?.lastName || m.lastName || '';
+            const fullName = `${firstName} ${lastName}`.trim();
+            const name = m.name || fullName || m.user?.email || m.email || id;
+            const email = m.email || m.user?.email || '';
+            const role = m.role || m.user?.role || 'Member';
+            return { id, name, email, role };
+          });
+          setOrgMembers(normalized);
         }
       })
       .catch(() => {
@@ -224,6 +234,10 @@ export function AuditListView() {
 
   // Fetch audit history for selected plan
   const fetchPlanHistory = useCallback(async (planId: string) => {
+    if (!planId || planId === 'undefined') {
+      setPlanHistory([]);
+      return;
+    }
     setLoadingHistory(true);
     try {
       const history = await apiRequest<any[]>(`/business-audits/plans/${planId}/history`);
@@ -236,8 +250,10 @@ export function AuditListView() {
   }, []);
 
   useEffect(() => {
-    if (selectedPlan) {
+    if (selectedPlan?.id) {
       fetchPlanHistory(selectedPlan.id);
+    } else {
+      setPlanHistory([]);
     }
   }, [selectedPlan?.id, fetchPlanHistory]);
 
@@ -769,19 +785,22 @@ export function AuditListView() {
   ];
 
   // ----------------------------------------------------
-  // RENDER: Full Audit Management Workspace (when selectedPlan != null)
+  // RENDER: Full Audit Management Workspace or Catalog View
   // ----------------------------------------------------
-  if (selectedPlan) {
-    const rag = getAuditPlanRag(selectedPlan.status, selectedPlan.assessments, {
-      frameworkCode: selectedPlan.frameworkCode,
-      frameworkId: selectedPlan.frameworkId,
-      frameworkName: selectedPlan.frameworkName,
-      scopeReferences: selectedPlan.scopeReferences,
-    });
-    const eligibility = checkCompletionEligibility(selectedPlan);
+  const rag = selectedPlan
+    ? getAuditPlanRag(selectedPlan.status, selectedPlan.assessments, {
+        frameworkCode: selectedPlan.frameworkCode,
+        frameworkId: selectedPlan.frameworkId,
+        frameworkName: selectedPlan.frameworkName,
+        scopeReferences: selectedPlan.scopeReferences,
+      })
+    : null;
+  const eligibility = selectedPlan ? checkCompletionEligibility(selectedPlan) : null;
 
-    return (
-      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 omni-fade-in space-y-6">
+  return (
+    <>
+      {selectedPlan && rag && eligibility ? (
+        <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 omni-fade-in space-y-6">
         {/* Breadcrumb & Navigation */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
           <div>
@@ -1589,15 +1608,9 @@ export function AuditListView() {
             </div>
           </div>
         )}
-      </div>
-    );
-  }
-
-  // ----------------------------------------------------
-  // RENDER: Catalog View (Audit Plans, Execution Runs, Findings)
-  // ----------------------------------------------------
-  return (
-    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 omni-fade-in space-y-6">
+        </div>
+      ) : (
+        <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 omni-fade-in space-y-6">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -2092,6 +2105,8 @@ export function AuditListView() {
           )}
         </div>
       )}
+    </div>
+      )}
 
       {/* CREATE AUDIT PLAN MODAL */}
       {showPlanModal && (
@@ -2145,7 +2160,7 @@ export function AuditListView() {
                         {m.name || m.email} ({m.role || 'Member'})
                       </option>
                     ))}
-                    <option value="Lead Auditor">Lead Auditor (Default Role)</option>
+                    <option key="default-lead-auditor" value="Lead Auditor">Lead Auditor (Default Role)</option>
                   </select>
                 ) : (
                   <input
@@ -2428,7 +2443,7 @@ export function AuditListView() {
                             {m.name || m.email}
                           </option>
                         ))}
-                        <option value="Remediation Lead">Remediation Lead (Default)</option>
+                        <option key="default-lead" value="Remediation Lead">Remediation Lead (Default)</option>
                       </select>
                     ) : (
                       <input
@@ -2600,7 +2615,7 @@ export function AuditListView() {
                           {m.name || m.email}
                         </option>
                       ))}
-                      <option value="Compliance Lead">Compliance Lead (Default)</option>
+                      <option key="default-compliance-lead" value="Compliance Lead">Compliance Lead (Default)</option>
                     </select>
                   ) : (
                     <input
@@ -2777,6 +2792,6 @@ export function AuditListView() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

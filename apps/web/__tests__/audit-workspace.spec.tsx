@@ -447,4 +447,92 @@ describe('Phase 2 — Audit Management Workspace and Workflow', () => {
       });
     });
   });
+
+  describe('6. Audit Detail Page Action Modals (Attach Evidence & Manage CAPA)', () => {
+    it('opens and closes Manage CAPA modal with correct finding record from audit-detail screen', async () => {
+      render(<AuditListView />);
+
+      await waitFor(() => {
+        expect(screen.getByText('SOC 2 Type II Annual Audit')).toBeInTheDocument();
+      });
+
+      // Navigate into the audit detail workspace
+      const manageButtons = screen.getAllByRole('button', { name: /manage audit workspace/i });
+      fireEvent.click(manageButtons[1]);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /findings/i })).toBeInTheDocument();
+      });
+
+      // Switch to Findings sub-tab
+      fireEvent.click(screen.getByRole('button', { name: /findings/i }));
+
+      // Find the "Manage CAPA (1)" button on the finding card
+      const manageCapaBtn = await screen.findByRole('button', { name: /manage capa/i });
+      expect(manageCapaBtn).toBeInTheDocument();
+
+      // Click to open the CAPA modal
+      fireEvent.click(manageCapaBtn);
+
+      // Verify the modal rendered in the DOM with the correct finding title
+      await waitFor(() => {
+        expect(screen.getByText(/CAPA Remediation Workflow/i)).toBeInTheDocument();
+        expect(screen.getByText(/Actions for: Stale SSH keys found on bastion host/i)).toBeInTheDocument();
+        expect(screen.getByText('Revoke and audit developer SSH keys')).toBeInTheDocument();
+      });
+
+      // Verify modal close and return to detail view
+      const closeButtons = screen.getAllByRole('button');
+      const dialogClose = closeButtons.find((btn) => btn.querySelector('svg.lucide-x'));
+      if (dialogClose) {
+        fireEvent.click(dialogClose);
+      } else {
+        fireEvent.click(screen.getByRole('button', { name: /close/i }));
+      }
+
+      await waitFor(() => {
+        expect(screen.queryByText(/CAPA Remediation Workflow/i)).not.toBeInTheDocument();
+      });
+    });
+
+    it('opens and closes Attach Evidence modal with targeted finding from audit-detail screen', async () => {
+      render(<AuditListView />);
+
+      await waitFor(() => {
+        expect(screen.getByText('SOC 2 Type II Annual Audit')).toBeInTheDocument();
+      });
+
+      // Navigate into the audit detail workspace
+      const manageButtons = screen.getAllByRole('button', { name: /manage audit workspace/i });
+      fireEvent.click(manageButtons[1]);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /findings/i })).toBeInTheDocument();
+      });
+
+      // Switch to Findings sub-tab
+      fireEvent.click(screen.getByRole('button', { name: /findings/i }));
+
+      // Find the "Attach Evidence" button on the finding card
+      const attachEvidenceBtns = await screen.findAllByRole('button', { name: /attach evidence/i });
+      expect(attachEvidenceBtns.length).toBeGreaterThan(0);
+
+      // Click "Attach Evidence"
+      fireEvent.click(attachEvidenceBtns[0]);
+
+      // Verify the Evidence modal rendered in the DOM with target context
+      await waitFor(() => {
+        expect(screen.getByText(/Attach Audit Evidence Artifact/i)).toBeInTheDocument();
+        expect(screen.getByText(/Attaching to:/i)).toBeInTheDocument();
+        expect(screen.getAllByText(/Stale SSH keys found on bastion host/i).length).toBeGreaterThan(1);
+      });
+
+      // Cancel modal
+      fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+
+      await waitFor(() => {
+        expect(screen.queryByText(/Attach Audit Evidence Artifact/i)).not.toBeInTheDocument();
+      });
+    });
+  });
 });

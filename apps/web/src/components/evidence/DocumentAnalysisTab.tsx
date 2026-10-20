@@ -62,7 +62,7 @@ export function DocumentAnalysisTab({ evidenceId, evidenceTitle, fileName }: Doc
   const fetchAnalyses = async () => {
     setLoading(true);
     try {
-      const list = await apiRequest<DocumentAnalysisDto[]>(`/evidence/${evidenceId}/analyses`);
+      const list = await apiRequest<DocumentAnalysisDto[]>(`/api/v1/evidence/${evidenceId}/analyses`);
       setAnalyses(list);
       if (list.length > 0) {
         setSelectedAnalysis(list[0]);
@@ -84,7 +84,7 @@ export function DocumentAnalysisTab({ evidenceId, evidenceTitle, fileName }: Doc
       const payload = {
         analysisContext: analysisContext,
       };
-      await apiRequest(`/evidence/${evidenceId}/analyze`, {
+      await apiRequest(`/api/v1/evidence/${evidenceId}/analyze`, {
         method: 'POST',
         body: JSON.stringify(payload),
       });
@@ -120,7 +120,7 @@ export function DocumentAnalysisTab({ evidenceId, evidenceTitle, fileName }: Doc
       };
 
       const updatedFinding = await apiRequest<ExtractedFindingDto>(
-        `/analyses/${selectedAnalysis.id}/findings/${reviewFinding.id}/review`,
+        `/api/v1/analyses/${selectedAnalysis.id}/findings/${reviewFinding.id}/review`,
         {
           method: 'POST',
           body: JSON.stringify(body),

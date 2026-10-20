@@ -10,7 +10,14 @@ import {
   EffectiveCapabilityMap,
   EffectiveCapabilityDto,
 } from '@omnigrc/shared';
-import { apiRequest, setStoredTokens, clearStoredTokens, getStoredTokens } from '@/lib/api-client';
+import {
+  apiRequest,
+  setStoredTokens,
+  clearStoredTokens,
+  getStoredTokens,
+  isJwtExpired,
+  API_BASE_URL,
+} from '@/lib/api-client';
 
 interface ExtendedOrganizationDto extends OrganizationDto {
   licenseState?: string;
@@ -48,11 +55,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [licenseError, setLicenseError] = useState<string | null>(null);
 
   const initAuth = useCallback(async () => {
-    const { accessToken } = getStoredTokens();
+    const { accessToken, refreshToken } = getStoredTokens();
     if (!accessToken) {
       setLoading(false);
       setCapabilitiesStatus('available');
       return;
+    }
+
+    // Proactively check if token is expired to avoid doomed 401 requests
+    if (isJwtExpired(accessToken)) {
+      if (refreshToken && !isJwtExpired(refreshToken)) {
+        try {
+          const refreshRes = await fetch(`${API_BASE_URL}/auth/refresh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refreshToken }),
+          });
+
+          if (refreshRes.ok) {
+            const tokens = await refreshRes.json();
+            setStoredTokens(tokens.accessToken, tokens.refreshToken);
+          } else {
+            clearStoredTokens();
+            setUser(null);
+            setOrganization(null);
+            setCapabilities(null);
+            setCapabilitiesStatus('available');
+            setLoading(false);
+            return;
+          }
+        } catch {
+          clearStoredTokens();
+          setUser(null);
+          setOrganization(null);
+          setCapabilities(null);
+          setCapabilitiesStatus('available');
+          setLoading(false);
+          return;
+        }
+      } else {
+        clearStoredTokens();
+        setUser(null);
+        setOrganization(null);
+        setCapabilities(null);
+        setCapabilitiesStatus('available');
+        setLoading(false);
+        return;
+      }
     }
 
     try {
@@ -81,7 +130,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(null);
         setOrganization(null);
         setCapabilities(null);
-        setCapabilitiesStatus('error');
+        setCapabilitiesStatus('available');
       }
     } finally {
       setLoading(false);

@@ -1,4 +1,4 @@
-const API_BASE_URL = (
+export const API_BASE_URL = (
   process.env.NEXT_PUBLIC_API_URL ||
   (process.env.NODE_ENV === 'production' ? 'https://api.omnigrc.co' : 'http://localhost:3001')
 ).replace(/\/+$/, '');
@@ -6,12 +6,37 @@ const API_BASE_URL = (
 const ACCESS_TOKEN_KEY = 'omnigrc_access_token';
 const REFRESH_TOKEN_KEY = 'omnigrc_refresh_token';
 
+export const isJwtExpired = (token: string | null | undefined): boolean => {
+  if (!token || typeof token !== 'string') return true;
+  const parts = token.split('.');
+  if (parts.length !== 3) return true;
+  try {
+    const rawPayload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const jsonStr =
+      typeof atob === 'function'
+        ? atob(rawPayload)
+        : Buffer.from(rawPayload, 'base64').toString('utf8');
+    const payload = JSON.parse(jsonStr);
+    if (!payload.exp) return false;
+    return payload.exp * 1000 <= Date.now() + 5000;
+  } catch {
+    return true;
+  }
+};
+
 export const getStoredTokens = () => {
   if (typeof window === 'undefined') return { accessToken: null, refreshToken: null };
-  return {
-    accessToken: localStorage.getItem(ACCESS_TOKEN_KEY),
-    refreshToken: localStorage.getItem(REFRESH_TOKEN_KEY),
-  };
+  const rawAccess = localStorage.getItem(ACCESS_TOKEN_KEY);
+  const rawRefresh = localStorage.getItem(REFRESH_TOKEN_KEY);
+  const accessToken =
+    rawAccess && rawAccess !== 'undefined' && rawAccess !== 'null' && rawAccess.trim() !== ''
+      ? rawAccess.trim()
+      : null;
+  const refreshToken =
+    rawRefresh && rawRefresh !== 'undefined' && rawRefresh !== 'null' && rawRefresh.trim() !== ''
+      ? rawRefresh.trim()
+      : null;
+  return { accessToken, refreshToken };
 };
 
 export const setStoredTokens = (accessToken: string, refreshToken: string) => {
@@ -63,7 +88,13 @@ export async function apiRequest<T = any>(
   });
 
   // Handle 401 token refresh retry logic
-  if (response.status === 401 && refreshToken && !endpoint.includes('/auth/login') && !endpoint.includes('/auth/register')) {
+  if (
+    response.status === 401 &&
+    refreshToken &&
+    !endpoint.includes('/auth/login') &&
+    !endpoint.includes('/auth/register') &&
+    !endpoint.includes('/auth/refresh')
+  ) {
     try {
       const refreshRes = await fetch(`${API_BASE_URL}/auth/refresh`, {
         method: 'POST',

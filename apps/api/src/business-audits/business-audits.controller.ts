@@ -174,6 +174,8 @@ export class BusinessAuditsController {
     @Query('status') status?: FindingStatus,
     @Query('severity') severity?: VulnerabilitySeverity,
     @Query('search') search?: string,
+    @Query('planId') planId?: string,
+    @Query('assessmentId') assessmentId?: string,
   ) {
     const authCtx: ResourceAuthContext = {
       userId: user.userId,
@@ -186,6 +188,8 @@ export class BusinessAuditsController {
       status,
       severity,
       search,
+      planId,
+      assessmentId,
     });
   }
 
