@@ -413,18 +413,24 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       return callback();
     }
 
-    return super.$transaction(async (tx) => {
-      // 1. Establish tenant setting transaction-locally using parameterized query
-      await tx.$executeRawUnsafe(`SELECT set_config('app.current_tenant', $1, true);`, orgId);
+    return super.$transaction(
+      async (tx) => {
+        // 1. Establish tenant setting transaction-locally using parameterized query
+        await tx.$executeRawUnsafe(`SELECT set_config('app.current_tenant', $1, true);`, orgId);
 
-      // 2. If acting via MSSP, establish acting_mssp_id
-      if (actingViaMsspId) {
-        await tx.$executeRawUnsafe(`SELECT set_config('app.acting_mssp_id', $1, true);`, actingViaMsspId);
-      }
+        // 2. If acting via MSSP, establish acting_mssp_id
+        if (actingViaMsspId) {
+          await tx.$executeRawUnsafe(`SELECT set_config('app.acting_mssp_id', $1, true);`, actingViaMsspId);
+        }
 
-      // 3. Bind tx to TenantContext for transparent query routing
-      return TenantContext.runWithTxClient(tx, () => callback(tx));
-    });
+        // 3. Bind tx to TenantContext for transparent query routing
+        return TenantContext.runWithTxClient(tx, () => callback(tx));
+      },
+      {
+        maxWait: 10000,
+        timeout: 30000,
+      },
+    );
   }
 
   override async $transaction(arg: any, options?: any): Promise<any> {

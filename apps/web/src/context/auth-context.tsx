@@ -125,11 +125,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else if (err?.code === 'PRODUCT_ACCESS_REVOKED') {
         setLicenseError('PRODUCT_ACCESS_REVOKED');
         setCapabilitiesStatus('error');
-      } else {
+      } else if (err?.status === 401 || err?.statusCode === 401) {
         clearStoredTokens();
         setUser(null);
         setOrganization(null);
         setCapabilities(null);
+        setCapabilitiesStatus('available');
+      } else {
+        // Transient server or network error (e.g., 500/503) — preserve credentials and let view error boundaries report error
         setCapabilitiesStatus('available');
       }
     } finally {

@@ -532,7 +532,7 @@ export class MetricsService {
       ...overdueVendorAssessmentList.map((va) => ({
         id: va.id,
         domain: 'VENDOR' as const,
-        title: `${va.vendor.name}: ${va.title}`,
+        title: `${va.vendor?.name || 'Vendor'}: ${va.title}`,
         severityOrPriority: 'HIGH',
         targetView: 'vendors',
       })),
