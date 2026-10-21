@@ -22,28 +22,41 @@ async function bootstrap() {
     ? process.env.FRONTEND_URL.split(',').map((url) => url.trim().replace(/\/+$/, ''))
     : [];
 
-  const allowedOrigins = [
+  const rawAppUrl = process.env.APP_URL
+    ? [process.env.APP_URL.trim().replace(/\/+$/, '')]
+    : [];
+
+  const defaultOrigins = [
     'http://localhost:3000',
     'http://127.0.0.1:3000',
+    'http://localhost:3002',
+    'http://127.0.0.1:3002',
+    'https://app.omnigrc.co',
+    'https://control.omnigrc.co',
+    ...rawAppUrl,
     ...rawFrontendUrls,
   ].filter((url): url is string => typeof url === 'string' && url.length > 0);
+
+  const allowedOrigins = Array.from(new Set(defaultOrigins));
 
   app.enableCors({
     origin: (origin, callback) => {
       // Allow requests with no origin (mobile apps, curl, server-to-server)
       if (!origin) return callback(null, true);
 
-      // Allow exact matches in allowedOrigins, any Vercel domain, or any Render domain
+      const normalizedOrigin = origin.trim().replace(/\/+$/, '');
+
+      // Allow exact matches in configured allowedOrigins or legitimate scoped OMNiGRC domains
       const isAllowed =
-        allowedOrigins.some((allowed) => origin.startsWith(allowed)) ||
-        /\.vercel\.app$/.test(origin) ||
-        /\.onrender\.com$/.test(origin);
+        allowedOrigins.includes(normalizedOrigin) ||
+        /^https:\/\/([a-z0-9-]+\.)?omnigrc\.co$/.test(normalizedOrigin) ||
+        /^https:\/\/([a-z0-9-]+-)?omnigrc[a-z0-9-]*\.vercel\.app$/.test(normalizedOrigin);
 
       if (isAllowed) {
         callback(null, true);
       } else {
-        // Fallback: reflect origin to prevent CORS breakage during deployment
-        callback(null, true);
+        logger.warn(`[CORS] Blocked request from unauthorized origin: ${origin}`);
+        callback(null, false);
       }
     },
     credentials: true,

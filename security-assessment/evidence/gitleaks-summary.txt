@@ -1,0 +1,21 @@
+﻿generic-api-key | apps/control-plane-api/src/auth/operator-auth.service.spec.ts : line 215 | Detected a Generic API Key, potentially exposing access to various services and sensitive operations.
+generic-api-key | apps/control-plane-api/src/auth/operator-auth.service.spec.ts : line 238 | Detected a Generic API Key, potentially exposing access to various services and sensitive operations.
+generic-api-key | apps/control-plane-api/src/deployments/deployments.service.spec.ts : line 158 | Detected a Generic API Key, potentially exposing access to various services and sensitive operations.
+generic-api-key | apps/api/src/service-control/service-control-signal.service.spec.ts : line 11 | Detected a Generic API Key, potentially exposing access to various services and sensitive operations.
+generic-api-key | apps/control-plane-api/src/audit/redaction.service.spec.ts : line 16 | Detected a Generic API Key, potentially exposing access to various services and sensitive operations.
+stripe-access-token | apps/control-plane-api/src/audit/redaction.service.spec.ts : line 18 | Found a Stripe Access Token, posing a risk to payment processing services and sensitive financial data.
+private-key | packages/shared/src/index.ts : line 1086 | Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.
+generic-api-key | apps/api/src/controls/ai/grc-intelligence-chat.service.ts : line 65 | Detected a Generic API Key, potentially exposing access to various services and sensitive operations.
+generic-api-key | apps/api/src/controls/ai/grc-intelligence-chat.service.ts : line 143 | Detected a Generic API Key, potentially exposing access to various services and sensitive operations.
+generic-api-key | apps/api/src/controls/ai/grc-intelligence-chat.service.ts : line 149 | Detected a Generic API Key, potentially exposing access to various services and sensitive operations.
+generic-api-key | .env.self-hosted.example : line 18 | Detected a Generic API Key, potentially exposing access to various services and sensitive operations.
+private-key | apps/control-plane-api/src/licenses/license-signing.service.ts : line 16 | Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.
+generic-api-key | apps/control-plane-api/test/control-plane-activation.e2e-spec.ts : line 235 | Detected a Generic API Key, potentially exposing access to various services and sensitive operations.
+generic-api-key | apps/control-plane-api/test/control-plane-deployment.e2e-spec.ts : line 120 | Detected a Generic API Key, potentially exposing access to various services and sensitive operations.
+generic-api-key | apps/api/src/auth/auth.service.spec.ts : line 237 | Detected a Generic API Key, potentially exposing access to various services and sensitive operations.
+generic-api-key | apps/api/.env.eu.example : line 14 | Detected a Generic API Key, potentially exposing access to various services and sensitive operations.
+generic-api-key | apps/api/.env.uk.example : line 14 | Detected a Generic API Key, potentially exposing access to various services and sensitive operations.
+generic-api-key | apps/api/.env.india.example : line 14 | Detected a Generic API Key, potentially exposing access to various services and sensitive operations.
+generic-api-key | apps/api/.env.australia.example : line 14 | Detected a Generic API Key, potentially exposing access to various services and sensitive operations.
+slack-webhook-url | apps/api/.env.example : line 27 | Discovered a Slack Webhook, which could lead to unauthorized message posting and data leakage in Slack channels.
+generic-api-key | apps/api/.env.example : line 15 | Detected a Generic API Key, potentially exposing access to various services and sensitive operations.

@@ -1,0 +1,367 @@
+
+Report Summary
+
+┌───────────────────┬──────┬─────────────────┐
+│      Target       │ Type │ Vulnerabilities │
+├───────────────────┼──────┼─────────────────┤
+│ package-lock.json │ npm  │       90        │
+└───────────────────┴──────┴─────────────────┘
+Legend:
+- '-': Not scanned
+- '0': Clean (no security findings detected)
+
+
+package-lock.json (npm)
+=======================
+Total: 90 (UNKNOWN: 0, LOW: 7, MEDIUM: 32, HIGH: 46, CRITICAL: 5)
+
+┌─────────────────┬─────────────────────┬──────────┬──────────┬───────────────────┬────────────────────────────────────────────────────┬──────────────────────────────────────────────────────────────┐
+│     Library     │    Vulnerability    │ Severity │  Status  │ Installed Version │                   Fixed Version                    │                            Title                             │
+├─────────────────┼─────────────────────┼──────────┼──────────┼───────────────────┼────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│ @nestjs/core    │ CVE-2026-35515      │ MEDIUM   │ fixed    │ 10.4.22           │ 11.1.18                                            │ @nestjs/core: Nest: Server-Sent Events (SSE) injection and   │
+│                 │                     │          │          │                   │                                                    │ spoofing via unsanitized newline characters...               │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-35515                   │
+├─────────────────┼─────────────────────┼──────────┤          ├───────────────────┼────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│ @xmldom/xmldom  │ CVE-2026-34601      │ HIGH     │          │ 0.7.13            │ 0.8.12, 0.9.9                                      │ xmldom: xmldom: XML structure injection via CDATA terminator │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-34601                   │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-41672      │          │          │                   │ 0.8.13, 0.9.10                                     │ xmldom: @xmldom/xmldom: xmldom: Arbitrary XML Node Injection │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-41672                   │
+│                 ├─────────────────────┤          │          │                   │                                                    ├──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-41673      │          │          │                   │                                                    │ @xmldom/xmldom: xmldom: xmldom: Denial of Service via deeply │
+│                 │                     │          │          │                   │                                                    │ nested XML documents                                         │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-41673                   │
+│                 ├─────────────────────┤          │          │                   │                                                    ├──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-41674      │          │          │                   │                                                    │ xmldom: xmldom: Arbitrary XML markup injection               │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-41674                   │
+│                 ├─────────────────────┤          │          │                   │                                                    ├──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-41675      │          │          │                   │                                                    │ xmldom: xmldom: Arbitrary XML node injection via crafted     │
+│                 │                     │          │          │                   │                                                    │ processing instructions                                      │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-41675                   │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-83605      │          │          │                   │ 0.9.11, 0.8.14                                     │ xmldom: @xmldom/xmldom: xmldom: Attribute injection allows   │
+│                 │                     │          │          │                   │                                                    │ client-side script execution                                 │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-83605                   │
+│                 ├─────────────────────┤          │          │                   │                                                    ├──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-83607      │          │          │                   │                                                    │ xmldom: xmldom: Cross-site scripting via unvalidated element │
+│                 │                     │          │          │                   │                                                    │ name injection                                               │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-83607                   │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-83608      │          │          │                   │ 0.8.15, 0.9.12                                     │ xmldom: @xmldom/xmldom: xmldom: XML Markup Injection via     │
+│                 │                     │          │          │                   │                                                    │ DocType Name Bypass                                          │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-83608                   │
+│                 ├─────────────────────┤          │          │                   │                                                    ├──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-83613      │          │          │                   │                                                    │ xmldom: @xmldom/xmldom: xmldom: Denial of Service due to     │
+│                 │                     │          │          │                   │                                                    │ quadratic-time attribute processing                          │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-83613                   │
+│                 ├─────────────────────┤          │          │                   │                                                    ├──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-83614      │          │          │                   │                                                    │ xmldom: @xmldom/xmldom: xmldom: Denial of Service via        │
+│                 │                     │          │          │                   │                                                    │ quadratic-time XML parsing                                   │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-83614                   │
+│                 ├─────────────────────┤          │          │                   │                                                    ├──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-83615      │          │          │                   │                                                    │ xmldom: @xmldom/xmldom: xmldom: Denial of Service via        │
+│                 │                     │          │          │                   │                                                    │ quadratic memory consumption                                 │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-83615                   │
+│                 ├─────────────────────┤          │          │                   │                                                    ├──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-83616      │          │          │                   │                                                    │ xmldom: xmldom: XML Structure Injection via Unvalidated      │
+│                 │                     │          │          │                   │                                                    │ Processing Instruction Targets                               │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-83616                   │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-83619      │          │          │                   │ 0.8.15                                             │ @xmldom/xmldom: xmldom: Denial of Service via crafted XML    │
+│                 │                     │          │          │                   │                                                    │ input                                                        │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-83619                   │
+│                 ├─────────────────────┼──────────┤          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-83610      │ MEDIUM   │          │                   │ 0.8.15, 0.9.12                                     │ xmldom: @xmldom/xmldom: xmldom: XML fragment injection via   │
+│                 │                     │          │          │                   │                                                    │ invalid EntityReference serialization                        │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-83610                   │
+│                 ├─────────────────────┤          │          │                   │                                                    ├──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-83611      │          │          │                   │                                                    │ xmldom: xmldom: Malformed XML end tag parsing leads to       │
+│                 │                     │          │          │                   │                                                    │ content discard and...                                       │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-83611                   │
+├─────────────────┼─────────────────────┤          │          ├───────────────────┼────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│ ajv             │ CVE-2025-69873      │          │          │ 8.12.0            │ 8.18.0, 6.14.0                                     │ ajv: ReDoS via $data reference                               │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2025-69873                   │
+├─────────────────┼─────────────────────┼──────────┤          ├───────────────────┼────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│ body-parser     │ CVE-2026-12590      │ LOW      │          │ 1.20.4            │ 1.20.6, 2.3.0                                      │ body-parser: body-parser: Denial of Service via invalid      │
+│                 │                     │          │          │                   │                                                    │ limit option                                                 │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-12590                   │
+├─────────────────┼─────────────────────┼──────────┤          ├───────────────────┼────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│ brace-expansion │ CVE-2026-102276     │ HIGH     │          │ 1.1.18            │ 5.0.10, 3.0.7, 2.1.5, 1.1.19                       │ brace-expansion: brace-expansion: Denial of Service via      │
+│                 │                     │          │          │                   │                                                    │ stack exhaustion from crafted brace patterns...              │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-102276                  │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-102278     │          │          │                   │ 5.0.11, 3.0.8, 2.1.6, 1.1.20                       │ brace-expansion: brace-expansion: Denial of Service via      │
+│                 │                     │          │          │                   │                                                    │ uncontrolled recursion in nested brace patterns...           │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-102278                  │
+│                 ├─────────────────────┼──────────┤          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-102277     │ MEDIUM   │          │                   │ 5.0.12, 3.0.9, 2.1.7, 1.1.21                       │ brace-expansion: brace-expansion: Denial of Service via      │
+│                 │                     │          │          │                   │                                                    │ crafted brace patterns                                       │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-102277                  │
+│                 ├─────────────────────┼──────────┤          ├───────────────────┼────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-102276     │ HIGH     │          │ 2.1.4             │ 5.0.10, 3.0.7, 2.1.5, 1.1.19                       │ brace-expansion: brace-expansion: Denial of Service via      │
+│                 │                     │          │          │                   │                                                    │ stack exhaustion from crafted brace patterns...              │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-102276                  │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-102278     │          │          │                   │ 5.0.11, 3.0.8, 2.1.6, 1.1.20                       │ brace-expansion: brace-expansion: Denial of Service via      │
+│                 │                     │          │          │                   │                                                    │ uncontrolled recursion in nested brace patterns...           │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-102278                  │
+│                 ├─────────────────────┼──────────┤          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-102277     │ MEDIUM   │          │                   │ 5.0.12, 3.0.9, 2.1.7, 1.1.21                       │ brace-expansion: brace-expansion: Denial of Service via      │
+│                 │                     │          │          │                   │                                                    │ crafted brace patterns                                       │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-102277                  │
+├─────────────────┼─────────────────────┼──────────┼──────────┼───────────────────┼────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│ braces          │ CVE-2026-93687      │ HIGH     │ affected │ 3.0.3             │                                                    │ braces: braces: Denial of Service via Stack Overflow from    │
+│                 │                     │          │          │                   │                                                    │ Deeply Nested Patterns...                                    │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-93687                   │
+├─────────────────┼─────────────────────┼──────────┼──────────┼───────────────────┼────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│ file-type       │ CVE-2026-31808      │ MEDIUM   │ fixed    │ 20.4.1            │ 21.3.1                                             │ file-type: file-type: Denial of Service due to infinite loop │
+│                 │                     │          │          │                   │                                                    │ in ASF file...                                               │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-31808                   │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-32630      │          │          │                   │ 21.3.2                                             │ file-type: file-type: Denial of Service via excessive memory │
+│                 │                     │          │          │                   │                                                    │ growth from crafted ZIP...                                   │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-32630                   │
+├─────────────────┼─────────────────────┼──────────┤          ├───────────────────┼────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│ glob            │ CVE-2025-64756      │ HIGH     │          │ 10.4.5            │ 11.1.0, 10.5.0                                     │ glob: glob: Command Injection Vulnerability via Malicious    │
+│                 │                     │          │          │                   │                                                    │ Filenames                                                    │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2025-64756                   │
+├─────────────────┼─────────────────────┤          │          ├───────────────────┼────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│ multer          │ CVE-2026-2359       │          │          │ 2.0.2             │ 2.1.0                                              │ multer: Multer: Denial of Service via dropped file upload    │
+│                 │                     │          │          │                   │                                                    │ connections                                                  │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-2359                    │
+│                 ├─────────────────────┤          │          │                   │                                                    ├──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-3304       │          │          │                   │                                                    │ multer: Multer: Denial of Service via malformed requests     │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-3304                    │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-3520       │          │          │                   │ 2.1.1                                              │ multer: Multer: Denial of Service via malformed requests     │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-3520                    │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-5079       │          │          │                   │ 2.2.0, 3.0.0-alpha.2                               │ multer: Multer: Denial of Service via deeply nested field    │
+│                 │                     │          │          │                   │                                                    │ names in multipart...                                        │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-5079                    │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-77078      │          │          │                   │ 2.3.0                                              │ multer: Multer: Denial of Service via crafted multipart      │
+│                 │                     │          │          │                   │                                                    │ field names                                                  │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-77078                   │
+│                 ├─────────────────────┤          │          │                   │                                                    ├──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-82333      │          │          │                   │                                                    │ multer: Multer: Denial of Service via oversized array index  │
+│                 │                     │          │          │                   │                                                    │ in field names...                                            │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-82333                   │
+│                 ├─────────────────────┼──────────┤          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-5038       │ MEDIUM   │          │                   │ 2.2.0, 3.0.0-alpha.2                               │ multer: Multer: Denial of Service via aborted or malformed   │
+│                 │                     │          │          │                   │                                                    │ multipart uploads                                            │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-5038                    │
+│                 ├─────────────────────┼──────────┤          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-77063      │ LOW      │          │                   │ 2.3.0                                              │ multer: Multer: File size limit bypass via asynchronous file │
+│                 │                     │          │          │                   │                                                    │ filter race condition...                                     │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-77063                   │
+├─────────────────┼─────────────────────┼──────────┤          ├───────────────────┼────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│ next            │ CVE-2026-75604      │ CRITICAL │          │ 14.2.35           │ 15.5.24, 16.3.3                                    │ next: Next.js: Unauthenticated Remote Code Execution on      │
+│                 │                     │          │          │                   │                                                    │ windows-hosted servers                                       │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-75604                   │
+│                 ├─────────────────────┤          │          │                   │                                                    ├──────────────────────────────────────────────────────────────┤
+│                 │ GHSA-2xp9-vwfh-vxw4 │          │          │                   │                                                    │ Next.js: Unauthenticated Remote Code Execution in Image      │
+│                 │                     │          │          │                   │                                                    │ Optimization API when AVIF files...                          │
+│                 │                     │          │          │                   │                                                    │ https://github.com/advisories/GHSA-2xp9-vwfh-vxw4            │
+│                 ├─────────────────────┼──────────┤          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-44573      │ HIGH     │          │                   │ 15.5.16, 16.2.5                                    │ next.js: Next.js: Information disclosure due to middleware   │
+│                 │                     │          │          │                   │                                                    │ bypass in Pages Router with...                               │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-44573                   │
+│                 ├─────────────────────┤          │          │                   │                                                    ├──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-44578      │          │          │                   │                                                    │ Next.js: Next.js: Server-Side Request Forgery via crafted    │
+│                 │                     │          │          │                   │                                                    │ WebSocket upgrade requests                                   │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-44578                   │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-64641      │          │          │                   │ 15.5.21, 16.2.11                                   │ next: Next.js: Denial of Service via crafted requests to App │
+│                 │                     │          │          │                   │                                                    │ Router with...                                               │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-64641                   │
+│                 ├─────────────────────┤          │          │                   │                                                    ├──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-64645      │          │          │                   │                                                    │ next: Next.js: Server-Side Request Forgery vulnerability     │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-64645                   │
+│                 ├─────────────────────┤          │          │                   │                                                    ├──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-64649      │          │          │                   │                                                    │ next: Next.js: Server-Side Request Forgery via malicious     │
+│                 │                     │          │          │                   │                                                    │ host redirection in Server Actions...                        │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-64649                   │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ GHSA-8h8q-6873-q5fj │          │          │                   │ 15.5.16, 16.2.5                                    │ Next.js Vulnerable to Denial of Service with Server          │
+│                 │                     │          │          │                   │                                                    │ Components                                                   │
+│                 │                     │          │          │                   │                                                    │ https://github.com/advisories/GHSA-8h8q-6873-q5fj            │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ GHSA-h25m-26qc-wcjf │          │          │                   │ 15.0.8, 15.1.12, 15.2.9, 15.3.9, 15.4.11, 15.5.10, │ Next.js HTTP request deserialization can lead to DoS when    │
+│                 │                     │          │          │                   │ 15.6.0-canary.61, 16.0.11, 16.1.5                  │ using insecure React...                                      │
+│                 │                     │          │          │                   │                                                    │ https://github.com/advisories/GHSA-h25m-26qc-wcjf            │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ GHSA-q4gf-8mx6-v5v3 │          │          │                   │ 15.5.15, 16.2.3                                    │ Next.js has a Denial of Service with Server Components       │
+│                 │                     │          │          │                   │                                                    │ https://github.com/advisories/GHSA-q4gf-8mx6-v5v3            │
+│                 ├─────────────────────┼──────────┤          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2025-59471      │ MEDIUM   │          │                   │ 15.5.10, 16.1.5                                    │ next: NextJS Denial of Service in Image Optimizer            │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2025-59471                   │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-27980      │          │          │                   │ 16.1.7, 15.5.14                                    │ next.js: Next.js: Unbounded next/image disk cache growth can │
+│                 │                     │          │          │                   │                                                    │ exhaust storage                                              │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-27980                   │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-29057      │          │          │                   │ 16.1.7, 15.5.13                                    │ next.js: Next.js: HTTP request smuggling in rewrites         │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-29057                   │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-44576      │          │          │                   │ 15.5.16, 16.2.5                                    │ Next.js: Next.js: Cache poisoning vulnerability in React     │
+│                 │                     │          │          │                   │                                                    │ Server Components                                            │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-44576                   │
+│                 ├─────────────────────┤          │          │                   │                                                    ├──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-44577      │          │          │                   │                                                    │ Next.js: Next.js: Denial of Service via Image Optimization   │
+│                 │                     │          │          │                   │                                                    │ API                                                          │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-44577                   │
+│                 ├─────────────────────┤          │          │                   │                                                    ├──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-44580      │          │          │                   │                                                    │ next.js: Next.js: Cross-site scripting allows arbitrary code │
+│                 │                     │          │          │                   │                                                    │ execution via untrusted script content...                    │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-44580                   │
+│                 ├─────────────────────┤          │          │                   │                                                    ├──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-44581      │          │          │                   │                                                    │ next.js: Next.js: Stored Cross-Site Scripting via malformed  │
+│                 │                     │          │          │                   │                                                    │ nonce values in cached responses...                          │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-44581                   │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-64643      │          │          │                   │ 15.5.21, 16.2.11                                   │ next: Next.js: Information disclosure via Server Action ID   │
+│                 │                     │          │          │                   │                                                    │ exposure                                                     │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-64643                   │
+│                 ├─────────────────────┤          │          │                   │                                                    ├──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-64646      │          │          │                   │                                                    │ next: Next.js: Denial of Service via excessive memory        │
+│                 │                     │          │          │                   │                                                    │ consumption in Server Actions...                             │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-64646                   │
+│                 ├─────────────────────┤          │          │                   │                                                    ├──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-64647      │          │          │                   │                                                    │ next: Next.js: Information disclosure via server-side        │
+│                 │                     │          │          │                   │                                                    │ request caching                                              │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-64647                   │
+│                 ├─────────────────────┤          │          │                   │                                                    ├──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-64648      │          │          │                   │                                                    │ next: Next.js: Information disclosure via server-side fetch  │
+│                 │                     │          │          │                   │                                                    │ cache                                                        │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-64648                   │
+│                 ├─────────────────────┼──────────┤          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-44572      │ LOW      │          │                   │ 15.5.16, 16.2.5                                    │ next.js: Next.js: Denial of Service due to improper handling │
+│                 │                     │          │          │                   │                                                    │ of x-nextjs-data header...                                   │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-44572                   │
+│                 ├─────────────────────┤          │          │                   │                                                    ├──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-44582      │          │          │                   │                                                    │ Next.js: Next.js: Cache poisoning allows incorrect response  │
+│                 │                     │          │          │                   │                                                    │ delivery                                                     │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-44582                   │
+├─────────────────┼─────────────────────┼──────────┼──────────┼───────────────────┼────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│ passport-saml   │ CVE-2025-54419      │ CRITICAL │ affected │ 3.2.4             │                                                    │ @node-saml/node-saml: Node-SAML Signature Verification       │
+│                 │                     │          │          │                   │                                                    │ Vulnerability                                                │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2025-54419                   │
+├─────────────────┼─────────────────────┼──────────┼──────────┼───────────────────┼────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│ picomatch       │ CVE-2026-33671      │ HIGH     │ fixed    │ 4.0.1             │ 4.0.4, 3.0.2, 2.3.2                                │ picomatch: Picomatch: Regular Expression Denial of Service   │
+│                 │                     │          │          │                   │                                                    │ via crafted extglob patterns                                 │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-33671                   │
+│                 ├─────────────────────┼──────────┤          │                   │                                                    ├──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-33672      │ MEDIUM   │          │                   │                                                    │ picomatch: Picomatch: Data integrity compromised via method  │
+│                 │                     │          │          │                   │                                                    │ injection with crafted POSIX bracket...                      │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-33672                   │
+├─────────────────┼─────────────────────┼──────────┤          ├───────────────────┼────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│ postcss         │ CVE-2026-45623      │ HIGH     │          │ 8.4.31            │ 8.5.12                                             │ postcss: PostCSS: Information disclosure and denial of       │
+│                 │                     │          │          │                   │                                                    │ service via crafted CSS input...                             │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-45623                   │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-73646      │          │          │                   │ 8.5.18                                             │ postcss: PostCSS: Information disclosure via path traversal  │
+│                 │                     │          │          │                   │                                                    │ in source map auto-loading                                   │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-73646                   │
+│                 ├─────────────────────┼──────────┤          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-41305      │ MEDIUM   │          │                   │ 8.5.10                                             │ postcss: PostCSS: Cross-Site Scripting (XSS) via improper    │
+│                 │                     │          │          │                   │                                                    │ escaping of style closing tags...                            │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-41305                   │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-69153      │          │          │                   │ 8.5.23                                             │ postcss: PostCSS: Information disclosure via crafted         │
+│                 │                     │          │          │                   │                                                    │ sourceMappingURL                                             │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-69153                   │
+├─────────────────┼─────────────────────┼──────────┤          ├───────────────────┼────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│ proxy-addr      │ CVE-2026-90711      │ CRITICAL │          │ 2.0.7             │ 2.0.8                                              │ proxy-addr: proxy-addr vulnerable to IP spoofing via         │
+│                 │                     │          │          │                   │                                                    │ IPv4-mapped IPv6 trust subnet                                │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-90711                   │
+├─────────────────┼─────────────────────┼──────────┤          ├───────────────────┼────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│ qs              │ CVE-2026-82417      │ MEDIUM   │          │ 6.14.2            │ 6.16.0                                             │ qs: qs: Denial of Service via improper validation in         │
+│                 │                     │          │          │                   │                                                    │ stringify function                                           │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-82417                   │
+│                 ├─────────────────────┤          │          │                   │                                                    ├──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-82562      │          │          │                   │                                                    │ qs: qs: Denial of Service via array limit bypass in query    │
+│                 │                     │          │          │                   │                                                    │ string...                                                    │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-82562                   │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-8723       │          │          │                   │ 6.15.2                                             │ qs: qs: Denial of Service due to improper handling of        │
+│                 │                     │          │          │                   │                                                    │ null/undefined array...                                      │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-8723                    │
+├─────────────────┼─────────────────────┼──────────┤          ├───────────────────┼────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│ source-map-js   │ CVE-2026-93749      │ HIGH     │          │ 1.2.1             │ 1.2.2                                              │ source-map-js: source-map-js: Denial of Service via          │
+│                 │                     │          │          │                   │                                                    │ malformed indexed source maps                                │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-93749                   │
+├─────────────────┼─────────────────────┼──────────┤          ├───────────────────┼────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│ tar             │ CVE-2026-59873      │ CRITICAL │          │ 6.2.1             │ 7.5.19                                             │ tar: node-tar: Denial of Service via crafted gzip bomb       │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-59873                   │
+│                 ├─────────────────────┼──────────┤          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-23745      │ HIGH     │          │                   │ 7.5.3                                              │ node-tar: tar: node-tar: Arbitrary file overwrite and        │
+│                 │                     │          │          │                   │                                                    │ symlink poisoning via unsanitized linkpaths...               │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-23745                   │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-23950      │          │          │                   │ 7.5.4                                              │ node-tar: tar: node-tar: Arbitrary file overwrite via        │
+│                 │                     │          │          │                   │                                                    │ Unicode path collision race condition...                     │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-23950                   │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-24842      │          │          │                   │ 7.5.7                                              │ node-tar: tar: node-tar: Arbitrary file creation via path    │
+│                 │                     │          │          │                   │                                                    │ traversal bypass in hardlink...                              │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-24842                   │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-26960      │          │          │                   │ 7.5.8                                              │ node-tar: node-tar: Arbitrary file read/write via malicious  │
+│                 │                     │          │          │                   │                                                    │ archive hardlink creation                                    │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-26960                   │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-29786      │          │          │                   │ 7.5.10                                             │ node-tar: hardlink path traversal via drive-relative         │
+│                 │                     │          │          │                   │                                                    │ linkpath                                                     │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-29786                   │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-31802      │          │          │                   │ 7.5.11                                             │ tar: tar: File overwrite via drive-relative symlink          │
+│                 │                     │          │          │                   │                                                    │ traversal                                                    │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-31802                   │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-59874      │          │          │                   │ 7.5.18                                             │ tar: Node-tar: Denial of Service via malformed tar archive   │
+│                 │                     │          │          │                   │                                                    │ header                                                       │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-59874                   │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-73566      │          │          │                   │ 7.5.21                                             │ tar: node-tar: Denial of Service via crafted long-path tar   │
+│                 │                     │          │          │                   │                                                    │ archive                                                      │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-73566                   │
+│                 ├─────────────────────┼──────────┤          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-53655      │ MEDIUM   │          │                   │ 7.5.16                                             │ node-tar: node-tar: File smuggling due to inconsistent tar   │
+│                 │                     │          │          │                   │                                                    │ archive parsing                                              │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-53655                   │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-59871      │          │          │                   │ 7.5.18                                             │ node-tar: node-tar: Denial of Service due to incorrect PAX   │
+│                 │                     │          │          │                   │                                                    │ path handling                                                │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-59871                   │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2026-59875      │          │          │                   │ 7.5.17                                             │ node-tar: node-tar: Denial of Service via crafted archive    │
+│                 │                     │          │          │                   │                                                    │ with NUL bytes in...                                         │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-59875                   │
+├─────────────────┼─────────────────────┼──────────┤          ├───────────────────┼────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│ tmp             │ CVE-2026-44705      │ HIGH     │          │ 0.0.33            │ 0.2.6                                              │ tmp: path Traversal via unsanitized prefix/postfix enables   │
+│                 │                     │          │          │                   │                                                    │ directory escape                                             │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-44705                   │
+│                 ├─────────────────────┼──────────┤          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2025-54798      │ LOW      │          │                   │ 0.2.4                                              │ tmp: tmp Symbolic Link Write Vulnerability                   │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2025-54798                   │
+├─────────────────┼─────────────────────┼──────────┤          ├───────────────────┼────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│ uuid            │ CVE-2026-41907      │ MEDIUM   │          │ 11.0.3            │ 11.1.1, 12.0.1, 13.0.1                             │ uuid: uuid: Out-of-bounds write vulnerability impacts data   │
+│                 │                     │          │          │                   │                                                    │ integrity and confidentiality                                │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2026-41907                   │
+│                 │                     │          │          ├───────────────────┤                                                    │                                                              │
+│                 │                     │          │          │ 8.3.2             │                                                    │                                                              │
+│                 │                     │          │          │                   │                                                    │                                                              │
+│                 │                     │          │          │                   │                                                    │                                                              │
+├─────────────────┼─────────────────────┼──────────┤          ├───────────────────┼────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│ webpack         │ CVE-2025-68157      │ LOW      │          │ 5.97.1            │ 5.104.0                                            │ webpack: webpack buildHttp HttpUriPlugin allowedUris bypass  │
+│                 │                     │          │          │                   │                                                    │ via HTTP redirects                                           │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2025-68157                   │
+│                 ├─────────────────────┤          │          │                   ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2025-68458      │          │          │                   │ 5.104.1                                            │ webpack: webpack buildHttp: allowedUris allow-list bypass    │
+│                 │                     │          │          │                   │                                                    │ via URL userinfo (@) leading to...                           │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2025-68458                   │
+├─────────────────┼─────────────────────┼──────────┤          ├───────────────────┼────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│ xml2js          │ CVE-2023-0842       │ MEDIUM   │          │ 0.4.23            │ 0.5.0                                              │ node-xml2js: xml2js is vulnerable to prototype pollution     │
+│                 │                     │          │          │                   │                                                    │ https://avd.aquasec.com/nvd/cve-2023-0842                    │
+└─────────────────┴─────────────────────┴──────────┴──────────┴───────────────────┴────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────┘
