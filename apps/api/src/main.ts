@@ -46,11 +46,8 @@ async function bootstrap() {
 
       const normalizedOrigin = origin.trim().replace(/\/+$/, '');
 
-      // Allow exact matches in configured allowedOrigins or legitimate scoped OMNiGRC domains
-      const isAllowed =
-        allowedOrigins.includes(normalizedOrigin) ||
-        /^https:\/\/([a-z0-9-]+\.)?omnigrc\.co$/.test(normalizedOrigin) ||
-        /^https:\/\/([a-z0-9-]+-)?omnigrc[a-z0-9-]*\.vercel\.app$/.test(normalizedOrigin);
+      // Enforce strict match against approved origins; do not trust arbitrary subdomains or preview deployments
+      const isAllowed = allowedOrigins.includes(normalizedOrigin);
 
       if (isAllowed) {
         callback(null, true);
