@@ -2,6 +2,9 @@
 const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ['@omnigrc/shared'],
+  images: {
+    unoptimized: true,
+  },
   async headers() {
     return [
       {
@@ -32,8 +35,12 @@ const nextConfig = {
             value: 'camera=(), microphone=(), geolocation=(), browsing-topics=()',
           },
           {
+            key: 'Cross-Origin-Opener-Policy',
+            value: 'same-origin-allow-popups',
+          },
+          {
             key: 'Content-Security-Policy',
-            value: "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://*.omnigrc.co https://control-api.omnigrc.co http://localhost:* https://*.arav.internal http://127.0.0.1:*; frame-ancestors 'none';",
+            value: "default-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://*.omnigrc.co https://control-api.omnigrc.co http://localhost:* https://*.arav.internal http://127.0.0.1:*; frame-ancestors 'none';",
           },
         ],
       },
