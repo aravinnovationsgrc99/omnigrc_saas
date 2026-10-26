@@ -12,9 +12,13 @@ import {
   RegulatoryHealthStatus,
   RegulatoryPublicationState,
 } from '@prisma/client';
-import { RegulatorySourceAdapter } from './adapters/regulatory-source-adapter.interface';
+import {
+  RegulatorySourceAdapter,
+  NormalizedPublicationItem,
+} from './adapters/regulatory-source-adapter.interface';
 import { RbiSourceAdapter } from './adapters/rbi-source.adapter';
 import { SchedulerLockService } from '../notifications/cron/scheduler-lock.service';
+import { SsrfSecurityException } from './security/ssrf-safe-http-client.service';
 import * as crypto from 'crypto';
 
 export interface SourceSyncResult {
@@ -27,6 +31,95 @@ export interface SourceSyncResult {
   unchangedCount: number;
   diagnostics: Record<string, any>;
   errorMessage?: string;
+}
+
+export interface ClassifiedSyncError {
+  isPermanent: boolean;
+  category:
+    | 'SECURITY_SSRF'
+    | 'CONFIGURATION_ERROR'
+    | 'FORMAT_ERROR'
+    | 'HTTP_CLIENT_ERROR'
+    | 'TRANSIENT_NETWORK'
+    | 'UNKNOWN';
+  retryAfterSeconds?: number;
+}
+
+/**
+ * Classifies an ingestion sync failure into permanent vs transient errors.
+ * Permanent errors (SSRF, malformed URL, HTTP 404, invalid feed structure) pause the source.
+ * Transient errors (timeout, 5xx, rate limits) trigger bounded exponential backoff.
+ */
+export function classifySyncError(err: any): ClassifiedSyncError {
+  const message = (err?.message || '').toLowerCase();
+
+  // 1. SSRF security violations are permanent policy blocks
+  if (
+    err instanceof SsrfSecurityException ||
+    message.includes('ssrf security violation') ||
+    message.includes('prohibited ip') ||
+    message.includes('not authorized')
+  ) {
+    return { isPermanent: true, category: 'SECURITY_SSRF' };
+  }
+
+  // 2. Configuration, scheme, and URL syntax errors
+  if (
+    message.includes('malformed url') ||
+    message.includes('insecure scheme') ||
+    message.includes('embedded user credentials')
+  ) {
+    return { isPermanent: true, category: 'CONFIGURATION_ERROR' };
+  }
+
+  // 3. Document or feed format errors
+  if (
+    message.includes('not a valid rss') ||
+    message.includes('file signature mismatch') ||
+    message.includes('unsupported content-type')
+  ) {
+    return { isPermanent: true, category: 'FORMAT_ERROR' };
+  }
+
+  // 4. HTTP 4xx client errors (400, 401, 403, 404, 410, 422)
+  if (
+    message.includes('http 400') ||
+    message.includes('http 401') ||
+    message.includes('http 403') ||
+    message.includes('http 404') ||
+    message.includes('http 410') ||
+    message.includes('http 422')
+  ) {
+    return { isPermanent: true, category: 'HTTP_CLIENT_ERROR' };
+  }
+
+  // 5. Rate limiting with Retry-After header
+  let retryAfterSeconds: number | undefined;
+  if (err?.headers?.['retry-after'] || message.includes('retry-after')) {
+    const rawHeader = err?.headers?.['retry-after'] || '';
+    const parsedSec = parseInt(rawHeader, 10);
+    if (!isNaN(parsedSec) && parsedSec > 0) {
+      retryAfterSeconds = parsedSec;
+    }
+  }
+
+  // 6. Network timeouts and 5xx transient server errors
+  if (
+    message.includes('timeout') ||
+    message.includes('econnreset') ||
+    message.includes('etimedout') ||
+    message.includes('econnrefused') ||
+    message.includes('socket hang up') ||
+    message.includes('http 500') ||
+    message.includes('http 502') ||
+    message.includes('http 503') ||
+    message.includes('http 504') ||
+    message.includes('network stream error')
+  ) {
+    return { isPermanent: false, category: 'TRANSIENT_NETWORK', retryAfterSeconds };
+  }
+
+  return { isPermanent: false, category: 'UNKNOWN', retryAfterSeconds };
 }
 
 @Injectable()
@@ -60,12 +153,13 @@ export class RegulatoryIngestionService {
   /**
    * Generates a deterministic positive 64-bit integer lock ID from a string key
    * for PostgreSQL advisory locking.
+   * Uses bitwise AND with 0x7FFFFFFFFFFFFFFFn to guarantee a signed 64-bit non-negative integer,
+   * safely preventing the -2^63 BigInt sign inversion overflow in PostgreSQL.
    */
   public generateLockId(key: string): bigint {
     const hash = crypto.createHash('sha256').update(key).digest();
     const rawBigInt = hash.readBigInt64BE(0);
-    // Ensure positive BigInt
-    return rawBigInt < 0n ? -rawBigInt : rawBigInt;
+    return rawBigInt & 0x7FFFFFFFFFFFFFFFn;
   }
 
   /**
@@ -156,14 +250,16 @@ export class RegulatoryIngestionService {
         }
       }
 
-      // 3. Compute next scheduled fetch time based on polling interval
+      // 3. Compute next scheduled fetch time based on normal configured polling interval
       const nextScheduled = new Date(now.getTime() + source.pollingIntervalMinutes * 60 * 1000);
 
-      // 4. Update source health and diagnostics
+      // 4. Update source: reset consecutiveFailures = 0, isPaused = false, and set HEALTHY
       await this.prisma.regulatorySource.update({
         where: { id: source.id },
         data: {
           healthStatus: RegulatoryHealthStatus.HEALTHY,
+          isPaused: false,
+          consecutiveFailures: 0,
           lastSuccessfulFetchAt: now,
           nextScheduledFetchAt: nextScheduled,
           lastErrorMessage: null,
@@ -172,6 +268,7 @@ export class RegulatoryIngestionService {
             newPublicationsCount,
             newVersionsCount,
             unchangedCount,
+            consecutiveFailures: 0,
           },
         },
       });
@@ -212,15 +309,52 @@ export class RegulatoryIngestionService {
     } catch (err: any) {
       this.logger.error(`Sync failure for regulatory source "${source.displayName}": ${err.message}`, err.stack);
 
-      // Update source failure status safely
+      // 1. Classify failure into permanent vs transient
+      const classification = classifySyncError(err);
+      const failures = (source.consecutiveFailures || 0) + 1;
+
+      let nextScheduled: Date;
+      let healthStatus: RegulatoryHealthStatus;
+      let isPaused: boolean;
+      let delayMinutes: number;
+
+      if (classification.isPermanent) {
+        // Permanent failure: pause source from normal 15-minute polling ticks.
+        // Set next retry to 24 hours (1440m) as safety backstop until administrator intervenes.
+        healthStatus = RegulatoryHealthStatus.PAUSED;
+        isPaused = true;
+        delayMinutes = 1440;
+        nextScheduled = new Date(now.getTime() + delayMinutes * 60 * 1000);
+      } else {
+        // Transient failure: bounded exponential backoff
+        // If Retry-After provided, respect it; otherwise back off: 15m * 2^(failures - 1) capped at 24h
+        healthStatus = RegulatoryHealthStatus.FAILING;
+        isPaused = false;
+        if (classification.retryAfterSeconds) {
+          delayMinutes = Math.min(1440, Math.ceil(classification.retryAfterSeconds / 60));
+        } else {
+          delayMinutes = Math.min(1440, 15 * Math.pow(2, Math.min(failures - 1, 6)));
+        }
+        nextScheduled = new Date(now.getTime() + delayMinutes * 60 * 1000);
+      }
+
+      // Update source failure state, backoff schedule, and sanitized diagnostics
       await this.prisma.regulatorySource.update({
         where: { id: source.id },
         data: {
-          healthStatus: RegulatoryHealthStatus.FAILING,
+          healthStatus,
+          isPaused,
+          consecutiveFailures: failures,
+          nextScheduledFetchAt: nextScheduled,
           lastErrorMessage: err.message?.substring(0, 500) || 'Unknown fetch error',
           sanitizedDiagnostics: {
             failedAt: now.toISOString(),
             errorType: err.name || 'Error',
+            category: classification.category,
+            isPermanent: classification.isPermanent,
+            consecutiveFailures: failures,
+            delayMinutes,
+            nextScheduledRetry: nextScheduled.toISOString(),
             message: err.message?.substring(0, 300),
           },
         },
@@ -234,7 +368,13 @@ export class RegulatoryIngestionService {
         newPublicationsCount: 0,
         newVersionsCount: 0,
         unchangedCount: 0,
-        diagnostics: { error: err.message },
+        diagnostics: {
+          error: err.message,
+          category: classification.category,
+          isPermanent: classification.isPermanent,
+          consecutiveFailures: failures,
+          delayMinutes,
+        },
         errorMessage: err.message,
       };
     }
@@ -243,23 +383,13 @@ export class RegulatoryIngestionService {
   /**
    * Idempotently processes an individual publication item:
    * - Deduplicates by externalId or canonicalUrl
-   * - Creates publication + initial version if new
-   * - Creates immutable new version if content changed
-   * - Leaves versions untouched if content hash unchanged
+   * - Decouples feed metadata from substantive content
+   * - Updates metadata without creating versions on title-only changes
+   * - Creates immutable new version only when substantive content hash changes
    */
   public async processPublicationItem(
     source: RegulatorySource,
-    item: {
-      externalId?: string;
-      canonicalUrl: string;
-      title: string;
-      publicationNumber?: string;
-      publicationDate?: Date;
-      rawContent?: string;
-      contentHash: string;
-      documentUrls?: string[];
-      rawMetadata?: Record<string, any>;
-    },
+    item: NormalizedPublicationItem,
   ): Promise<{ status: 'CREATED_NEW' | 'CREATED_VERSION' | 'UNCHANGED'; publicationId: string }> {
     const now = new Date();
 
@@ -284,6 +414,8 @@ export class RegulatoryIngestionService {
       });
     }
 
+    const substantiveHash = item.documentBytesSha256 || item.feedContentHash || item.contentHash;
+
     // CASE A: NEW PUBLICATION
     if (!existingPublication) {
       const created = await this.prisma.regulatoryPublication.create({
@@ -297,7 +429,10 @@ export class RegulatoryIngestionService {
           publicationDate: item.publicationDate || now,
           firstDiscoveredAt: now,
           lastObservedAt: now,
-          contentHash: item.contentHash,
+          contentHash: substantiveHash,
+          feedContentHash: item.feedContentHash,
+          documentBytesSha256: item.documentBytesSha256,
+          isDocumentBytesVerified: item.isDocumentBytesVerified ?? false,
           currentVersionNumber: 1,
           currentDocumentMetadata: {
             documentUrls: item.documentUrls || [],
@@ -307,7 +442,10 @@ export class RegulatoryIngestionService {
           versions: {
             create: {
               versionNumber: 1,
-              contentSha256: item.contentHash,
+              contentSha256: substantiveHash,
+              feedContentHash: item.feedContentHash,
+              documentBytesSha256: item.documentBytesSha256,
+              isDocumentBytesVerified: item.isDocumentBytesVerified ?? false,
               retrievedAt: now,
               contentType: 'text/html; charset=utf-8',
               byteSize: Buffer.byteLength(item.rawContent || item.title, 'utf8'),
@@ -323,21 +461,35 @@ export class RegulatoryIngestionService {
     }
 
     // CASE B: PUBLICATION ALREADY EXISTS
-    // Check if content hash changed
-    if (existingPublication.contentHash === item.contentHash) {
-      // Content has not changed: update last observed timestamp
+    // Compare substantive content hash (documentBytesSha256 or feedContentHash)
+    const existingSubstantiveHash =
+      existingPublication.documentBytesSha256 ||
+      existingPublication.feedContentHash ||
+      existingPublication.contentHash;
+
+    const isContentUnchanged = existingSubstantiveHash === substantiveHash;
+
+    if (isContentUnchanged) {
+      // Substantive content has NOT changed.
+      // Update publication metadata (title, publicationNumber, publicationDate) without creating a new version!
       await this.prisma.regulatoryPublication.update({
         where: { id: existingPublication.id },
         data: {
           lastObservedAt: now,
+          title: item.title,
           publicationNumber: item.publicationNumber || existingPublication.publicationNumber,
+          publicationDate: item.publicationDate || existingPublication.publicationDate,
+          currentDocumentMetadata: {
+            documentUrls: item.documentUrls || [],
+            ...item.rawMetadata,
+          },
         },
       });
 
       return { status: 'UNCHANGED', publicationId: existingPublication.id };
     }
 
-    // CASE C: CONTENT CHANGED — CREATE IMMUTABLE NEW VERSION
+    // CASE C: SUBSTANTIVE CONTENT CHANGED — CREATE IMMUTABLE NEW VERSION
     const newVersionNumber = existingPublication.currentVersionNumber + 1;
 
     // Transactionally update publication and insert new version record
@@ -353,12 +505,15 @@ export class RegulatoryIngestionService {
         },
       });
 
-      // 2. Insert new version record
+      // 2. Insert new immutable version record
       await tx.regulatoryPublicationVersion.create({
         data: {
           publicationId: existingPublication.id,
           versionNumber: newVersionNumber,
-          contentSha256: item.contentHash,
+          contentSha256: substantiveHash,
+          feedContentHash: item.feedContentHash,
+          documentBytesSha256: item.documentBytesSha256,
+          isDocumentBytesVerified: item.isDocumentBytesVerified ?? false,
           retrievedAt: now,
           contentType: 'text/html; charset=utf-8',
           byteSize: Buffer.byteLength(item.rawContent || item.title, 'utf8'),
@@ -374,7 +529,11 @@ export class RegulatoryIngestionService {
         data: {
           title: item.title,
           publicationNumber: item.publicationNumber || existingPublication.publicationNumber,
-          contentHash: item.contentHash,
+          publicationDate: item.publicationDate || existingPublication.publicationDate,
+          contentHash: substantiveHash,
+          feedContentHash: item.feedContentHash,
+          documentBytesSha256: item.documentBytesSha256,
+          isDocumentBytesVerified: item.isDocumentBytesVerified ?? false,
           currentVersionNumber: newVersionNumber,
           lastObservedAt: now,
           currentDocumentMetadata: {

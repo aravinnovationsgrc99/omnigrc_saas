@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
@@ -74,17 +74,34 @@ export class RegulatoryDocumentStorageService {
     return crypto.createHash('sha256').update(buffer).digest('hex');
   }
 
-  public async saveDocument(file: {
-    originalname: string;
-    buffer: Buffer;
-    mimetype: string;
-  }): Promise<StorageSaveResult> {
+  public async saveDocument(
+    file: {
+      originalname: string;
+      buffer: Buffer;
+      mimetype: string;
+    },
+    organizationId?: string,
+  ): Promise<StorageSaveResult> {
     this.validateFileHeaderAndExtension(file.originalname, file.buffer, file.mimetype);
 
     const checksum = this.calculateChecksum(file.buffer);
     const safeName = this.sanitizeFilename(file.originalname);
-    const uniqueKey = `docs/${crypto.randomUUID()}-${safeName}`;
-    const fullPath = path.join(this.storageBaseDir, uniqueKey);
+
+    let uniqueKey: string;
+    if (organizationId) {
+      if (organizationId.includes('..') || organizationId.includes('/') || organizationId.includes('\\')) {
+        throw new BadRequestException('Invalid organizationId for tenant document storage.');
+      }
+      const safeOrgId = this.sanitizeFilename(organizationId);
+      uniqueKey = `tenants/${safeOrgId}/docs/${crypto.randomUUID()}-${safeName}`;
+    } else {
+      uniqueKey = `global/docs/${crypto.randomUUID()}-${safeName}`;
+    }
+
+    const fullPath = path.resolve(this.storageBaseDir, uniqueKey);
+    if (!fullPath.startsWith(this.storageBaseDir)) {
+      throw new BadRequestException('Unauthorized storage path traversal.');
+    }
 
     const dir = path.dirname(fullPath);
     if (!fs.existsSync(dir)) {
@@ -102,8 +119,23 @@ export class RegulatoryDocumentStorageService {
     };
   }
 
-  public getFileStream(storageKey: string): { stream: fs.ReadStream; filePath: string } {
-    const fullPath = path.join(this.storageBaseDir, storageKey);
+  public getFileStream(
+    storageKey: string,
+    organizationId?: string,
+  ): { stream: fs.ReadStream; filePath: string } {
+    if (storageKey.includes('..')) {
+      throw new BadRequestException('Unauthorized storage path traversal.');
+    }
+
+    if (organizationId && storageKey.startsWith('tenants/')) {
+      const safeOrgId = this.sanitizeFilename(organizationId);
+      const expectedPrefix = `tenants/${safeOrgId}/`;
+      if (!storageKey.startsWith(expectedPrefix)) {
+        throw new ForbiddenException('Cross-tenant document access violation: access denied.');
+      }
+    }
+
+    const fullPath = path.resolve(this.storageBaseDir, storageKey);
     if (!fullPath.startsWith(this.storageBaseDir)) {
       throw new BadRequestException('Unauthorized storage path traversal.');
     }

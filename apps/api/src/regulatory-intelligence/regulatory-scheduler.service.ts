@@ -32,10 +32,11 @@ export class RegulatorySchedulerService implements OnApplicationShutdown {
     try {
       const now = new Date();
 
-      // Find enabled sources due for polling
+      // Find enabled, non-paused sources due for polling
       const dueSources = await this.prisma.regulatorySource.findMany({
         where: {
           isEnabled: true,
+          isPaused: false,
           OR: [
             { nextScheduledFetchAt: { lte: now } },
             { nextScheduledFetchAt: null },

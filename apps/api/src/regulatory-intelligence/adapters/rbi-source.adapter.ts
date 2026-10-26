@@ -144,9 +144,10 @@ export class RbiSourceAdapter implements RegulatorySourceAdapter {
     // 7. Extract document URLs if present in description
     const documentUrls = this.extractDocumentUrls(cleanDescription);
 
-    // 8. Compute stable content hash (SHA-256 over clean title + description + link)
-    const hashPayload = `${cleanTitle}|${canonicalUrl}|${cleanDescription}`;
-    const contentHash = crypto.createHash('sha256').update(hashPayload).digest('hex');
+    // 8. Compute substantive feed content hash (SHA-256 over substantive notification description)
+    // Metadata (title, circular number, dates, URLs) is kept separate to avoid corrupting versioning
+    const feedContentPayload = cleanDescription.trim() || cleanTitle.trim();
+    const feedContentHash = crypto.createHash('sha256').update(feedContentPayload).digest('hex');
 
     return {
       externalId,
@@ -156,12 +157,16 @@ export class RbiSourceAdapter implements RegulatorySourceAdapter {
       publicationDate,
       summary: cleanDescription.substring(0, 500),
       rawContent: cleanDescription,
-      contentHash,
+      contentHash: feedContentHash,
+      feedContentHash,
+      documentBytesSha256: undefined,
+      isDocumentBytesVerified: false,
       documentUrls,
       rawMetadata: {
         rawPubDate,
         extractedExternalId: externalId,
         circularNumberFound: !!publicationNumber,
+        sourceType: 'RSS_FEED_METADATA_ONLY',
       },
     };
   }

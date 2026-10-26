@@ -9,6 +9,8 @@ import {
   UseGuards,
   NotFoundException,
   BadRequestException,
+  StreamableFile,
+  Res,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -280,6 +282,10 @@ export class RegulatoryIntelligenceController {
     @CurrentUser('id') actorId: string,
     @CurrentUser('organizationId') organizationId: string,
   ) {
+    if (!organizationId) {
+      throw new BadRequestException('Organization context required for manual intake.');
+    }
+
     const catalogueEntry = await this.prisma.regulatoryCatalogueEntry.findUnique({
       where: { id: dto.catalogueEntryId },
     });
@@ -295,14 +301,18 @@ export class RegulatoryIntelligenceController {
       throw new BadRequestException('Invalid base64 encoding for document content.');
     }
 
-    const saved = await this.documentStorage.saveDocument({
-      originalname: dto.fileName,
-      buffer: fileBuffer,
-      mimetype: dto.mimeType || 'application/octet-stream',
-    });
+    const saved = await this.documentStorage.saveDocument(
+      {
+        originalname: dto.fileName,
+        buffer: fileBuffer,
+        mimetype: dto.mimeType || 'application/octet-stream',
+      },
+      organizationId,
+    );
 
     const intake = await this.prisma.manualSourceIntake.create({
       data: {
+        organizationId,
         catalogueEntryId: dto.catalogueEntryId,
         title: dto.title,
         instrumentIdentifier: dto.instrumentIdentifier,
@@ -342,8 +352,11 @@ export class RegulatoryIntelligenceController {
   }
 
   @Get('manual-intake')
-  async listManualIntakes(@Query('catalogueEntryId') catalogueEntryId?: string) {
-    const where: any = {};
+  async listManualIntakes(
+    @CurrentUser('organizationId') organizationId: string,
+    @Query('catalogueEntryId') catalogueEntryId?: string,
+  ) {
+    const where: any = { organizationId };
     if (catalogueEntryId) {
       where.catalogueEntryId = catalogueEntryId;
     }
@@ -363,6 +376,48 @@ export class RegulatoryIntelligenceController {
     });
   }
 
+  @Get('manual-intake/:id')
+  async getManualIntake(
+    @Param('id') id: string,
+    @CurrentUser('organizationId') organizationId: string,
+  ) {
+    const intake = await this.prisma.manualSourceIntake.findFirst({
+      where: { id, organizationId },
+      include: {
+        catalogueEntry: true,
+        publication: true,
+      },
+    });
+
+    if (!intake) {
+      throw new NotFoundException(`Manual intake record "${id}" not found.`);
+    }
+
+    return intake;
+  }
+
+  @Get('manual-intake/:id/file')
+  async getManualIntakeFile(
+    @Param('id') id: string,
+    @CurrentUser('organizationId') organizationId: string,
+    @Res({ passthrough: true }) res: any,
+  ) {
+    const intake = await this.prisma.manualSourceIntake.findFirst({
+      where: { id, organizationId },
+    });
+
+    if (!intake) {
+      throw new NotFoundException(`Manual intake record "${id}" not found.`);
+    }
+
+    const { stream } = this.documentStorage.getFileStream(intake.storageKey, organizationId);
+    res.set({
+      'Content-Type': intake.mimeType,
+      'Content-Disposition': `attachment; filename="${intake.fileName}"`,
+    });
+    return new StreamableFile(stream);
+  }
+
   @Patch('manual-intake/:id/review')
   @Roles(Role.ADMIN, Role.MSSP_ADMIN)
   async reviewManualIntake(
@@ -371,8 +426,8 @@ export class RegulatoryIntelligenceController {
     @CurrentUser('id') actorId: string,
     @CurrentUser('organizationId') organizationId: string,
   ) {
-    const intake = await this.prisma.manualSourceIntake.findUnique({
-      where: { id },
+    const intake = await this.prisma.manualSourceIntake.findFirst({
+      where: { id, organizationId },
     });
 
     if (!intake) {

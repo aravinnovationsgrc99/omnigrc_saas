@@ -264,14 +264,16 @@ export class SsrfSafeHttpClientService {
       const parsedUrl = this.validateUrl(currentUrl, options.allowedDomains, allowInsecureHttp);
 
       // Pre-connection DNS validation
-      await this.resolveAndValidateIp(parsedUrl.hostname);
+      const pinnedIp = await this.resolveAndValidateIp(parsedUrl.hostname);
 
       const response = await this.performSingleRequest(parsedUrl, {
         timeoutMs,
         maxSizeBytes,
         headers: options.headers,
         acceptedContentTypes: options.acceptedContentTypes,
+        pinnedIp,
       });
+
 
       // Handle redirects
       if ([301, 302, 303, 307, 308].includes(response.statusCode)) {
@@ -339,6 +341,7 @@ export class SsrfSafeHttpClientService {
       maxSizeBytes: number;
       headers?: Record<string, string>;
       acceptedContentTypes?: string[];
+      pinnedIp: string;
     },
   ): Promise<{ statusCode: number; headers: http.IncomingHttpHeaders; body: Buffer; contentType: string }> {
     return new Promise((resolve, reject) => {
@@ -347,17 +350,51 @@ export class SsrfSafeHttpClientService {
 
       const requestHeaders: Record<string, string> = {
         'User-Agent': 'OMNiGRC-RegulatoryIntelligence-Bot/1.0 (+https://omnigrc.co/bot)',
+        Host: url.host,
         Accept: config.acceptedContentTypes?.join(', ') || '*/*',
         ...(config.headers || {}),
       };
 
+      const family = net.isIPv6(config.pinnedIp) ? 6 : (net.isIPv4(config.pinnedIp) ? 4 : 0);
+      if (family === 0) {
+        return reject(
+          new SsrfSecurityException(`Invalid IP address family for pinned destination "${config.pinnedIp}".`),
+        );
+      }
+
+      // Socket-level custom lookup strictly pins outgoing connection to pre-validated IP,
+      // completely eliminating DNS TOCTOU rebinding vulnerability.
+      const customLookup = (
+        _hostname: string,
+        opts: any,
+        cb: (err: NodeJS.ErrnoException | null, addressOrAddresses: any, family?: number) => void,
+      ) => {
+        if (opts && typeof opts === 'object' && opts.all) {
+          cb(null, [{ address: config.pinnedIp, family }]);
+        } else {
+          cb(null, config.pinnedIp, family);
+        }
+      };
+
+      const requestOptions: any = {
+        protocol: url.protocol,
+        hostname: url.hostname,
+        port: url.port ? parseInt(url.port, 10) : (isHttps ? 443 : 80),
+        path: `${url.pathname}${url.search}`,
+        method: 'GET',
+        headers: requestHeaders,
+        timeout: config.timeoutMs,
+        lookup: customLookup,
+      };
+
+      // For HTTPS connections:
+      // servername preserves TLS SNI and certificate validation against canonical hostname (RFC 6066)
+      if (isHttps && !net.isIP(url.hostname)) {
+        requestOptions.servername = url.hostname;
+      }
+
       const req = transport.request(
-        url,
-        {
-          method: 'GET',
-          headers: requestHeaders,
-          timeout: config.timeoutMs,
-        },
+        requestOptions,
         (res: http.IncomingMessage) => {
           const statusCode = res.statusCode || 500;
           const headers = res.headers;

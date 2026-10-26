@@ -16,6 +16,8 @@ describe('RbiSourceAdapter (Feed Parsing & Normalization)', () => {
     configuredEndpoint: 'https://www.rbi.org.in/notifications_rss.xml',
     sourceType: RegulatorySourceType.RSS,
     isEnabled: true,
+    isPaused: false,
+    consecutiveFailures: 0,
     pollingIntervalMinutes: 1440,
     lastAttemptedFetchAt: null,
     lastSuccessfulFetchAt: null,
@@ -85,11 +87,36 @@ describe('RbiSourceAdapter (Feed Parsing & Normalization)', () => {
       expect(first.publicationDate).toBeInstanceOf(Date);
       expect(first.contentHash).toBeDefined();
       expect(first.contentHash).toHaveLength(64); // SHA-256 hex string
+      expect(first.feedContentHash).toBeDefined();
+      expect(first.isDocumentBytesVerified).toBe(false);
+      expect(first.documentBytesSha256).toBeUndefined();
 
       const second = items[1];
       expect(second.title).toContain('Reserve Bank of India (Commercial Banks');
       expect(second.externalId).toBe('13744');
       expect(second.publicationNumber).toBe('RBI/2026-27/299');
+    });
+
+    it('should keep feedContentHash identical when only title or metadata changes (DATA-01)', () => {
+      const xml1 = `<rss version="2.0"><channel><item>
+        <title>Original Headline Title</title>
+        <link>https://www.rbi.org.in/scripts/NotificationUser.aspx?Id=11111</link>
+        <description><![CDATA[Standard substantive notification body text describing capital rules.]]></description>
+      </item></channel></rss>`;
+
+      const xml2 = `<rss version="2.0"><channel><item>
+        <title>Corrected Headline Title with Typo Fixed</title>
+        <link>https://www.rbi.org.in/scripts/NotificationUser.aspx?Id=11111</link>
+        <description><![CDATA[Standard substantive notification body text describing capital rules.]]></description>
+      </item></channel></rss>`;
+
+      const items1 = adapter.parseFeedXml(xml1, 'rbi.org.in');
+      const items2 = adapter.parseFeedXml(xml2, 'rbi.org.in');
+
+      expect(items1[0].title).not.toEqual(items2[0].title);
+      expect(items1[0].feedContentHash).toEqual(items2[0].feedContentHash);
+      expect(items1[0].isDocumentBytesVerified).toBe(false);
+      expect(items2[0].isDocumentBytesVerified).toBe(false);
     });
 
     it('should extract publicationNumber from alternate DOR format when present', () => {

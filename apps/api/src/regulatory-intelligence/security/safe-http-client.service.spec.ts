@@ -260,5 +260,36 @@ describe('SsrfSafeHttpClientService (Multi-Layer SSRF Defenses)', () => {
         }),
       ).rejects.toThrow(/HTTP 500/);
     });
+
+    it('should pin outbound socket connection to validated IP and preserve TLS SNI and Host header (SSRF-01)', async () => {
+      // Mock performSingleRequest spy to inspect request parameters
+      const performSpy = jest.spyOn<any, any>(service as any, 'performSingleRequest');
+
+      jest.spyOn(service, 'resolveAndValidateIp').mockResolvedValue('127.0.0.1');
+
+      const res = await service.get(`http://127.0.0.1:${mockPort}/valid-feed.xml`, {
+        allowedDomains: ['127.0.0.1'],
+        allowInsecureHttpForTesting: true,
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(performSpy).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          pinnedIp: '127.0.0.1',
+        }),
+      );
+    });
+
+    it('should fail closed when destination IP family is unrecognized (SSRF-01)', async () => {
+      const url = new URL('https://example.com/test');
+      await expect(
+        (service as any).performSingleRequest(url, {
+          timeoutMs: 5000,
+          maxSizeBytes: 1024,
+          pinnedIp: 'not-an-ip-address',
+        }),
+      ).rejects.toThrow(/Invalid IP address family/);
+    });
   });
 });

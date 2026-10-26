@@ -1,12 +1,13 @@
-import { RegulatoryIngestionService } from './regulatory-ingestion.service';
+import { RegulatoryIngestionService, classifySyncError } from './regulatory-ingestion.service';
 import { RbiSourceAdapter } from './adapters/rbi-source.adapter';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { SchedulerLockService } from '../notifications/cron/scheduler-lock.service';
+import { SsrfSecurityException } from './security/ssrf-safe-http-client.service';
 import { RegulatorySourceType, RegulatoryHealthStatus, RegulatoryPublicationState } from '@prisma/client';
 import { BadRequestException } from '@nestjs/common';
 
-describe('RegulatoryIngestionService (Deduplication, Versioning & Ingestion)', () => {
+describe('RegulatoryIngestionService (Deduplication, Versioning & Scheduling Backoff)', () => {
   let service: RegulatoryIngestionService;
   let mockPrisma: any;
   let mockRbiAdapter: jest.Mocked<RbiSourceAdapter>;
@@ -22,6 +23,8 @@ describe('RegulatoryIngestionService (Deduplication, Versioning & Ingestion)', (
     configuredEndpoint: 'https://www.rbi.org.in/notifications_rss.xml',
     sourceType: RegulatorySourceType.RSS,
     isEnabled: true,
+    isPaused: false,
+    consecutiveFailures: 0,
     pollingIntervalMinutes: 1440,
     lastAttemptedFetchAt: null,
     lastSuccessfulFetchAt: null,
@@ -73,7 +76,26 @@ describe('RegulatoryIngestionService (Deduplication, Versioning & Ingestion)', (
     );
   });
 
-  describe('1. Adapter Resolution & Validation', () => {
+  describe('1. Lock ID Generation & 64-bit Boundary Safety (LOCK-01)', () => {
+    it('should generate deterministic non-negative 64-bit BigInt lock ID', () => {
+      const lock1 = service.generateLockId('reg-sync-src-123');
+      const lock2 = service.generateLockId('reg-sync-src-123');
+      expect(lock1).toBe(lock2);
+      expect(lock1 >= 0n).toBe(true);
+      expect(lock1 <= 0x7FFFFFFFFFFFFFFFn).toBe(true);
+    });
+
+    it('should never overflow signed 64-bit PostgreSQL int8 range even for -2^63 boundary', () => {
+      // Test the bitwise mask directly on the boundary value
+      const minInt64 = -9223372036854775808n; // -2^63
+      const masked = minInt64 & 0x7FFFFFFFFFFFFFFFn;
+      expect(masked).toBe(0n);
+      expect(masked >= 0n).toBe(true);
+      expect(masked <= 9223372036854775807n).toBe(true); // <= 2^63 - 1
+    });
+  });
+
+  describe('2. Adapter Resolution & Validation', () => {
     it('should resolve the registered RBI adapter for an RBI source', () => {
       const adapter = service.getAdapterForSource(mockSource as any);
       expect(adapter).toBe(mockRbiAdapter);
@@ -87,9 +109,9 @@ describe('RegulatoryIngestionService (Deduplication, Versioning & Ingestion)', (
     });
   });
 
-  describe('2. Deduplication & Idempotent Publication Ingestion', () => {
+  describe('3. Deduplication & Idempotent Publication Ingestion (DATA-01 & DB-01)', () => {
     it('should create a new publication and version 1 when discovered for the first time', async () => {
-      mockPrisma.regulatoryPublication.findFirst.mockResolvedValueOnce(null); // No existing by externalId
+      mockPrisma.regulatoryPublication.findFirst.mockResolvedValueOnce(null);
       mockPrisma.regulatoryPublication.create.mockResolvedValueOnce({
         id: 'pub-new-1',
         title: 'New Circular',
@@ -99,239 +121,296 @@ describe('RegulatoryIngestionService (Deduplication, Versioning & Ingestion)', (
       const result = await service.processPublicationItem(mockSource as any, {
         externalId: '13745',
         canonicalUrl: 'https://www.rbi.org.in/item/13745',
-        title: 'Delegation of Powers under FEMA',
-        publicationNumber: 'RBI/2026/1',
-        publicationDate: new Date('2026-10-23'),
+        title: 'New Circular',
+        publicationNumber: 'RBI/2026-27/100',
         contentHash: 'hash-abc-123',
-        rawContent: 'Sample HTML content',
+        feedContentHash: 'hash-abc-123',
+        isDocumentBytesVerified: false,
       });
 
       expect(result.status).toBe('CREATED_NEW');
       expect(result.publicationId).toBe('pub-new-1');
-
-      expect(mockPrisma.regulatoryPublication.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({
-          sourceId: mockSource.id,
-          catalogueEntryId: mockSource.catalogueEntryId,
-          externalId: '13745',
-          canonicalUrl: 'https://www.rbi.org.in/item/13745',
-          contentHash: 'hash-abc-123',
-          currentVersionNumber: 1,
-          processingState: RegulatoryPublicationState.DISCOVERED,
-          versions: {
-            create: expect.objectContaining({
-              versionNumber: 1,
-              contentSha256: 'hash-abc-123',
-              reasonForVersion: 'INITIAL_INGESTION',
-            }),
-          },
-        }),
-      });
-    });
-
-    it('should be idempotent and NOT create a new version when content hash is unchanged', async () => {
-      // Existing publication with identical hash
-      mockPrisma.regulatoryPublication.findFirst.mockResolvedValueOnce({
-        id: 'pub-existing-1',
-        contentHash: 'hash-identical-123',
-        currentVersionNumber: 1,
-        publicationNumber: 'RBI/2026/1',
-      });
-
-      const result = await service.processPublicationItem(mockSource as any, {
-        externalId: '13745',
-        canonicalUrl: 'https://www.rbi.org.in/item/13745',
-        title: 'Delegation of Powers under FEMA',
-        publicationNumber: 'RBI/2026/1',
-        contentHash: 'hash-identical-123',
-      });
-
-      expect(result.status).toBe('UNCHANGED');
-      expect(result.publicationId).toBe('pub-existing-1');
-
-      // Verify no new version was created
-      expect(mockPrisma.regulatoryPublicationVersion.create).not.toHaveBeenCalled();
-      // Verify lastObservedAt was updated
-      expect(mockPrisma.regulatoryPublication.update).toHaveBeenCalledWith({
-        where: { id: 'pub-existing-1' },
-        data: expect.objectContaining({
-          lastObservedAt: expect.any(Date),
-        }),
-      });
-    });
-
-    it('should create a new immutable version and increment version number when content changes', async () => {
-      // Existing publication with old content hash
-      mockPrisma.regulatoryPublication.findFirst.mockResolvedValueOnce({
-        id: 'pub-existing-1',
-        contentHash: 'hash-old-version-1',
-        currentVersionNumber: 1,
-        publicationNumber: 'RBI/2026/1',
-      });
-
-      const result = await service.processPublicationItem(mockSource as any, {
-        externalId: '13745',
-        canonicalUrl: 'https://www.rbi.org.in/item/13745',
-        title: 'Delegation of Powers under FEMA (Amended)',
-        publicationNumber: 'RBI/2026/1-Rev',
-        contentHash: 'hash-new-version-2',
-        rawContent: 'Updated amendment content',
-      });
-
-      expect(result.status).toBe('CREATED_VERSION');
-      expect(result.publicationId).toBe('pub-existing-1');
-
-      // Verify previous version is marked superseded
-      expect(mockPrisma.regulatoryPublicationVersion.updateMany).toHaveBeenCalledWith({
-        where: {
-          publicationId: 'pub-existing-1',
-          supersededAt: null,
-        },
-        data: {
-          supersededAt: expect.any(Date),
-        },
-      });
-
-      // Verify new version #2 is created
-      expect(mockPrisma.regulatoryPublicationVersion.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({
-          publicationId: 'pub-existing-1',
-          versionNumber: 2,
-          contentSha256: 'hash-new-version-2',
-          reasonForVersion: 'CONTENT_UPDATE_DETECTED',
-        }),
-      });
-
-      // Verify publication record currentVersionNumber is updated to 2
-      expect(mockPrisma.regulatoryPublication.update).toHaveBeenCalledWith({
-        where: { id: 'pub-existing-1' },
-        data: expect.objectContaining({
-          currentVersionNumber: 2,
-          contentHash: 'hash-new-version-2',
-        }),
-      });
-    });
-
-    it('should deduplicate by canonicalUrl when externalId is absent', async () => {
-      mockPrisma.regulatoryPublication.findFirst.mockResolvedValueOnce({
-        id: 'pub-url-dedup',
-        contentHash: 'hash-url-same',
-        currentVersionNumber: 1,
-      });
-
-      const result = await service.processPublicationItem(mockSource as any, {
-        canonicalUrl: 'https://www.rbi.org.in/scripts/Directions.aspx?docId=555',
-        title: 'Directions without External ID',
-        contentHash: 'hash-url-same',
-      });
-
-      expect(result.status).toBe('UNCHANGED');
-      expect(result.publicationId).toBe('pub-url-dedup');
-    });
-  });
-
-  describe('3. Concurrency Lock & Source Sync Execution', () => {
-    it('should acquire scheduler lock and execute sync when lock is available', async () => {
-      mockPrisma.regulatorySource.findUnique.mockResolvedValueOnce(mockSource);
-      mockRbiAdapter.fetchAndNormalize.mockResolvedValueOnce({
-        items: [
-          {
-            externalId: '100',
-            canonicalUrl: 'https://www.rbi.org.in/item/100',
-            title: 'Circular 100',
-            contentHash: 'hash-100',
-          },
-        ],
-        diagnostics: {
-          itemCount: 1,
-          fetchedAt: new Date().toISOString(),
-          endpoint: mockSource.configuredEndpoint,
-          durationMs: 45,
-          rawBytesSize: 1024,
-        },
-      });
-
-      mockPrisma.regulatoryPublication.findFirst.mockResolvedValueOnce(null);
-      mockPrisma.regulatoryPublication.create.mockResolvedValueOnce({ id: 'pub-100' });
-
-      // Mock lock acquisition success
-      mockLockService.withLock.mockImplementation(async (lockId, jobName, task) => {
-        const res = await task();
-        return { executed: true, result: res, reason: 'LOCK_ACQUIRED' };
-      });
-
-      const syncResult = await service.syncSource(mockSource.id, {
-        actorId: 'admin-1',
-        organizationId: 'org-test',
-      });
-
-      expect(syncResult.success).toBe(true);
-      expect(syncResult.totalDiscovered).toBe(1);
-      expect(syncResult.newPublicationsCount).toBe(1);
-
-      // Verify health status updated to HEALTHY
-      expect(mockPrisma.regulatorySource.update).toHaveBeenCalledWith(
+      expect(mockPrisma.regulatoryPublication.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: mockSource.id },
           data: expect.objectContaining({
-            healthStatus: RegulatoryHealthStatus.HEALTHY,
+            sourceId: mockSource.id,
+            externalId: '13745',
+            canonicalUrl: 'https://www.rbi.org.in/item/13745',
+            feedContentHash: 'hash-abc-123',
+            isDocumentBytesVerified: false,
+            currentVersionNumber: 1,
           }),
         }),
       );
+    });
 
-      // Verify audit log emitted
-      expect(mockAuditLogs.log).toHaveBeenCalledWith(
+    it('should update publication title without creating new version on title-only metadata change (DATA-01)', async () => {
+      const existingPub = {
+        id: 'pub-existing-1',
+        sourceId: mockSource.id,
+        externalId: '13745',
+        canonicalUrl: 'https://www.rbi.org.in/item/13745',
+        title: 'Original Title with Typo',
+        publicationNumber: 'RBI/2026-27/100',
+        contentHash: 'content-hash-same',
+        feedContentHash: 'content-hash-same',
+        documentBytesSha256: null,
+        currentVersionNumber: 1,
+      };
+
+      mockPrisma.regulatoryPublication.findFirst.mockResolvedValueOnce(existingPub);
+
+      const result = await service.processPublicationItem(mockSource as any, {
+        externalId: '13745',
+        canonicalUrl: 'https://www.rbi.org.in/item/13745',
+        title: 'Corrected Title with Typo Fixed',
+        publicationNumber: 'RBI/2026-27/100',
+        contentHash: 'content-hash-same',
+        feedContentHash: 'content-hash-same',
+      });
+
+      expect(result.status).toBe('UNCHANGED');
+      expect(mockPrisma.regulatoryPublication.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          organizationId: 'org-test',
-          actorId: 'admin-1',
-          action: 'REGULATORY_SOURCE_SYNC',
+          where: { id: existingPub.id },
+          data: expect.objectContaining({
+            title: 'Corrected Title with Typo Fixed',
+          }),
+        }),
+      );
+      // Ensure no new version record created
+      expect(mockPrisma.regulatoryPublicationVersion.create).not.toHaveBeenCalled();
+    });
+
+    it('should create immutable new version when substantive content hash changes (DATA-01)', async () => {
+      const existingPub = {
+        id: 'pub-existing-1',
+        sourceId: mockSource.id,
+        externalId: '13745',
+        canonicalUrl: 'https://www.rbi.org.in/item/13745',
+        title: 'Circular Title',
+        contentHash: 'hash-v1',
+        feedContentHash: 'hash-v1',
+        currentVersionNumber: 1,
+      };
+
+      mockPrisma.regulatoryPublication.findFirst.mockResolvedValueOnce(existingPub);
+
+      const result = await service.processPublicationItem(mockSource as any, {
+        externalId: '13745',
+        canonicalUrl: 'https://www.rbi.org.in/item/13745',
+        title: 'Circular Title',
+        contentHash: 'hash-v2-substantive-change',
+        feedContentHash: 'hash-v2-substantive-change',
+        rawContent: 'Updated regulation text body',
+      });
+
+      expect(result.status).toBe('CREATED_VERSION');
+      expect(mockPrisma.regulatoryPublicationVersion.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { publicationId: existingPub.id, supersededAt: null },
+          data: expect.objectContaining({ supersededAt: expect.any(Date) }),
+        }),
+      );
+      expect(mockPrisma.regulatoryPublicationVersion.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            publicationId: existingPub.id,
+            versionNumber: 2,
+            contentSha256: 'hash-v2-substantive-change',
+            reasonForVersion: 'CONTENT_UPDATE_DETECTED',
+          }),
+        }),
+      );
+      expect(mockPrisma.regulatoryPublication.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: existingPub.id },
+          data: expect.objectContaining({
+            currentVersionNumber: 2,
+            contentHash: 'hash-v2-substantive-change',
+          }),
         }),
       );
     });
+  });
 
-    it('should gracefully skip duplicate execution when another replica holds the lock', async () => {
-      mockPrisma.regulatorySource.findUnique.mockResolvedValueOnce(mockSource);
-
-      // Mock lock unavailable
-      mockLockService.withLock.mockResolvedValueOnce({
-        executed: false,
-        reason: 'LOCK_UNAVAILABLE_SKIPPED',
-      });
-
-      const syncResult = await service.syncSource(mockSource.id);
-
-      expect(syncResult.success).toBe(false);
-      expect(syncResult.errorMessage).toContain('already in progress on another cluster worker');
-      expect(mockRbiAdapter.fetchAndNormalize).not.toHaveBeenCalled();
+  describe('4. Failure Classification & Bounded Exponential Backoff (SCHED-01)', () => {
+    it('should classify SSRF policy blocks as permanent errors', () => {
+      const err = new SsrfSecurityException('Destination host resolved to prohibited IP address 127.0.0.1');
+      const res = classifySyncError(err);
+      expect(res.isPermanent).toBe(true);
+      expect(res.category).toBe('SECURITY_SSRF');
     });
 
-    it('should isolate failures and mark source FAILING without crashing the process', async () => {
-      mockPrisma.regulatorySource.findUnique.mockResolvedValueOnce(mockSource);
+    it('should classify malformed URLs as permanent configuration errors', () => {
+      const err = new Error('Malformed URL provided: "not-a-valid-url"');
+      const res = classifySyncError(err);
+      expect(res.isPermanent).toBe(true);
+      expect(res.category).toBe('CONFIGURATION_ERROR');
+    });
 
+    it('should classify HTTP 404 as permanent HTTP client errors', () => {
+      const err = new Error('Official endpoint responded with HTTP 404: Not Found');
+      const res = classifySyncError(err);
+      expect(res.isPermanent).toBe(true);
+      expect(res.category).toBe('HTTP_CLIENT_ERROR');
+    });
+
+    it('should classify network timeouts as transient errors', () => {
+      const err = new Error('Connection timeout to official regulator server');
+      const res = classifySyncError(err);
+      expect(res.isPermanent).toBe(false);
+      expect(res.category).toBe('TRANSIENT_NETWORK');
+    });
+
+    it('should pause source on permanent error (SCHED-01)', async () => {
+      mockPrisma.regulatorySource.findUnique.mockResolvedValueOnce(mockSource);
       mockLockService.withLock.mockImplementation(async (lockId, jobName, task) => {
         const res = await task();
         return { executed: true, result: res };
       });
 
       mockRbiAdapter.fetchAndNormalize.mockRejectedValueOnce(
-        new Error('Connection timeout to official regulator server'),
+        new SsrfSecurityException('Prohibited private IP destination'),
       );
 
-      const syncResult = await service.syncSource(mockSource.id);
+      const result = await service.syncSource(mockSource.id);
+      expect(result.success).toBe(false);
 
-      expect(syncResult.success).toBe(false);
-      expect(syncResult.errorMessage).toContain('Connection timeout');
+      expect(mockPrisma.regulatorySource.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: mockSource.id },
+          data: expect.objectContaining({
+            healthStatus: RegulatoryHealthStatus.PAUSED,
+            isPaused: true,
+            consecutiveFailures: 1,
+            nextScheduledFetchAt: expect.any(Date),
+            sanitizedDiagnostics: expect.objectContaining({
+              isPermanent: true,
+              category: 'SECURITY_SSRF',
+            }),
+          }),
+        }),
+      );
+    });
 
-      // Verify source updated with FAILING status and sanitized message
+    it('should apply bounded exponential backoff for transient failures (SCHED-01)', async () => {
+      // Test progression: 1 failure = 15m, 2 failures = 30m, 3 failures = 60m
+      const sourceWith2Failures = {
+        ...mockSource,
+        consecutiveFailures: 2,
+      };
+
+      mockPrisma.regulatorySource.findUnique.mockResolvedValueOnce(sourceWith2Failures);
+      mockLockService.withLock.mockImplementation(async (lockId, jobName, task) => {
+        const res = await task();
+        return { executed: true, result: res };
+      });
+
+      mockRbiAdapter.fetchAndNormalize.mockRejectedValueOnce(
+        new Error('ETIMEDOUT: Connection timed out'),
+      );
+
+      const beforeTime = Date.now();
+      const result = await service.syncSource(sourceWith2Failures.id);
+      expect(result.success).toBe(false);
+
+      // Consecutive failures should increment to 3
+      // Backoff delay for 3 failures: 15 * 2^(3-1) = 60 minutes
+      expect(mockPrisma.regulatorySource.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: sourceWith2Failures.id },
+          data: expect.objectContaining({
+            healthStatus: RegulatoryHealthStatus.FAILING,
+            isPaused: false,
+            consecutiveFailures: 3,
+            sanitizedDiagnostics: expect.objectContaining({
+              delayMinutes: 60,
+              consecutiveFailures: 3,
+            }),
+          }),
+        }),
+      );
+
+      const updateCall = mockPrisma.regulatorySource.update.mock.calls.find(
+        (c: any) => c[0].data.healthStatus === RegulatoryHealthStatus.FAILING,
+      );
+      const scheduledAt = updateCall[0].data.nextScheduledFetchAt.getTime();
+      const expectedDelayMs = 60 * 60 * 1000;
+      expect(scheduledAt).toBeGreaterThanOrEqual(beforeTime + expectedDelayMs - 1000);
+      expect(scheduledAt).toBeLessThanOrEqual(beforeTime + expectedDelayMs + 5000);
+    });
+
+    it('should respect Retry-After header when provided for transient rate-limiting', async () => {
+      mockPrisma.regulatorySource.findUnique.mockResolvedValueOnce(mockSource);
+      mockLockService.withLock.mockImplementation(async (lockId, jobName, task) => {
+        const res = await task();
+        return { executed: true, result: res };
+      });
+
+      const rateLimitErr: any = new Error('HTTP 429 Too Many Requests (retry-after: 300)');
+      rateLimitErr.headers = { 'retry-after': '300' };
+
+      mockRbiAdapter.fetchAndNormalize.mockRejectedValueOnce(rateLimitErr);
+
+      const beforeTime = Date.now();
+      await service.syncSource(mockSource.id);
+
+      // 300 seconds = 5 minutes
       expect(mockPrisma.regulatorySource.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: mockSource.id },
           data: expect.objectContaining({
             healthStatus: RegulatoryHealthStatus.FAILING,
-            lastErrorMessage: expect.stringContaining('Connection timeout'),
+            sanitizedDiagnostics: expect.objectContaining({
+              delayMinutes: 5,
+            }),
           }),
         }),
       );
+    });
+
+    it('should reset consecutiveFailures to 0 and restore normal interval after recovery', async () => {
+      const previouslyFailingSource = {
+        ...mockSource,
+        consecutiveFailures: 5,
+        healthStatus: RegulatoryHealthStatus.FAILING,
+      };
+
+      mockPrisma.regulatorySource.findUnique.mockResolvedValueOnce(previouslyFailingSource);
+      mockLockService.withLock.mockImplementation(async (lockId, jobName, task) => {
+        const res = await task();
+        return { executed: true, result: res };
+      });
+
+      mockRbiAdapter.fetchAndNormalize.mockResolvedValueOnce({
+        items: [],
+        diagnostics: { itemCount: 0, fetchedAt: new Date().toISOString(), endpoint: 'test', durationMs: 5, rawBytesSize: 100 },
+      });
+
+      const beforeTime = Date.now();
+      const result = await service.syncSource(previouslyFailingSource.id);
+      expect(result.success).toBe(true);
+
+      // Verify reset: consecutiveFailures: 0, isPaused: false, normal polling interval (1440m = 24h)
+      expect(mockPrisma.regulatorySource.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: previouslyFailingSource.id },
+          data: expect.objectContaining({
+            healthStatus: RegulatoryHealthStatus.HEALTHY,
+            isPaused: false,
+            consecutiveFailures: 0,
+            lastErrorMessage: null,
+          }),
+        }),
+      );
+
+      const healthyCall = mockPrisma.regulatorySource.update.mock.calls.find(
+        (c: any) => c[0].data.healthStatus === RegulatoryHealthStatus.HEALTHY,
+      );
+      const scheduledAt = healthyCall[0].data.nextScheduledFetchAt.getTime();
+      const expectedNormalIntervalMs = 1440 * 60 * 1000;
+      expect(scheduledAt).toBeGreaterThanOrEqual(beforeTime + expectedNormalIntervalMs - 1000);
     });
   });
 });

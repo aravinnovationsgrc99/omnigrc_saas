@@ -244,6 +244,7 @@ model Organization {
   systemLicenseState  SystemLicenseState?
   controlStateProjection OrganizationControlStateProjection?
   serviceOverrideProjections OrganizationServiceOverrideProjection[]
+  manualSourceIntakes ManualSourceIntake[]
 
   @@index([parentOrganizationId])
   @@map("organizations")
@@ -2379,6 +2380,8 @@ model RegulatorySource {
   configuredEndpoint     String
   sourceType             RegulatorySourceType   @default(RSS)
   isEnabled              Boolean                @default(true)
+  isPaused               Boolean                @default(false)
+  consecutiveFailures    Int                    @default(0)
   pollingIntervalMinutes Int                    @default(1440)
   lastAttemptedFetchAt   DateTime?
   lastSuccessfulFetchAt  DateTime?
@@ -2395,6 +2398,7 @@ model RegulatorySource {
   @@unique([regulatorCode, configuredEndpoint])
   @@index([regulatorCode])
   @@index([isEnabled])
+  @@index([isPaused])
   @@index([healthStatus])
   @@map("regulatory_sources")
 }
@@ -2411,6 +2415,9 @@ model RegulatoryPublication {
   firstDiscoveredAt      DateTime                   @default(now())
   lastObservedAt         DateTime                   @default(now())
   contentHash            String
+  feedContentHash        String?
+  documentBytesSha256    String?
+  isDocumentBytesVerified Boolean                   @default(false)
   currentVersionNumber   Int                        @default(1)
   currentDocumentMetadata Json?
   processingState        RegulatoryPublicationState @default(DISCOVERED)
@@ -2423,6 +2430,7 @@ model RegulatoryPublication {
   manualIntakes          ManualSourceIntake[]
 
   @@unique([sourceId, canonicalUrl])
+  @@unique([sourceId, externalId])
   @@index([sourceId])
   @@index([catalogueEntryId])
   @@index([externalId])
@@ -2433,21 +2441,24 @@ model RegulatoryPublication {
 }
 
 model RegulatoryPublicationVersion {
-  id               String    @id @default(uuid())
-  publicationId    String
-  versionNumber    Int
-  contentSha256    String
-  retrievedAt      DateTime  @default(now())
-  contentType      String
-  byteSize         Int
-  documentUrl      String
-  storageKey       String?
-  reasonForVersion String?
-  rawMetadata      Json?
-  supersededAt     DateTime?
-  createdAt        DateTime  @default(now())
+  id                     String    @id @default(uuid())
+  publicationId          String
+  versionNumber          Int
+  contentSha256          String
+  feedContentHash        String?
+  documentBytesSha256    String?
+  isDocumentBytesVerified Boolean  @default(false)
+  retrievedAt            DateTime  @default(now())
+  contentType            String
+  byteSize               Int
+  documentUrl            String
+  storageKey             String?
+  reasonForVersion       String?
+  rawMetadata            Json?
+  supersededAt           DateTime?
+  createdAt              DateTime  @default(now())
 
-  publication      RegulatoryPublication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  publication            RegulatoryPublication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
 
   @@unique([publicationId, versionNumber])
   @@index([publicationId])
@@ -2458,6 +2469,7 @@ model RegulatoryPublicationVersion {
 
 model ManualSourceIntake {
   id                   String                   @id @default(uuid())
+  organizationId       String
   catalogueEntryId     String
   publicationId        String?
   title                String
@@ -2477,9 +2489,11 @@ model ManualSourceIntake {
   createdAt            DateTime                 @default(now())
   updatedAt            DateTime                 @updatedAt
 
+  organization         Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   catalogueEntry       RegulatoryCatalogueEntry @relation(fields: [catalogueEntryId], references: [id], onDelete: Cascade)
   publication          RegulatoryPublication?   @relation(fields: [publicationId], references: [id], onDelete: SetNull)
 
+  @@index([organizationId])
   @@index([catalogueEntryId])
   @@index([reviewStatus])
   @@index([uploadedById])

@@ -9,6 +9,9 @@ export interface NormalizedPublicationItem {
   summary?: string;
   rawContent?: string;
   contentHash: string;
+  feedContentHash?: string;
+  documentBytesSha256?: string;
+  isDocumentBytesVerified?: boolean;
   documentUrls?: string[];
   rawMetadata?: Record<string, any>;
 }
