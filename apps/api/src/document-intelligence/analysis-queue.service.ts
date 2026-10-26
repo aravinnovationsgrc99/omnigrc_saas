@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, OnModuleDestroy, ServiceUnavailableException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { FrameworkEntitlementsService } from '../frameworks/framework-entitlements.service';
@@ -251,15 +251,14 @@ export class AnalysisQueueService implements OnModuleInit, OnModuleDestroy {
     });
 
     try {
-      // 4. Resolve Evidence file path
-      const storageDir = path.resolve(process.cwd(), 'uploads', 'evidence');
+      // 4. Resolve Evidence file path canonically within evidence storage root
+      const storageDir = path.resolve(process.env.EVIDENCE_STORAGE_DIR || path.join(process.cwd(), 'uploads', 'evidence'));
       const storageKey = analysis.evidence?.storageKey || analysis.evidenceChecksum || `${organizationId}/${analysisId}`;
-      const filePath = path.join(storageDir, storageKey);
       const fileName = analysis.evidenceFileName || analysis.evidence?.fileName || 'document.pdf';
       const mimeType = analysis.evidence?.mimeType || 'application/pdf';
 
-      // 5. Document Extraction Phase
-      let extraction = await this.extractionService.extract(filePath, fileName, mimeType);
+      // 5. Document Extraction Phase with canonical root containment
+      let extraction = await this.extractionService.extract(storageKey, fileName, mimeType, { baseDir: storageDir });
 
       if (
         extraction.extractionStatus === ExtractionStatus.UNSUPPORTED_FORMAT ||
@@ -361,7 +360,7 @@ export class AnalysisQueueService implements OnModuleInit, OnModuleDestroy {
           });
         }
 
-        const finalAnalysisStatus = extraction.isTruncated || extraction.extractionStatus === ExtractionStatus.OCR_UNAVAILABLE
+        const finalAnalysisStatus = extraction.isTruncated
           ? AnalysisStatus.PARTIAL
           : AnalysisStatus.COMPLETED;
 
@@ -407,9 +406,25 @@ export class AnalysisQueueService implements OnModuleInit, OnModuleDestroy {
       this.logger.log(`Document Analysis job "${analysisId}" completed successfully in ${Date.now() - startTime}ms.`);
     } catch (err: any) {
       this.logger.error(`Document Analysis job "${analysisId}" failed: ${err.message}`);
+
+      // Map exception to appropriate failure ExtractionStatus so it is never left at schema @default(SUCCESS)
+      let failureExtractionStatus = ExtractionStatus.MALFORMED_DOCUMENT;
+      const isNotFound = err instanceof NotFoundException || err?.name === 'NotFoundException' || err?.status === 404 || err?.code === 'ENOENT';
+      const isBadRequest = err instanceof BadRequestException || err?.name === 'BadRequestException' || err?.status === 400;
+
+      if (isNotFound) {
+        failureExtractionStatus = ExtractionStatus.EMPTY_DOCUMENT;
+      } else if (isBadRequest) {
+        failureExtractionStatus = ExtractionStatus.MALFORMED_DOCUMENT;
+      }
+
       await this.prisma.documentAnalysis.update({
         where: { id: analysis.id },
-        data: { status: AnalysisStatus.FAILED, errorMessage: err.message },
+        data: {
+          status: AnalysisStatus.FAILED,
+          extractionStatus: failureExtractionStatus,
+          errorMessage: err.message,
+        },
       });
       await this.prisma.analysisRun.update({
         where: { id: run.id },

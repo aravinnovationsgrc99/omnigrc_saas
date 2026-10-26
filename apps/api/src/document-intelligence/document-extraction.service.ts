@@ -1,9 +1,8 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
+import { fork } from 'child_process';
 import * as ExcelJS from 'exceljs';
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const pdfParse = require('pdf-parse');
 import * as mammoth from 'mammoth';
 import { ExtractionStatus } from '@omnigrc/shared';
 
@@ -40,9 +39,115 @@ export class DocumentExtractionService {
   private readonly logger = new Logger(DocumentExtractionService.name);
 
   /**
+   * Canonically resolve and confine storageKey within the configured base directory.
+   * Rejects path traversal, absolute paths, null bytes, encoded traversal, and symlink escapes.
+   * Never leaks internal filesystem paths to client-facing exceptions.
+   */
+  public resolveAndValidatePath(baseDir: string, relativePathOrKey: string): string {
+    if (!baseDir || typeof baseDir !== 'string' || baseDir.includes('\0')) {
+      throw new BadRequestException('Invalid storage base directory.');
+    }
+
+    if (!relativePathOrKey || typeof relativePathOrKey !== 'string' || relativePathOrKey.includes('\0')) {
+      throw new BadRequestException('Invalid document file path.');
+    }
+
+    // 1. Check for encoded traversal variants (e.g. %2e%2e, %2f, %5c)
+    let decodedKey = relativePathOrKey;
+    try {
+      decodedKey = decodeURIComponent(relativePathOrKey);
+    } catch {
+      // Retain raw if malformed URI component
+    }
+    if (decodedKey.includes('\0')) {
+      throw new BadRequestException('Invalid document file path.');
+    }
+
+    // 2. Reject absolute paths (POSIX / or Windows C:\ or \\unc)
+    if (
+      path.isAbsolute(relativePathOrKey) ||
+      path.isAbsolute(decodedKey) ||
+      /^[a-zA-Z]:[/\\]/.test(relativePathOrKey) ||
+      /^[a-zA-Z]:[/\\]/.test(decodedKey) ||
+      relativePathOrKey.startsWith('/') ||
+      relativePathOrKey.startsWith('\\') ||
+      decodedKey.startsWith('/') ||
+      decodedKey.startsWith('\\')
+    ) {
+      throw new BadRequestException('Absolute paths are not permitted in storage keys.');
+    }
+
+    // 3. Reject directory traversal symbols (.. segments in both raw and decoded forms)
+    const rawSegments = relativePathOrKey.split(/[/\\]/);
+    const decodedSegments = decodedKey.split(/[/\\]/);
+    if (rawSegments.includes('..') || decodedSegments.includes('..')) {
+      throw new BadRequestException('Path traversal symbols are forbidden.');
+    }
+
+    // 4. Validate existence of base directory without creating unexpected directories as side-effect
+    if (!fs.existsSync(baseDir)) {
+      this.logger.warn('Evidence storage root directory does not exist on disk.');
+      throw new NotFoundException('Document file not found on storage disk.');
+    }
+
+    // 5. Canonicalize base directory
+    let canonicalBase: string;
+    try {
+      canonicalBase = fs.realpathSync(baseDir);
+    } catch {
+      throw new NotFoundException('Document file not found on storage disk.');
+    }
+
+    // 6. Resolve target path
+    const candidatePath = path.resolve(canonicalBase, relativePathOrKey);
+
+    // 7. Lexical boundary check: candidatePath must reside within canonicalBase
+    const relToRoot = path.relative(canonicalBase, candidatePath);
+    if (relToRoot.startsWith('..') || path.isAbsolute(relToRoot)) {
+      throw new BadRequestException('Path traversal detected: target escapes storage root.');
+    }
+
+    // 8. Missing file check
+    if (!fs.existsSync(candidatePath)) {
+      throw new NotFoundException('Document file not found on storage disk.');
+    }
+
+    // 9. Canonical target verification (symlink escape detection)
+    let canonicalTarget: string;
+    try {
+      canonicalTarget = fs.realpathSync(candidatePath);
+    } catch {
+      throw new NotFoundException('Document file not found on storage disk.');
+    }
+
+    const relCanonical = path.relative(canonicalBase, canonicalTarget);
+    if (relCanonical.startsWith('..') || path.isAbsolute(relCanonical)) {
+      throw new BadRequestException('Unauthorized symlink target outside storage boundary.');
+    }
+
+    // 10. Ensure target is a regular file, not a directory or device
+    try {
+      const stat = fs.statSync(canonicalTarget);
+      if (!stat.isFile()) {
+        throw new BadRequestException('Target path is not a regular file.');
+      }
+    } catch (err: any) {
+      if (err instanceof BadRequestException) throw err;
+      throw new NotFoundException('Document file not found on storage disk.');
+    }
+
+    return canonicalTarget;
+  }
+
+  /**
    * Extract document text & structured sections based on mimeType and extension
    */
-  public async extract(filePath: string, fileName: string, mimeType: string): Promise<ExtractionResult> {
+  public async extract(
+    filePath: string,
+    fileName: string,
+    mimeType: string,
+    options?: { baseDir?: string; timeoutMs?: number; maxPages?: number; maxTextLength?: number },
+  ): Promise<ExtractionResult> {
     // 1. Path safety and filename validation
     if (!fileName || typeof fileName !== 'string' || fileName.length > 255) {
       throw new BadRequestException('Invalid document file name.');
@@ -56,21 +161,47 @@ export class DocumentExtractionService {
       throw new BadRequestException('Invalid document file path.');
     }
 
-    // 2. Missing file check: throw explicit typed error; NEVER fabricate compliance fallback text
-    if (!fs.existsSync(filePath)) {
-      this.logger.warn(`Document extraction requested for non-existent file "${fileName}".`);
-      throw new NotFoundException('Document file not found on storage disk.');
+    let targetFilePath = filePath;
+
+    if (options?.baseDir) {
+      targetFilePath = this.resolveAndValidatePath(options.baseDir, filePath);
+    } else {
+      if (filePath.includes('..')) {
+        throw new BadRequestException('Invalid document file path. Path traversal symbols are forbidden.');
+      }
+      if (!fs.existsSync(filePath)) {
+        this.logger.warn(`Document extraction requested for non-existent file "${fileName}".`);
+        throw new NotFoundException('Document file not found on storage disk.');
+      }
+      try {
+        targetFilePath = fs.realpathSync(filePath);
+        const stat = fs.statSync(targetFilePath);
+        if (!stat.isFile()) {
+          throw new BadRequestException('Target path is not a regular file.');
+        }
+      } catch (err: any) {
+        if (err instanceof BadRequestException) throw err;
+        throw new NotFoundException('Document file not found on storage disk.');
+      }
     }
 
     const ext = path.extname(fileName).toLowerCase().replace('.', '');
-    const buffer = await fs.promises.readFile(filePath);
+
+    // Open file handle to mitigate TOCTOU race conditions between validation and read
+    const fileHandle = await fs.promises.open(targetFilePath, 'r');
+    let buffer: Buffer;
+    try {
+      buffer = await fileHandle.readFile();
+    } finally {
+      await fileHandle.close().catch(() => {});
+    }
 
     if (ext === 'pdf' || mimeType.includes('pdf')) {
-      return this.extractPdf(buffer);
+      return this.extractPdf(buffer, targetFilePath, options);
     } else if (['doc', 'docx'].includes(ext) || mimeType.includes('wordprocessingml') || mimeType.includes('msword')) {
       return this.extractOfficeDoc(buffer, ext);
     } else if (['xls', 'xlsx', 'csv'].includes(ext) || mimeType.includes('spreadsheetml') || mimeType.includes('excel') || mimeType.includes('csv')) {
-      return this.extractSpreadsheet(filePath, ext);
+      return this.extractSpreadsheet(targetFilePath, ext);
     } else if (['png', 'jpg', 'jpeg', 'webp'].includes(ext) || mimeType.startsWith('image/')) {
       return this.extractImageOcr(buffer, ext);
     } else if (['txt', 'log', 'json', 'xml'].includes(ext) || mimeType.startsWith('text/') || mimeType.includes('json') || mimeType.includes('xml')) {
@@ -88,9 +219,32 @@ export class DocumentExtractionService {
   }
 
   /**
-   * PDF Extraction with real stream parsing, page boundary tracking, and bounds enforcement
+   * Resolve path to the isolated child process worker script
    */
-  private async extractPdf(buffer: Buffer): Promise<ExtractionResult> {
+  private resolveWorkerScriptPath(): string {
+    const candidates = [
+      path.resolve(__dirname, 'pdf-parser.worker.js'),
+      path.resolve(__dirname, '../src/document-intelligence/pdf-parser.worker.js'),
+      path.resolve(process.cwd(), 'apps/api/src/document-intelligence/pdf-parser.worker.js'),
+      path.resolve(process.cwd(), 'src/document-intelligence/pdf-parser.worker.js'),
+    ];
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+    return path.resolve(__dirname, 'pdf-parser.worker.js');
+  }
+
+  /**
+   * PDF Extraction with isolated child process execution, 256MB memory cap,
+   * execution timeout, sanitized environment, and fault isolation.
+   */
+  private async extractPdf(
+    buffer: Buffer,
+    targetFilePath?: string,
+    options?: { timeoutMs?: number; maxPages?: number; maxTextLength?: number },
+  ): Promise<ExtractionResult> {
     if (!buffer || buffer.length === 0) {
       return {
         extractionMethod: 'PdfExtractor',
@@ -103,98 +257,145 @@ export class DocumentExtractionService {
       };
     }
 
-    const pageSections: ExtractedSection[] = [];
-    let isTruncated = false;
-    let truncationReason: string | undefined;
+    const workerScript = this.resolveWorkerScriptPath();
+    const timeoutMs = options?.timeoutMs || Number(process.env.PDF_PARSER_TIMEOUT_MS) || 10000;
+    const maxPages = options?.maxPages || MAX_PDF_PAGES;
+    const maxTextLength = options?.maxTextLength || MAX_TEXT_LENGTH;
 
-    const renderPage = (pageData: any): Promise<string> => {
-      const pageNum = pageData.pageNumber || (pageData.pageIndex + 1);
-      return pageData
-        .getTextContent({ normalizeWhitespace: false, disableCombineTextItems: false })
-        .then((textContent: any) => {
-          let lastY: number | undefined;
-          let text = '';
-          for (const item of textContent.items) {
-            if (lastY === item.transform[5] || lastY === undefined) {
-              text += item.str;
-            } else {
-              text += '\n' + item.str;
-            }
-            lastY = item.transform[5];
-          }
+    return new Promise<ExtractionResult>((resolve) => {
+      let isSettled = false;
+      let timer: NodeJS.Timeout | null = null;
 
-          const cleanPageText = this.normalizeExtractedText(text);
-          if (cleanPageText.length > 0) {
-            pageSections.push({
-              page: pageNum,
-              text: cleanPageText,
-            });
-          }
-          return cleanPageText;
-        });
-    };
-
-    try {
-      const parsed = await pdfParse(buffer, {
-        max: MAX_PDF_PAGES,
-        pagerender: renderPage,
+      // Spawn isolated child process with sanitized environment (no app secrets) and 256MB V8 memory limit
+      const child = fork(workerScript, [], {
+        env: {
+          NODE_ENV: process.env.NODE_ENV || 'production',
+          PATH: process.env.PATH || '',
+          SYSTEMROOT: process.env.SYSTEMROOT || '',
+        },
+        silent: true,
+        execArgv: ['--max-old-space-size=256'],
       });
 
-      const totalPages = parsed.numpages || 0;
-      if (totalPages > MAX_PDF_PAGES) {
-        isTruncated = true;
-        truncationReason = `PDF page count (${totalPages}) exceeds maximum limit of ${MAX_PDF_PAGES}. Remaining pages skipped.`;
-      }
+      const cleanup = () => {
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        try {
+          if (!child.killed) {
+            child.kill('SIGKILL');
+          }
+        } catch {
+          // Process already closed
+        }
+      };
 
-      // Sort sections by page number
-      pageSections.sort((a, b) => (a.page || 0) - (b.page || 0));
+      const safeResolve = (res: ExtractionResult) => {
+        if (!isSettled) {
+          isSettled = true;
+          cleanup();
+          resolve(res);
+        }
+      };
 
-      const combinedText = pageSections.map((s) => s.text).join('\n\n');
-      const normalizedFullText = this.normalizeExtractedText(combinedText);
-
-      // Scanned / image-only or empty PDF (no text streams extracted)
-      if (!normalizedFullText || normalizedFullText.length === 0) {
-        return {
+      timer = setTimeout(() => {
+        this.logger.warn(`PDF extraction timed out after ${timeoutMs}ms. Child process terminated.`);
+        safeResolve({
           extractionMethod: 'PdfExtractor',
-          extractionStatus: ExtractionStatus.EMPTY_DOCUMENT,
+          extractionStatus: ExtractionStatus.MALFORMED_DOCUMENT,
           fullText: '',
           sections: [],
-          pageCount: totalPages,
+          pageCount: 0,
           isTruncated: false,
+          truncationReason: `PDF extraction timed out after ${timeoutMs}ms.`,
           ocrUsed: false,
-        };
-      }
+        });
+      }, timeoutMs);
 
-      const { text: boundedText, isTruncated: textTruncated, truncationReason: textReason } = this.applyTextBounds(normalizedFullText);
-      if (textTruncated) {
-        isTruncated = true;
-        truncationReason = textReason;
-      }
+      child.on('message', (message: any) => {
+        if (message && message.type === 'PDF_RESULT') {
+          const res = message.result;
+          if (res.isEmpty) {
+            safeResolve({
+              extractionMethod: 'PdfExtractor',
+              extractionStatus: ExtractionStatus.EMPTY_DOCUMENT,
+              fullText: '',
+              sections: [],
+              pageCount: res.pageCount || 0,
+              isTruncated: false,
+              ocrUsed: false,
+            });
+          } else {
+            safeResolve({
+              extractionMethod: 'PdfExtractor',
+              extractionStatus: ExtractionStatus.SUCCESS,
+              fullText: res.fullText || '',
+              sections: res.sections || [],
+              pageCount: res.pageCount || 0,
+              isTruncated: Boolean(res.isTruncated),
+              truncationReason: res.truncationReason,
+              ocrUsed: false,
+            });
+          }
+        } else if (message && message.type === 'PDF_ERROR') {
+          this.logger.warn(`PDF extraction failed in worker: ${message.error || 'Unknown error'}`);
+          safeResolve({
+            extractionMethod: 'PdfExtractor',
+            extractionStatus: ExtractionStatus.MALFORMED_DOCUMENT,
+            fullText: '',
+            sections: [],
+            pageCount: 0,
+            isTruncated: false,
+            truncationReason: message.isPassword ? 'Document is encrypted or password-protected.' : message.error,
+            ocrUsed: false,
+          });
+        }
+      });
 
-      return {
-        extractionMethod: 'PdfExtractor',
-        extractionStatus: ExtractionStatus.SUCCESS,
-        fullText: boundedText,
-        sections: pageSections.length > 0 ? pageSections : [{ page: 1, text: boundedText }],
-        isTruncated,
-        truncationReason,
-        pageCount: totalPages,
-        ocrUsed: false,
-      };
-    } catch (err: any) {
-      const isPassword = err?.name === 'PasswordException' || /password/i.test(err?.message || '');
-      this.logger.warn(`PDF extraction failed: ${err?.message || 'Unknown parse error'}`);
-      return {
-        extractionMethod: 'PdfExtractor',
-        extractionStatus: ExtractionStatus.MALFORMED_DOCUMENT,
-        fullText: '',
-        sections: [],
-        pageCount: 0,
-        isTruncated: false,
-        truncationReason: isPassword ? 'Document is encrypted or password-protected.' : undefined,
-        ocrUsed: false,
-      };
-    }
+      child.on('error', (err) => {
+        this.logger.warn(`PDF extraction child process error: ${err.message}`);
+        safeResolve({
+          extractionMethod: 'PdfExtractor',
+          extractionStatus: ExtractionStatus.MALFORMED_DOCUMENT,
+          fullText: '',
+          sections: [],
+          pageCount: 0,
+          isTruncated: false,
+          truncationReason: `Worker error: ${err.message}`,
+          ocrUsed: false,
+        });
+      });
+
+      child.on('exit', (code, signal) => {
+        if (!isSettled) {
+          this.logger.warn(`PDF extraction worker exited unexpectedly (code: ${code}, signal: ${signal}).`);
+          safeResolve({
+            extractionMethod: 'PdfExtractor',
+            extractionStatus: ExtractionStatus.MALFORMED_DOCUMENT,
+            fullText: '',
+            sections: [],
+            pageCount: 0,
+            isTruncated: false,
+            truncationReason: `Worker exited unexpectedly (${signal || code}).`,
+            ocrUsed: false,
+          });
+        }
+      });
+
+      // Send execution payload to child process
+      if (targetFilePath && fs.existsSync(targetFilePath)) {
+        child.send({
+          type: 'PARSE_PDF',
+          payload: { filePath: targetFilePath, maxPages, maxTextLength },
+        });
+      } else {
+        child.send({
+          type: 'PARSE_PDF',
+          payload: { bufferBase64: buffer.toString('base64'), maxPages, maxTextLength },
+        });
+      }
+    });
   }
 
   /**

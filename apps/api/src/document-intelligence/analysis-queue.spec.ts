@@ -5,7 +5,8 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { FrameworkEntitlementsService } from '../frameworks/framework-entitlements.service';
 import { DocumentExtractionService } from './document-extraction.service';
 import { AiRouterService } from '../controls/ai/ai-router.service';
-import { ServiceUnavailableException } from '@nestjs/common';
+import { ServiceUnavailableException, NotFoundException, BadRequestException } from '@nestjs/common';
+import { ExtractionStatus, AnalysisStatus } from '@omnigrc/shared';
 import * as bullmq from 'bullmq';
 
 import { EffectiveServiceStateResolver } from '../service-control/effective-service-state-resolver.service';
@@ -155,5 +156,138 @@ describe('AnalysisQueueService Lifecycle & Worker Leak Prevention', () => {
       }),
     );
     expect(prisma.extractedFinding.deleteMany).not.toHaveBeenCalled();
+  });
+
+  describe('Document Extraction Failure Propagation & Status Persistence Regression', () => {
+    it('should persist FAILED and non-SUCCESS extractionStatus when extract() returns an explicit failure status', async () => {
+      const resolver = (queueService as any).effectiveServiceStateResolver;
+      jest.spyOn(resolver, 'resolveEffectiveState').mockResolvedValue({ isAvailable: true } as any);
+
+      const prisma = (queueService as any).prisma;
+      jest.spyOn(prisma.organizationControlStateProjection, 'findUnique').mockResolvedValue(null);
+      jest.spyOn(prisma.documentAnalysis, 'findFirst').mockResolvedValue({
+        id: 'analysis-fail-1',
+        organizationId: 'org-1',
+        evidenceFileName: 'scanned.png',
+      } as any);
+      jest.spyOn(prisma.analysisRun, 'create').mockResolvedValue({ id: 'run-fail-1' } as any);
+
+      const generateFindingsSpy = jest.spyOn(queueService as any, 'generateDocumentFindings');
+
+      const extractionService = (queueService as any).extractionService;
+      jest.spyOn(extractionService, 'extract').mockResolvedValueOnce({
+        extractionStatus: ExtractionStatus.OCR_UNAVAILABLE,
+        fullText: '',
+        sections: [],
+      } as any);
+
+      await (queueService as any).processJob({ analysisId: 'analysis-fail-1', organizationId: 'org-1' });
+
+      // Confirm DocumentAnalysis updated to FAILED with exact extractionStatus
+      expect(prisma.documentAnalysis.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'analysis-fail-1' },
+          data: expect.objectContaining({
+            status: AnalysisStatus.FAILED,
+            extractionStatus: ExtractionStatus.OCR_UNAVAILABLE,
+          }),
+        }),
+      );
+
+      // Confirm AnalysisRun updated to FAILED
+      expect(prisma.analysisRun.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'run-fail-1' },
+          data: expect.objectContaining({
+            status: AnalysisStatus.FAILED,
+          }),
+        }),
+      );
+
+      // Confirm generateDocumentFindings() was NEVER called
+      expect(generateFindingsSpy).not.toHaveBeenCalled();
+    });
+
+    it('should persist FAILED with EMPTY_DOCUMENT when extract() throws NotFoundException for a missing file', async () => {
+      const resolver = (queueService as any).effectiveServiceStateResolver;
+      jest.spyOn(resolver, 'resolveEffectiveState').mockResolvedValue({ isAvailable: true } as any);
+
+      const prisma = (queueService as any).prisma;
+      jest.spyOn(prisma.organizationControlStateProjection, 'findUnique').mockResolvedValue(null);
+      jest.spyOn(prisma.documentAnalysis, 'findFirst').mockResolvedValue({
+        id: 'analysis-missing-1',
+        organizationId: 'org-1',
+        evidenceFileName: 'missing.pdf',
+      } as any);
+      jest.spyOn(prisma.analysisRun, 'create').mockResolvedValue({ id: 'run-missing-1' } as any);
+
+      const generateFindingsSpy = jest.spyOn(queueService as any, 'generateDocumentFindings');
+
+      const extractionService = (queueService as any).extractionService;
+      jest.spyOn(extractionService, 'extract').mockRejectedValueOnce(
+        new NotFoundException('Document file not found on storage disk.'),
+      );
+
+      await (queueService as any).processJob({ analysisId: 'analysis-missing-1', organizationId: 'org-1' });
+
+      // Confirm DocumentAnalysis was NOT left with extractionStatus = SUCCESS
+      expect(prisma.documentAnalysis.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'analysis-missing-1' },
+          data: expect.objectContaining({
+            status: AnalysisStatus.FAILED,
+            extractionStatus: ExtractionStatus.EMPTY_DOCUMENT,
+            errorMessage: 'Document file not found on storage disk.',
+          }),
+        }),
+      );
+
+      expect(prisma.analysisRun.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'run-missing-1' },
+          data: expect.objectContaining({
+            status: AnalysisStatus.FAILED,
+          }),
+        }),
+      );
+
+      expect(generateFindingsSpy).not.toHaveBeenCalled();
+    });
+
+    it('should persist FAILED with MALFORMED_DOCUMENT when extract() throws BadRequestException for traversal', async () => {
+      const resolver = (queueService as any).effectiveServiceStateResolver;
+      jest.spyOn(resolver, 'resolveEffectiveState').mockResolvedValue({ isAvailable: true } as any);
+
+      const prisma = (queueService as any).prisma;
+      jest.spyOn(prisma.organizationControlStateProjection, 'findUnique').mockResolvedValue(null);
+      jest.spyOn(prisma.documentAnalysis, 'findFirst').mockResolvedValue({
+        id: 'analysis-traversal-1',
+        organizationId: 'org-1',
+        evidenceFileName: 'bad.pdf',
+      } as any);
+      jest.spyOn(prisma.analysisRun, 'create').mockResolvedValue({ id: 'run-traversal-1' } as any);
+
+      const generateFindingsSpy = jest.spyOn(queueService as any, 'generateDocumentFindings');
+
+      const extractionService = (queueService as any).extractionService;
+      jest.spyOn(extractionService, 'extract').mockRejectedValueOnce(
+        new BadRequestException('Path traversal detected: target escapes storage root.'),
+      );
+
+      await (queueService as any).processJob({ analysisId: 'analysis-traversal-1', organizationId: 'org-1' });
+
+      expect(prisma.documentAnalysis.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'analysis-traversal-1' },
+          data: expect.objectContaining({
+            status: AnalysisStatus.FAILED,
+            extractionStatus: ExtractionStatus.MALFORMED_DOCUMENT,
+            errorMessage: 'Path traversal detected: target escapes storage root.',
+          }),
+        }),
+      );
+
+      expect(generateFindingsSpy).not.toHaveBeenCalled();
+    });
   });
 });
