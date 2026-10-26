@@ -2279,7 +2279,209 @@ model ExtractedFinding {
   @@map("extracted_findings")
 }
 
+// --------------------------------------------------
+// PHASE 2 — REGULATORY INTELLIGENCE & INGESTION MODELS
+// --------------------------------------------------
 
+enum RegulatoryInstrumentType {
+  LAW
+  REGULATION
+  DIRECTIVE
+  FRAMEWORK
+  STANDARD
+  GUIDANCE
+  CIRCULAR
+  OTHER
+}
 
+enum RegulatoryVerificationStatus {
+  VERIFIED
+  UNVERIFIED
+  REQUIRES_REVIEW
+}
 
+enum RegulatoryIngestionMethod {
+  AUTOMATED_FEED
+  AUTOMATED_SCRAPER
+  MANUAL_INTAKE
+  UNAVAILABLE
+}
 
+enum RegulatoryConnectorStatus {
+  ACTIVE
+  PLANNED
+  MANUAL_ONLY
+  UNAVAILABLE
+}
+
+enum RegulatorySourceType {
+  RSS
+  ATOM
+  API
+  HTML_LISTING
+  MANUAL
+}
+
+enum RegulatoryHealthStatus {
+  HEALTHY
+  DEGRADED
+  FAILING
+  PAUSED
+  UNTESTED
+}
+
+enum RegulatoryPublicationState {
+  DISCOVERED
+  FETCHED
+  FAILED
+  ARCHIVED
+}
+
+enum ManualIntakeReviewStatus {
+  PENDING_REVIEW
+  ACCEPTED
+  REJECTED
+}
+
+model RegulatoryCatalogueEntry {
+  id                  String                       @id @default(uuid())
+  code                String                       @unique
+  displayName         String
+  jurisdiction        String
+  issuingAuthority    String
+  instrumentType      RegulatoryInstrumentType     @default(REGULATION)
+  officialSourceUrl   String?
+  verificationStatus  RegulatoryVerificationStatus @default(UNVERIFIED)
+  lastVerifiedAt      DateTime?
+  publicationMetadata Json?
+  ingestionMethod     RegulatoryIngestionMethod    @default(MANUAL_INTAKE)
+  connectorStatus     RegulatoryConnectorStatus    @default(PLANNED)
+  monitoringFrequency String?                      @default("MANUAL_REVIEW")
+  createdAt           DateTime                     @default(now())
+  updatedAt           DateTime                     @updatedAt
+
+  sources             RegulatorySource[]
+  publications        RegulatoryPublication[]
+  manualIntakes       ManualSourceIntake[]
+
+  @@index([jurisdiction])
+  @@index([connectorStatus])
+  @@index([verificationStatus])
+  @@map("regulatory_catalogue_entries")
+}
+
+model RegulatorySource {
+  id                     String                 @id @default(uuid())
+  regulatorCode          String
+  displayName            String
+  catalogueEntryId       String?
+  officialDomain         String
+  configuredEndpoint     String
+  sourceType             RegulatorySourceType   @default(RSS)
+  isEnabled              Boolean                @default(true)
+  pollingIntervalMinutes Int                    @default(1440)
+  lastAttemptedFetchAt   DateTime?
+  lastSuccessfulFetchAt  DateTime?
+  nextScheduledFetchAt   DateTime?
+  healthStatus           RegulatoryHealthStatus @default(UNTESTED)
+  lastErrorMessage       String?
+  sanitizedDiagnostics   Json?
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+
+  catalogueEntry         RegulatoryCatalogueEntry? @relation(fields: [catalogueEntryId], references: [id], onDelete: SetNull)
+  publications           RegulatoryPublication[]
+
+  @@unique([regulatorCode, configuredEndpoint])
+  @@index([regulatorCode])
+  @@index([isEnabled])
+  @@index([healthStatus])
+  @@map("regulatory_sources")
+}
+
+model RegulatoryPublication {
+  id                     String                     @id @default(uuid())
+  sourceId               String
+  catalogueEntryId       String?
+  externalId             String?
+  canonicalUrl           String
+  title                  String
+  publicationNumber      String?
+  publicationDate        DateTime?
+  firstDiscoveredAt      DateTime                   @default(now())
+  lastObservedAt         DateTime                   @default(now())
+  contentHash            String
+  currentVersionNumber   Int                        @default(1)
+  currentDocumentMetadata Json?
+  processingState        RegulatoryPublicationState @default(DISCOVERED)
+  createdAt              DateTime                   @default(now())
+  updatedAt              DateTime                   @updatedAt
+
+  source                 RegulatorySource            @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  catalogueEntry         RegulatoryCatalogueEntry?   @relation(fields: [catalogueEntryId], references: [id], onDelete: SetNull)
+  versions               RegulatoryPublicationVersion[]
+  manualIntakes          ManualSourceIntake[]
+
+  @@unique([sourceId, canonicalUrl])
+  @@index([sourceId])
+  @@index([catalogueEntryId])
+  @@index([externalId])
+  @@index([publicationDate])
+  @@index([processingState])
+  @@index([contentHash])
+  @@map("regulatory_publications")
+}
+
+model RegulatoryPublicationVersion {
+  id               String    @id @default(uuid())
+  publicationId    String
+  versionNumber    Int
+  contentSha256    String
+  retrievedAt      DateTime  @default(now())
+  contentType      String
+  byteSize         Int
+  documentUrl      String
+  storageKey       String?
+  reasonForVersion String?
+  rawMetadata      Json?
+  supersededAt     DateTime?
+  createdAt        DateTime  @default(now())
+
+  publication      RegulatoryPublication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+
+  @@unique([publicationId, versionNumber])
+  @@index([publicationId])
+  @@index([contentSha256])
+  @@index([retrievedAt])
+  @@map("regulatory_publication_versions")
+}
+
+model ManualSourceIntake {
+  id                   String                   @id @default(uuid())
+  catalogueEntryId     String
+  publicationId        String?
+  title                String
+  instrumentIdentifier String?
+  sourceUrl            String?
+  fileName             String
+  fileSize             Int
+  mimeType             String
+  checksum             String
+  storageKey           String
+  uploadedById         String
+  reviewStatus         ManualIntakeReviewStatus @default(PENDING_REVIEW)
+  reviewedById         String?
+  reviewedAt           DateTime?
+  reviewNotes          String?
+  provenanceNotes      String?
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+
+  catalogueEntry       RegulatoryCatalogueEntry @relation(fields: [catalogueEntryId], references: [id], onDelete: Cascade)
+  publication          RegulatoryPublication?   @relation(fields: [publicationId], references: [id], onDelete: SetNull)
+
+  @@index([catalogueEntryId])
+  @@index([reviewStatus])
+  @@index([uploadedById])
+  @@map("manual_source_intakes")
+}

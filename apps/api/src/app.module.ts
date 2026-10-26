@@ -45,6 +45,7 @@ import { OrganizationControlModule } from './organization-control/organization-c
 import { OrganizationControlStateGuard } from './common/guards/organization-control-state.guard';
 import { ServiceControlModule } from './service-control/service-control.module';
 import { ServiceCapabilityGuard } from './common/guards/service-capability.guard';
+import { RegulatoryIntelligenceModule } from './regulatory-intelligence/regulatory-intelligence.module';
 
 @Module({
   imports: [
@@ -98,6 +99,7 @@ import { ServiceCapabilityGuard } from './common/guards/service-capability.guard
     ProvisioningModule,
     OrganizationControlModule,
     ServiceControlModule,
+    RegulatoryIntelligenceModule,
   ],
   providers: [
     {
