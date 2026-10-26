@@ -53,6 +53,7 @@ describe('RegulatoryRemediationService', () => {
       evidence: {
         findMany: jest.fn(),
       },
+      $transaction: jest.fn(async (cb) => (typeof cb === 'function' ? cb(prisma) : cb)),
     };
 
     auditLogsService = {
@@ -391,6 +392,41 @@ describe('RegulatoryRemediationService', () => {
         }),
       ).rejects.toThrow(BadRequestException);
     });
+
+    it('should reject remediation task with reason and annotate underlying ComplianceTask', async () => {
+      prisma.regulatoryRemediationTask.findFirst.mockResolvedValue({
+        id: 'rem-task-1',
+        organizationId: mockOrgId,
+        complianceTaskId: 'comp-1',
+        status: RegulatoryRemediationStatus.AWAITING_APPROVAL,
+        assignedById: 'officer-1',
+        description: 'Original remediation proposal',
+      });
+
+      prisma.regulatoryRemediationTask.update.mockResolvedValue({
+        id: 'rem-task-1',
+        status: RegulatoryRemediationStatus.REJECTED,
+        rejectedById: 'officer-2',
+        rejectionReason: 'Scope too broad, split into smaller tasks',
+      });
+
+      const res = await service.handleApproval(mockOrgId, 'officer-2', Role.MSSP_ADMIN, 'rem-task-1', {
+        action: RemediationApprovalAction.REJECT,
+        rejectionReason: 'Scope too broad, split into smaller tasks',
+      });
+
+      expect(res.status).toBe(RegulatoryRemediationStatus.REJECTED);
+      expect(prisma.complianceTask.update).toHaveBeenCalledWith({
+        where: { id: 'comp-1' },
+        data: {
+          status: TaskStatus.COMPLETE,
+          description: expect.stringContaining('[REJECTED: Scope too broad, split into smaller tasks]'),
+        },
+      });
+      expect(auditLogsService.log).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'REGULATORY_REMEDIATION_REJECTED' }),
+      );
+    });
   });
 
   describe('4. completeRemediation & Evidence Validation', () => {
@@ -501,7 +537,10 @@ describe('RegulatoryRemediationService', () => {
       expect(res.status).toBe(RegulatoryRemediationStatus.RISK_ACCEPTED);
       expect(prisma.complianceTask.update).toHaveBeenCalledWith({
         where: { id: 'comp-1' },
-        data: { status: TaskStatus.COMPLETE },
+        data: {
+          status: TaskStatus.COMPLETE,
+          description: expect.stringContaining('[RISK ACCEPTED: Compensating control in place: air-gapped system approved by CISO.]'),
+        },
       });
       expect(auditLogsService.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'REGULATORY_REMEDIATION_RISK_ACCEPTED' }),

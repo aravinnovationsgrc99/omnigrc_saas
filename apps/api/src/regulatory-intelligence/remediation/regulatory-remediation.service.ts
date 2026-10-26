@@ -114,72 +114,74 @@ export class RegulatoryRemediationService {
       ? RegulatoryRemediationStatus.AWAITING_APPROVAL
       : RegulatoryRemediationStatus.PROPOSED;
 
-    // 8. Create underlying ComplianceTask for cross-system task lifecycle integration
-    const complianceTask = await this.prisma.complianceTask.create({
-      data: {
-        organizationId,
-        title: dto.title,
-        description: dto.description,
-        owner: assignee.name || assignee.email,
-        dueDate: internalDueDate,
-        controlId: assessment.controlId || null,
-        obligationReference: assessment.obligation?.obligationIdentifier || assessment.obligation?.id || null,
-        createdById: actorId,
-        status: TaskStatus.NOT_STARTED,
-      },
-    });
+    // 8-10. Transactional creation: ComplianceTask + RegulatoryRemediationTask + RegulatoryRemediationHistory
+    const remediationTask = await this.prisma.$transaction(async (tx) => {
+      const complianceTask = await tx.complianceTask.create({
+        data: {
+          organizationId,
+          title: dto.title,
+          description: dto.description,
+          owner: assignee.name || assignee.email,
+          dueDate: internalDueDate,
+          controlId: assessment.controlId || null,
+          obligationReference: assessment.obligation?.obligationIdentifier || assessment.obligation?.id || null,
+          createdById: actorId,
+          status: TaskStatus.NOT_STARTED,
+        },
+      });
 
-    // 9. Create RegulatoryRemediationTask with full regulatory provenance
-    const remediationTask = await this.prisma.regulatoryRemediationTask.create({
-      data: {
-        organizationId,
-        complianceTaskId: complianceTask.id,
-        assessmentId: dto.assessmentId,
-        obligationId: assessment.obligationId,
-        controlId: assessment.controlId,
-        mappingId: assessment.mappingId,
-        publicationId: assessment.publicationId,
-        publicationVersionId: assessment.publicationVersionId,
-        applicabilityId: assessment.applicabilityId,
-        status: initialStatus,
-        priority: dto.priority || RemediationPriority.MEDIUM,
-        initialGapOutcome: assessment.gapOutcome,
-        initialEvidenceOutcome: assessment.evidenceOutcome,
-        title: dto.title,
-        description: dto.description,
-        acceptanceCriteria: dto.acceptanceCriteria,
-        internalDueDate,
-        regulatoryDeadline,
-        assignedToId: dto.assignedToId,
-        assignedById: actorId,
-        requiresApproval: !!dto.requiresApproval,
-      },
-      include: {
-        complianceTask: true,
-        obligation: true,
-        control: true,
-      },
-    });
-
-    // 10. Record immutable history
-    await this.prisma.regulatoryRemediationHistory.create({
-      data: {
-        remediationTaskId: remediationTask.id,
-        organizationId,
-        previousStatus: null,
-        newStatus: initialStatus,
-        action: 'CREATED',
-        actorId,
-        rationale: dto.overrideRationale || 'Remediation task proposed from reviewed control-gap finding.',
-        snapshotPayload: {
+      const createdRemediation = await tx.regulatoryRemediationTask.create({
+        data: {
+          organizationId,
+          complianceTaskId: complianceTask.id,
           assessmentId: dto.assessmentId,
+          obligationId: assessment.obligationId,
+          controlId: assessment.controlId,
+          mappingId: assessment.mappingId,
+          publicationId: assessment.publicationId,
+          publicationVersionId: assessment.publicationVersionId,
+          applicabilityId: assessment.applicabilityId,
+          status: initialStatus,
+          priority: dto.priority || RemediationPriority.MEDIUM,
           initialGapOutcome: assessment.gapOutcome,
           initialEvidenceOutcome: assessment.evidenceOutcome,
-          internalDueDate: internalDueDate ? internalDueDate.toISOString() : null,
-          regulatoryDeadline: regulatoryDeadline ? regulatoryDeadline.toISOString() : null,
-          priority: remediationTask.priority,
+          title: dto.title,
+          description: dto.description,
+          acceptanceCriteria: dto.acceptanceCriteria,
+          internalDueDate,
+          regulatoryDeadline,
+          assignedToId: dto.assignedToId,
+          assignedById: actorId,
+          requiresApproval: !!dto.requiresApproval,
         },
-      },
+        include: {
+          complianceTask: true,
+          obligation: true,
+          control: true,
+        },
+      });
+
+      await tx.regulatoryRemediationHistory.create({
+        data: {
+          remediationTaskId: createdRemediation.id,
+          organizationId,
+          previousStatus: null,
+          newStatus: initialStatus,
+          action: 'CREATED',
+          actorId,
+          rationale: dto.overrideRationale || 'Remediation task proposed from reviewed control-gap finding.',
+          snapshotPayload: {
+            assessmentId: dto.assessmentId,
+            initialGapOutcome: assessment.gapOutcome,
+            initialEvidenceOutcome: assessment.evidenceOutcome,
+            internalDueDate: internalDueDate ? internalDueDate.toISOString() : null,
+            regulatoryDeadline: regulatoryDeadline ? regulatoryDeadline.toISOString() : null,
+            priority: createdRemediation.priority,
+          },
+        },
+      });
+
+      return createdRemediation;
     });
 
     // 11. Notify assignee
@@ -201,7 +203,7 @@ export class RegulatoryRemediationService {
       entityId: remediationTask.id,
       metadata: {
         assessmentId: dto.assessmentId,
-        complianceTaskId: complianceTask.id,
+        complianceTaskId: remediationTask.complianceTaskId,
         status: initialStatus,
         priority: remediationTask.priority,
         assignedToId: dto.assignedToId,
@@ -242,31 +244,35 @@ export class RegulatoryRemediationService {
 
     const previousAssigneeId = task.assignedToId;
 
-    const updated = await this.prisma.regulatoryRemediationTask.update({
-      where: { id },
-      data: {
-        assignedToId: dto.assignedToId,
-      },
-      include: { complianceTask: true },
-    });
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const taskUpdated = await tx.regulatoryRemediationTask.update({
+        where: { id },
+        data: {
+          assignedToId: dto.assignedToId,
+        },
+        include: { complianceTask: true },
+      });
 
-    // Sync ComplianceTask owner
-    await this.prisma.complianceTask.update({
-      where: { id: task.complianceTaskId },
-      data: { owner: newAssignee.name || newAssignee.email },
-    });
+      // Sync ComplianceTask owner
+      await tx.complianceTask.update({
+        where: { id: task.complianceTaskId },
+        data: { owner: newAssignee.name || newAssignee.email },
+      });
 
-    await this.prisma.regulatoryRemediationHistory.create({
-      data: {
-        remediationTaskId: id,
-        organizationId,
-        previousStatus: task.status,
-        newStatus: task.status,
-        action: 'ASSIGNED',
-        actorId,
-        rationale: dto.rationale || `Reassigned from ${previousAssigneeId} to ${dto.assignedToId}`,
-        snapshotPayload: { previousAssigneeId, newAssigneeId: dto.assignedToId },
-      },
+      await tx.regulatoryRemediationHistory.create({
+        data: {
+          remediationTaskId: id,
+          organizationId,
+          previousStatus: task.status,
+          newStatus: task.status,
+          action: 'ASSIGNED',
+          actorId,
+          rationale: dto.rationale || `Reassigned from ${previousAssigneeId} to ${dto.assignedToId}`,
+          snapshotPayload: { previousAssigneeId, newAssigneeId: dto.assignedToId },
+        },
+      });
+
+      return taskUpdated;
     });
 
     await this.notificationsService.notify({
@@ -343,45 +349,49 @@ export class RegulatoryRemediationService {
     const nextInternalDueDate = dto.internalDueDate ? new Date(dto.internalDueDate) : task.internalDueDate;
     const nextPriority = dto.priority || task.priority;
 
-    const updated = await this.prisma.regulatoryRemediationTask.update({
-      where: { id },
-      data: {
-        status: nextStatus,
-        progressNotes: dto.progressNotes || task.progressNotes,
-        blockedReason,
-        unblockedReason,
-        internalDueDate: nextInternalDueDate,
-        priority: nextPriority,
-      },
-      include: { complianceTask: true },
-    });
-
-    if (complianceStatus || dto.internalDueDate) {
-      await this.prisma.complianceTask.update({
-        where: { id: task.complianceTaskId },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const taskUpdated = await tx.regulatoryRemediationTask.update({
+        where: { id },
         data: {
-          ...(complianceStatus && { status: complianceStatus }),
-          ...(dto.internalDueDate && { dueDate: nextInternalDueDate }),
-        },
-      });
-    }
-
-    await this.prisma.regulatoryRemediationHistory.create({
-      data: {
-        remediationTaskId: id,
-        organizationId,
-        previousStatus: task.status,
-        newStatus: nextStatus,
-        action: 'STATUS_CHANGED',
-        actorId,
-        rationale: dto.overrideRationale || dto.progressNotes || dto.blockedReason || dto.unblockedReason,
-        snapshotPayload: {
-          previousStatus: task.status,
-          newStatus: nextStatus,
-          internalDueDate: nextInternalDueDate ? nextInternalDueDate.toISOString() : null,
+          status: nextStatus,
+          progressNotes: dto.progressNotes || task.progressNotes,
+          blockedReason,
+          unblockedReason,
+          internalDueDate: nextInternalDueDate,
           priority: nextPriority,
         },
-      },
+        include: { complianceTask: true },
+      });
+
+      if (complianceStatus || dto.internalDueDate) {
+        await tx.complianceTask.update({
+          where: { id: task.complianceTaskId },
+          data: {
+            ...(complianceStatus && { status: complianceStatus }),
+            ...(dto.internalDueDate && { dueDate: nextInternalDueDate }),
+          },
+        });
+      }
+
+      await tx.regulatoryRemediationHistory.create({
+        data: {
+          remediationTaskId: id,
+          organizationId,
+          previousStatus: task.status,
+          newStatus: nextStatus,
+          action: 'STATUS_CHANGED',
+          actorId,
+          rationale: dto.overrideRationale || dto.progressNotes || dto.blockedReason || dto.unblockedReason,
+          snapshotPayload: {
+            previousStatus: task.status,
+            newStatus: nextStatus,
+            internalDueDate: nextInternalDueDate ? nextInternalDueDate.toISOString() : null,
+            priority: nextPriority,
+          },
+        },
+      });
+
+      return taskUpdated;
     });
 
     await this.auditLogsService.log({
@@ -435,27 +445,31 @@ export class RegulatoryRemediationService {
     const now = new Date();
 
     if (dto.action === RemediationApprovalAction.APPROVE) {
-      const updated = await this.prisma.regulatoryRemediationTask.update({
-        where: { id },
-        data: {
-          status: RegulatoryRemediationStatus.APPROVED,
-          approvedById: actorId,
-          approvedAt: now,
-          approvalNotes: dto.approvalNotes || null,
-        },
-        include: { complianceTask: true },
-      });
+      const updated = await this.prisma.$transaction(async (tx) => {
+        const taskUpdated = await tx.regulatoryRemediationTask.update({
+          where: { id },
+          data: {
+            status: RegulatoryRemediationStatus.APPROVED,
+            approvedById: actorId,
+            approvedAt: now,
+            approvalNotes: dto.approvalNotes || null,
+          },
+          include: { complianceTask: true },
+        });
 
-      await this.prisma.regulatoryRemediationHistory.create({
-        data: {
-          remediationTaskId: id,
-          organizationId,
-          previousStatus: task.status,
-          newStatus: RegulatoryRemediationStatus.APPROVED,
-          action: 'APPROVED',
-          actorId,
-          rationale: dto.approvalNotes || 'Remediation task approved by compliance officer.',
-        },
+        await tx.regulatoryRemediationHistory.create({
+          data: {
+            remediationTaskId: id,
+            organizationId,
+            previousStatus: task.status,
+            newStatus: RegulatoryRemediationStatus.APPROVED,
+            action: 'APPROVED',
+            actorId,
+            rationale: dto.approvalNotes || 'Remediation task approved by compliance officer.',
+          },
+        });
+
+        return taskUpdated;
       });
 
       await this.auditLogsService.log({
@@ -473,32 +487,41 @@ export class RegulatoryRemediationService {
         throw new BadRequestException('rejectionReason is mandatory when rejecting a remediation task.');
       }
 
-      const updated = await this.prisma.regulatoryRemediationTask.update({
-        where: { id },
-        data: {
-          status: RegulatoryRemediationStatus.REJECTED,
-          rejectedById: actorId,
-          rejectedAt: now,
-          rejectionReason: dto.rejectionReason,
-        },
-        include: { complianceTask: true },
-      });
+      const updated = await this.prisma.$transaction(async (tx) => {
+        const taskUpdated = await tx.regulatoryRemediationTask.update({
+          where: { id },
+          data: {
+            status: RegulatoryRemediationStatus.REJECTED,
+            rejectedById: actorId,
+            rejectedAt: now,
+            rejectionReason: dto.rejectionReason,
+          },
+          include: { complianceTask: true },
+        });
 
-      await this.prisma.complianceTask.update({
-        where: { id: task.complianceTaskId },
-        data: { status: TaskStatus.COMPLETE },
-      });
+        const rejectedAnnotation = `[REJECTED: ${dto.rejectionReason}]`;
+        const currentDesc = task.description || '';
+        await tx.complianceTask.update({
+          where: { id: task.complianceTaskId },
+          data: {
+            status: TaskStatus.COMPLETE,
+            description: `${rejectedAnnotation} ${currentDesc}`.trim(),
+          },
+        });
 
-      await this.prisma.regulatoryRemediationHistory.create({
-        data: {
-          remediationTaskId: id,
-          organizationId,
-          previousStatus: task.status,
-          newStatus: RegulatoryRemediationStatus.REJECTED,
-          action: 'REJECTED',
-          actorId,
-          rationale: dto.rejectionReason,
-        },
+        await tx.regulatoryRemediationHistory.create({
+          data: {
+            remediationTaskId: id,
+            organizationId,
+            previousStatus: task.status,
+            newStatus: RegulatoryRemediationStatus.REJECTED,
+            action: 'REJECTED',
+            actorId,
+            rationale: dto.rejectionReason,
+          },
+        });
+
+        return taskUpdated;
       });
 
       await this.auditLogsService.log({
@@ -561,33 +584,37 @@ export class RegulatoryRemediationService {
       validatedEvidence = items;
     }
 
-    const updated = await this.prisma.regulatoryRemediationTask.update({
-      where: { id },
-      data: {
-        status: RegulatoryRemediationStatus.COMPLETED,
-        completionNotes: dto.completionNotes,
-        evidenceReferences: validatedEvidence,
-      },
-      include: { complianceTask: true },
-    });
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const taskUpdated = await tx.regulatoryRemediationTask.update({
+        where: { id },
+        data: {
+          status: RegulatoryRemediationStatus.COMPLETED,
+          completionNotes: dto.completionNotes,
+          evidenceReferences: validatedEvidence,
+        },
+        include: { complianceTask: true },
+      });
 
-    // Sync ComplianceTask status to UNDER_REVIEW
-    await this.prisma.complianceTask.update({
-      where: { id: task.complianceTaskId },
-      data: { status: TaskStatus.UNDER_REVIEW },
-    });
+      // Sync ComplianceTask status to UNDER_REVIEW
+      await tx.complianceTask.update({
+        where: { id: task.complianceTaskId },
+        data: { status: TaskStatus.UNDER_REVIEW },
+      });
 
-    await this.prisma.regulatoryRemediationHistory.create({
-      data: {
-        remediationTaskId: id,
-        organizationId,
-        previousStatus: task.status,
-        newStatus: RegulatoryRemediationStatus.COMPLETED,
-        action: 'COMPLETED',
-        actorId,
-        rationale: dto.completionNotes,
-        snapshotPayload: { evidenceCount: validatedEvidence.length, evidenceIds: dto.evidenceIds },
-      },
+      await tx.regulatoryRemediationHistory.create({
+        data: {
+          remediationTaskId: id,
+          organizationId,
+          previousStatus: task.status,
+          newStatus: RegulatoryRemediationStatus.COMPLETED,
+          action: 'COMPLETED',
+          actorId,
+          rationale: dto.completionNotes,
+          snapshotPayload: { evidenceCount: validatedEvidence.length, evidenceIds: dto.evidenceIds },
+        },
+      });
+
+      return taskUpdated;
     });
 
     await this.auditLogsService.log({
@@ -632,38 +659,42 @@ export class RegulatoryRemediationService {
 
     const now = new Date();
 
-    const updated = await this.prisma.regulatoryRemediationTask.update({
-      where: { id },
-      data: {
-        status: RegulatoryRemediationStatus.VERIFIED_CLOSED,
-        verifiedById: actorId,
-        verifiedAt: now,
-        verificationNotes: dto.verificationNotes,
-        reassessmentRequested: !!dto.reassessmentRequested,
-      },
-      include: { complianceTask: true },
-    });
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const taskUpdated = await tx.regulatoryRemediationTask.update({
+        where: { id },
+        data: {
+          status: RegulatoryRemediationStatus.VERIFIED_CLOSED,
+          verifiedById: actorId,
+          verifiedAt: now,
+          verificationNotes: dto.verificationNotes,
+          reassessmentRequested: !!dto.reassessmentRequested,
+        },
+        include: { complianceTask: true },
+      });
 
-    // Mark ComplianceTask as COMPLETE
-    await this.prisma.complianceTask.update({
-      where: { id: task.complianceTaskId },
-      data: {
-        status: TaskStatus.COMPLETE,
-        lastCompletedAt: now,
-      },
-    });
+      // Mark ComplianceTask as COMPLETE
+      await tx.complianceTask.update({
+        where: { id: task.complianceTaskId },
+        data: {
+          status: TaskStatus.COMPLETE,
+          lastCompletedAt: now,
+        },
+      });
 
-    await this.prisma.regulatoryRemediationHistory.create({
-      data: {
-        remediationTaskId: id,
-        organizationId,
-        previousStatus: task.status,
-        newStatus: RegulatoryRemediationStatus.VERIFIED_CLOSED,
-        action: 'VERIFIED_CLOSED',
-        actorId,
-        rationale: dto.verificationNotes,
-        snapshotPayload: { reassessmentRequested: !!dto.reassessmentRequested },
-      },
+      await tx.regulatoryRemediationHistory.create({
+        data: {
+          remediationTaskId: id,
+          organizationId,
+          previousStatus: task.status,
+          newStatus: RegulatoryRemediationStatus.VERIFIED_CLOSED,
+          action: 'VERIFIED_CLOSED',
+          actorId,
+          rationale: dto.verificationNotes,
+          snapshotPayload: { reassessmentRequested: !!dto.reassessmentRequested },
+        },
+      });
+
+      return taskUpdated;
     });
 
     await this.auditLogsService.log({
@@ -718,32 +749,41 @@ export class RegulatoryRemediationService {
 
     const now = new Date();
 
-    const updated = await this.prisma.regulatoryRemediationTask.update({
-      where: { id },
-      data: {
-        status: RegulatoryRemediationStatus.RISK_ACCEPTED,
-        riskAcceptedById: actorId,
-        riskAcceptedAt: now,
-        riskAcceptanceRationale: dto.riskAcceptanceRationale,
-      },
-      include: { complianceTask: true },
-    });
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const taskUpdated = await tx.regulatoryRemediationTask.update({
+        where: { id },
+        data: {
+          status: RegulatoryRemediationStatus.RISK_ACCEPTED,
+          riskAcceptedById: actorId,
+          riskAcceptedAt: now,
+          riskAcceptanceRationale: dto.riskAcceptanceRationale,
+        },
+        include: { complianceTask: true },
+      });
 
-    await this.prisma.complianceTask.update({
-      where: { id: task.complianceTaskId },
-      data: { status: TaskStatus.COMPLETE },
-    });
+      const riskAcceptedAnnotation = `[RISK ACCEPTED: ${dto.riskAcceptanceRationale}]`;
+      const currentDesc = task.description || '';
+      await tx.complianceTask.update({
+        where: { id: task.complianceTaskId },
+        data: {
+          status: TaskStatus.COMPLETE,
+          description: `${riskAcceptedAnnotation} ${currentDesc}`.trim(),
+        },
+      });
 
-    await this.prisma.regulatoryRemediationHistory.create({
-      data: {
-        remediationTaskId: id,
-        organizationId,
-        previousStatus: task.status,
-        newStatus: RegulatoryRemediationStatus.RISK_ACCEPTED,
-        action: 'RISK_ACCEPTED',
-        actorId,
-        rationale: dto.riskAcceptanceRationale,
-      },
+      await tx.regulatoryRemediationHistory.create({
+        data: {
+          remediationTaskId: id,
+          organizationId,
+          previousStatus: task.status,
+          newStatus: RegulatoryRemediationStatus.RISK_ACCEPTED,
+          action: 'RISK_ACCEPTED',
+          actorId,
+          rationale: dto.riskAcceptanceRationale,
+        },
+      });
+
+      return taskUpdated;
     });
 
     await this.auditLogsService.log({

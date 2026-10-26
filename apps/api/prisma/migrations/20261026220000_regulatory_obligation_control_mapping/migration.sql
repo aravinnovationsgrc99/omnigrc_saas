@@ -97,3 +97,30 @@ CREATE INDEX IF NOT EXISTS "regulatory_obligation_control_mappings_mappingMethod
 
 CREATE INDEX IF NOT EXISTS "regulatory_obligation_control_mapping_histories_mappingId_idx" ON "regulatory_obligation_control_mapping_histories"("mappingId");
 CREATE INDEX IF NOT EXISTS "regulatory_obligation_control_mapping_histories_organizationId_idx" ON "regulatory_obligation_control_mapping_histories"("organizationId");
+
+-- 6. Row-Level Security
+ALTER TABLE "regulatory_obligation_control_mappings" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "regulatory_obligation_control_mappings" FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "regulatory_obligation_control_mappings_tenant_isolation" ON "regulatory_obligation_control_mappings";
+CREATE POLICY "regulatory_obligation_control_mappings_tenant_isolation" ON "regulatory_obligation_control_mappings"
+AS PERMISSIVE FOR ALL
+USING ("organizationId"::text = COALESCE(NULLIF(current_setting('app.current_tenant', true), ''), NULLIF(current_setting('app.current_organization_id', true), '')))
+WITH CHECK ("organizationId"::text = COALESCE(NULLIF(current_setting('app.current_tenant', true), ''), NULLIF(current_setting('app.current_organization_id', true), '')));
+
+ALTER TABLE "regulatory_obligation_control_mapping_histories" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "regulatory_obligation_control_mapping_histories" FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "regulatory_obligation_control_mapping_histories_tenant_isolation" ON "regulatory_obligation_control_mapping_histories";
+CREATE POLICY "regulatory_obligation_control_mapping_histories_tenant_isolation" ON "regulatory_obligation_control_mapping_histories"
+AS PERMISSIVE FOR ALL
+USING ("organizationId"::text = COALESCE(NULLIF(current_setting('app.current_tenant', true), ''), NULLIF(current_setting('app.current_organization_id', true), '')))
+WITH CHECK ("organizationId"::text = COALESCE(NULLIF(current_setting('app.current_tenant', true), ''), NULLIF(current_setting('app.current_organization_id', true), '')));
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'omnigrc_app') THEN
+    GRANT SELECT, INSERT, UPDATE, DELETE ON "regulatory_obligation_control_mappings" TO omnigrc_app;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON "regulatory_obligation_control_mapping_histories" TO omnigrc_app;
+  END IF;
+END $$;

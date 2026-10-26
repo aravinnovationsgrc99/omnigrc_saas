@@ -128,3 +128,30 @@ CREATE INDEX IF NOT EXISTS "regulatory_control_gap_assessments_isHumanReviewed_i
 
 CREATE INDEX IF NOT EXISTS "regulatory_control_gap_assessment_histories_assessmentId_idx" ON "regulatory_control_gap_assessment_histories"("assessmentId");
 CREATE INDEX IF NOT EXISTS "regulatory_control_gap_assessment_histories_organizationId_idx" ON "regulatory_control_gap_assessment_histories"("organizationId");
+
+-- 7. Row-Level Security
+ALTER TABLE "regulatory_control_gap_assessments" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "regulatory_control_gap_assessments" FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "regulatory_control_gap_assessments_tenant_isolation" ON "regulatory_control_gap_assessments";
+CREATE POLICY "regulatory_control_gap_assessments_tenant_isolation" ON "regulatory_control_gap_assessments"
+AS PERMISSIVE FOR ALL
+USING ("organizationId"::text = COALESCE(NULLIF(current_setting('app.current_tenant', true), ''), NULLIF(current_setting('app.current_organization_id', true), '')))
+WITH CHECK ("organizationId"::text = COALESCE(NULLIF(current_setting('app.current_tenant', true), ''), NULLIF(current_setting('app.current_organization_id', true), '')));
+
+ALTER TABLE "regulatory_control_gap_assessment_histories" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "regulatory_control_gap_assessment_histories" FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "regulatory_control_gap_assessment_histories_tenant_isolation" ON "regulatory_control_gap_assessment_histories";
+CREATE POLICY "regulatory_control_gap_assessment_histories_tenant_isolation" ON "regulatory_control_gap_assessment_histories"
+AS PERMISSIVE FOR ALL
+USING ("organizationId"::text = COALESCE(NULLIF(current_setting('app.current_tenant', true), ''), NULLIF(current_setting('app.current_organization_id', true), '')))
+WITH CHECK ("organizationId"::text = COALESCE(NULLIF(current_setting('app.current_tenant', true), ''), NULLIF(current_setting('app.current_organization_id', true), '')));
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'omnigrc_app') THEN
+    GRANT SELECT, INSERT, UPDATE, DELETE ON "regulatory_control_gap_assessments" TO omnigrc_app;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON "regulatory_control_gap_assessment_histories" TO omnigrc_app;
+  END IF;
+END $$;

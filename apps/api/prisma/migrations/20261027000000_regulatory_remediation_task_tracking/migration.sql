@@ -207,3 +207,30 @@ CREATE INDEX IF NOT EXISTS "regulatory_remediation_tasks_assignedToId_idx" ON "r
 
 CREATE INDEX IF NOT EXISTS "regulatory_remediation_histories_remediationTaskId_idx" ON "regulatory_remediation_histories"("remediationTaskId");
 CREATE INDEX IF NOT EXISTS "regulatory_remediation_histories_organizationId_idx" ON "regulatory_remediation_histories"("organizationId");
+
+-- 8. Row-Level Security
+ALTER TABLE "regulatory_remediation_tasks" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "regulatory_remediation_tasks" FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "regulatory_remediation_tasks_tenant_isolation" ON "regulatory_remediation_tasks";
+CREATE POLICY "regulatory_remediation_tasks_tenant_isolation" ON "regulatory_remediation_tasks"
+AS PERMISSIVE FOR ALL
+USING ("organizationId"::text = COALESCE(NULLIF(current_setting('app.current_tenant', true), ''), NULLIF(current_setting('app.current_organization_id', true), '')))
+WITH CHECK ("organizationId"::text = COALESCE(NULLIF(current_setting('app.current_tenant', true), ''), NULLIF(current_setting('app.current_organization_id', true), '')));
+
+ALTER TABLE "regulatory_remediation_histories" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "regulatory_remediation_histories" FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "regulatory_remediation_histories_tenant_isolation" ON "regulatory_remediation_histories";
+CREATE POLICY "regulatory_remediation_histories_tenant_isolation" ON "regulatory_remediation_histories"
+AS PERMISSIVE FOR ALL
+USING ("organizationId"::text = COALESCE(NULLIF(current_setting('app.current_tenant', true), ''), NULLIF(current_setting('app.current_organization_id', true), '')))
+WITH CHECK ("organizationId"::text = COALESCE(NULLIF(current_setting('app.current_tenant', true), ''), NULLIF(current_setting('app.current_organization_id', true), '')));
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'omnigrc_app') THEN
+    GRANT SELECT, INSERT, UPDATE, DELETE ON "regulatory_remediation_tasks" TO omnigrc_app;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON "regulatory_remediation_histories" TO omnigrc_app;
+  END IF;
+END $$;
