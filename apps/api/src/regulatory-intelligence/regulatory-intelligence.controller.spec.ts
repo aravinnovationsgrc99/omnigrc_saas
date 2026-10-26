@@ -19,6 +19,8 @@ describe('RegulatoryIntelligenceController (Internal API & Tenant Isolation)', (
   let mockAuditLogs: jest.Mocked<AuditLogsService>;
   let mockObligationService: jest.Mocked<RegulatoryObligationService>;
   let mockApplicabilityService: jest.Mocked<RegulatoryApplicabilityService>;
+  let mockMappingService: any;
+  let mockGapService: any;
 
   beforeEach(() => {
     mockPrisma = {
@@ -82,6 +84,25 @@ describe('RegulatoryIntelligenceController (Internal API & Tenant Isolation)', (
       updateProfile: jest.fn(),
     } as any;
 
+    mockMappingService = {
+      createMapping: jest.fn(),
+      suggestMappings: jest.fn(),
+      listMappings: jest.fn(),
+      getMappingCoverage: jest.fn(),
+      getMapping: jest.fn(),
+      reviewOrOverrideMapping: jest.fn(),
+      deleteMapping: jest.fn(),
+    } as any;
+
+    mockGapService = {
+      assessObligationGap: jest.fn(),
+      assessOrganizationGaps: jest.fn(),
+      listGapAssessments: jest.fn(),
+      getGapAssessment: jest.fn(),
+      reviewOrOverrideGapAssessment: jest.fn(),
+      getGapSummary: jest.fn(),
+    } as any;
+
     controller = new RegulatoryIntelligenceController(
       mockPrisma,
       mockCatalogueService,
@@ -90,6 +111,8 @@ describe('RegulatoryIntelligenceController (Internal API & Tenant Isolation)', (
       mockAuditLogs,
       mockObligationService,
       mockApplicabilityService,
+      mockMappingService,
+      mockGapService,
     );
   });
 
@@ -686,6 +709,280 @@ describe('RegulatoryIntelligenceController (Internal API & Tenant Isolation)', (
         expect.objectContaining({ industrySector: 'FINANCIAL_SERVICES' }),
         'admin-1',
       );
+    });
+  });
+
+  describe('8. Regulatory Obligation-to-Control Mapping Endpoints (Phase 5)', () => {
+    it('should create mapping between obligation and control', async () => {
+      mockMappingService.createMapping.mockResolvedValueOnce({
+        id: 'map-1',
+        organizationId: 'org-123',
+        obligationId: 'ob-1',
+        controlId: 'ctrl-1',
+        status: 'APPROVED',
+      });
+
+      const res = await controller.createMapping(
+        {
+          obligationId: 'ob-1',
+          controlId: 'ctrl-1',
+          rationale: 'Network isolation control matches RBI direction.',
+        },
+        'analyst-1',
+        'org-123',
+      );
+
+      expect(res.id).toBe('map-1');
+      expect(mockMappingService.createMapping).toHaveBeenCalledWith(
+        'org-123',
+        expect.objectContaining({ obligationId: 'ob-1', controlId: 'ctrl-1' }),
+        'analyst-1',
+      );
+    });
+
+    it('should trigger mapping suggestion engine for applicable obligations', async () => {
+      mockMappingService.suggestMappings.mockResolvedValueOnce({
+        organizationId: 'org-123',
+        totalEligibleObligations: 5,
+        suggestionsCreated: 3,
+      });
+
+      const res = await controller.suggestMappings({}, 'analyst-1', 'org-123');
+
+      expect(res.suggestionsCreated).toBe(3);
+      expect(mockMappingService.suggestMappings).toHaveBeenCalledWith(
+        'org-123',
+        {},
+        'analyst-1',
+      );
+    });
+
+    it('should list mappings scoped to organization with pagination', async () => {
+      mockMappingService.listMappings.mockResolvedValueOnce({
+        items: [{ id: 'map-1', status: 'APPROVED' }],
+        total: 1,
+        page: 1,
+        limit: 20,
+        totalPages: 1,
+      });
+
+      const res = await controller.listMappings({ status: 'APPROVED' as any }, 'org-123');
+
+      expect(res.items).toHaveLength(1);
+      expect(mockMappingService.listMappings).toHaveBeenCalledWith(
+        'org-123',
+        expect.objectContaining({ status: 'APPROVED' }),
+      );
+    });
+
+    it('should get mapping coverage report identifying unmapped obligations', async () => {
+      mockMappingService.getMappingCoverage.mockResolvedValueOnce({
+        organizationId: 'org-123',
+        totalApplicableObligations: 4,
+        mappedObligationsCount: 3,
+        unmappedObligationsCount: 1,
+        coveragePercentage: 75,
+        unmappedObligations: [{ obligationId: 'ob-unmapped', title: 'Scope 3 Disclosures' }],
+      });
+
+      const res = await controller.getMappingCoverage('org-123');
+
+      expect(res.coveragePercentage).toBe(75);
+      expect(res.unmappedObligations).toHaveLength(1);
+      expect(mockMappingService.getMappingCoverage).toHaveBeenCalledWith('org-123');
+    });
+
+    it('should retrieve single mapping by ID', async () => {
+      mockMappingService.getMapping.mockResolvedValueOnce({
+        id: 'map-1',
+        organizationId: 'org-123',
+      });
+
+      const res = await controller.getMapping('map-1', 'org-123');
+
+      expect(res.id).toBe('map-1');
+      expect(mockMappingService.getMapping).toHaveBeenCalledWith('map-1', 'org-123');
+    });
+
+    it('should review or override mapping with review notes', async () => {
+      mockMappingService.reviewOrOverrideMapping.mockResolvedValueOnce({
+        id: 'map-1',
+        status: 'OVERRIDDEN',
+        reviewNotes: 'Broadening control scope to cover child subsidiaries.',
+      });
+
+      const res = await controller.reviewMapping(
+        'map-1',
+        {
+          status: 'OVERRIDDEN' as any,
+          reviewNotes: 'Broadening control scope to cover child subsidiaries.',
+        },
+        'analyst-1',
+        'org-123',
+      );
+
+      expect(res.status).toBe('OVERRIDDEN');
+      expect(mockMappingService.reviewOrOverrideMapping).toHaveBeenCalledWith(
+        'map-1',
+        'org-123',
+        expect.objectContaining({ status: 'OVERRIDDEN' }),
+        'analyst-1',
+      );
+    });
+
+    it('should delete mapping and emit audit record', async () => {
+      mockMappingService.deleteMapping.mockResolvedValueOnce({
+        success: true,
+        deletedId: 'map-1',
+      });
+
+      const res = await controller.deleteMapping('map-1', 'admin-1', 'org-123');
+
+      expect(res.success).toBe(true);
+      expect(mockMappingService.deleteMapping).toHaveBeenCalledWith(
+        'map-1',
+        'org-123',
+        'admin-1',
+      );
+    });
+
+    it('should reject mapping operations when organization context is missing', async () => {
+      await expect(
+        controller.createMapping({} as any, 'analyst-1', ''),
+      ).rejects.toThrow(BadRequestException);
+
+      await expect(
+        controller.getMappingCoverage(''),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('9. Regulatory Control-Gap & Evidence Sufficiency Endpoints (Phase 6)', () => {
+    it('should trigger gap assessment for a single obligation', async () => {
+      mockGapService.assessObligationGap.mockResolvedValueOnce({
+        id: 'gap-1',
+        organizationId: 'org-123',
+        obligationId: 'ob-1',
+        gapOutcome: 'IMPLEMENTED',
+        evidenceOutcome: 'SUFFICIENT',
+      });
+
+      const res = await controller.assessControlGaps(
+        { obligationId: 'ob-1', forceReassess: true },
+        'analyst-1',
+        'org-123',
+      );
+
+      expect(res.id).toBe('gap-1');
+      expect(mockGapService.assessObligationGap).toHaveBeenCalledWith(
+        'org-123',
+        'ob-1',
+        'analyst-1',
+        true,
+      );
+    });
+
+    it('should trigger batch gap assessment for organization when obligationId is omitted', async () => {
+      mockGapService.assessOrganizationGaps.mockResolvedValueOnce({
+        organizationId: 'org-123',
+        totalEvaluated: 5,
+        gapOutcomes: { IMPLEMENTED: 3, NO_MAPPING: 2 },
+      });
+
+      const res = await controller.assessControlGaps({}, 'analyst-1', 'org-123');
+
+      expect(res.totalEvaluated).toBe(5);
+      expect(mockGapService.assessOrganizationGaps).toHaveBeenCalledWith(
+        'org-123',
+        'analyst-1',
+        false,
+      );
+    });
+
+    it('should list gap assessments scoped to organization with pagination', async () => {
+      mockGapService.listGapAssessments.mockResolvedValueOnce({
+        items: [{ id: 'gap-1', gapOutcome: 'IMPLEMENTED' }],
+        total: 1,
+        page: 1,
+        limit: 20,
+        totalPages: 1,
+      });
+
+      const res = await controller.listControlGaps(
+        { gapOutcome: 'IMPLEMENTED' as any },
+        'org-123',
+      );
+
+      expect(res.items).toHaveLength(1);
+      expect(mockGapService.listGapAssessments).toHaveBeenCalledWith(
+        'org-123',
+        expect.objectContaining({ gapOutcome: 'IMPLEMENTED' }),
+      );
+    });
+
+    it('should retrieve single gap assessment with full details by ID', async () => {
+      mockGapService.getGapAssessment.mockResolvedValueOnce({
+        id: 'gap-1',
+        gapOutcome: 'NO_MAPPING',
+        evidenceOutcome: 'NOT_ASSESSED',
+      });
+
+      const res = await controller.getControlGap('gap-1', 'org-123');
+
+      expect(res.id).toBe('gap-1');
+      expect(mockGapService.getGapAssessment).toHaveBeenCalledWith('gap-1', 'org-123');
+    });
+
+    it('should review or override gap assessment with compliance notes', async () => {
+      mockGapService.reviewOrOverrideGapAssessment.mockResolvedValueOnce({
+        id: 'gap-1',
+        gapOutcome: 'IMPLEMENTED',
+        isHumanReviewed: true,
+      });
+
+      const res = await controller.reviewControlGap(
+        'gap-1',
+        {
+          gapOutcome: 'IMPLEMENTED' as any,
+          reviewNotes: 'Compensating technical network controls verified by external auditor.',
+        },
+        'analyst-1',
+        'org-123',
+      );
+
+      expect(res.gapOutcome).toBe('IMPLEMENTED');
+      expect(mockGapService.reviewOrOverrideGapAssessment).toHaveBeenCalledWith(
+        'gap-1',
+        'org-123',
+        expect.objectContaining({ gapOutcome: 'IMPLEMENTED' }),
+        'analyst-1',
+      );
+    });
+
+    it('should return gap and evidence distribution summary', async () => {
+      mockGapService.getGapSummary.mockResolvedValueOnce({
+        organizationId: 'org-123',
+        totalAssessed: 10,
+        unmappedObligationsCount: 2,
+        partiallyOrNotImplementedCount: 3,
+        implementedCount: 5,
+      });
+
+      const res = await controller.getControlGapSummary('org-123');
+
+      expect(res.totalAssessed).toBe(10);
+      expect(res.implementedCount).toBe(5);
+      expect(mockGapService.getGapSummary).toHaveBeenCalledWith('org-123');
+    });
+
+    it('should reject gap requests when organization context is missing', async () => {
+      await expect(
+        controller.assessControlGaps({}, 'analyst-1', ''),
+      ).rejects.toThrow(BadRequestException);
+
+      await expect(
+        controller.getControlGapSummary(''),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 });

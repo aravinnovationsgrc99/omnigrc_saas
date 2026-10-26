@@ -4,6 +4,7 @@ import {
   Post,
   Patch,
   Put,
+  Delete,
   Param,
   Query,
   Body,
@@ -45,6 +46,19 @@ import {
   ReviewApplicabilityDto,
   UpdateComplianceProfileDto,
 } from './dto/applicability.dto';
+import { ObligationControlMappingService } from './mappings/obligation-control-mapping.service';
+import {
+  CreateObligationMappingDto,
+  SuggestMappingsDto,
+  QueryObligationMappingsDto,
+  ReviewObligationMappingDto,
+} from './dto/obligation-mapping.dto';
+import { RegulatoryControlGapService } from './gaps/regulatory-control-gap.service';
+import {
+  AssessControlGapDto,
+  QueryControlGapDto,
+  ReviewControlGapDto,
+} from './dto/control-gap.dto';
 
 @Controller('regulatory')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -57,6 +71,8 @@ export class RegulatoryIntelligenceController {
     private readonly auditLogsService: AuditLogsService,
     private readonly obligationService: RegulatoryObligationService,
     private readonly applicabilityService: RegulatoryApplicabilityService,
+    private readonly mappingService: ObligationControlMappingService,
+    private readonly gapService: RegulatoryControlGapService,
   ) {}
 
   // ==========================================
@@ -628,6 +644,166 @@ export class RegulatoryIntelligenceController {
       throw new BadRequestException('Authenticated organization context is required.');
     }
     return this.applicabilityService.updateProfile(organizationId, dto, actorId);
+  }
+
+  // ==========================================
+  // 8. OBLIGATION-TO-CONTROL MAPPINGS (PHASE 5)
+  // ==========================================
+
+  @Post('mappings')
+  @Roles(Role.ADMIN, Role.MSSP_ADMIN, Role.ANALYST)
+  async createMapping(
+    @Body() dto: CreateObligationMappingDto,
+    @CurrentUser('id') actorId: string,
+    @CurrentUser('organizationId') organizationId: string,
+  ) {
+    if (!organizationId) {
+      throw new BadRequestException('Authenticated organization context is required.');
+    }
+    return this.mappingService.createMapping(organizationId, dto, actorId);
+  }
+
+  @Post('mappings/suggest')
+  @Roles(Role.ADMIN, Role.MSSP_ADMIN, Role.ANALYST)
+  async suggestMappings(
+    @Body() dto: SuggestMappingsDto,
+    @CurrentUser('id') actorId: string,
+    @CurrentUser('organizationId') organizationId: string,
+  ) {
+    if (!organizationId) {
+      throw new BadRequestException('Authenticated organization context is required.');
+    }
+    return this.mappingService.suggestMappings(organizationId, dto, actorId);
+  }
+
+  @Get('mappings')
+  async listMappings(
+    @Query() query: QueryObligationMappingsDto,
+    @CurrentUser('organizationId') organizationId: string,
+  ) {
+    if (!organizationId) {
+      throw new BadRequestException('Authenticated organization context is required.');
+    }
+    return this.mappingService.listMappings(organizationId, query);
+  }
+
+  @Get('mappings/coverage')
+  async getMappingCoverage(@CurrentUser('organizationId') organizationId: string) {
+    if (!organizationId) {
+      throw new BadRequestException('Authenticated organization context is required.');
+    }
+    return this.mappingService.getMappingCoverage(organizationId);
+  }
+
+  @Get('mappings/:id')
+  async getMapping(
+    @Param('id') id: string,
+    @CurrentUser('organizationId') organizationId: string,
+  ) {
+    if (!organizationId) {
+      throw new BadRequestException('Authenticated organization context is required.');
+    }
+    return this.mappingService.getMapping(id, organizationId);
+  }
+
+  @Patch('mappings/:id/review')
+  @Roles(Role.ADMIN, Role.MSSP_ADMIN, Role.ANALYST)
+  async reviewMapping(
+    @Param('id') id: string,
+    @Body() dto: ReviewObligationMappingDto,
+    @CurrentUser('id') actorId: string,
+    @CurrentUser('organizationId') organizationId: string,
+  ) {
+    if (!organizationId) {
+      throw new BadRequestException('Authenticated organization context is required.');
+    }
+    return this.mappingService.reviewOrOverrideMapping(id, organizationId, dto, actorId);
+  }
+
+  @Delete('mappings/:id')
+  @Roles(Role.ADMIN, Role.MSSP_ADMIN)
+  async deleteMapping(
+    @Param('id') id: string,
+    @CurrentUser('id') actorId: string,
+    @CurrentUser('organizationId') organizationId: string,
+  ) {
+    if (!organizationId) {
+      throw new BadRequestException('Authenticated organization context is required.');
+    }
+    return this.mappingService.deleteMapping(id, organizationId, actorId);
+  }
+
+  // ==========================================
+  // 9. CONTROL-GAP & EVIDENCE SUFFICIENCY (PHASE 6)
+  // ==========================================
+
+  @Post('gaps/assess')
+  @Roles(Role.ADMIN, Role.MSSP_ADMIN, Role.ANALYST)
+  async assessControlGaps(
+    @Body() dto: AssessControlGapDto,
+    @CurrentUser('id') actorId: string,
+    @CurrentUser('organizationId') organizationId: string,
+  ) {
+    if (!organizationId) {
+      throw new BadRequestException('Authenticated organization context is required.');
+    }
+    if (dto.obligationId) {
+      return this.gapService.assessObligationGap(
+        organizationId,
+        dto.obligationId,
+        actorId,
+        dto.forceReassess || false,
+      );
+    }
+    return this.gapService.assessOrganizationGaps(
+      organizationId,
+      actorId,
+      dto.forceReassess || false,
+    );
+  }
+
+  @Get('gaps')
+  async listControlGaps(
+    @Query() query: QueryControlGapDto,
+    @CurrentUser('organizationId') organizationId: string,
+  ) {
+    if (!organizationId) {
+      throw new BadRequestException('Authenticated organization context is required.');
+    }
+    return this.gapService.listGapAssessments(organizationId, query);
+  }
+
+  @Get('gaps/summary')
+  async getControlGapSummary(@CurrentUser('organizationId') organizationId: string) {
+    if (!organizationId) {
+      throw new BadRequestException('Authenticated organization context is required.');
+    }
+    return this.gapService.getGapSummary(organizationId);
+  }
+
+  @Get('gaps/:id')
+  async getControlGap(
+    @Param('id') id: string,
+    @CurrentUser('organizationId') organizationId: string,
+  ) {
+    if (!organizationId) {
+      throw new BadRequestException('Authenticated organization context is required.');
+    }
+    return this.gapService.getGapAssessment(id, organizationId);
+  }
+
+  @Patch('gaps/:id/review')
+  @Roles(Role.ADMIN, Role.MSSP_ADMIN, Role.ANALYST)
+  async reviewControlGap(
+    @Param('id') id: string,
+    @Body() dto: ReviewControlGapDto,
+    @CurrentUser('id') actorId: string,
+    @CurrentUser('organizationId') organizationId: string,
+  ) {
+    if (!organizationId) {
+      throw new BadRequestException('Authenticated organization context is required.');
+    }
+    return this.gapService.reviewOrOverrideGapAssessment(id, organizationId, dto, actorId);
   }
 }
 

@@ -14,6 +14,10 @@ import { ObligationExtractorService } from './obligations/obligation-extractor.s
 import { RegulatoryObligationService } from './obligations/regulatory-obligation.service';
 import { ApplicabilityEngineService } from './applicability/applicability-engine.service';
 import { RegulatoryApplicabilityService } from './applicability/regulatory-applicability.service';
+import { MappingSuggestionEngineService } from './mappings/mapping-suggestion-engine.service';
+import { ObligationControlMappingService } from './mappings/obligation-control-mapping.service';
+import { ControlGapEngineService } from './gaps/control-gap-engine.service';
+import { RegulatoryControlGapService } from './gaps/regulatory-control-gap.service';
 
 @Module({
   imports: [PrismaModule, AuditLogsModule],
@@ -30,6 +34,10 @@ import { RegulatoryApplicabilityService } from './applicability/regulatory-appli
     RegulatoryObligationService,
     ApplicabilityEngineService,
     RegulatoryApplicabilityService,
+    MappingSuggestionEngineService,
+    ObligationControlMappingService,
+    ControlGapEngineService,
+    RegulatoryControlGapService,
   ],
   exports: [
     RegulatoryCatalogueService,
@@ -40,6 +48,10 @@ import { RegulatoryApplicabilityService } from './applicability/regulatory-appli
     RegulatoryObligationService,
     ApplicabilityEngineService,
     RegulatoryApplicabilityService,
+    MappingSuggestionEngineService,
+    ObligationControlMappingService,
+    ControlGapEngineService,
+    RegulatoryControlGapService,
   ],
 })
 export class RegulatoryIntelligenceModule {}

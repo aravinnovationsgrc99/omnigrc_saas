@@ -88,6 +88,14 @@ export const DIRECT_TENANT_MODELS = [
   'OrganizationComplianceProfile',
   'RegulatoryApplicabilityAssessment',
   'RegulatoryApplicabilityHistory',
+
+  // Phase 5 Regulatory Obligation-to-Control Mapping
+  'RegulatoryObligationControlMapping',
+  'RegulatoryObligationControlMappingHistory',
+
+  // Phase 6 Regulatory Control-Gap Analysis and Evidence Sufficiency
+  'RegulatoryControlGapAssessment',
+  'RegulatoryControlGapAssessmentHistory',
 ];
 
 export const CHILD_TENANT_MODELS: Record<string, string> = {

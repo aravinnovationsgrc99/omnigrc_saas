@@ -249,6 +249,10 @@ model Organization {
   complianceProfile   OrganizationComplianceProfile?
   applicabilityAssessments RegulatoryApplicabilityAssessment[]
   applicabilityHistories   RegulatoryApplicabilityHistory[]
+  regulatoryObligationControlMappings RegulatoryObligationControlMapping[]
+  regulatoryObligationControlMappingHistories RegulatoryObligationControlMappingHistory[]
+  regulatoryControlGapAssessments RegulatoryControlGapAssessment[]
+  regulatoryControlGapAssessmentHistories RegulatoryControlGapAssessmentHistory[]
 
   @@index([parentOrganizationId])
   @@map("organizations")
@@ -583,6 +587,7 @@ model FrameworkReference {
   documentAnalyses DocumentAnalysis[]
   risks            Risk[]
   auditPlanReferences AuditPlanFrameworkReference[]
+  obligationMappings RegulatoryObligationControlMapping[]
 
   @@unique([frameworkVersionId, identifier])
   @@index([frameworkVersionId])
@@ -627,6 +632,8 @@ model Control {
   evidenceAssociations ControlEvidence[]
   approvalAssociations ControlApproval[]
   riskAssociations     RiskControl[]
+  regulatoryMappings   RegulatoryObligationControlMapping[]
+  gapAssessments       RegulatoryControlGapAssessment[]
 
   @@unique([id, organizationId])
   @@index([organizationId])
@@ -2436,6 +2443,8 @@ model RegulatoryPublication {
   manualIntakes          ManualSourceIntake[]
   obligations            RegulatoryObligation[]
   applicabilityAssessments RegulatoryApplicabilityAssessment[]
+  obligationControlMappings RegulatoryObligationControlMapping[]
+  gapAssessments         RegulatoryControlGapAssessment[]
 
   @@unique([sourceId, canonicalUrl])
   @@unique([sourceId, externalId])
@@ -2468,6 +2477,8 @@ model RegulatoryPublicationVersion {
 
   publication            RegulatoryPublication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
   obligations            RegulatoryObligation[]
+  obligationControlMappings RegulatoryObligationControlMapping[]
+  gapAssessments         RegulatoryControlGapAssessment[]
 
   @@unique([publicationId, versionNumber])
   @@index([publicationId])
@@ -2565,6 +2576,8 @@ model RegulatoryObligation {
   catalogueEntry         RegulatoryCatalogueEntry?  @relation(fields: [catalogueEntryId], references: [id], onDelete: SetNull)
   manualIntake           ManualSourceIntake?        @relation(fields: [manualIntakeId], references: [id], onDelete: SetNull)
   applicabilityAssessments RegulatoryApplicabilityAssessment[]
+  controlMappings        RegulatoryObligationControlMapping[]
+  gapAssessments         RegulatoryControlGapAssessment[]
 
   @@unique([publicationId, fingerprint])
   @@index([organizationId])
@@ -2648,6 +2661,7 @@ model RegulatoryApplicabilityAssessment {
   publication                RegulatoryPublication?  @relation(fields: [publicationId], references: [id], onDelete: SetNull)
   catalogueEntry             RegulatoryCatalogueEntry? @relation(fields: [catalogueEntryId], references: [id], onDelete: SetNull)
   history                    RegulatoryApplicabilityHistory[]
+  gapAssessments             RegulatoryControlGapAssessment[]
 
   @@unique([organizationId, obligationId])
   @@index([organizationId])
@@ -2677,5 +2691,159 @@ model RegulatoryApplicabilityHistory {
   @@index([assessmentId])
   @@index([organizationId])
   @@map("regulatory_applicability_histories")
+}
+
+enum ObligationMappingMethod {
+  HUMAN_AUTHORED
+  RULE_SUGGESTED
+  AI_SUGGESTED
+}
+
+model RegulatoryObligationControlMapping {
+  id                   String                   @id @default(uuid())
+  organizationId       String
+  obligationId         String
+  controlId            String
+  publicationId        String?
+  publicationVersionId String?
+  frameworkReferenceId String?
+  mappingMethod        ObligationMappingMethod  @default(RULE_SUGGESTED)
+  status               MappingStatus            @default(SUGGESTED)
+  confidence           ObligationConfidence     @default(HIGH)
+  rationale            String
+  sourceExcerpt        String?
+  ruleMatched          String?
+  suggestedById        String?
+  reviewedById         String?
+  reviewedAt           DateTime?
+  reviewNotes          String?
+  reassessmentCount    Int                      @default(0)
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+
+  organization         Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  obligation           RegulatoryObligation     @relation(fields: [obligationId], references: [id], onDelete: Cascade)
+  control              Control                  @relation(fields: [controlId], references: [id], onDelete: Cascade)
+  publication          RegulatoryPublication?   @relation(fields: [publicationId], references: [id], onDelete: SetNull)
+  publicationVersion   RegulatoryPublicationVersion? @relation(fields: [publicationVersionId], references: [id], onDelete: SetNull)
+  frameworkReference   FrameworkReference?      @relation(fields: [frameworkReferenceId], references: [id], onDelete: SetNull)
+  history              RegulatoryObligationControlMappingHistory[]
+  gapAssessments       RegulatoryControlGapAssessment[]
+
+  @@unique([organizationId, obligationId, controlId])
+  @@index([organizationId])
+  @@index([obligationId])
+  @@index([controlId])
+  @@index([status])
+  @@index([mappingMethod])
+  @@map("regulatory_obligation_control_mappings")
+}
+
+model RegulatoryObligationControlMappingHistory {
+  id                String                  @id @default(uuid())
+  mappingId         String
+  organizationId    String
+  previousStatus    MappingStatus
+  newStatus         MappingStatus
+  previousRationale String?
+  newRationale      String
+  actorId           String
+  reviewNotes       String?
+  changedAt         DateTime                @default(now())
+
+  mapping           RegulatoryObligationControlMapping @relation(fields: [mappingId], references: [id], onDelete: Cascade)
+  organization      Organization                       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([mappingId])
+  @@index([organizationId])
+  @@map("regulatory_obligation_control_mapping_histories")
+}
+
+enum ControlGapOutcome {
+  NO_MAPPING
+  CONTROL_INELIGIBLE
+  NOT_IMPLEMENTED
+  PARTIALLY_IMPLEMENTED
+  IMPLEMENTED
+  UNKNOWN_IMPLEMENTATION
+}
+
+enum EvidenceSufficiencyOutcome {
+  SUFFICIENT
+  INSUFFICIENT
+  STALE
+  UNVERIFIED
+  NOT_ASSESSED
+}
+
+model RegulatoryControlGapAssessment {
+  id                   String                     @id @default(uuid())
+  organizationId       String
+  obligationId         String
+  mappingId            String?
+  controlId            String?
+  publicationId        String?
+  publicationVersionId String?
+  applicabilityId      String?
+  gapOutcome           ControlGapOutcome
+  evidenceOutcome      EvidenceSufficiencyOutcome @default(NOT_ASSESSED)
+  determinationType    DeterminationType          @default(RULE_DERIVED)
+  confidence           ObligationConfidence       @default(HIGH)
+  gapRationale         String
+  evidenceRationale    String
+  ruleMatched          String?
+  evaluatedRecords     Json
+  isHumanReviewed      Boolean                    @default(false)
+  reviewedById         String?
+  reviewedAt           DateTime?
+  reviewNotes          String?
+  reassessmentCount    Int                        @default(0)
+  assessedById         String?
+  assessedAt           DateTime                   @default(now())
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+
+  organization         Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  obligation           RegulatoryObligation       @relation(fields: [obligationId], references: [id], onDelete: Cascade)
+  mapping              RegulatoryObligationControlMapping? @relation(fields: [mappingId], references: [id], onDelete: SetNull)
+  control              Control?                   @relation(fields: [controlId], references: [id], onDelete: SetNull)
+  publication          RegulatoryPublication?     @relation(fields: [publicationId], references: [id], onDelete: SetNull)
+  publicationVersion   RegulatoryPublicationVersion? @relation(fields: [publicationVersionId], references: [id], onDelete: SetNull)
+  applicabilityAssessment RegulatoryApplicabilityAssessment? @relation(fields: [applicabilityId], references: [id], onDelete: SetNull)
+  history              RegulatoryControlGapAssessmentHistory[]
+
+  @@unique([organizationId, obligationId])
+  @@index([organizationId])
+  @@index([obligationId])
+  @@index([controlId])
+  @@index([mappingId])
+  @@index([gapOutcome])
+  @@index([evidenceOutcome])
+  @@index([isHumanReviewed])
+  @@map("regulatory_control_gap_assessments")
+}
+
+model RegulatoryControlGapAssessmentHistory {
+  id                      String                     @id @default(uuid())
+  assessmentId            String
+  organizationId          String
+  previousGapOutcome      ControlGapOutcome
+  newGapOutcome           ControlGapOutcome
+  previousEvidenceOutcome EvidenceSufficiencyOutcome
+  newEvidenceOutcome      EvidenceSufficiencyOutcome
+  determinationType       DeterminationType
+  gapRationale            String
+  evidenceRationale       String
+  actorId                 String
+  reviewNotes             String?
+  evaluatedRecords        Json?
+  changedAt               DateTime                   @default(now())
+
+  assessment              RegulatoryControlGapAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  organization            Organization                   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([assessmentId])
+  @@index([organizationId])
+  @@map("regulatory_control_gap_assessment_histories")
 }
 
