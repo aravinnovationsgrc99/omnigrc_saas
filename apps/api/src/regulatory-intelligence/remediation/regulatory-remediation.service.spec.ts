@@ -159,6 +159,36 @@ describe('RegulatoryRemediationService', () => {
       ).rejects.toThrow(ConflictException);
     });
 
+    it('should map database P2002 unique constraint failure to ConflictException under concurrent race conditions', async () => {
+      prisma.regulatoryControlGapAssessment.findFirst.mockResolvedValue({
+        id: 'gap-1',
+        organizationId: mockOrgId,
+        isHumanReviewed: true,
+        gapOutcome: ControlGapOutcome.NOT_IMPLEMENTED,
+        evidenceOutcome: EvidenceSufficiencyOutcome.INSUFFICIENT,
+      });
+
+      // App check passes (e.g. race condition where neither has committed yet)
+      prisma.regulatoryRemediationTask.findFirst.mockResolvedValue(null);
+      prisma.user.findFirst.mockResolvedValue({ id: 'user-assignee-1', name: 'Assignee', email: 'assignee@omnigrc.local' });
+
+      // Transaction throws database constraint violation
+      prisma.$transaction.mockRejectedValueOnce({
+        code: 'P2002',
+        message: 'Unique constraint failed on the fields: (organizationId, assessmentId)',
+      });
+
+      await expect(
+        service.createRemediation(mockOrgId, mockActorId, {
+          assessmentId: 'gap-1',
+          title: 'Concurrent race remediation',
+          description: 'Desc',
+          acceptanceCriteria: 'Criteria',
+          assignedToId: 'user-assignee-1',
+        }),
+      ).rejects.toThrow(ConflictException);
+    });
+
     it('should successfully create remediation, preserving legal complianceDeadline and creating ComplianceTask', async () => {
       const legalDeadline = new Date('2027-01-01T00:00:00Z');
       prisma.regulatoryControlGapAssessment.findFirst.mockResolvedValue({

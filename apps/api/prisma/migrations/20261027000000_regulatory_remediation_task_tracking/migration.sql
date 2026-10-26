@@ -205,6 +205,11 @@ CREATE INDEX IF NOT EXISTS "regulatory_remediation_tasks_status_idx" ON "regulat
 CREATE INDEX IF NOT EXISTS "regulatory_remediation_tasks_priority_idx" ON "regulatory_remediation_tasks"("priority");
 CREATE INDEX IF NOT EXISTS "regulatory_remediation_tasks_assignedToId_idx" ON "regulatory_remediation_tasks"("assignedToId");
 
+-- Partial unique index guaranteeing at most ONE active remediation task per finding per organization
+CREATE UNIQUE INDEX IF NOT EXISTS "regulatory_remediation_tasks_active_assessment_idx"
+ON "regulatory_remediation_tasks"("organizationId", "assessmentId")
+WHERE "status" NOT IN ('VERIFIED_CLOSED', 'REJECTED', 'RISK_ACCEPTED');
+
 CREATE INDEX IF NOT EXISTS "regulatory_remediation_histories_remediationTaskId_idx" ON "regulatory_remediation_histories"("remediationTaskId");
 CREATE INDEX IF NOT EXISTS "regulatory_remediation_histories_organizationId_idx" ON "regulatory_remediation_histories"("organizationId");
 

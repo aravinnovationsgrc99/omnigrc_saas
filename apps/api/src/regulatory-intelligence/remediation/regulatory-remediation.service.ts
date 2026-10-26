@@ -115,74 +115,84 @@ export class RegulatoryRemediationService {
       : RegulatoryRemediationStatus.PROPOSED;
 
     // 8-10. Transactional creation: ComplianceTask + RegulatoryRemediationTask + RegulatoryRemediationHistory
-    const remediationTask = await this.prisma.$transaction(async (tx) => {
-      const complianceTask = await tx.complianceTask.create({
-        data: {
-          organizationId,
-          title: dto.title,
-          description: dto.description,
-          owner: assignee.name || assignee.email,
-          dueDate: internalDueDate,
-          controlId: assessment.controlId || null,
-          obligationReference: assessment.obligation?.obligationIdentifier || assessment.obligation?.id || null,
-          createdById: actorId,
-          status: TaskStatus.NOT_STARTED,
-        },
-      });
+    let remediationTask: any;
+    try {
+      remediationTask = await this.prisma.$transaction(async (tx) => {
+        const complianceTask = await tx.complianceTask.create({
+          data: {
+            organizationId,
+            title: dto.title,
+            description: dto.description,
+            owner: assignee.name || assignee.email,
+            dueDate: internalDueDate,
+            controlId: assessment.controlId || null,
+            obligationReference: assessment.obligation?.obligationIdentifier || assessment.obligation?.id || null,
+            createdById: actorId,
+            status: TaskStatus.NOT_STARTED,
+          },
+        });
 
-      const createdRemediation = await tx.regulatoryRemediationTask.create({
-        data: {
-          organizationId,
-          complianceTaskId: complianceTask.id,
-          assessmentId: dto.assessmentId,
-          obligationId: assessment.obligationId,
-          controlId: assessment.controlId,
-          mappingId: assessment.mappingId,
-          publicationId: assessment.publicationId,
-          publicationVersionId: assessment.publicationVersionId,
-          applicabilityId: assessment.applicabilityId,
-          status: initialStatus,
-          priority: dto.priority || RemediationPriority.MEDIUM,
-          initialGapOutcome: assessment.gapOutcome,
-          initialEvidenceOutcome: assessment.evidenceOutcome,
-          title: dto.title,
-          description: dto.description,
-          acceptanceCriteria: dto.acceptanceCriteria,
-          internalDueDate,
-          regulatoryDeadline,
-          assignedToId: dto.assignedToId,
-          assignedById: actorId,
-          requiresApproval: !!dto.requiresApproval,
-        },
-        include: {
-          complianceTask: true,
-          obligation: true,
-          control: true,
-        },
-      });
-
-      await tx.regulatoryRemediationHistory.create({
-        data: {
-          remediationTaskId: createdRemediation.id,
-          organizationId,
-          previousStatus: null,
-          newStatus: initialStatus,
-          action: 'CREATED',
-          actorId,
-          rationale: dto.overrideRationale || 'Remediation task proposed from reviewed control-gap finding.',
-          snapshotPayload: {
+        const createdRemediation = await tx.regulatoryRemediationTask.create({
+          data: {
+            organizationId,
+            complianceTaskId: complianceTask.id,
             assessmentId: dto.assessmentId,
+            obligationId: assessment.obligationId,
+            controlId: assessment.controlId,
+            mappingId: assessment.mappingId,
+            publicationId: assessment.publicationId,
+            publicationVersionId: assessment.publicationVersionId,
+            applicabilityId: assessment.applicabilityId,
+            status: initialStatus,
+            priority: dto.priority || RemediationPriority.MEDIUM,
             initialGapOutcome: assessment.gapOutcome,
             initialEvidenceOutcome: assessment.evidenceOutcome,
-            internalDueDate: internalDueDate ? internalDueDate.toISOString() : null,
-            regulatoryDeadline: regulatoryDeadline ? regulatoryDeadline.toISOString() : null,
-            priority: createdRemediation.priority,
+            title: dto.title,
+            description: dto.description,
+            acceptanceCriteria: dto.acceptanceCriteria,
+            internalDueDate,
+            regulatoryDeadline,
+            assignedToId: dto.assignedToId,
+            assignedById: actorId,
+            requiresApproval: !!dto.requiresApproval,
           },
-        },
-      });
+          include: {
+            complianceTask: true,
+            obligation: true,
+            control: true,
+          },
+        });
 
-      return createdRemediation;
-    });
+        await tx.regulatoryRemediationHistory.create({
+          data: {
+            remediationTaskId: createdRemediation.id,
+            organizationId,
+            previousStatus: null,
+            newStatus: initialStatus,
+            action: 'CREATED',
+            actorId,
+            rationale: dto.overrideRationale || 'Remediation task proposed from reviewed control-gap finding.',
+            snapshotPayload: {
+              assessmentId: dto.assessmentId,
+              initialGapOutcome: assessment.gapOutcome,
+              initialEvidenceOutcome: assessment.evidenceOutcome,
+              internalDueDate: internalDueDate ? internalDueDate.toISOString() : null,
+              regulatoryDeadline: regulatoryDeadline ? regulatoryDeadline.toISOString() : null,
+              priority: createdRemediation.priority,
+            },
+          },
+        });
+
+        return createdRemediation;
+      });
+    } catch (err: any) {
+      if (err?.code === 'P2002' || err?.message?.includes('active_assessment')) {
+        throw new ConflictException(
+          `An active remediation task already exists for gap assessment "${dto.assessmentId}".`,
+        );
+      }
+      throw err;
+    }
 
     // 11. Notify assignee
     await this.notificationsService.notify({
