@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Put,
   Param,
   Query,
   Body,
@@ -22,6 +23,8 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { RegulatoryCatalogueService } from './catalogue/regulatory-catalogue.service';
 import { RegulatoryIngestionService } from './regulatory-ingestion.service';
 import { RegulatoryDocumentStorageService } from './storage/regulatory-document-storage.service';
+import { RegulatoryObligationService } from './obligations/regulatory-obligation.service';
+import { RegulatoryApplicabilityService } from './applicability/regulatory-applicability.service';
 import {
   QuerySourcesDto,
   QueryPublicationsDto,
@@ -30,6 +33,18 @@ import {
   CreateManualIntakeDto,
   ReviewManualIntakeDto,
 } from './dto/regulatory.dto';
+import {
+  QueryObligationsDto,
+  ExtractObligationsDto,
+  ReviewObligationDto,
+  CreateManualObligationDto,
+} from './dto/obligation.dto';
+import {
+  AssessApplicabilityDto,
+  QueryApplicabilityDto,
+  ReviewApplicabilityDto,
+  UpdateComplianceProfileDto,
+} from './dto/applicability.dto';
 
 @Controller('regulatory')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -40,6 +55,8 @@ export class RegulatoryIntelligenceController {
     private readonly ingestionService: RegulatoryIngestionService,
     private readonly documentStorage: RegulatoryDocumentStorageService,
     private readonly auditLogsService: AuditLogsService,
+    private readonly obligationService: RegulatoryObligationService,
+    private readonly applicabilityService: RegulatoryApplicabilityService,
   ) {}
 
   // ==========================================
@@ -462,4 +479,155 @@ export class RegulatoryIntelligenceController {
 
     return updated;
   }
+
+  // ==========================================
+  // 5. REGULATORY OBLIGATIONS (PHASE 3)
+  // ==========================================
+
+  @Post('publications/:id/extract-obligations')
+  @Roles(Role.ADMIN, Role.MSSP_ADMIN, Role.ANALYST)
+  async extractPublicationObligations(
+    @Param('id') id: string,
+    @Body() dto: ExtractObligationsDto,
+    @CurrentUser('id') actorId: string,
+    @CurrentUser('organizationId') organizationId?: string,
+  ) {
+    return this.obligationService.extractCandidateObligations(
+      id,
+      actorId,
+      organizationId,
+      dto.forceReextract,
+    );
+  }
+
+  @Get('obligations')
+  async listObligations(
+    @Query() query: QueryObligationsDto,
+    @CurrentUser('organizationId') organizationId?: string,
+  ) {
+    return this.obligationService.listObligations(query, organizationId);
+  }
+
+  @Get('obligations/:id')
+  async getObligation(
+    @Param('id') id: string,
+    @CurrentUser('organizationId') organizationId?: string,
+  ) {
+    return this.obligationService.getObligation(id, organizationId);
+  }
+
+  @Patch('obligations/:id/review')
+  @Roles(Role.ADMIN, Role.MSSP_ADMIN, Role.ANALYST)
+  async reviewObligation(
+    @Param('id') id: string,
+    @Body() dto: ReviewObligationDto,
+    @CurrentUser('id') actorId: string,
+    @CurrentUser('organizationId') organizationId?: string,
+  ) {
+    return this.obligationService.reviewObligation(id, dto, actorId, organizationId);
+  }
+
+  @Post('obligations/manual')
+  @Roles(Role.ADMIN, Role.MSSP_ADMIN)
+  async createManualObligation(
+    @Body() dto: CreateManualObligationDto,
+    @CurrentUser('id') actorId: string,
+    @CurrentUser('organizationId') organizationId?: string,
+  ) {
+    return this.obligationService.createManualObligation(dto, actorId, organizationId);
+  }
+
+  // ==========================================
+  // 6. REGULATORY APPLICABILITY ASSESSMENTS (PHASE 4)
+  // ==========================================
+
+  @Post('applicability/assess')
+  @Roles(Role.ADMIN, Role.MSSP_ADMIN, Role.ANALYST)
+  async triggerApplicabilityAssessment(
+    @Body() dto: AssessApplicabilityDto,
+    @CurrentUser('id') actorId: string,
+    @CurrentUser('organizationId') organizationId: string,
+  ) {
+    if (!organizationId) {
+      throw new BadRequestException('Authenticated organization context is required for applicability assessment.');
+    }
+
+    if (dto.obligationId) {
+      return this.applicabilityService.assessObligation(
+        organizationId,
+        dto.obligationId,
+        actorId,
+        dto.forceReassess,
+      );
+    }
+
+    return this.applicabilityService.assessAllForOrganization(
+      organizationId,
+      actorId,
+      dto.catalogueEntryId,
+      dto.forceReassess,
+    );
+  }
+
+  @Get('applicability')
+  async listApplicabilityAssessments(
+    @Query() query: QueryApplicabilityDto,
+    @CurrentUser('organizationId') organizationId: string,
+  ) {
+    if (!organizationId) {
+      throw new BadRequestException('Authenticated organization context is required.');
+    }
+    return this.applicabilityService.listAssessments(organizationId, query);
+  }
+
+  @Get('applicability/:id')
+  async getApplicabilityAssessment(
+    @Param('id') id: string,
+    @CurrentUser('organizationId') organizationId: string,
+  ) {
+    if (!organizationId) {
+      throw new BadRequestException('Authenticated organization context is required.');
+    }
+    return this.applicabilityService.getAssessment(id, organizationId);
+  }
+
+  @Patch('applicability/:id/review')
+  @Roles(Role.ADMIN, Role.MSSP_ADMIN, Role.ANALYST)
+  async reviewApplicabilityAssessment(
+    @Param('id') id: string,
+    @Body() dto: ReviewApplicabilityDto,
+    @CurrentUser('id') actorId: string,
+    @CurrentUser('organizationId') organizationId: string,
+  ) {
+    if (!organizationId) {
+      throw new BadRequestException('Authenticated organization context is required.');
+    }
+    return this.applicabilityService.reviewOrOverrideAssessment(id, organizationId, dto, actorId);
+  }
+
+  // ==========================================
+  // 7. ORGANIZATION COMPLIANCE PROFILE (PHASE 4)
+  // ==========================================
+
+  @Get('organization-profile')
+  async getOrganizationProfile(@CurrentUser('organizationId') organizationId: string) {
+    if (!organizationId) {
+      throw new BadRequestException('Authenticated organization context is required.');
+    }
+    return this.applicabilityService.getOrBuildProfile(organizationId);
+  }
+
+  @Put('organization-profile')
+  @Roles(Role.ADMIN, Role.MSSP_ADMIN)
+  async updateOrganizationProfile(
+    @Body() dto: UpdateComplianceProfileDto,
+    @CurrentUser('id') actorId: string,
+    @CurrentUser('organizationId') organizationId: string,
+  ) {
+    if (!organizationId) {
+      throw new BadRequestException('Authenticated organization context is required.');
+    }
+    return this.applicabilityService.updateProfile(organizationId, dto, actorId);
+  }
 }
+

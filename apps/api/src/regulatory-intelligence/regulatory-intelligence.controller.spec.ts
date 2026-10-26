@@ -3,8 +3,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RegulatoryCatalogueService } from './catalogue/regulatory-catalogue.service';
 import { RegulatoryIngestionService } from './regulatory-ingestion.service';
 import { RegulatoryDocumentStorageService } from './storage/regulatory-document-storage.service';
+import { RegulatoryObligationService } from './obligations/regulatory-obligation.service';
+import { RegulatoryApplicabilityService } from './applicability/regulatory-applicability.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
-import { ManualIntakeReviewStatus } from '@prisma/client';
+import { ManualIntakeReviewStatus, RegulatoryObligationStatus, ApplicabilityOutcome } from '@prisma/client';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { Readable } from 'stream';
 
@@ -15,6 +17,8 @@ describe('RegulatoryIntelligenceController (Internal API & Tenant Isolation)', (
   let mockIngestionService: jest.Mocked<RegulatoryIngestionService>;
   let mockDocumentStorage: jest.Mocked<RegulatoryDocumentStorageService>;
   let mockAuditLogs: jest.Mocked<AuditLogsService>;
+  let mockObligationService: jest.Mocked<RegulatoryObligationService>;
+  let mockApplicabilityService: jest.Mocked<RegulatoryApplicabilityService>;
 
   beforeEach(() => {
     mockPrisma = {
@@ -60,12 +64,32 @@ describe('RegulatoryIntelligenceController (Internal API & Tenant Isolation)', (
       log: jest.fn().mockResolvedValue({} as any),
     } as any;
 
+    mockObligationService = {
+      extractCandidateObligations: jest.fn(),
+      listObligations: jest.fn(),
+      getObligation: jest.fn(),
+      reviewObligation: jest.fn(),
+      createManualObligation: jest.fn(),
+    } as any;
+
+    mockApplicabilityService = {
+      assessObligation: jest.fn(),
+      assessAllForOrganization: jest.fn(),
+      listAssessments: jest.fn(),
+      getAssessment: jest.fn(),
+      reviewOrOverrideAssessment: jest.fn(),
+      getOrBuildProfile: jest.fn(),
+      updateProfile: jest.fn(),
+    } as any;
+
     controller = new RegulatoryIntelligenceController(
       mockPrisma,
       mockCatalogueService,
       mockIngestionService,
       mockDocumentStorage,
       mockAuditLogs,
+      mockObligationService,
+      mockApplicabilityService,
     );
   });
 
@@ -402,6 +426,265 @@ describe('RegulatoryIntelligenceController (Internal API & Tenant Isolation)', (
           organizationId: 'org-123',
           action: 'MANUAL_REGULATORY_INTAKE_REVIEWED',
         }),
+      );
+    });
+  });
+
+  describe('5. Regulatory Obligations Endpoints (Phase 3)', () => {
+    it('should trigger obligation extraction for a publication', async () => {
+      mockObligationService.extractCandidateObligations.mockResolvedValueOnce({
+        publicationId: 'pub-100',
+        totalCandidatesExtracted: 3,
+        newlyCreatedCount: 3,
+        existingRetainedCount: 0,
+      });
+
+      const res = await controller.extractPublicationObligations(
+        'pub-100',
+        { forceReextract: false },
+        'analyst-1',
+        'org-123',
+      );
+
+      expect(res.publicationId).toBe('pub-100');
+      expect(res.totalCandidatesExtracted).toBe(3);
+      expect(mockObligationService.extractCandidateObligations).toHaveBeenCalledWith(
+        'pub-100',
+        'analyst-1',
+        'org-123',
+        false,
+      );
+    });
+
+    it('should list obligations with query filters', async () => {
+      mockObligationService.listObligations.mockResolvedValueOnce({
+        items: [{ id: 'ob-1', title: 'Data Encryption Mandate' } as any],
+        total: 1,
+        page: 1,
+        limit: 20,
+        totalPages: 1,
+      });
+
+      const res = await controller.listObligations(
+        { status: RegulatoryObligationStatus.CANDIDATE },
+        'org-123',
+      );
+
+      expect(res.items).toHaveLength(1);
+      expect(mockObligationService.listObligations).toHaveBeenCalledWith(
+        { status: RegulatoryObligationStatus.CANDIDATE },
+        'org-123',
+      );
+    });
+
+    it('should get a single obligation by ID', async () => {
+      mockObligationService.getObligation.mockResolvedValueOnce({
+        id: 'ob-1',
+        title: 'Data Encryption Mandate',
+      } as any);
+
+      const res = await controller.getObligation('ob-1', 'org-123');
+      expect(res.id).toBe('ob-1');
+      expect(mockObligationService.getObligation).toHaveBeenCalledWith('ob-1', 'org-123');
+    });
+
+    it('should submit human review for an obligation', async () => {
+      mockObligationService.reviewObligation.mockResolvedValueOnce({
+        id: 'ob-1',
+        status: RegulatoryObligationStatus.VERIFIED,
+        isHumanVerified: true,
+      } as any);
+
+      const res = await controller.reviewObligation(
+        'ob-1',
+        {
+          status: RegulatoryObligationStatus.VERIFIED,
+          reviewNotes: 'Verified against authoritative section',
+        },
+        'analyst-1',
+        'org-123',
+      );
+
+      expect(res.status).toBe(RegulatoryObligationStatus.VERIFIED);
+      expect(mockObligationService.reviewObligation).toHaveBeenCalledWith(
+        'ob-1',
+        expect.objectContaining({ status: RegulatoryObligationStatus.VERIFIED }),
+        'analyst-1',
+        'org-123',
+      );
+    });
+
+    it('should create manual obligation', async () => {
+      mockObligationService.createManualObligation.mockResolvedValueOnce({
+        id: 'ob-man-1',
+        title: 'Manual Requirement',
+        isHumanVerified: true,
+      } as any);
+
+      const res = await controller.createManualObligation(
+        {
+          publicationId: 'pub-100',
+          title: 'Manual Requirement',
+          obligationWording: 'Must audit backups quarterly.',
+        },
+        'admin-1',
+        'org-123',
+      );
+
+      expect(res.id).toBe('ob-man-1');
+      expect(mockObligationService.createManualObligation).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'Manual Requirement' }),
+        'admin-1',
+        'org-123',
+      );
+    });
+  });
+
+  describe('6. Regulatory Applicability Endpoints (Phase 4)', () => {
+    it('should trigger applicability assessment for a specific obligation', async () => {
+      mockApplicabilityService.assessObligation.mockResolvedValueOnce({
+        id: 'asm-1',
+        outcome: ApplicabilityOutcome.APPLICABLE,
+      } as any);
+
+      const res = await controller.triggerApplicabilityAssessment(
+        { obligationId: 'ob-1', forceReassess: false },
+        'analyst-1',
+        'org-123',
+      );
+
+      expect((res as any)?.id).toBe('asm-1');
+      expect(mockApplicabilityService.assessObligation).toHaveBeenCalledWith(
+        'org-123',
+        'ob-1',
+        'analyst-1',
+        false,
+      );
+    });
+
+    it('should trigger batch assessment for all obligations in organization', async () => {
+      mockApplicabilityService.assessAllForOrganization.mockResolvedValueOnce({
+        organizationId: 'org-123',
+        totalEvaluated: 10,
+        applicableCount: 4,
+        notApplicableCount: 3,
+        requiresReviewCount: 2,
+        insufficientInfoCount: 1,
+      });
+
+      const res = await controller.triggerApplicabilityAssessment(
+        { forceReassess: true },
+        'analyst-1',
+        'org-123',
+      );
+
+      expect((res as any)?.totalEvaluated).toBe(10);
+      expect(mockApplicabilityService.assessAllForOrganization).toHaveBeenCalledWith(
+        'org-123',
+        'analyst-1',
+        undefined,
+        true,
+      );
+    });
+
+    it('should reject assessment trigger when organization context is missing', async () => {
+      await expect(
+        controller.triggerApplicabilityAssessment({}, 'analyst-1', ''),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should list applicability assessments scoped to organization', async () => {
+      mockApplicabilityService.listAssessments.mockResolvedValueOnce({
+        items: [{ id: 'asm-1', outcome: ApplicabilityOutcome.APPLICABLE } as any],
+        total: 1,
+        page: 1,
+        limit: 20,
+        totalPages: 1,
+      });
+
+      const res = await controller.listApplicabilityAssessments(
+        { outcome: ApplicabilityOutcome.APPLICABLE },
+        'org-123',
+      );
+
+      expect(res.items).toHaveLength(1);
+      expect(mockApplicabilityService.listAssessments).toHaveBeenCalledWith(
+        'org-123',
+        { outcome: ApplicabilityOutcome.APPLICABLE },
+      );
+    });
+
+    it('should retrieve single assessment by ID', async () => {
+      mockApplicabilityService.getAssessment.mockResolvedValueOnce({
+        id: 'asm-1',
+        outcome: ApplicabilityOutcome.APPLICABLE,
+      } as any);
+
+      const res = await controller.getApplicabilityAssessment('asm-1', 'org-123');
+      expect(res.id).toBe('asm-1');
+      expect(mockApplicabilityService.getAssessment).toHaveBeenCalledWith('asm-1', 'org-123');
+    });
+
+    it('should review or override applicability assessment', async () => {
+      mockApplicabilityService.reviewOrOverrideAssessment.mockResolvedValueOnce({
+        id: 'asm-1',
+        outcome: ApplicabilityOutcome.NOT_APPLICABLE,
+        isHumanReviewed: true,
+      } as any);
+
+      const res = await controller.reviewApplicabilityAssessment(
+        'asm-1',
+        {
+          outcome: ApplicabilityOutcome.NOT_APPLICABLE,
+          reviewNotes: 'Entity is a holding company exempt from direct banking direction.',
+        },
+        'analyst-1',
+        'org-123',
+      );
+
+      expect(res.outcome).toBe(ApplicabilityOutcome.NOT_APPLICABLE);
+      expect(mockApplicabilityService.reviewOrOverrideAssessment).toHaveBeenCalledWith(
+        'asm-1',
+        'org-123',
+        expect.objectContaining({ outcome: ApplicabilityOutcome.NOT_APPLICABLE }),
+        'analyst-1',
+      );
+    });
+  });
+
+  describe('7. Organization Compliance Profile Endpoints (Phase 4)', () => {
+    it('should get organization compliance profile', async () => {
+      mockApplicabilityService.getOrBuildProfile.mockResolvedValueOnce({
+        organizationId: 'org-123',
+        industrySector: 'BANKING',
+      } as any);
+
+      const res = await controller.getOrganizationProfile('org-123');
+      expect(res.organizationId).toBe('org-123');
+      expect(mockApplicabilityService.getOrBuildProfile).toHaveBeenCalledWith('org-123');
+    });
+
+    it('should update organization compliance profile', async () => {
+      mockApplicabilityService.updateProfile.mockResolvedValueOnce({
+        id: 'cp-1',
+        organizationId: 'org-123',
+        industrySector: 'FINANCIAL_SERVICES',
+      } as any);
+
+      const res = await controller.updateOrganizationProfile(
+        {
+          industrySector: 'FINANCIAL_SERVICES',
+          operatingJurisdictions: ['INDIA'],
+        },
+        'admin-1',
+        'org-123',
+      );
+
+      expect(res.industrySector).toBe('FINANCIAL_SERVICES');
+      expect(mockApplicabilityService.updateProfile).toHaveBeenCalledWith(
+        'org-123',
+        expect.objectContaining({ industrySector: 'FINANCIAL_SERVICES' }),
+        'admin-1',
       );
     });
   });

@@ -245,6 +245,10 @@ model Organization {
   controlStateProjection OrganizationControlStateProjection?
   serviceOverrideProjections OrganizationServiceOverrideProjection[]
   manualSourceIntakes ManualSourceIntake[]
+  regulatoryObligations RegulatoryObligation[]
+  complianceProfile   OrganizationComplianceProfile?
+  applicabilityAssessments RegulatoryApplicabilityAssessment[]
+  applicabilityHistories   RegulatoryApplicabilityHistory[]
 
   @@index([parentOrganizationId])
   @@map("organizations")
@@ -2364,6 +2368,8 @@ model RegulatoryCatalogueEntry {
   sources             RegulatorySource[]
   publications        RegulatoryPublication[]
   manualIntakes       ManualSourceIntake[]
+  obligations         RegulatoryObligation[]
+  applicabilityAssessments RegulatoryApplicabilityAssessment[]
 
   @@index([jurisdiction])
   @@index([connectorStatus])
@@ -2428,6 +2434,8 @@ model RegulatoryPublication {
   catalogueEntry         RegulatoryCatalogueEntry?   @relation(fields: [catalogueEntryId], references: [id], onDelete: SetNull)
   versions               RegulatoryPublicationVersion[]
   manualIntakes          ManualSourceIntake[]
+  obligations            RegulatoryObligation[]
+  applicabilityAssessments RegulatoryApplicabilityAssessment[]
 
   @@unique([sourceId, canonicalUrl])
   @@unique([sourceId, externalId])
@@ -2459,6 +2467,7 @@ model RegulatoryPublicationVersion {
   createdAt              DateTime  @default(now())
 
   publication            RegulatoryPublication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  obligations            RegulatoryObligation[]
 
   @@unique([publicationId, versionNumber])
   @@index([publicationId])
@@ -2492,6 +2501,7 @@ model ManualSourceIntake {
   organization         Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   catalogueEntry       RegulatoryCatalogueEntry @relation(fields: [catalogueEntryId], references: [id], onDelete: Cascade)
   publication          RegulatoryPublication?   @relation(fields: [publicationId], references: [id], onDelete: SetNull)
+  obligations          RegulatoryObligation[]
 
   @@index([organizationId])
   @@index([catalogueEntryId])
@@ -2499,3 +2509,173 @@ model ManualSourceIntake {
   @@index([uploadedById])
   @@map("manual_source_intakes")
 }
+
+enum RegulatoryObligationStatus {
+  CANDIDATE
+  UNDER_REVIEW
+  VERIFIED
+  REJECTED
+  DEPRECATED
+}
+
+enum ObligationExtractionMethod {
+  RULE_BASED
+  AI_EXTRACTED
+  MANUAL_ENTRY
+}
+
+enum ObligationConfidence {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+model RegulatoryObligation {
+  id                     String                     @id @default(uuid())
+  organizationId         String?
+  publicationId          String
+  publicationVersionId   String?
+  catalogueEntryId       String?
+  sourceId               String?
+  manualIntakeId         String?
+  obligationIdentifier   String?
+  title                  String
+  obligationWording      String
+  requiredAction         String?
+  affectedActor          String?
+  effectiveDate          DateTime?
+  complianceDeadline     DateTime?
+  sourceExcerpt          String?
+  documentLocation       Json?
+  extractionMethod       ObligationExtractionMethod @default(RULE_BASED)
+  extractionConfidence   ObligationConfidence       @default(HIGH)
+  extractionModelDetails Json?
+  fingerprint            String
+  status                 RegulatoryObligationStatus @default(CANDIDATE)
+  isHumanVerified        Boolean                    @default(false)
+  verifiedById           String?
+  verifiedAt             DateTime?
+  reviewNotes            String?
+  createdAt              DateTime                   @default(now())
+  updatedAt              DateTime                   @updatedAt
+
+  organization           Organization?              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  publication            RegulatoryPublication      @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  publicationVersion     RegulatoryPublicationVersion? @relation(fields: [publicationVersionId], references: [id], onDelete: SetNull)
+  catalogueEntry         RegulatoryCatalogueEntry?  @relation(fields: [catalogueEntryId], references: [id], onDelete: SetNull)
+  manualIntake           ManualSourceIntake?        @relation(fields: [manualIntakeId], references: [id], onDelete: SetNull)
+  applicabilityAssessments RegulatoryApplicabilityAssessment[]
+
+  @@unique([publicationId, fingerprint])
+  @@index([organizationId])
+  @@index([publicationId])
+  @@index([catalogueEntryId])
+  @@index([status])
+  @@index([isHumanVerified])
+  @@index([affectedActor])
+  @@index([fingerprint])
+  @@map("regulatory_obligations")
+}
+
+enum ApplicabilityOutcome {
+  APPLICABLE
+  NOT_APPLICABLE
+  REQUIRES_REVIEW
+  INSUFFICIENT_INFORMATION
+}
+
+enum DeterminationType {
+  RULE_DERIVED
+  HUMAN_OVERRIDDEN
+  HUMAN_CONFIRMED
+}
+
+enum ApplicabilityConfidence {
+  CONFIRMED
+  HIGH
+  MEDIUM
+  LOW
+}
+
+model OrganizationComplianceProfile {
+  id                     String    @id @default(uuid())
+  organizationId         String    @unique
+  operatingJurisdictions String[]  @default(["INDIA"])
+  industrySector         String?
+  regulatedEntityTypes   String[]  @default([])
+  handlesPersonalData    Boolean   @default(true)
+  handlesPaymentData     Boolean   @default(false)
+  isSignificantDataFiduciary Boolean @default(false)
+  annualTurnoverBand     String?
+  employeeCountBand      String?
+  customAttributes       Json?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  organization           Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("organization_compliance_profiles")
+}
+
+model RegulatoryApplicabilityAssessment {
+  id                         String                  @id @default(uuid())
+  organizationId             String
+  obligationId               String
+  publicationId              String?
+  publicationVersionId       String?
+  catalogueEntryId           String?
+  outcome                    ApplicabilityOutcome
+  determinationType          DeterminationType       @default(RULE_DERIVED)
+  confidence                 ApplicabilityConfidence @default(HIGH)
+  rationale                  String
+  ruleMatched                String?
+  evaluatedAttributes        Json
+  obligationCriteriaSnapshot Json
+  assessedAt                 DateTime                @default(now())
+  assessedById               String?
+  isHumanReviewed            Boolean                 @default(false)
+  reviewedById               String?
+  reviewedAt                 DateTime?
+  reviewNotes                String?
+  previousOutcome            ApplicabilityOutcome?
+  reassessmentCount          Int                     @default(0)
+  createdAt                  DateTime                @default(now())
+  updatedAt                  DateTime                @updatedAt
+
+  organization               Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  obligation                 RegulatoryObligation    @relation(fields: [obligationId], references: [id], onDelete: Cascade)
+  publication                RegulatoryPublication?  @relation(fields: [publicationId], references: [id], onDelete: SetNull)
+  catalogueEntry             RegulatoryCatalogueEntry? @relation(fields: [catalogueEntryId], references: [id], onDelete: SetNull)
+  history                    RegulatoryApplicabilityHistory[]
+
+  @@unique([organizationId, obligationId])
+  @@index([organizationId])
+  @@index([obligationId])
+  @@index([catalogueEntryId])
+  @@index([outcome])
+  @@index([determinationType])
+  @@index([isHumanReviewed])
+  @@map("regulatory_applicability_assessments")
+}
+
+model RegulatoryApplicabilityHistory {
+  id                  String               @id @default(uuid())
+  assessmentId        String
+  organizationId      String
+  previousOutcome     ApplicabilityOutcome
+  newOutcome          ApplicabilityOutcome
+  determinationType   DeterminationType
+  rationale           String
+  actorId             String
+  changedAt           DateTime             @default(now())
+  evaluatedAttributes Json?
+
+  assessment          RegulatoryApplicabilityAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  organization        Organization                      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([assessmentId])
+  @@index([organizationId])
+  @@map("regulatory_applicability_histories")
+}
+

@@ -10,6 +10,11 @@ import { RegulatoryDocumentStorageService } from './storage/regulatory-document-
 import { RegulatoryIntelligenceController } from './regulatory-intelligence.controller';
 import { SchedulerLockService } from '../notifications/cron/scheduler-lock.service';
 
+import { ObligationExtractorService } from './obligations/obligation-extractor.service';
+import { RegulatoryObligationService } from './obligations/regulatory-obligation.service';
+import { ApplicabilityEngineService } from './applicability/applicability-engine.service';
+import { RegulatoryApplicabilityService } from './applicability/regulatory-applicability.service';
+
 @Module({
   imports: [PrismaModule, AuditLogsModule],
   controllers: [RegulatoryIntelligenceController],
@@ -21,12 +26,20 @@ import { SchedulerLockService } from '../notifications/cron/scheduler-lock.servi
     RegulatorySchedulerService,
     RegulatoryDocumentStorageService,
     SchedulerLockService,
+    ObligationExtractorService,
+    RegulatoryObligationService,
+    ApplicabilityEngineService,
+    RegulatoryApplicabilityService,
   ],
   exports: [
     RegulatoryCatalogueService,
     RegulatoryIngestionService,
     SsrfSafeHttpClientService,
     RegulatoryDocumentStorageService,
+    ObligationExtractorService,
+    RegulatoryObligationService,
+    ApplicabilityEngineService,
+    RegulatoryApplicabilityService,
   ],
 })
 export class RegulatoryIntelligenceModule {}

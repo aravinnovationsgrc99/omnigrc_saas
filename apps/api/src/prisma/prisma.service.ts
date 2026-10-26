@@ -83,6 +83,11 @@ export const DIRECT_TENANT_MODELS = [
 
   // Phase 2.1 Regulatory Intelligence: Manual Source Intake
   'ManualSourceIntake',
+
+  // Phase 4 Regulatory Applicability Assessment & Profiles
+  'OrganizationComplianceProfile',
+  'RegulatoryApplicabilityAssessment',
+  'RegulatoryApplicabilityHistory',
 ];
 
 export const CHILD_TENANT_MODELS: Record<string, string> = {
