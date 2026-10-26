@@ -96,6 +96,10 @@ export const DIRECT_TENANT_MODELS = [
   // Phase 6 Regulatory Control-Gap Analysis and Evidence Sufficiency
   'RegulatoryControlGapAssessment',
   'RegulatoryControlGapAssessmentHistory',
+
+  // Phase 7 Regulatory Remediation Planning and Task Tracking
+  'RegulatoryRemediationTask',
+  'RegulatoryRemediationHistory',
 ];
 
 export const CHILD_TENANT_MODELS: Record<string, string> = {

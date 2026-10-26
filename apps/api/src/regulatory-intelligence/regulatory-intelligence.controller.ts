@@ -59,6 +59,17 @@ import {
   QueryControlGapDto,
   ReviewControlGapDto,
 } from './dto/control-gap.dto';
+import { RegulatoryRemediationService } from './remediation/regulatory-remediation.service';
+import {
+  CreateRemediationDto,
+  AssignRemediationDto,
+  UpdateRemediationStatusDto,
+  RemediationApprovalDto,
+  CompleteRemediationDto,
+  VerifyRemediationDto,
+  RiskAcceptRemediationDto,
+  QueryRemediationDto,
+} from './dto/remediation.dto';
 
 @Controller('regulatory')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -73,6 +84,7 @@ export class RegulatoryIntelligenceController {
     private readonly applicabilityService: RegulatoryApplicabilityService,
     private readonly mappingService: ObligationControlMappingService,
     private readonly gapService: RegulatoryControlGapService,
+    private readonly remediationService: RegulatoryRemediationService,
   ) {}
 
   // ==========================================
@@ -804,6 +816,145 @@ export class RegulatoryIntelligenceController {
       throw new BadRequestException('Authenticated organization context is required.');
     }
     return this.gapService.reviewOrOverrideGapAssessment(id, organizationId, dto, actorId);
+  }
+
+  // ==========================================
+  // 10. REGULATORY REMEDIATION PLANNING & TASK TRACKING (Phase 7)
+  // ==========================================
+
+  @Post('remediation')
+  @Roles(Role.ADMIN, Role.MSSP_ADMIN, Role.ANALYST)
+  async createRemediation(
+    @Body() dto: CreateRemediationDto,
+    @CurrentUser('id') actorId: string,
+    @CurrentUser('organizationId') organizationId: string,
+  ) {
+    if (!organizationId) {
+      throw new BadRequestException('Authenticated organization context is required.');
+    }
+    return this.remediationService.createRemediation(organizationId, actorId, dto);
+  }
+
+  @Get('remediation')
+  @Roles(Role.ADMIN, Role.MSSP_ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR)
+  async listRemediationTasks(
+    @Query() query: QueryRemediationDto,
+    @CurrentUser('organizationId') organizationId: string,
+  ) {
+    if (!organizationId) {
+      throw new BadRequestException('Authenticated organization context is required.');
+    }
+    return this.remediationService.findAll(organizationId, query);
+  }
+
+  @Get('remediation/summary')
+  @Roles(Role.ADMIN, Role.MSSP_ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR)
+  async getRemediationSummary(
+    @CurrentUser('organizationId') organizationId: string,
+  ) {
+    if (!organizationId) {
+      throw new BadRequestException('Authenticated organization context is required.');
+    }
+    return this.remediationService.getSummary(organizationId);
+  }
+
+  @Get('remediation/:id')
+  @Roles(Role.ADMIN, Role.MSSP_ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR)
+  async getRemediationTask(
+    @Param('id') id: string,
+    @CurrentUser('organizationId') organizationId: string,
+  ) {
+    if (!organizationId) {
+      throw new BadRequestException('Authenticated organization context is required.');
+    }
+    return this.remediationService.findOne(organizationId, id);
+  }
+
+  @Patch('remediation/:id/assign')
+  @Roles(Role.ADMIN, Role.MSSP_ADMIN, Role.ANALYST)
+  async assignRemediation(
+    @Param('id') id: string,
+    @Body() dto: AssignRemediationDto,
+    @CurrentUser('id') actorId: string,
+    @CurrentUser('organizationId') organizationId: string,
+  ) {
+    if (!organizationId) {
+      throw new BadRequestException('Authenticated organization context is required.');
+    }
+    return this.remediationService.assignRemediation(organizationId, actorId, id, dto);
+  }
+
+  @Patch('remediation/:id/status')
+  @Roles(Role.ADMIN, Role.MSSP_ADMIN, Role.ANALYST)
+  async updateRemediationStatus(
+    @Param('id') id: string,
+    @Body() dto: UpdateRemediationStatusDto,
+    @CurrentUser('id') actorId: string,
+    @CurrentUser('organizationId') organizationId: string,
+  ) {
+    if (!organizationId) {
+      throw new BadRequestException('Authenticated organization context is required.');
+    }
+    return this.remediationService.updateStatus(organizationId, actorId, id, dto);
+  }
+
+  @Post('remediation/:id/approval')
+  @Roles(Role.ADMIN, Role.MSSP_ADMIN, Role.ANALYST)
+  async handleRemediationApproval(
+    @Param('id') id: string,
+    @Body() dto: RemediationApprovalDto,
+    @CurrentUser('id') actorId: string,
+    @CurrentUser('role') actorRole: string,
+    @CurrentUser('organizationId') organizationId: string,
+  ) {
+    if (!organizationId) {
+      throw new BadRequestException('Authenticated organization context is required.');
+    }
+    return this.remediationService.handleApproval(organizationId, actorId, actorRole, id, dto);
+  }
+
+  @Post('remediation/:id/complete')
+  @Roles(Role.ADMIN, Role.MSSP_ADMIN, Role.ANALYST)
+  async completeRemediation(
+    @Param('id') id: string,
+    @Body() dto: CompleteRemediationDto,
+    @CurrentUser('id') actorId: string,
+    @CurrentUser('organizationId') organizationId: string,
+  ) {
+    if (!organizationId) {
+      throw new BadRequestException('Authenticated organization context is required.');
+    }
+    return this.remediationService.completeRemediation(organizationId, actorId, id, dto);
+  }
+
+  @Post('remediation/:id/verify')
+  @Roles(Role.ADMIN, Role.MSSP_ADMIN)
+  async verifyRemediation(
+    @Param('id') id: string,
+    @Body() dto: VerifyRemediationDto,
+    @CurrentUser('id') actorId: string,
+    @CurrentUser('role') actorRole: string,
+    @CurrentUser('organizationId') organizationId: string,
+  ) {
+    if (!organizationId) {
+      throw new BadRequestException('Authenticated organization context is required.');
+    }
+    return this.remediationService.verifyAndClose(organizationId, actorId, actorRole, id, dto);
+  }
+
+  @Post('remediation/:id/risk-accept')
+  @Roles(Role.ADMIN, Role.MSSP_ADMIN)
+  async acceptRemediationRisk(
+    @Param('id') id: string,
+    @Body() dto: RiskAcceptRemediationDto,
+    @CurrentUser('id') actorId: string,
+    @CurrentUser('role') actorRole: string,
+    @CurrentUser('organizationId') organizationId: string,
+  ) {
+    if (!organizationId) {
+      throw new BadRequestException('Authenticated organization context is required.');
+    }
+    return this.remediationService.acceptRisk(organizationId, actorId, actorRole, id, dto);
   }
 }
 

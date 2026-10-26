@@ -253,6 +253,8 @@ model Organization {
   regulatoryObligationControlMappingHistories RegulatoryObligationControlMappingHistory[]
   regulatoryControlGapAssessments RegulatoryControlGapAssessment[]
   regulatoryControlGapAssessmentHistories RegulatoryControlGapAssessmentHistory[]
+  regulatoryRemediationTasks   RegulatoryRemediationTask[]
+  regulatoryRemediationHistories RegulatoryRemediationHistory[]
 
   @@index([parentOrganizationId])
   @@map("organizations")
@@ -634,6 +636,7 @@ model Control {
   riskAssociations     RiskControl[]
   regulatoryMappings   RegulatoryObligationControlMapping[]
   gapAssessments       RegulatoryControlGapAssessment[]
+  regulatoryRemediations RegulatoryRemediationTask[]
 
   @@unique([id, organizationId])
   @@index([organizationId])
@@ -721,6 +724,7 @@ model ComplianceTask {
   projectRef        Project?           @relation(fields: [projectId], references: [id], onDelete: SetNull)
   control           Control?           @relation(fields: [controlId], references: [id], onDelete: SetNull)
   vendorAssessments VendorAssessment[]
+  regulatoryRemediation RegulatoryRemediationTask?
 
   @@index([organizationId])
   @@index([departmentId])
@@ -2445,6 +2449,7 @@ model RegulatoryPublication {
   applicabilityAssessments RegulatoryApplicabilityAssessment[]
   obligationControlMappings RegulatoryObligationControlMapping[]
   gapAssessments         RegulatoryControlGapAssessment[]
+  remediationTasks       RegulatoryRemediationTask[]
 
   @@unique([sourceId, canonicalUrl])
   @@unique([sourceId, externalId])
@@ -2479,6 +2484,7 @@ model RegulatoryPublicationVersion {
   obligations            RegulatoryObligation[]
   obligationControlMappings RegulatoryObligationControlMapping[]
   gapAssessments         RegulatoryControlGapAssessment[]
+  remediationTasks       RegulatoryRemediationTask[]
 
   @@unique([publicationId, versionNumber])
   @@index([publicationId])
@@ -2578,6 +2584,7 @@ model RegulatoryObligation {
   applicabilityAssessments RegulatoryApplicabilityAssessment[]
   controlMappings        RegulatoryObligationControlMapping[]
   gapAssessments         RegulatoryControlGapAssessment[]
+  remediationTasks       RegulatoryRemediationTask[]
 
   @@unique([publicationId, fingerprint])
   @@index([organizationId])
@@ -2662,6 +2669,7 @@ model RegulatoryApplicabilityAssessment {
   catalogueEntry             RegulatoryCatalogueEntry? @relation(fields: [catalogueEntryId], references: [id], onDelete: SetNull)
   history                    RegulatoryApplicabilityHistory[]
   gapAssessments             RegulatoryControlGapAssessment[]
+  remediationTasks           RegulatoryRemediationTask[]
 
   @@unique([organizationId, obligationId])
   @@index([organizationId])
@@ -2729,6 +2737,7 @@ model RegulatoryObligationControlMapping {
   frameworkReference   FrameworkReference?      @relation(fields: [frameworkReferenceId], references: [id], onDelete: SetNull)
   history              RegulatoryObligationControlMappingHistory[]
   gapAssessments       RegulatoryControlGapAssessment[]
+  remediationTasks     RegulatoryRemediationTask[]
 
   @@unique([organizationId, obligationId, controlId])
   @@index([organizationId])
@@ -2811,6 +2820,7 @@ model RegulatoryControlGapAssessment {
   publicationVersion   RegulatoryPublicationVersion? @relation(fields: [publicationVersionId], references: [id], onDelete: SetNull)
   applicabilityAssessment RegulatoryApplicabilityAssessment? @relation(fields: [applicabilityId], references: [id], onDelete: SetNull)
   history              RegulatoryControlGapAssessmentHistory[]
+  remediationTasks     RegulatoryRemediationTask[]
 
   @@unique([organizationId, obligationId])
   @@index([organizationId])
@@ -2846,4 +2856,131 @@ model RegulatoryControlGapAssessmentHistory {
   @@index([organizationId])
   @@map("regulatory_control_gap_assessment_histories")
 }
+
+// ============================================================================
+// Phase 7: Regulatory Remediation Planning & Task Tracking
+// ============================================================================
+
+enum RegulatoryRemediationStatus {
+  PROPOSED
+  AWAITING_APPROVAL
+  APPROVED
+  IN_PROGRESS
+  BLOCKED
+  COMPLETED
+  VERIFIED_CLOSED
+  REJECTED
+  RISK_ACCEPTED
+}
+
+enum RemediationPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model RegulatoryRemediationTask {
+  id                      String                      @id @default(uuid())
+  organizationId          String
+  complianceTaskId        String                      @unique
+  assessmentId            String
+  obligationId            String
+  controlId               String?
+  mappingId               String?
+  publicationId           String?
+  publicationVersionId    String?
+  applicabilityId         String?
+
+  status                  RegulatoryRemediationStatus @default(PROPOSED)
+  priority                RemediationPriority         @default(MEDIUM)
+  initialGapOutcome       ControlGapOutcome
+  initialEvidenceOutcome  EvidenceSufficiencyOutcome
+
+  title                   String
+  description             String
+  acceptanceCriteria      String
+
+  // Deadlines: Legal vs Internal
+  internalDueDate         DateTime?
+  regulatoryDeadline      DateTime?
+
+  // Assignments
+  assignedToId            String
+  assignedById            String
+
+  // Blocker tracking
+  blockedReason           String?
+  unblockedReason         String?
+
+  // Progress notes & Completion
+  progressNotes           String?
+  completionNotes         String?
+  evidenceReferences      Json?
+
+  // Verification
+  verifiedById            String?
+  verifiedAt              DateTime?
+  verificationNotes       String?
+  reassessmentRequested   Boolean                     @default(false)
+
+  // Governance Approval
+  requiresApproval        Boolean                     @default(false)
+  approvedById            String?
+  approvedAt              DateTime?
+  approvalNotes           String?
+  rejectedById            String?
+  rejectedAt              DateTime?
+  rejectionReason         String?
+
+  // Risk Acceptance / Exception Workflow
+  riskAcceptedById        String?
+  riskAcceptedAt          DateTime?
+  riskAcceptanceRationale String?
+
+  createdAt               DateTime                    @default(now())
+  updatedAt               DateTime                    @updatedAt
+
+  organization            Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  complianceTask          ComplianceTask              @relation(fields: [complianceTaskId], references: [id], onDelete: Cascade)
+  assessment              RegulatoryControlGapAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  obligation              RegulatoryObligation        @relation(fields: [obligationId], references: [id], onDelete: Cascade)
+  control                 Control?                    @relation(fields: [controlId], references: [id], onDelete: SetNull)
+  mapping                 RegulatoryObligationControlMapping? @relation(fields: [mappingId], references: [id], onDelete: SetNull)
+  publication             RegulatoryPublication?      @relation(fields: [publicationId], references: [id], onDelete: SetNull)
+  publicationVersion      RegulatoryPublicationVersion? @relation(fields: [publicationVersionId], references: [id], onDelete: SetNull)
+  applicability           RegulatoryApplicabilityAssessment? @relation(fields: [applicabilityId], references: [id], onDelete: SetNull)
+  history                 RegulatoryRemediationHistory[]
+
+  @@index([organizationId])
+  @@index([assessmentId])
+  @@index([complianceTaskId])
+  @@index([obligationId])
+  @@index([controlId])
+  @@index([status])
+  @@index([priority])
+  @@index([assignedToId])
+  @@map("regulatory_remediation_tasks")
+}
+
+model RegulatoryRemediationHistory {
+  id                   String                      @id @default(uuid())
+  remediationTaskId    String
+  organizationId       String
+  previousStatus       RegulatoryRemediationStatus?
+  newStatus            RegulatoryRemediationStatus
+  action               String
+  actorId              String
+  rationale            String?
+  snapshotPayload      Json?
+  recordedAt           DateTime                    @default(now())
+
+  remediationTask      RegulatoryRemediationTask   @relation(fields: [remediationTaskId], references: [id], onDelete: Cascade)
+  organization         Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([remediationTaskId])
+  @@index([organizationId])
+  @@map("regulatory_remediation_histories")
+}
+
 

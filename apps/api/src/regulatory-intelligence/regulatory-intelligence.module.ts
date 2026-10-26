@@ -18,9 +18,11 @@ import { MappingSuggestionEngineService } from './mappings/mapping-suggestion-en
 import { ObligationControlMappingService } from './mappings/obligation-control-mapping.service';
 import { ControlGapEngineService } from './gaps/control-gap-engine.service';
 import { RegulatoryControlGapService } from './gaps/regulatory-control-gap.service';
+import { RegulatoryRemediationService } from './remediation/regulatory-remediation.service';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [PrismaModule, AuditLogsModule],
+  imports: [PrismaModule, AuditLogsModule, NotificationsModule],
   controllers: [RegulatoryIntelligenceController],
   providers: [
     SsrfSafeHttpClientService,
@@ -38,6 +40,7 @@ import { RegulatoryControlGapService } from './gaps/regulatory-control-gap.servi
     ObligationControlMappingService,
     ControlGapEngineService,
     RegulatoryControlGapService,
+    RegulatoryRemediationService,
   ],
   exports: [
     RegulatoryCatalogueService,
@@ -52,6 +55,7 @@ import { RegulatoryControlGapService } from './gaps/regulatory-control-gap.servi
     ObligationControlMappingService,
     ControlGapEngineService,
     RegulatoryControlGapService,
+    RegulatoryRemediationService,
   ],
 })
 export class RegulatoryIntelligenceModule {}

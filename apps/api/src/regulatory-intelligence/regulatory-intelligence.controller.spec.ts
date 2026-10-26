@@ -6,7 +6,7 @@ import { RegulatoryDocumentStorageService } from './storage/regulatory-document-
 import { RegulatoryObligationService } from './obligations/regulatory-obligation.service';
 import { RegulatoryApplicabilityService } from './applicability/regulatory-applicability.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
-import { ManualIntakeReviewStatus, RegulatoryObligationStatus, ApplicabilityOutcome } from '@prisma/client';
+import { ManualIntakeReviewStatus, RegulatoryObligationStatus, ApplicabilityOutcome, Role } from '@prisma/client';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { Readable } from 'stream';
 
@@ -21,6 +21,7 @@ describe('RegulatoryIntelligenceController (Internal API & Tenant Isolation)', (
   let mockApplicabilityService: jest.Mocked<RegulatoryApplicabilityService>;
   let mockMappingService: any;
   let mockGapService: any;
+  let mockRemediationService: any;
 
   beforeEach(() => {
     mockPrisma = {
@@ -103,6 +104,19 @@ describe('RegulatoryIntelligenceController (Internal API & Tenant Isolation)', (
       getGapSummary: jest.fn(),
     } as any;
 
+    mockRemediationService = {
+      createRemediation: jest.fn(),
+      findAll: jest.fn(),
+      getSummary: jest.fn(),
+      findOne: jest.fn(),
+      assignRemediation: jest.fn(),
+      updateStatus: jest.fn(),
+      handleApproval: jest.fn(),
+      completeRemediation: jest.fn(),
+      verifyAndClose: jest.fn(),
+      acceptRisk: jest.fn(),
+    } as any;
+
     controller = new RegulatoryIntelligenceController(
       mockPrisma,
       mockCatalogueService,
@@ -113,6 +127,7 @@ describe('RegulatoryIntelligenceController (Internal API & Tenant Isolation)', (
       mockApplicabilityService,
       mockMappingService,
       mockGapService,
+      mockRemediationService,
     );
   });
 
@@ -982,6 +997,217 @@ describe('RegulatoryIntelligenceController (Internal API & Tenant Isolation)', (
 
       await expect(
         controller.getControlGapSummary(''),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('10. Regulatory Remediation Planning & Task Tracking Endpoints (Phase 7)', () => {
+    it('should create remediation task with organization scoping and actor context', async () => {
+      mockRemediationService.createRemediation.mockResolvedValueOnce({
+        id: 'rem-task-1',
+        title: 'Deploy MFA',
+        status: 'PROPOSED',
+      });
+
+      const dto = {
+        assessmentId: 'gap-1',
+        title: 'Deploy MFA',
+        description: 'Deploy MFA across admins',
+        acceptanceCriteria: 'MFA verified',
+        assignedToId: 'user-1',
+      };
+
+      const res = await controller.createRemediation(dto, 'officer-1', 'org-123');
+
+      expect(res.id).toBe('rem-task-1');
+      expect(mockRemediationService.createRemediation).toHaveBeenCalledWith('org-123', 'officer-1', dto);
+    });
+
+    it('should list remediation tasks scoped to caller organization with filters', async () => {
+      mockRemediationService.findAll.mockResolvedValueOnce({
+        items: [{ id: 'rem-task-1', title: 'Task 1' }],
+        total: 1,
+        page: 1,
+        limit: 20,
+      });
+
+      const query = { page: 1, limit: 20 };
+      const res = await controller.listRemediationTasks(query, 'org-123');
+
+      expect(res.items).toHaveLength(1);
+      expect(mockRemediationService.findAll).toHaveBeenCalledWith('org-123', query);
+    });
+
+    it('should return remediation summary metrics', async () => {
+      mockRemediationService.getSummary.mockResolvedValueOnce({
+        totalTasks: 5,
+        internalOverdueCount: 1,
+        regulatoryOverdueCount: 0,
+      });
+
+      const res = await controller.getRemediationSummary('org-123');
+
+      expect(res.totalTasks).toBe(5);
+      expect(mockRemediationService.getSummary).toHaveBeenCalledWith('org-123');
+    });
+
+    it('should retrieve single remediation task by ID', async () => {
+      mockRemediationService.findOne.mockResolvedValueOnce({
+        id: 'rem-task-1',
+        title: 'Task 1',
+      });
+
+      const res = await controller.getRemediationTask('rem-task-1', 'org-123');
+
+      expect(res.id).toBe('rem-task-1');
+      expect(mockRemediationService.findOne).toHaveBeenCalledWith('org-123', 'rem-task-1');
+    });
+
+    it('should reassign remediation task with rationale', async () => {
+      mockRemediationService.assignRemediation.mockResolvedValueOnce({
+        id: 'rem-task-1',
+        assignedToId: 'user-2',
+      });
+
+      const res = await controller.assignRemediation(
+        'rem-task-1',
+        { assignedToId: 'user-2', rationale: 'Rotation' },
+        'officer-1',
+        'org-123',
+      );
+
+      expect(res.assignedToId).toBe('user-2');
+      expect(mockRemediationService.assignRemediation).toHaveBeenCalledWith(
+        'org-123',
+        'officer-1',
+        'rem-task-1',
+        { assignedToId: 'user-2', rationale: 'Rotation' },
+      );
+    });
+
+    it('should update status and blockers', async () => {
+      mockRemediationService.updateStatus.mockResolvedValueOnce({
+        id: 'rem-task-1',
+        status: 'BLOCKED',
+      });
+
+      const res = await controller.updateRemediationStatus(
+        'rem-task-1',
+        { status: 'BLOCKED' as any, blockedReason: 'Wait on vendor' },
+        'officer-1',
+        'org-123',
+      );
+
+      expect(res.status).toBe('BLOCKED');
+      expect(mockRemediationService.updateStatus).toHaveBeenCalledWith(
+        'org-123',
+        'officer-1',
+        'rem-task-1',
+        { status: 'BLOCKED', blockedReason: 'Wait on vendor' },
+      );
+    });
+
+    it('should process governance approval decision', async () => {
+      mockRemediationService.handleApproval.mockResolvedValueOnce({
+        id: 'rem-task-1',
+        status: 'APPROVED',
+      });
+
+      const res = await controller.handleRemediationApproval(
+        'rem-task-1',
+        { action: 'APPROVE' as any, approvalNotes: 'Signed off' },
+        'officer-1',
+        Role.MSSP_ADMIN,
+        'org-123',
+      );
+
+      expect(res.status).toBe('APPROVED');
+      expect(mockRemediationService.handleApproval).toHaveBeenCalledWith(
+        'org-123',
+        'officer-1',
+        Role.MSSP_ADMIN,
+        'rem-task-1',
+        { action: 'APPROVE', approvalNotes: 'Signed off' },
+      );
+    });
+
+    it('should submit completion notes and evidence references', async () => {
+      mockRemediationService.completeRemediation.mockResolvedValueOnce({
+        id: 'rem-task-1',
+        status: 'COMPLETED',
+      });
+
+      const res = await controller.completeRemediation(
+        'rem-task-1',
+        { completionNotes: 'Done', evidenceIds: ['ev-1'] },
+        'officer-1',
+        'org-123',
+      );
+
+      expect(res.status).toBe('COMPLETED');
+      expect(mockRemediationService.completeRemediation).toHaveBeenCalledWith(
+        'org-123',
+        'officer-1',
+        'rem-task-1',
+        { completionNotes: 'Done', evidenceIds: ['ev-1'] },
+      );
+    });
+
+    it('should verify and close task with optional reassessment request', async () => {
+      mockRemediationService.verifyAndClose.mockResolvedValueOnce({
+        id: 'rem-task-1',
+        status: 'VERIFIED_CLOSED',
+      });
+
+      const res = await controller.verifyRemediation(
+        'rem-task-1',
+        { verificationNotes: 'Verified', reassessmentRequested: true },
+        'officer-1',
+        Role.MSSP_ADMIN,
+        'org-123',
+      );
+
+      expect(res.status).toBe('VERIFIED_CLOSED');
+      expect(mockRemediationService.verifyAndClose).toHaveBeenCalledWith(
+        'org-123',
+        'officer-1',
+        Role.MSSP_ADMIN,
+        'rem-task-1',
+        { verificationNotes: 'Verified', reassessmentRequested: true },
+      );
+    });
+
+    it('should document risk acceptance without silent suppression', async () => {
+      mockRemediationService.acceptRisk.mockResolvedValueOnce({
+        id: 'rem-task-1',
+        status: 'RISK_ACCEPTED',
+      });
+
+      const res = await controller.acceptRemediationRisk(
+        'rem-task-1',
+        { riskAcceptanceRationale: 'Air-gapped compensating control' },
+        'officer-1',
+        Role.ADMIN,
+        'org-123',
+      );
+
+      expect(res.status).toBe('RISK_ACCEPTED');
+      expect(mockRemediationService.acceptRisk).toHaveBeenCalledWith(
+        'org-123',
+        'officer-1',
+        Role.ADMIN,
+        'rem-task-1',
+        { riskAcceptanceRationale: 'Air-gapped compensating control' },
+      );
+    });
+
+    it('should reject remediation requests when organization context is missing', async () => {
+      await expect(
+        controller.createRemediation({} as any, 'officer-1', ''),
+      ).rejects.toThrow(BadRequestException);
+
+      await expect(
+        controller.getRemediationSummary(''),
       ).rejects.toThrow(BadRequestException);
     });
   });
