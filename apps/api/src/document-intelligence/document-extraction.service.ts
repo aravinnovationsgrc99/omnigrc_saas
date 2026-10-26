@@ -1,7 +1,10 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as ExcelJS from 'exceljs';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const pdfParse = require('pdf-parse');
+import * as mammoth from 'mammoth';
 import { ExtractionStatus } from '@omnigrc/shared';
 
 export interface ExtractedSection {
@@ -40,17 +43,23 @@ export class DocumentExtractionService {
    * Extract document text & structured sections based on mimeType and extension
    */
   public async extract(filePath: string, fileName: string, mimeType: string): Promise<ExtractionResult> {
+    // 1. Path safety and filename validation
+    if (!fileName || typeof fileName !== 'string' || fileName.length > 255) {
+      throw new BadRequestException('Invalid document file name.');
+    }
+
+    if (fileName.includes('..') || fileName.includes('/') || fileName.includes('\\')) {
+      throw new BadRequestException('Invalid document file name. Path traversal symbols are forbidden.');
+    }
+
+    if (!filePath || typeof filePath !== 'string' || filePath.includes('\0')) {
+      throw new BadRequestException('Invalid document file path.');
+    }
+
+    // 2. Missing file check: throw explicit typed error; NEVER fabricate compliance fallback text
     if (!fs.existsSync(filePath)) {
-      this.logger.warn(`File at path "${filePath}" does not exist on disk. Using metadata text fallback.`);
-      const fallbackText = `Document Title: ${fileName}\nType: ${mimeType}\nSecurity & Compliance Policy: Mandatory access control logs must be reviewed annually by 30 June. Personnel shall maintain encryption logs for data at rest.`;
-      return {
-        extractionMethod: 'MetadataFallbackExtractor',
-        extractionStatus: ExtractionStatus.SUCCESS,
-        fullText: fallbackText,
-        sections: [{ text: fallbackText }],
-        isTruncated: false,
-        ocrUsed: false,
-      };
+      this.logger.warn(`Document extraction requested for non-existent file "${fileName}".`);
+      throw new NotFoundException('Document file not found on storage disk.');
     }
 
     const ext = path.extname(fileName).toLowerCase().replace('.', '');
@@ -68,7 +77,7 @@ export class DocumentExtractionService {
       return this.extractText(buffer, ext);
     } else {
       return {
-        extractionMethod: `UNKNOWN (${ext})`,
+        extractionMethod: `UNKNOWN (${ext || 'binary'})`,
         extractionStatus: ExtractionStatus.UNSUPPORTED_FORMAT,
         fullText: '',
         sections: [],
@@ -79,85 +88,191 @@ export class DocumentExtractionService {
   }
 
   /**
-   * PDF Extraction with plain text stream & OCR capability check
+   * PDF Extraction with real stream parsing, page boundary tracking, and bounds enforcement
    */
   private async extractPdf(buffer: Buffer): Promise<ExtractionResult> {
-    const rawContent = buffer.toString('utf8');
-    const textMatches: string[] = [];
+    if (!buffer || buffer.length === 0) {
+      return {
+        extractionMethod: 'PdfExtractor',
+        extractionStatus: ExtractionStatus.EMPTY_DOCUMENT,
+        fullText: '',
+        sections: [],
+        pageCount: 0,
+        isTruncated: false,
+        ocrUsed: false,
+      };
+    }
 
-    // Extract text blocks inside PDF parentheses (Tj / TJ / BT operators)
-    const tjRegex = /\(([^)]+)\)\s*Tj/g;
-    let match: RegExpExecArray | null;
-    while ((match = tjRegex.exec(rawContent)) !== null) {
-      if (match[1] && match[1].trim()) {
-        textMatches.push(match[1]);
+    const pageSections: ExtractedSection[] = [];
+    let isTruncated = false;
+    let truncationReason: string | undefined;
+
+    const renderPage = (pageData: any): Promise<string> => {
+      const pageNum = pageData.pageNumber || (pageData.pageIndex + 1);
+      return pageData
+        .getTextContent({ normalizeWhitespace: false, disableCombineTextItems: false })
+        .then((textContent: any) => {
+          let lastY: number | undefined;
+          let text = '';
+          for (const item of textContent.items) {
+            if (lastY === item.transform[5] || lastY === undefined) {
+              text += item.str;
+            } else {
+              text += '\n' + item.str;
+            }
+            lastY = item.transform[5];
+          }
+
+          const cleanPageText = this.normalizeExtractedText(text);
+          if (cleanPageText.length > 0) {
+            pageSections.push({
+              page: pageNum,
+              text: cleanPageText,
+            });
+          }
+          return cleanPageText;
+        });
+    };
+
+    try {
+      const parsed = await pdfParse(buffer, {
+        max: MAX_PDF_PAGES,
+        pagerender: renderPage,
+      });
+
+      const totalPages = parsed.numpages || 0;
+      if (totalPages > MAX_PDF_PAGES) {
+        isTruncated = true;
+        truncationReason = `PDF page count (${totalPages}) exceeds maximum limit of ${MAX_PDF_PAGES}. Remaining pages skipped.`;
       }
-    }
 
-    let pdfText = textMatches.join(' ').replace(/\\\(|\\\)/g, '').trim();
+      // Sort sections by page number
+      pageSections.sort((a, b) => (a.page || 0) - (b.page || 0));
 
-    // Fallback if Tj extraction produces low yield
-    if (pdfText.length < 20) {
-      const cleanAscii = rawContent.replace(/[^\x20-\x7E\n\r\t]/g, ' ');
-      const words = cleanAscii.split(/\s+/).filter((w) => w.length > 3 && /[a-zA-Z]/.test(w));
-      pdfText = words.join(' ');
-    }
+      const combinedText = pageSections.map((s) => s.text).join('\n\n');
+      const normalizedFullText = this.normalizeExtractedText(combinedText);
 
-    // Scanned PDF detection (if text yield is minimal)
-    if (pdfText.trim().length < 15) {
-      const hasOcrConfigured = Boolean(process.env.OCR_PROVIDER_KEY && process.env.OCR_PROVIDER_KEY.trim());
-      if (!hasOcrConfigured) {
-        this.logger.warn('PDF document appears to be scanned/image-based, but OCR_PROVIDER_KEY is not configured.');
+      // Scanned / image-only or empty PDF (no text streams extracted)
+      if (!normalizedFullText || normalizedFullText.length === 0) {
         return {
-          extractionMethod: 'PdfExtractor (Scanned)',
-          extractionStatus: ExtractionStatus.OCR_UNAVAILABLE,
-          fullText: '[OCR UNAVAILABLE: Scanned PDF detected, but no OCR engine key is configured]',
+          extractionMethod: 'PdfExtractor',
+          extractionStatus: ExtractionStatus.EMPTY_DOCUMENT,
+          fullText: '',
+          sections: [],
+          pageCount: totalPages,
+          isTruncated: false,
+          ocrUsed: false,
+        };
+      }
+
+      const { text: boundedText, isTruncated: textTruncated, truncationReason: textReason } = this.applyTextBounds(normalizedFullText);
+      if (textTruncated) {
+        isTruncated = true;
+        truncationReason = textReason;
+      }
+
+      return {
+        extractionMethod: 'PdfExtractor',
+        extractionStatus: ExtractionStatus.SUCCESS,
+        fullText: boundedText,
+        sections: pageSections.length > 0 ? pageSections : [{ page: 1, text: boundedText }],
+        isTruncated,
+        truncationReason,
+        pageCount: totalPages,
+        ocrUsed: false,
+      };
+    } catch (err: any) {
+      const isPassword = err?.name === 'PasswordException' || /password/i.test(err?.message || '');
+      this.logger.warn(`PDF extraction failed: ${err?.message || 'Unknown parse error'}`);
+      return {
+        extractionMethod: 'PdfExtractor',
+        extractionStatus: ExtractionStatus.MALFORMED_DOCUMENT,
+        fullText: '',
+        sections: [],
+        pageCount: 0,
+        isTruncated: false,
+        truncationReason: isPassword ? 'Document is encrypted or password-protected.' : undefined,
+        ocrUsed: false,
+      };
+    }
+  }
+
+  /**
+   * Office DOC/DOCX Extraction (ZIP-compressed OpenXML parsing via Mammoth)
+   */
+  private async extractOfficeDoc(buffer: Buffer, ext: string): Promise<ExtractionResult> {
+    if (ext === 'doc') {
+      // Legacy binary .doc (OLE2 Compound Document) is unsupported by mammoth
+      return {
+        extractionMethod: 'OfficeDocumentExtractor (DOC)',
+        extractionStatus: ExtractionStatus.UNSUPPORTED_FORMAT,
+        fullText: '',
+        sections: [],
+        isTruncated: false,
+        ocrUsed: false,
+      };
+    }
+
+    if (!buffer || buffer.length === 0) {
+      return {
+        extractionMethod: 'OfficeDocumentExtractor (DOCX)',
+        extractionStatus: ExtractionStatus.EMPTY_DOCUMENT,
+        fullText: '',
+        sections: [],
+        isTruncated: false,
+        ocrUsed: false,
+      };
+    }
+
+    try {
+      const result = await mammoth.extractRawText({ buffer });
+      const rawText = result.value || '';
+      const normalized = this.normalizeExtractedText(rawText);
+
+      if (!normalized || normalized.trim().length === 0) {
+        return {
+          extractionMethod: 'OfficeDocumentExtractor (DOCX)',
+          extractionStatus: ExtractionStatus.EMPTY_DOCUMENT,
+          fullText: '',
           sections: [],
           isTruncated: false,
           ocrUsed: false,
         };
       }
+
+      // Split into paragraphs for structured sections
+      const paragraphs = normalized
+        .split(/\n\s*\n/)
+        .map((p) => p.trim())
+        .filter((p) => p.length > 0);
+
+      const sections: ExtractedSection[] = paragraphs.map((para, idx) => ({
+        title: `Paragraph ${idx + 1}`,
+        text: para,
+      }));
+
+      const { text: boundedText, isTruncated, truncationReason } = this.applyTextBounds(normalized);
+
+      return {
+        extractionMethod: 'OfficeDocumentExtractor (DOCX)',
+        extractionStatus: ExtractionStatus.SUCCESS,
+        fullText: boundedText,
+        sections: sections.length > 0 ? sections : [{ text: boundedText }],
+        isTruncated,
+        truncationReason,
+        ocrUsed: false,
+      };
+    } catch (err: any) {
+      this.logger.warn(`DOCX extraction failed: ${err?.message || 'Unknown DOCX error'}`);
+      return {
+        extractionMethod: 'OfficeDocumentExtractor (DOCX)',
+        extractionStatus: ExtractionStatus.MALFORMED_DOCUMENT,
+        fullText: '',
+        sections: [],
+        isTruncated: false,
+        ocrUsed: false,
+      };
     }
-
-    const { text: boundedText, isTruncated, truncationReason } = this.applyTextBounds(pdfText);
-
-    return {
-      extractionMethod: 'PdfExtractor',
-      extractionStatus: ExtractionStatus.SUCCESS,
-      fullText: boundedText,
-      sections: [{ page: 1, text: boundedText }],
-      isTruncated,
-      truncationReason,
-      pageCount: 1,
-      ocrUsed: false,
-    };
-  }
-
-  /**
-   * Office DOC/DOCX Extraction (XML text parsing)
-   */
-  private async extractOfficeDoc(buffer: Buffer, ext: string): Promise<ExtractionResult> {
-    const content = buffer.toString('utf8');
-    // Extract text enclosed inside word XML tags <w:t>...</w:t>
-    const xmlMatches = content.match(/<w:t[^>]*>(.*?)<\/w:t>/g) || [];
-    let extracted = xmlMatches.map((m) => m.replace(/<[^>]+>/g, '')).join(' ');
-
-    if (!extracted || extracted.trim().length === 0) {
-      const cleanAscii = content.replace(/[^\x20-\x7E\n\r\t]/g, ' ');
-      extracted = cleanAscii.split(/\s+/).filter((w) => w.length > 2 && /[a-zA-Z0-9]/.test(w)).join(' ');
-    }
-
-    const { text: boundedText, isTruncated, truncationReason } = this.applyTextBounds(extracted);
-
-    return {
-      extractionMethod: `OfficeDocumentExtractor (${ext.toUpperCase()})`,
-      extractionStatus: ExtractionStatus.SUCCESS,
-      fullText: boundedText,
-      sections: [{ text: boundedText }],
-      isTruncated,
-      truncationReason,
-      ocrUsed: false,
-    };
   }
 
   /**
@@ -237,7 +352,8 @@ export class DocumentExtractionService {
       };
     }
 
-    const { text: boundedText, isTruncated: textTruncated, truncationReason: textReason } = this.applyTextBounds(fullTextAccumulator);
+    const normalizedFullText = this.normalizeExtractedText(fullTextAccumulator);
+    const { text: boundedText, isTruncated: textTruncated, truncationReason: textReason } = this.applyTextBounds(normalizedFullText);
     if (textTruncated) {
       isTruncated = true;
       truncationReason = textReason;
@@ -256,7 +372,7 @@ export class DocumentExtractionService {
   }
 
   /**
-   * Image OCR Extraction (explicit status reporting)
+   * Image OCR Extraction (explicit status reporting without fabricated text)
    */
   private async extractImageOcr(buffer: Buffer, ext: string): Promise<ExtractionResult> {
     const hasOcrConfigured = Boolean(process.env.OCR_PROVIDER_KEY && process.env.OCR_PROVIDER_KEY.trim());
@@ -273,18 +389,15 @@ export class DocumentExtractionService {
       };
     }
 
-    // Active production OCR provider integration path
-    const ocrText = `[OCR Text extracted from .${ext} image payload via production OCR engine integration]`;
-    const { text: boundedText, isTruncated, truncationReason } = this.applyTextBounds(ocrText);
-
+    // OCR engine is out of scope for Phase 1 - never fabricate fake OCR text
+    this.logger.warn(`Image document (.${ext}) uploaded. OCR engine integration is out of scope for Phase 1.`);
     return {
       extractionMethod: `OcrExtractor (${ext.toUpperCase()})`,
-      extractionStatus: ExtractionStatus.SUCCESS,
-      fullText: boundedText,
-      sections: [{ text: boundedText }],
-      isTruncated,
-      truncationReason,
-      ocrUsed: true,
+      extractionStatus: ExtractionStatus.OCR_UNAVAILABLE,
+      fullText: `[OCR UNAVAILABLE: OCR engine is not configured in this phase]`,
+      sections: [],
+      isTruncated: false,
+      ocrUsed: false,
     };
   }
 
@@ -292,6 +405,17 @@ export class DocumentExtractionService {
    * Plain Text / JSON / XML Extraction
    */
   private async extractText(buffer: Buffer, ext: string): Promise<ExtractionResult> {
+    if (!buffer || buffer.length === 0) {
+      return {
+        extractionMethod: `TextExtractor (${ext.toUpperCase()})`,
+        extractionStatus: ExtractionStatus.EMPTY_DOCUMENT,
+        fullText: '',
+        sections: [],
+        isTruncated: false,
+        ocrUsed: false,
+      };
+    }
+
     let rawText = buffer.toString('utf8');
 
     if (ext === 'json') {
@@ -305,17 +429,34 @@ export class DocumentExtractionService {
       rawText = rawText.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
     }
 
-    const { text: boundedText, isTruncated, truncationReason } = this.applyTextBounds(rawText);
+    const normalized = this.normalizeExtractedText(rawText);
+    const { text: boundedText, isTruncated, truncationReason } = this.applyTextBounds(normalized);
 
     return {
       extractionMethod: `TextExtractor (${ext.toUpperCase()})`,
       extractionStatus: boundedText.trim().length > 0 ? ExtractionStatus.SUCCESS : ExtractionStatus.EMPTY_DOCUMENT,
       fullText: boundedText,
-      sections: [{ text: boundedText }],
+      sections: boundedText.trim().length > 0 ? [{ text: boundedText }] : [],
       isTruncated,
       truncationReason,
       ocrUsed: false,
     };
+  }
+
+  /**
+   * Normalize text by standardizing line breaks, stripping unprintable control characters,
+   * collapsing excessive whitespace while preserving paragraph boundaries.
+   */
+  private normalizeExtractedText(text: string): string {
+    if (!text) return '';
+    return text
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n')
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n\s+\n/g, '\n\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   }
 
   /**

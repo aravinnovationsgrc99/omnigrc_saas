@@ -261,7 +261,12 @@ export class AnalysisQueueService implements OnModuleInit, OnModuleDestroy {
       // 5. Document Extraction Phase
       let extraction = await this.extractionService.extract(filePath, fileName, mimeType);
 
-      if (extraction.extractionStatus === ExtractionStatus.UNSUPPORTED_FORMAT || extraction.extractionStatus === ExtractionStatus.MALFORMED_DOCUMENT) {
+      if (
+        extraction.extractionStatus === ExtractionStatus.UNSUPPORTED_FORMAT ||
+        extraction.extractionStatus === ExtractionStatus.MALFORMED_DOCUMENT ||
+        extraction.extractionStatus === ExtractionStatus.EMPTY_DOCUMENT ||
+        extraction.extractionStatus === ExtractionStatus.OCR_UNAVAILABLE
+      ) {
         await this.prisma.documentAnalysis.update({
           where: { id: analysis.id },
           data: {
