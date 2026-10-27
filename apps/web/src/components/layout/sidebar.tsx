@@ -6,7 +6,7 @@ import { Role, OrgType, hasRole, OMNIGRC_VERSION } from '@omnigrc/shared';
 import {
   LayoutDashboard, ShieldAlert, Boxes, GitMerge, KanbanSquare,
   Settings, Globe2, FileText, Lock, FileCheck, Building2, Bug, ClipboardList, FileSpreadsheet,
-  CheckSquare, FileArchive, ShieldCheck, Library, Layers, Sparkles, Building, CheckCircle2, X, type LucideIcon
+  CheckSquare, FileArchive, ShieldCheck, Library, Layers, Sparkles, Building, CheckCircle2, X, Scale, type LucideIcon
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -67,6 +67,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: 'Intelligence & MSSP',
     items: [
       { key: 'intelligence', label: 'GRC Intelligence', icon: Sparkles, capabilityCode: 'AI_GRC_CHAT', enabled: true },
+      { key: 'regulatory-intelligence', label: 'Regulatory Intelligence', icon: Scale, capabilityCode: 'REGULATORY_INTELLIGENCE', enabled: true },
       { key: 'integrations', label: 'Integrations Hub', icon: Layers, capabilityCode: 'INTEGRATIONS_HUB', enabled: true },
       { key: 'mssp', label: 'MSSP Partner Portal', icon: Building, capabilityCode: 'MSSP_PORTAL', enabled: true, roles: [Role.MSSP_ADMIN, Role.MSSP_ANALYST, Role.ADMIN] },
     ],

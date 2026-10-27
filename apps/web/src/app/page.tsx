@@ -28,6 +28,7 @@ import { IntegrationsView } from '@/components/integrations/integrations-view';
 import { GrcIntelligenceView } from '@/components/intelligence/grc-intelligence-view';
 import { MsspPartnerPortalView } from '@/components/mssp/mssp-partner-portal-view';
 import { ApprovalCenterView } from '@/components/approval/approval-center-view';
+import { RegulatoryIntelligenceView } from '@/components/regulatory-intelligence/regulatory-intelligence-view';
 
 import { ComingSoon } from '@/components/dashboard/coming-soon';
 import { OnboardingWizard } from '@/components/onboarding/onboarding-wizard';
@@ -149,6 +150,7 @@ export default function MainPage() {
                 {view === 'evidence' && <EvidenceVaultView />}
                 {view === 'board' && <ComplianceBoardView />}
                 {view === 'intelligence' && <GrcIntelligenceView />}
+                {view === 'regulatory-intelligence' && <RegulatoryIntelligenceView />}
                 {view === 'integrations' && <IntegrationsView />}
                 {view === 'mssp' && <MsspPartnerPortalView />}
                 {view === 'settings' && <SettingsView />}

@@ -526,8 +526,8 @@ describe('Phase 5 Frontend Workflows & Integration Verification', () => {
 
       render(
         <Topbar
-          currentView="dashboard"
-          onToggleMobileNav={jest.fn()}
+          mobileSidebarOpen={false}
+          onToggleMobileSidebar={jest.fn()}
           onNavigateToView={handleNavigate}
         />
       );
