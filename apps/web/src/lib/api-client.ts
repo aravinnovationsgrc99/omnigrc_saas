@@ -1,6 +1,6 @@
 export const API_BASE_URL = (
   process.env.NEXT_PUBLIC_API_URL ||
-  (process.env.NODE_ENV === 'production' ? 'https://api.omnigrc.co' : 'http://localhost:3001')
+  (process.env.NODE_ENV === 'production' ? 'https://omnigrc-saas.onrender.com' : 'http://localhost:3001')
 ).replace(/\/+$/, '');
 
 const ACCESS_TOKEN_KEY = 'omnigrc_access_token';
