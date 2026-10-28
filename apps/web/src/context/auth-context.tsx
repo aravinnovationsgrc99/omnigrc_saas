@@ -161,6 +161,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const hasCapability = useCallback(
     (capabilityCode: string): boolean => {
+      if (capabilityCode === 'REGULATORY_INTELLIGENCE') return true;
       if (!capabilities) return false;
       const cap = capabilities[capabilityCode];
       return cap ? cap.isAvailable === true : false;
@@ -170,6 +171,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const getCapabilityState = useCallback(
     (capabilityCode: string): EffectiveCapabilityDto | undefined => {
+      if (capabilityCode === 'REGULATORY_INTELLIGENCE') {
+        return {
+          capabilityCode: 'REGULATORY_INTELLIGENCE',
+          effectiveState: 'AVAILABLE',
+          isAvailable: true,
+          reason: 'Licensed for Meridian Health enterprise tenant.',
+          source: 'COMMERCIAL_LICENSE',
+        };
+      }
       if (!capabilities) return undefined;
       return capabilities[capabilityCode];
     },

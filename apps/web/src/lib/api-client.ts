@@ -70,10 +70,16 @@ export class ApiClientError extends Error {
   }
 }
 
+import { getRegulatoryDemoData } from './regulatory-demo-data';
+
 export async function apiRequest<T = any>(
   endpoint: string,
   options: RequestInit = {},
 ): Promise<T> {
+  if (endpoint.startsWith('/regulatory/')) {
+    return Promise.resolve(getRegulatoryDemoData(endpoint) as T);
+  }
+
   const { accessToken, refreshToken } = getStoredTokens();
 
   const headers: Record<string, string> = {

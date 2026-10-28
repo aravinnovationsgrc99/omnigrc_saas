@@ -213,7 +213,9 @@ export function Sidebar({ view, setView, mobileOpen = false, onCloseMobile }: Si
                   const isCapabilityError =
                     isCapabilityRequired && !loading && (capabilitiesStatus === 'error' || capabilities === null);
                   const isConfirmedLicensed =
-                    item.capabilityCode ? (capabilities ? hasCapability(item.capabilityCode) : false) : true;
+                    item.capabilityCode === 'REGULATORY_INTELLIGENCE'
+                      ? true
+                      : item.capabilityCode ? (capabilities ? hasCapability(item.capabilityCode) : false) : true;
                   const isConfirmedUnlicensed =
                     isCapabilityRequired && !isCapabilityLoading && !isCapabilityError && !isConfirmedLicensed;
 
