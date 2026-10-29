@@ -1,3 +1,5 @@
+import { getRegulatoryDemoData } from './regulatory-demo-data';
+
 const rawApiUrl: string =
   process.env.NEXT_PUBLIC_API_URL ||
   (process.env.NODE_ENV === 'production'
@@ -69,8 +71,6 @@ export class ApiClientError extends Error {
     this.data = data;
   }
 }
-
-import { getRegulatoryDemoData } from './regulatory-demo-data';
 
 export async function apiRequest<T = any>(
   endpoint: string,
