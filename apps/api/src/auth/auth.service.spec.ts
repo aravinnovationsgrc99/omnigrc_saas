@@ -300,6 +300,118 @@ describe('AuthService', () => {
       ).rejects.toThrow('DB Constraint Violation');
     });
 
+    it('should update password and clear passwordSetupRequired when existing user requires password setup', async () => {
+      const existingUserWithSetupRequired = {
+        id: 'user-existing-1',
+        email: 'invitee@orga.com',
+        name: 'Initial Name',
+        organizationId: 'org-A',
+        role: Role.ADMIN,
+        passwordHash: 'old-random-hash',
+        passwordSetupRequired: true,
+        createdAt: new Date(),
+        organization: { id: 'org-A', name: 'Organization A', primaryRegion: 'India', onboardingCompleted: true, createdAt: new Date() },
+      };
+
+      prisma.$transaction.mockImplementation(async (cb) => {
+        return cb({
+          invitation: {
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+            findUnique: jest.fn().mockResolvedValue(validInvitation),
+          },
+          user: {
+            findUnique: jest.fn().mockResolvedValue(existingUserWithSetupRequired),
+            update: jest.fn().mockImplementation(({ data }) => Promise.resolve({
+              ...existingUserWithSetupRequired,
+              passwordHash: data.passwordHash,
+              passwordSetupRequired: false,
+              name: data.name || existingUserWithSetupRequired.name,
+            })),
+          },
+        });
+      });
+
+      const res = await service.acceptInvitation({
+        token: rawToken,
+        password: 'newPermanentPassword123!',
+        name: 'Aryan Sayal',
+      });
+
+      expect(res.user.email).toBe('invitee@orga.com');
+      expect(res.user.passwordSetupRequired).toBe(false);
+    });
+
+    it('should reject acceptance when existing user requires password setup but password is invalid or missing', async () => {
+      const existingUserWithSetupRequired = {
+        id: 'user-existing-1',
+        email: 'invitee@orga.com',
+        name: 'Initial Name',
+        organizationId: 'org-A',
+        role: Role.ADMIN,
+        passwordHash: 'old-random-hash',
+        passwordSetupRequired: true,
+        createdAt: new Date(),
+        organization: { id: 'org-A', name: 'Organization A', primaryRegion: 'India', onboardingCompleted: true, createdAt: new Date() },
+      };
+
+      prisma.$transaction.mockImplementation(async (cb) => {
+        return cb({
+          invitation: {
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+            findUnique: jest.fn().mockResolvedValue(validInvitation),
+          },
+          user: {
+            findUnique: jest.fn().mockResolvedValue(existingUserWithSetupRequired),
+            update: jest.fn(),
+          },
+        });
+      });
+
+      await expect(
+        service.acceptInvitation({
+          token: rawToken,
+          password: '123',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should preserve existing password and NOT overwrite it when existing user does not require password setup', async () => {
+      const activeExistingUser = {
+        id: 'user-existing-active',
+        email: 'invitee@orga.com',
+        name: 'Existing Active User',
+        organizationId: 'org-A',
+        role: Role.ADMIN,
+        passwordHash: 'existing-secure-password-hash',
+        passwordSetupRequired: false,
+        createdAt: new Date(),
+        organization: { id: 'org-A', name: 'Organization A', primaryRegion: 'India', onboardingCompleted: true, createdAt: new Date() },
+      };
+
+      const userUpdateMock = jest.fn();
+
+      prisma.$transaction.mockImplementation(async (cb) => {
+        return cb({
+          invitation: {
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+            findUnique: jest.fn().mockResolvedValue(validInvitation),
+          },
+          user: {
+            findUnique: jest.fn().mockResolvedValue(activeExistingUser),
+            update: userUpdateMock,
+          },
+        });
+      });
+
+      const res = await service.acceptInvitation({
+        token: rawToken,
+        password: 'attemptedNewPassword123!',
+      });
+
+      expect(res.user.email).toBe('invitee@orga.com');
+      expect(userUpdateMock).not.toHaveBeenCalled();
+    });
+
     it('should safely handle concurrent/double acceptance without race condition', async () => {
       prisma.invitation.updateMany.mockResolvedValue({ count: 0 });
       prisma.invitation.findUnique.mockResolvedValue({

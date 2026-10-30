@@ -601,7 +601,25 @@ export class AuthService {
             );
           }
           // Preserve existing user's role: do NOT overwrite existingUser.role silently!
-          userToAuth = existingUser;
+          // If the existing user requires password setup and provided a valid password in the invitation form,
+          // establish their password securely now.
+          if (existingUser.passwordSetupRequired) {
+            if (!dto.password || dto.password.trim().length < 6) {
+              throw new BadRequestException('Password must be at least 6 characters long');
+            }
+            const newPasswordHash = await bcrypt.hash(dto.password, 10);
+            userToAuth = await tx.user.update({
+              where: { id: existingUser.id },
+              data: {
+                passwordHash: newPasswordHash,
+                passwordSetupRequired: false,
+                ...(dto.name && dto.name.trim() ? { name: dto.name.trim() } : {}),
+              },
+              include: { organization: true },
+            });
+          } else {
+            userToAuth = existingUser;
+          }
         } else {
           if (!dto.password || dto.password.trim().length < 6) {
             throw new BadRequestException('Password must be at least 6 characters long');
