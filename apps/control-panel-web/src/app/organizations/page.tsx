@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -17,6 +17,8 @@ import {
   CheckCircle2,
   XCircle,
   ShieldAlert,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { useAuth } from '../../lib/auth-context';
 import {
@@ -30,6 +32,7 @@ import {
   LicenseSummary,
   TransitionResponse,
 } from '../../types/control-plane';
+import { useDebounce } from '../../lib/use-debounce';
 import { StatusBadge } from '../../components/ui/status-badge';
 import { ConfirmationDialog } from '../../components/ui/confirmation-dialog';
 import { ErrorState } from '../../components/ui/error-state';
@@ -48,7 +51,14 @@ export default function OrganizationsPage() {
   const [error, setError] = useState<ControlPlaneApiError | null>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearch = useDebounce(searchQuery, 200);
   const [activeTab, setActiveTab] = useState<FilterTab>('ALL');
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 10;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearch, activeTab]);
 
   // Transition Modal State
   const [activeModalOrg, setActiveModalOrg] = useState<OrganizationControlState | null>(null);
@@ -114,9 +124,27 @@ export default function OrganizationsPage() {
     );
   }
 
-  // Correlate deployments and licenses for summary columns
-  const getOrgDeploymentSummary = (orgId: string) => {
-    const orgDeps = deployments.filter((d) => d.organizationId === orgId);
+  // Pre-computed O(1) index maps for high performance rendering
+  const depsByOrg = useMemo(() => {
+    const map = new Map<string, DeploymentSummary[]>();
+    for (const d of deployments) {
+      const list = map.get(d.organizationId) || [];
+      list.push(d);
+      map.set(d.organizationId, list);
+    }
+    return map;
+  }, [deployments]);
+
+  const licById = useMemo(() => {
+    const map = new Map<string, LicenseSummary>();
+    for (const l of licenses) {
+      map.set(l.id, l);
+    }
+    return map;
+  }, [licenses]);
+
+  const getOrgDeploymentSummary = useCallback((orgId: string) => {
+    const orgDeps = depsByOrg.get(orgId) || [];
     if (orgDeps.length === 0) return { label: 'No Deployment', badge: 'bg-gray-800 text-gray-400' };
     const first = orgDeps[0];
     return {
@@ -126,35 +154,47 @@ export default function OrganizationsPage() {
           ? 'bg-emerald-950/60 text-emerald-300 border-emerald-800/40'
           : 'bg-amber-950/60 text-amber-300 border-amber-800/40',
     };
-  };
+  }, [depsByOrg]);
 
-  const getOrgLicenseSummary = (orgId: string) => {
-    const orgDeps = deployments.filter((d) => d.organizationId === orgId);
-    const licIds = orgDeps.map((d) => d.licenseId).filter(Boolean);
-    const orgLics = licenses.filter((l) => licIds.includes(l.id));
+  const getOrgLicenseSummary = useCallback((orgId: string) => {
+    const orgDeps = depsByOrg.get(orgId) || [];
+    if (orgDeps.length === 0) return { label: 'No License', status: 'UNLICENSED' };
+    const firstWithLic = orgDeps.find((d) => d.licenseId);
+    if (!firstWithLic || !firstWithLic.licenseId) return { label: 'No License', status: 'UNLICENSED' };
+    const primary = licById.get(firstWithLic.licenseId);
+    if (!primary) return { label: 'No License', status: 'UNLICENSED' };
 
-    if (orgLics.length === 0) return { label: 'No License', status: 'UNLICENSED' };
-    const primary = orgLics[0];
     return {
       label: `${primary.product} (${primary.status})`,
       status: primary.status,
     };
-  };
+  }, [depsByOrg, licById]);
 
-  // Filtering & Search
-  const filteredOrganizations = organizations.filter((org) => {
-    const matchesTab = activeTab === 'ALL' || org.state === activeTab;
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) return matchesTab;
+  // High performance filtered and paginated organizations
+  const filteredOrganizations = useMemo(() => {
+    const query = debouncedSearch.trim().toLowerCase();
+    return organizations.filter((org) => {
+      const matchesTab = activeTab === 'ALL' || org.state === activeTab;
+      if (!matchesTab) return false;
+      if (!query) return true;
 
-    const matchesId = org.organizationId.toLowerCase().includes(query);
+      const matchesId = org.organizationId.toLowerCase().includes(query);
+      if (matchesId) return true;
 
-    const orgDeps = deployments.filter((d) => d.organizationId === org.organizationId);
-    const matchesDepId = orgDeps.some((d) => d.id.toLowerCase().includes(query));
-    const matchesCustId = orgDeps.some((d) => (d.customerId || '').toLowerCase().includes(query));
+      const orgDeps = depsByOrg.get(org.organizationId) || [];
+      const matchesDepId = orgDeps.some((d) => d.id.toLowerCase().includes(query));
+      if (matchesDepId) return true;
 
-    return matchesTab && (matchesId || matchesDepId || matchesCustId);
-  });
+      const matchesCustId = orgDeps.some((d) => (d.customerId || '').toLowerCase().includes(query));
+      return matchesCustId;
+    });
+  }, [organizations, activeTab, debouncedSearch, depsByOrg]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredOrganizations.length / pageSize));
+  const paginatedOrganizations = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredOrganizations.slice(start, start + pageSize);
+  }, [filteredOrganizations, currentPage, pageSize]);
 
   const handleOpenTransitionModal = (org: OrganizationControlState, target: ControlState) => {
     setActiveModalOrg(org);
@@ -456,7 +496,7 @@ export default function OrganizationsPage() {
                 )}
 
                 {!isLoading &&
-                  filteredOrganizations.map((org) => {
+                  paginatedOrganizations.map((org) => {
                     const depSummary = getOrgDeploymentSummary(org.organizationId);
                     const licSummary = getOrgLicenseSummary(org.organizationId);
 
@@ -622,6 +662,48 @@ export default function OrganizationsPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Controls */}
+          {filteredOrganizations.length > pageSize && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-2 py-1 text-xs text-gray-400">
+              <div>
+                Showing{' '}
+                <span className="font-semibold text-white">
+                  {(currentPage - 1) * pageSize + 1}
+                </span>{' '}
+                to{' '}
+                <span className="font-semibold text-white">
+                  {Math.min(currentPage * pageSize, filteredOrganizations.length)}
+                </span>{' '}
+                of{' '}
+                <span className="font-semibold text-white">
+                  {filteredOrganizations.length}
+                </span>{' '}
+                organizations
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="inline-flex items-center gap-1 rounded border border-cpDark-700 bg-cpDark-800 px-2.5 py-1 text-xs text-gray-300 hover:bg-cpDark-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                  <span>Previous</span>
+                </button>
+                <div className="px-2 font-mono text-gray-300 text-xs">
+                  Page {currentPage} of {totalPages}
+                </div>
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="inline-flex items-center gap-1 rounded border border-cpDark-700 bg-cpDark-800 px-2.5 py-1 text-xs text-gray-300 hover:bg-cpDark-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <span>Next</span>
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

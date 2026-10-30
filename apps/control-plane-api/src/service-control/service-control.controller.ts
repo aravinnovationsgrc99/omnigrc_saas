@@ -24,6 +24,19 @@ import { UpdateOrganizationServiceOverrideDto } from './dto/update-organization-
 export class ServiceControlController {
   constructor(private readonly serviceControlService: ServiceControlService) {}
 
+  @Get('organizations/:organizationId/services')
+  @RequireOperatorRoles(
+    OperatorRole.PLATFORM_SUPER_ADMIN,
+    OperatorRole.OPERATIONS_ENGINEER,
+    OperatorRole.COMMERCIAL_OPERATOR,
+    OperatorRole.SUPPORT_ENGINEER,
+    OperatorRole.SECURITY_AUDIT,
+    OperatorRole.READ_ONLY_AUDITOR,
+  )
+  async listOrganizationServices(@Param('organizationId') organizationId: string) {
+    return this.serviceControlService.listOrganizationServices(organizationId);
+  }
+
   @Get('services')
   @RequireOperatorRoles(
     OperatorRole.PLATFORM_SUPER_ADMIN,

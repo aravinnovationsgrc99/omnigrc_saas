@@ -21,6 +21,14 @@ import {
   CheckCircle2,
   Lock,
   Clock,
+  Layers,
+  Sliders,
+  RotateCcw,
+  ToggleLeft,
+  ToggleRight,
+  Boxes,
+  Check,
+  X,
 } from 'lucide-react';
 import { useAuth } from '../../../lib/auth-context';
 import {
@@ -34,6 +42,8 @@ import {
   DeploymentSummary,
   LicenseSummary,
   TransitionResponse,
+  OrganizationServiceCatalogItem,
+  ServiceStateEnum,
 } from '../../../types/control-plane';
 import { StatusBadge } from '../../../components/ui/status-badge';
 import { ConfirmationDialog } from '../../../components/ui/confirmation-dialog';
@@ -51,8 +61,21 @@ export default function OrganizationDetailPage() {
   const [history, setHistory] = useState<OrganizationStateTransitionLog[]>([]);
   const [deployments, setDeployments] = useState<DeploymentSummary[]>([]);
   const [licenses, setLicenses] = useState<LicenseSummary[]>([]);
+  const [services, setServices] = useState<OrganizationServiceCatalogItem[]>([]);
+  const [selectedLicense, setSelectedLicense] = useState<LicenseSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<ControlPlaneApiError | null>(null);
+
+  // Module Override State
+  const [activeModuleModal, setActiveModuleModal] = useState<{
+    capability: string;
+    name: string;
+    action: 'OVERRIDE_ENABLED' | 'OVERRIDE_DISABLED' | 'CLEAR_OVERRIDE';
+  } | null>(null);
+  const [moduleReason, setModuleReason] = useState('');
+  const [isSubmittingModule, setIsSubmittingModule] = useState(false);
+  const [moduleError, setModuleError] = useState<string | null>(null);
+  const [moduleSuccessToast, setModuleSuccessToast] = useState<string | null>(null);
 
   // Transition Modal State
   const [targetState, setTargetState] = useState<ControlState | null>(null);
@@ -70,17 +93,29 @@ export default function OrganizationDetailPage() {
     setError(null);
 
     try {
-      const [stateData, historyData, depsData, licData] = await Promise.all([
+      const [stateData, historyData, depsData, servicesData] = await Promise.all([
         controlPlaneApi.getOrganization(organizationId),
         controlPlaneApi.getOrganizationHistory(organizationId).catch(() => []),
         controlPlaneApi.listDeployments(organizationId).catch(() => []),
-        controlPlaneApi.listLicenses().catch(() => []),
+        controlPlaneApi.listOrganizationServices(organizationId).catch(() => []),
       ]);
 
       setOrgState(stateData);
       setHistory(historyData || []);
       setDeployments(depsData || []);
-      setLicenses(licData || []);
+      setServices(servicesData || []);
+
+      // Targeted single-license fetch instead of listing all licenses across platform
+      if (depsData && depsData.length > 0 && depsData[0].licenseId) {
+        try {
+          const lic = await controlPlaneApi.getLicense(depsData[0].licenseId);
+          setSelectedLicense(lic);
+        } catch {
+          setSelectedLicense(null);
+        }
+      } else {
+        setSelectedLicense(null);
+      }
     } catch (err: any) {
       if (err instanceof ControlPlaneApiError) {
         setError(err);
@@ -166,9 +201,7 @@ export default function OrganizationDetailPage() {
 
   // Correlate deployment and license metadata
   const primaryDeployment = deployments.length > 0 ? deployments[0] : null;
-  const associatedLicense = primaryDeployment?.licenseId
-    ? licenses.find((l) => l.id === primaryDeployment.licenseId)
-    : null;
+  const associatedLicense = selectedLicense;
 
   const handleOpenTransitionModal = (target: ControlState) => {
     setTargetState(target);
@@ -271,6 +304,59 @@ export default function OrganizationDetailPage() {
           confirmVariant: 'danger' as const,
           confirmButtonText: 'Confirm',
         };
+    }
+  };
+
+  const handleOpenModuleModal = (
+    capability: string,
+    name: string,
+    action: 'OVERRIDE_ENABLED' | 'OVERRIDE_DISABLED' | 'CLEAR_OVERRIDE'
+  ) => {
+    setActiveModuleModal({ capability, name, action });
+    setModuleReason('');
+    setModuleError(null);
+  };
+
+  const handleExecuteModuleAction = async () => {
+    if (!activeModuleModal) return;
+    if (activeModuleModal.action !== 'CLEAR_OVERRIDE' && moduleReason.trim().length < 10) {
+      setModuleError('Operational justification must be at least 10 characters long.');
+      return;
+    }
+
+    setIsSubmittingModule(true);
+    setModuleError(null);
+
+    try {
+      if (activeModuleModal.action === 'CLEAR_OVERRIDE') {
+        await controlPlaneApi.clearOrganizationServiceOverride(
+          organizationId,
+          activeModuleModal.capability,
+        );
+        setModuleSuccessToast(`Cleared override for ${activeModuleModal.name}. Inherited global state restored.`);
+      } else {
+        const targetState: ServiceStateEnum = activeModuleModal.action === 'OVERRIDE_ENABLED' ? 'AVAILABLE' : 'DISABLED';
+        await controlPlaneApi.setOrganizationServiceOverride(
+          organizationId,
+          activeModuleModal.capability,
+          {
+            overrideState: targetState,
+            reason: moduleReason.trim(),
+            idempotencyKey: `mod_override_${organizationId}_${activeModuleModal.capability}_${Date.now()}`,
+          },
+        );
+        setModuleSuccessToast(
+          `Successfully set ${activeModuleModal.name} override to ${targetState} for organization ${organizationId}.`
+        );
+      }
+      setActiveModuleModal(null);
+      controlPlaneApi.clearCache('v1/organizations');
+      const updatedServices = await controlPlaneApi.listOrganizationServices(organizationId);
+      setServices(updatedServices || []);
+    } catch (err: any) {
+      setModuleError(err.message || 'Failed to update module entitlement.');
+    } finally {
+      setIsSubmittingModule(false);
     }
   };
 
@@ -639,6 +725,286 @@ export default function OrganizationDetailPage() {
         </div>
 
       </div>
+
+      {/* Module Success Notification */}
+      {moduleSuccessToast && (
+        <div className="rounded-lg border border-emerald-800/80 bg-emerald-950/40 p-4 text-xs text-emerald-200 flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-bold text-white block mb-0.5">
+                Module Entitlement Updated
+              </span>
+              <span className="font-mono text-emerald-300 text-[11px]">{moduleSuccessToast}</span>
+            </div>
+          </div>
+          <button onClick={() => setModuleSuccessToast(null)} className="text-gray-400 hover:text-white">&times;</button>
+        </div>
+      )}
+
+      {/* Section 6: Organization Module Activation & Capability Overrides */}
+      <div className="rounded-lg border border-cpDark-800 bg-cpDark-900 p-5 space-y-4 shadow-xl">
+        <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-cpDark-800 pb-3 gap-2">
+          <div className="flex items-center gap-2">
+            <Boxes className="h-5 w-5 text-aravBlue-400" />
+            <div>
+              <h2 className="text-sm font-bold text-white uppercase tracking-wider">
+                6. Organization-Level Module Activation &amp; Capability Overrides
+              </h2>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Fine-grained control over individual functional modules for this tenant. Backend endpoints strictly enforce entitlements.
+              </p>
+            </div>
+          </div>
+          <span className="text-xs font-mono text-gray-400 self-start md:self-auto bg-cpDark-950 px-2.5 py-1 rounded border border-cpDark-800">
+            {services.length} Canonical Capability Modules
+          </span>
+        </div>
+
+        <div className="rounded bg-aravBlue-950/30 border border-aravBlue-900/40 p-3 text-xs text-gray-300 flex items-start gap-2.5">
+          <Info className="h-4 w-4 text-aravBlue-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <span className="font-semibold text-aravBlue-300 block">Enforcement Architecture &amp; Data Preservation</span>
+            <p className="text-[11px] leading-relaxed">
+              When a module is <strong>deactivated</strong>, its navigation entries are hidden and all corresponding Data Plane API endpoints immediately return <code className="bg-cpDark-950 px-1 py-0.5 rounded text-amber-300">403 Service Deactivated</code>.
+              <strong> Zero tenant records are deleted</strong>. Re-activating a module instantly restores full access to all historical data and configurations.
+            </p>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="border-b border-cpDark-800 bg-cpDark-950 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+              <tr>
+                <th scope="col" className="px-4 py-2.5">Module / Capability</th>
+                <th scope="col" className="px-4 py-2.5">Global Status</th>
+                <th scope="col" className="px-4 py-2.5">Tenant Override</th>
+                <th scope="col" className="px-4 py-2.5">Effective State</th>
+                <th scope="col" className="px-4 py-2.5 text-right">Administrative Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-cpDark-800/60 font-mono text-gray-300">
+              {services.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-6 text-center text-gray-500 italic font-sans">
+                    Loading module capability catalog...
+                  </td>
+                </tr>
+              ) : (
+                services.map((svc) => {
+                  const globalState: ServiceStateEnum = svc.globalState?.state || 'AVAILABLE';
+                  const hasOverride = !!svc.organizationOverride;
+                  const effectiveState: ServiceStateEnum = svc.organizationOverride?.overrideState || globalState;
+                  const isEffectiveEnabled = effectiveState === 'AVAILABLE';
+
+                  return (
+                    <tr key={svc.id || svc.code} className="hover:bg-cpDark-800/40">
+                      <td className="px-4 py-3">
+                        <div className="font-bold text-white font-sans text-xs flex items-center gap-1.5">
+                          {svc.name}
+                          <span className="text-[10px] font-mono text-aravBlue-400 bg-aravBlue-950/60 border border-aravBlue-900/60 px-1.5 py-0.5 rounded">
+                            {svc.code}
+                          </span>
+                        </div>
+                        <p className="text-[11px] font-sans text-gray-400 mt-0.5 line-clamp-1">
+                          Domain: {svc.category || 'Core'} &bull; Override Permitted: {svc.isOrgOverridePermitted ? 'Yes' : 'No'}
+                        </p>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <span className={`text-[11px] px-2 py-0.5 rounded font-semibold ${
+                          globalState === 'AVAILABLE'
+                            ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-800/40'
+                            : globalState === 'MAINTENANCE'
+                            ? 'bg-amber-950/60 text-amber-300 border border-amber-800/40'
+                            : 'bg-rose-950/60 text-rose-300 border border-rose-800/40'
+                        }`}>
+                          {globalState}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {hasOverride ? (
+                          <div className="space-y-0.5">
+                            <span className={`text-[11px] px-2 py-0.5 rounded font-semibold inline-block ${
+                              svc.organizationOverride?.overrideState === 'AVAILABLE'
+                                ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-700'
+                                : 'bg-rose-950/80 text-rose-300 border border-rose-700'
+                            }`}>
+                              OVERRIDE: {svc.organizationOverride?.overrideState}
+                            </span>
+                            <div className="text-[10px] text-gray-400 font-sans max-w-xs truncate" title={svc.organizationOverride?.reason}>
+                              &quot;{svc.organizationOverride?.reason}&quot;
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-gray-500 text-[11px] italic font-sans">
+                            Inherited from Global
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded font-bold ${
+                          isEffectiveEnabled
+                            ? 'bg-emerald-900/40 text-emerald-300 border border-emerald-700/60'
+                            : 'bg-rose-900/40 text-rose-300 border border-rose-700/60'
+                        }`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${isEffectiveEnabled ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                          {isEffectiveEnabled ? 'ACTIVE / AVAILABLE' : 'DEACTIVATED'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-right">
+                        {canMutate ? (
+                          <div className="inline-flex items-center gap-1.5 font-sans">
+                            {isEffectiveEnabled ? (
+                              <button
+                                onClick={() => handleOpenModuleModal(svc.code, svc.name, 'OVERRIDE_DISABLED')}
+                                className="px-2.5 py-1 rounded bg-rose-950/60 border border-rose-800/80 text-rose-300 hover:bg-rose-900 text-[11px] font-semibold transition-colors"
+                              >
+                                Deactivate Module
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleOpenModuleModal(svc.code, svc.name, 'OVERRIDE_ENABLED')}
+                                className="px-2.5 py-1 rounded bg-emerald-950/60 border border-emerald-800/80 text-emerald-300 hover:bg-emerald-900 text-[11px] font-semibold transition-colors"
+                              >
+                                Activate Module
+                              </button>
+                            )}
+
+                            {hasOverride && (
+                              <button
+                                onClick={() => handleOpenModuleModal(svc.code, svc.name, 'CLEAR_OVERRIDE')}
+                                title="Revert to inherited global policy"
+                                className="px-2 py-1 rounded bg-cpDark-800 border border-cpDark-700 text-gray-300 hover:text-white hover:bg-cpDark-700 text-[11px] font-medium flex items-center gap-1 transition-colors"
+                              >
+                                <RotateCcw className="h-3 w-3" />
+                                <span>Inherit</span>
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-gray-500 font-sans italic">Read-only view</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Module Override Action Modal */}
+      {activeModuleModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-lg border border-cpDark-700 bg-cpDark-900 p-6 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-base font-bold text-white">
+                  {activeModuleModal.action === 'CLEAR_OVERRIDE'
+                    ? `Restore Inherited Policy for ${activeModuleModal.name}`
+                    : activeModuleModal.action === 'OVERRIDE_ENABLED'
+                    ? `Activate Module: ${activeModuleModal.name}`
+                    : `Deactivate Module: ${activeModuleModal.name}`}
+                </h3>
+                <p className="text-xs text-gray-400 mt-0.5 font-mono">
+                  Capability: {activeModuleModal.capability} &bull; Org: {organizationId}
+                </p>
+              </div>
+              <button
+                onClick={() => setActiveModuleModal(null)}
+                className="text-gray-400 hover:text-white text-lg"
+              >
+                &times;
+              </button>
+            </div>
+
+            {activeModuleModal.action === 'OVERRIDE_DISABLED' ? (
+              <div className="rounded bg-rose-950/40 border border-rose-800/60 p-3 text-xs text-rose-200 space-y-1">
+                <span className="font-semibold block text-rose-300">Operational Consequence:</span>
+                <p className="text-[11px] leading-relaxed">
+                  Users in organization <strong>{organizationId}</strong> will immediately lose access to the {activeModuleModal.name} module. Navigation menus will hide this section, and Data Plane API endpoints will deny calls. No data is erased.
+                </p>
+              </div>
+            ) : activeModuleModal.action === 'OVERRIDE_ENABLED' ? (
+              <div className="rounded bg-emerald-950/40 border border-emerald-800/60 p-3 text-xs text-emerald-200 space-y-1">
+                <span className="font-semibold block text-emerald-300">Operational Consequence:</span>
+                <p className="text-[11px] leading-relaxed">
+                  Users in organization <strong>{organizationId}</strong> will gain access to the {activeModuleModal.name} module regardless of global default policy.
+                </p>
+              </div>
+            ) : (
+              <div className="rounded bg-aravBlue-950/40 border border-aravBlue-800/60 p-3 text-xs text-aravBlue-200 space-y-1">
+                <span className="font-semibold block text-aravBlue-300">Revert Override:</span>
+                <p className="text-[11px] leading-relaxed">
+                  Removing this override will cause {activeModuleModal.name} to inherit its state from the global service catalog.
+                </p>
+              </div>
+            )}
+
+            {activeModuleModal.action !== 'CLEAR_OVERRIDE' && (
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-gray-300">
+                  Operational Justification / Audit Reason <span className="text-rose-400">*</span>
+                </label>
+                <textarea
+                  rows={3}
+                  value={moduleReason}
+                  onChange={(e) => setModuleReason(e.target.value)}
+                  placeholder="Provide audit justification (minimum 10 characters, e.g. Customer requested deactivation for compliance review)..."
+                  className="w-full rounded border border-cpDark-700 bg-cpDark-950 p-2.5 text-xs text-white placeholder-gray-500 focus:border-aravBlue-500 focus:outline-none"
+                />
+                <span className="text-[10px] text-gray-500">
+                  {moduleReason.trim().length}/10 minimum characters
+                </span>
+              </div>
+            )}
+
+            {moduleError && (
+              <div className="rounded border border-rose-800 bg-rose-950/80 p-2.5 text-xs text-rose-300 flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                <span>{moduleError}</span>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2.5 pt-2 border-t border-cpDark-800">
+              <button
+                type="button"
+                onClick={() => setActiveModuleModal(null)}
+                disabled={isSubmittingModule}
+                className="px-3 py-1.5 rounded border border-cpDark-700 text-xs text-gray-300 hover:bg-cpDark-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteModuleAction}
+                disabled={isSubmittingModule}
+                className={`px-4 py-1.5 rounded text-xs font-semibold flex items-center gap-1.5 ${
+                  activeModuleModal.action === 'OVERRIDE_DISABLED'
+                    ? 'bg-rose-600 hover:bg-rose-500 text-white'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                }`}
+              >
+                {isSubmittingModule ? (
+                  <>
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    <span>Applying...</span>
+                  </>
+                ) : (
+                  <span>
+                    {activeModuleModal.action === 'CLEAR_OVERRIDE'
+                      ? 'Confirm Restore Inherited'
+                      : activeModuleModal.action === 'OVERRIDE_ENABLED'
+                      ? 'Confirm Activation'
+                      : 'Confirm Deactivation'}
+                  </span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Section 5: Organization State Transition Audit History */}
       <div className="rounded-lg border border-cpDark-800 bg-cpDark-900 p-5 space-y-4 shadow-xl">

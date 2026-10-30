@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ServiceControlService, OperatorContext } from './service-control.service';
+import { ServiceControlService, OperatorContext, CANONICAL_CAPABILITIES } from './service-control.service';
 import { ControlPlanePrismaService } from '../prisma/prisma.service';
 import { ControlPlaneAuditLogsService } from '../audit/audit-logs.service';
 import { BadRequestException } from '@nestjs/common';
@@ -73,8 +73,8 @@ describe('ServiceControlService (Control Plane)', () => {
 
       await service.onModuleInit();
 
-      expect(mockPrisma.serviceCatalog.findUnique).toHaveBeenCalledTimes(20);
-      expect(mockPrisma.serviceCatalog.create).toHaveBeenCalledTimes(20);
+      expect(mockPrisma.serviceCatalog.findUnique).toHaveBeenCalledTimes(CANONICAL_CAPABILITIES.length);
+      expect(mockPrisma.serviceCatalog.create).toHaveBeenCalledTimes(CANONICAL_CAPABILITIES.length);
     });
   });
 

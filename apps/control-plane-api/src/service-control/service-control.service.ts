@@ -40,6 +40,7 @@ export const CANONICAL_CAPABILITIES = [
   { code: 'MSSP_PORTAL', name: 'MSSP Provider Portal', category: 'MSSP', hasBg: false },
   { code: 'REPORTING_MODULE', name: 'Reporting & Exports', category: 'GOVERNANCE', hasBg: false },
   { code: 'INTEGRATIONS_HUB', name: 'Integrations Hub', category: 'INTEGRATIONS', hasBg: false },
+  { code: 'REGULATORY_INTELLIGENCE', name: 'Regulatory Intelligence & Horizon Scanning', category: 'GOVERNANCE', hasBg: true },
 ];
 
 const TRIVIAL_REASONS = [
@@ -98,6 +99,30 @@ export class ServiceControlService implements OnModuleInit {
       }
     }
     this.logger.log('Canonical Service Catalog seeding verified (18 capabilities).');
+  }
+
+  async listOrganizationServices(organizationId: string) {
+    const catalog = await this.listServices();
+    const overrides = await this.prisma.organizationServiceOverride.findMany({
+      where: { organizationId },
+    });
+    const overrideMap = new Map(overrides.map((o) => [o.serviceId, o]));
+
+    return catalog.map((svc) => {
+      const override = overrideMap.get(svc.id);
+      return {
+        ...svc,
+        organizationOverride: override
+          ? {
+              id: override.id,
+              overrideState: override.overrideState,
+              reason: override.reason,
+              sequence: override.sequence.toString(),
+              updatedAt: override.updatedAt,
+            }
+          : null,
+      };
+    });
   }
 
   async listServices() {

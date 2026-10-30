@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Building2,
   KeyRound,
+  Library,
   Sliders,
   Server,
   Activity,

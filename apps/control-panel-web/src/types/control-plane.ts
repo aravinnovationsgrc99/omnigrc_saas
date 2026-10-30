@@ -487,3 +487,73 @@ export interface KeyRegistryMetadata {
   formatVersion: string;
   securityNotes: string;
 }
+
+export interface FrameworkVersionSummaryDto {
+  id: string;
+  version: string;
+  name: string;
+  status: string;
+  publisher?: string | null;
+  effectiveDate?: string | null;
+  referencesCount?: number;
+  entitlementsCount?: number;
+  createdAt: string;
+}
+
+export interface RegulatoryFrameworkDto {
+  id: string;
+  code: string;
+  name: string;
+  category: string;
+  jurisdiction: string;
+  issuingAuthority: string;
+  instrumentType: string;
+  officialReferenceUrl?: string | null;
+  versionsCount: number;
+  clausesCount: number;
+  totalReferencesCount: number;
+  entitledOrganizationsCount: number;
+  latestVersion?: FrameworkVersionSummaryDto | null;
+  versions?: FrameworkVersionSummaryDto[];
+  createdAt: string;
+}
+
+export interface FrameworkReferenceDto {
+  id: string;
+  frameworkVersionId: string;
+  parentRefId?: string | null;
+  type: string;
+  identifier: string;
+  title: string;
+  description?: string | null;
+  normativeText?: string | null;
+  sortOrder: number;
+  createdAt: string;
+}
+
+export interface FrameworkEntitlementDto {
+  id: string;
+  organizationId: string;
+  organizationName: string;
+  organizationType: string;
+  frameworkId: string;
+  versionId?: string | null;
+  versionName: string;
+  status: string;
+  grantedAt?: string | null;
+  expiresAt?: string | null;
+  source: string;
+  createdAt: string;
+}
+
+export interface OrganizationModuleOverrideSummary {
+  id: string;
+  overrideState: ServiceStateEnum;
+  reason: string;
+  sequence: string;
+  updatedAt: string;
+}
+
+export interface OrganizationServiceCatalogItem extends ServiceCatalogItem {
+  organizationOverride?: OrganizationModuleOverrideSummary | null;
+}

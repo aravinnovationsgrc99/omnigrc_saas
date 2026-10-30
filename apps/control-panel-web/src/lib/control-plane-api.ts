@@ -37,6 +37,10 @@ import {
   UpdateAnnouncementDto,
   SystemOverview,
   KeyRegistryMetadata,
+  RegulatoryFrameworkDto,
+  FrameworkReferenceDto,
+  FrameworkEntitlementDto,
+  OrganizationServiceCatalogItem,
 } from '../types/control-plane';
 
 export class ControlPlaneApiError extends Error {
@@ -72,6 +76,25 @@ export function getRefreshToken(): string | null {
   return inMemoryRefreshToken;
 }
 
+
+// Client-side in-memory response cache and deduplication map
+interface CacheEntry<T = any> {
+  data: T;
+  timestamp: number;
+  ttlMs: number;
+}
+
+const apiGetCache = new Map<string, CacheEntry>();
+const inFlightRequests = new Map<string, Promise<any>>();
+
+export function clearApiCache(prefix?: string) {
+  if (!prefix) {
+    apiGetCache.clear();
+  } else {
+    apiGetCache.forEach((_, key) => { if (key.includes(prefix)) { apiGetCache.delete(key); } });
+  }
+}
+
 export function clearAuthTokens() {
   inMemoryAccessToken = null;
   inMemoryRefreshToken = null;
@@ -97,7 +120,13 @@ async function request<T>(
   path: string,
   options: RequestInit = {},
   isRetry: boolean = false,
+  customTtlMs: number = 15000,
 ): Promise<T> {
+  const isGet = !options.method || options.method.toUpperCase() === 'GET';
+  const ttlMs = customTtlMs;
+  if (!isGet) {
+    clearApiCache();
+  }
   const baseUrl = getBaseUrl();
   const url = `${baseUrl.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
   const correlationId = generateCorrelationId();
@@ -153,7 +182,16 @@ async function request<T>(
       return {} as T;
     }
 
-    return await response.json();
+    const data = await response.json();
+    if (isGet && response.status < 400) {
+      apiGetCache.set(path, {
+        data,
+        timestamp: Date.now(),
+        ttlMs,
+      });
+    }
+    inFlightRequests.delete(path);
+    return data;
   } catch (err: any) {
     if (err instanceof ControlPlaneApiError) {
       throw err;
@@ -582,6 +620,55 @@ export const controlPlaneApi = {
 
   getKeyRegistry: async (): Promise<KeyRegistryMetadata> => {
     return request<KeyRegistryMetadata>('v1/system/key-registry', { method: 'GET' });
+  },
+
+  // Regulatory Compliance Framework Endpoints
+  listFrameworks: async (query?: {
+    search?: string;
+    jurisdiction?: string;
+    category?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ data: RegulatoryFrameworkDto[]; total: number; page: number; limit: number; totalPages: number }> => {
+    const params = new URLSearchParams();
+    if (query?.search) params.append('search', query.search);
+    if (query?.jurisdiction) params.append('jurisdiction', query.jurisdiction);
+    if (query?.category) params.append('category', query.category);
+    if (query?.page) params.append('page', String(query.page));
+    if (query?.limit) params.append('limit', String(query.limit));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return request(`v1/frameworks${qs}`, { method: 'GET' }, false, 30000);
+  },
+
+  getFramework: async (idOrCode: string): Promise<RegulatoryFrameworkDto> => {
+    return request<RegulatoryFrameworkDto>(`v1/frameworks/${encodeURIComponent(idOrCode)}`, { method: 'GET' }, false, 30000);
+  },
+
+  listFrameworkReferences: async (
+    idOrCode: string,
+    query?: { versionId?: string; search?: string; type?: string; page?: number; limit?: number },
+  ): Promise<{ framework: any; versionId: string; data: FrameworkReferenceDto[]; total: number; page: number; limit: number; totalPages: number }> => {
+    const params = new URLSearchParams();
+    if (query?.versionId) params.append('versionId', query.versionId);
+    if (query?.search) params.append('search', query.search);
+    if (query?.type) params.append('type', query.type);
+    if (query?.page) params.append('page', String(query.page));
+    if (query?.limit) params.append('limit', String(query.limit));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return request(`v1/frameworks/${encodeURIComponent(idOrCode)}/references${qs}`, { method: 'GET' }, false, 20000);
+  },
+
+  listFrameworkEntitlements: async (idOrCode: string): Promise<FrameworkEntitlementDto[]> => {
+    return request<FrameworkEntitlementDto[]>(`v1/frameworks/${encodeURIComponent(idOrCode)}/entitlements`, { method: 'GET' }, false, 20000);
+  },
+
+  // Organization Module Capabilities & Overrides
+  listOrganizationServices: async (organizationId: string): Promise<OrganizationServiceCatalogItem[]> => {
+    return request<OrganizationServiceCatalogItem[]>(`v1/organizations/${encodeURIComponent(organizationId)}/services`, { method: 'GET' }, false, 15000);
+  },
+
+  clearCache: (prefix?: string) => {
+    clearApiCache(prefix);
   },
 
   // Generic typed API request method

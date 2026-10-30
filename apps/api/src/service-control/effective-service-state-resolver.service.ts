@@ -23,6 +23,7 @@ export const KNOWN_CAPABILITY_CODES = new Set([
   'MSSP_PORTAL',
   'REPORTING_MODULE',
   'INTEGRATIONS_HUB',
+  'REGULATORY_INTELLIGENCE',
 ]);
 
 export interface EffectiveServiceStateResult {
