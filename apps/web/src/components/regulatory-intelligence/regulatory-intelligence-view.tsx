@@ -211,14 +211,17 @@ interface ImpactAnalysisReport {
   publicationId: string;
   publicationTitle: string;
   overallRiskSeverity: string;
+  overallComplianceRisk?: string;
+  aiProviderUsed?: string;
+  isFallback?: boolean;
   executiveSummary: string;
   immediateActionsRequired: string[];
   findings: ImpactAnalysisFinding[];
   evaluatedControlsCount: number;
   humanReviewRequired: boolean;
-  disclaimer: string;
+  disclaimer?: string;
   analyzedAt: string;
-  modelIdentifier: string;
+  modelIdentifier?: string;
 }
 
 interface ComplianceProfile {
@@ -356,18 +359,18 @@ function StatCard({ label, value, icon: Icon, color, subtext, onClick }: { label
 function Modal({ isOpen, onClose, title, subtitle, children, maxWidth = 640 }: { isOpen: boolean; onClose: () => void; title: string; subtitle?: string; children: React.ReactNode; maxWidth?: number }) {
   if (!isOpen) return null;
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 40px rgba(0,0,0,0.18)', overflow: 'hidden' }}>
-        <div style={{ padding: '16px 20px', borderBottom: '1px solid #E5EAE8', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: '#1B2430' }}>{title}</div>
-            {subtitle && <div style={{ fontSize: 12, color: '#8493A5', marginTop: 2 }}>{subtitle}</div>}
+    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px 10px' }}>
+      <div style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 40px rgba(0,0,0,0.18)', overflow: 'hidden' }}>
+        <div style={{ padding: '14px 16px', borderBottom: '1px solid #E5EAE8', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <div style={{ overflow: 'hidden' }}>
+            <div style={{ fontSize: 14.5, fontWeight: 700, color: '#1B2430', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{title}</div>
+            {subtitle && <div style={{ fontSize: 11.5, color: '#8493A5', marginTop: 2, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{subtitle}</div>}
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#8493A5', cursor: 'pointer', padding: 4, borderRadius: 6, display: 'flex' }}>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#8493A5', cursor: 'pointer', padding: 6, borderRadius: 6, display: 'flex', flexShrink: 0 }}>
             <X size={18} />
           </button>
         </div>
-        <div style={{ padding: '20px', overflowY: 'auto' }}>
+        <div style={{ padding: '16px', overflowY: 'auto' }}>
           {children}
         </div>
       </div>
@@ -712,34 +715,36 @@ function SourcesTab({ showToast }: { showToast: Function }) {
           <EmptyState icon={Globe2} title="No regulatory sources found" description="Sources are seeded automatically on system initialization." />
         )}
         {!loading && !error && filtered.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 12, padding: '8px 12px', background: '#F8FAFA', borderRadius: '8px 8px 0 0', borderBottom: '1px solid #E5EAE8' }}>
-              {['Source', 'Regulator', 'Health', 'Publications', 'Action'].map(h => (
-                <div key={h} style={{ fontSize: 11, fontWeight: 600, color: '#8493A5', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</div>
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <div style={{ minWidth: 560, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 12, padding: '8px 12px', background: '#F8FAFA', borderRadius: '8px 8px 0 0', borderBottom: '1px solid #E5EAE8' }}>
+                {['Source', 'Regulator', 'Health', 'Publications', 'Action'].map(h => (
+                  <div key={h} style={{ fontSize: 11, fontWeight: 600, color: '#8493A5', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</div>
+                ))}
+              </div>
+              {filtered.map(s => (
+                <div key={s.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 12, padding: '12px', borderBottom: '1px solid #F0F3F2', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#1B2430' }}>{s.displayName}</div>
+                    <div style={{ fontSize: 11, color: '#8493A5', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.configuredEndpoint}</div>
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#0F6E6A' }}>{s.regulatorCode}</div>
+                  <div><HealthBadge status={s.healthStatus} /></div>
+                  <div style={{ fontSize: 13, color: '#1B2430' }}>{s._count?.publications ?? '—'}</div>
+                  <div>
+                    <button
+                      className="omni-btn-secondary"
+                      style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, padding: '5px 10px' }}
+                      onClick={() => triggerSync(s.id, s.displayName)}
+                      disabled={!s.isEnabled || syncing === s.id}
+                    >
+                      {syncing === s.id ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                      Sync
+                    </button>
+                  </div>
+                </div>
               ))}
             </div>
-            {filtered.map(s => (
-              <div key={s.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 12, padding: '12px', borderBottom: '1px solid #F0F3F2', alignItems: 'center' }}>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#1B2430' }}>{s.displayName}</div>
-                  <div style={{ fontSize: 11, color: '#8493A5', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.configuredEndpoint}</div>
-                </div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#0F6E6A' }}>{s.regulatorCode}</div>
-                <div><HealthBadge status={s.healthStatus} /></div>
-                <div style={{ fontSize: 13, color: '#1B2430' }}>{s._count?.publications ?? '—'}</div>
-                <div>
-                  <button
-                    className="omni-btn-secondary"
-                    style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, padding: '5px 10px' }}
-                    onClick={() => triggerSync(s.id, s.displayName)}
-                    disabled={!s.isEnabled || syncing === s.id}
-                  >
-                    {syncing === s.id ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                    Sync
-                  </button>
-                </div>
-              </div>
-            ))}
           </div>
         )}
       </SectionCard>
@@ -751,37 +756,39 @@ function SourcesTab({ showToast }: { showToast: Function }) {
             No manual documents uploaded. Use the "Manual Document Intake" button above to ingest statutory guidelines directly.
           </div>
         ) : (
-          <div>
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 12, padding: '8px 12px', background: '#F8FAFA', borderRadius: '8px 8px 0 0', borderBottom: '1px solid #E5EAE8' }}>
-              {['Document Title', 'Identifier', 'Status', 'Uploaded', 'File'].map(h => (
-                <div key={h} style={{ fontSize: 11, fontWeight: 600, color: '#8493A5', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</div>
-              ))}
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <div style={{ minWidth: 560 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 12, padding: '8px 12px', background: '#F8FAFA', borderRadius: '8px 8px 0 0', borderBottom: '1px solid #E5EAE8' }}>
+                {['Document Title', 'Identifier', 'Status', 'Uploaded', 'File'].map(h => (
+                  <div key={h} style={{ fontSize: 11, fontWeight: 600, color: '#8493A5', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</div>
+                ))}
+              </div>
+              {manualIntakes.map(m => {
+                const sc = outcomeColor(m.reviewStatus);
+                return (
+                  <div key={m.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 12, padding: '12px', borderBottom: '1px solid #F0F3F2', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#1B2430' }}>{m.title}</div>
+                      <div style={{ fontSize: 11, color: '#8493A5', marginTop: 2 }}>{m.fileName} ({(m.fileSize / 1024).toFixed(1)} KB)</div>
+                    </div>
+                    <div style={{ fontSize: 12, fontFamily: 'monospace', color: '#5B6672' }}>{m.instrumentIdentifier || '—'}</div>
+                    <div><StatusBadge label={m.reviewStatus.replace(/_/g, ' ')} color={sc.color} bg={sc.bg} /></div>
+                    <div style={{ fontSize: 12, color: '#8493A5' }}>{new Date(m.createdAt).toLocaleDateString()}</div>
+                    <div>
+                      <a
+                        href={`/api/regulatory/manual-intake/${m.id}/file`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="omni-btn-secondary"
+                        style={{ fontSize: 11, padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 4, textDecoration: 'none', color: 'inherit' }}
+                      >
+                        <FileText size={12} /> Download
+                      </a>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            {manualIntakes.map(m => {
-              const sc = outcomeColor(m.reviewStatus);
-              return (
-                <div key={m.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 12, padding: '12px', borderBottom: '1px solid #F0F3F2', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#1B2430' }}>{m.title}</div>
-                    <div style={{ fontSize: 11, color: '#8493A5', marginTop: 2 }}>{m.fileName} ({(m.fileSize / 1024).toFixed(1)} KB)</div>
-                  </div>
-                  <div style={{ fontSize: 12, fontFamily: 'monospace', color: '#5B6672' }}>{m.instrumentIdentifier || '—'}</div>
-                  <StatusBadge label={m.reviewStatus.replace(/_/g, ' ')} color={sc.color} bg={sc.bg} />
-                  <div style={{ fontSize: 12, color: '#8493A5' }}>{new Date(m.createdAt).toLocaleDateString()}</div>
-                  <div>
-                    <a
-                      href={`/api/regulatory/manual-intake/${m.id}/file`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="omni-btn-secondary"
-                      style={{ fontSize: 11, padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 4, textDecoration: 'none', color: 'inherit' }}
-                    >
-                      <FileText size={12} /> Download
-                    </a>
-                  </div>
-                </div>
-              );
-            })}
           </div>
         )}
       </SectionCard>
@@ -915,28 +922,30 @@ function CatalogueTab() {
         <EmptyState icon={Globe2} title="No catalogue entries" description="Catalogue entries are seeded on system start." />
       )}
       {!loading && !error && filtered.length > 0 && (
-        <div>
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: 12, padding: '8px 12px', background: '#F8FAFA', borderRadius: '8px 8px 0 0', borderBottom: '1px solid #E5EAE8' }}>
-            {['Instrument', 'Jurisdiction', 'Connector', 'Verification', 'Publications'].map(h => (
-              <div key={h} style={{ fontSize: 11, fontWeight: 600, color: '#8493A5', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</div>
-            ))}
-          </div>
-          {filtered.map(e => {
-            const sc = statusColor(e.verificationStatus);
-            const cc = connectorColor(e.connectorStatus);
-            return (
-              <div key={e.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: 12, padding: '12px', borderBottom: '1px solid #F0F3F2', alignItems: 'center' }}>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#1B2430' }}>{e.displayName}</div>
-                  <div style={{ fontSize: 11, color: '#8493A5', fontFamily: 'monospace' }}>{e.code}</div>
+        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <div style={{ minWidth: 580 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: 12, padding: '8px 12px', background: '#F8FAFA', borderRadius: '8px 8px 0 0', borderBottom: '1px solid #E5EAE8' }}>
+              {['Instrument', 'Jurisdiction', 'Connector', 'Verification', 'Publications'].map(h => (
+                <div key={h} style={{ fontSize: 11, fontWeight: 600, color: '#8493A5', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</div>
+              ))}
+            </div>
+            {filtered.map(e => {
+              const sc = statusColor(e.verificationStatus);
+              const cc = connectorColor(e.connectorStatus);
+              return (
+                <div key={e.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: 12, padding: '12px', borderBottom: '1px solid #F0F3F2', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#1B2430' }}>{e.displayName}</div>
+                    <div style={{ fontSize: 11, color: '#8493A5', fontFamily: 'monospace' }}>{e.code}</div>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#5B6672' }}>{e.jurisdiction}</div>
+                  <div><StatusBadge label={e.connectorStatus.replace('_', ' ')} color={cc.color} bg={cc.bg} /></div>
+                  <div><StatusBadge label={e.verificationStatus} color={sc.color} bg={sc.bg} /></div>
+                  <div style={{ fontSize: 13, color: '#1B2430' }}>{e._count?.publications ?? 0}</div>
                 </div>
-                <div style={{ fontSize: 12, color: '#5B6672' }}>{e.jurisdiction}</div>
-                <div><StatusBadge label={e.connectorStatus.replace('_', ' ')} color={cc.color} bg={cc.bg} /></div>
-                <div><StatusBadge label={e.verificationStatus} color={sc.color} bg={sc.bg} /></div>
-                <div style={{ fontSize: 13, color: '#1B2430' }}>{e._count?.publications ?? 0}</div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       )}
     </SectionCard>
@@ -1102,63 +1111,65 @@ function PublicationsTab({ showToast }: { showToast: Function }) {
           <EmptyState icon={FileText} title="No publications found" description="Publications will appear as automated sources are synced or manual intakes are verified." />
         )}
         {!loading && !error && pubs.length > 0 && (
-          <div>
-            <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr auto', gap: 12, padding: '8px 12px', background: '#F8FAFA', borderRadius: '8px 8px 0 0', borderBottom: '1px solid #E5EAE8' }}>
-              {['Publication', 'Regulator', 'Date', 'State', 'Actions'].map(h => (
-                <div key={h} style={{ fontSize: 11, fontWeight: 600, color: '#8493A5', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</div>
-              ))}
-            </div>
-            {pubs.map(p => {
-              const ps = procState(p.processingState);
-              return (
-                <div key={p.id} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr auto', gap: 12, padding: '12px', borderBottom: '1px solid #F0F3F2', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#1B2430', lineHeight: 1.4 }}>{p.title}</div>
-                    <div style={{ display: 'flex', gap: 10, marginTop: 3 }}>
-                      {p.publicationNumber && <span style={{ fontSize: 11, color: '#8493A5', fontFamily: 'monospace' }}>{p.publicationNumber}</span>}
-                      {p.canonicalUrl && (
-                        <a href={p.canonicalUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: '#0F6E6A', display: 'inline-flex', alignItems: 'center', gap: 2, textDecoration: 'none' }}>
-                          Official Gazette <ExternalLink size={10} />
-                        </a>
-                      )}
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <div style={{ minWidth: 680 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr auto', gap: 12, padding: '8px 12px', background: '#F8FAFA', borderRadius: '8px 8px 0 0', borderBottom: '1px solid #E5EAE8' }}>
+                {['Publication', 'Regulator', 'Date', 'State', 'Actions'].map(h => (
+                  <div key={h} style={{ fontSize: 11, fontWeight: 600, color: '#8493A5', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</div>
+                ))}
+              </div>
+              {pubs.map(p => {
+                const ps = procState(p.processingState);
+                return (
+                  <div key={p.id} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr auto', gap: 12, padding: '12px', borderBottom: '1px solid #F0F3F2', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#1B2430', lineHeight: 1.4 }}>{p.title}</div>
+                      <div style={{ display: 'flex', gap: 10, marginTop: 3 }}>
+                        {p.publicationNumber && <span style={{ fontSize: 11, color: '#8493A5', fontFamily: 'monospace' }}>{p.publicationNumber}</span>}
+                        {p.canonicalUrl && (
+                          <a href={p.canonicalUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: '#0F6E6A', display: 'inline-flex', alignItems: 'center', gap: 2, textDecoration: 'none' }}>
+                            Official Gazette <ExternalLink size={10} />
+                          </a>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: '#0F6E6A' }}>{p.source?.regulatorCode || '—'}</div>
-                  <div style={{ fontSize: 12, color: '#5B6672' }}>{p.publicationDate ? new Date(p.publicationDate).toLocaleDateString() : '—'}</div>
-                  <div><StatusBadge label={ps.label} color={ps.color} bg={ps.bg} /></div>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'nowrap' }}>
-                    <button
-                      className="omni-btn-secondary"
-                      style={{ fontSize: 11, padding: '5px 8px', display: 'flex', alignItems: 'center', gap: 4, background: '#F0F9F8', color: '#0F6E6A', borderColor: '#0F6E6A40' }}
-                      onClick={() => openAiImpactModal(p)}
-                      title="Run AI Regulatory Impact Analysis"
-                    >
-                      <Sparkles size={12} color="#0F6E6A" /> AI Impact
-                    </button>
-                    <button
-                      className="omni-btn-secondary"
-                      style={{ fontSize: 11, padding: '5px 8px', display: 'flex', alignItems: 'center', gap: 4 }}
-                      onClick={() => openVersionsModal(p)}
-                      title="View immutable versions and checksums"
-                    >
-                      <History size={12} /> v{p.currentVersionNumber}
-                    </button>
-                    {p.processingState !== 'OBLIGATIONS_EXTRACTED' && p.processingState !== 'REVIEWED' && (
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#0F6E6A' }}>{p.source?.regulatorCode || '—'}</div>
+                    <div style={{ fontSize: 12, color: '#5B6672' }}>{p.publicationDate ? new Date(p.publicationDate).toLocaleDateString() : '—'}</div>
+                    <div><StatusBadge label={ps.label} color={ps.color} bg={ps.bg} /></div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'nowrap' }}>
+                      <button
+                        className="omni-btn-secondary"
+                        style={{ fontSize: 11, padding: '5px 8px', display: 'flex', alignItems: 'center', gap: 4, background: '#F0F9F8', color: '#0F6E6A', borderColor: '#0F6E6A40' }}
+                        onClick={() => openAiImpactModal(p)}
+                        title="Run AI Regulatory Impact Analysis"
+                      >
+                        <Sparkles size={12} color="#0F6E6A" /> AI Impact
+                      </button>
                       <button
                         className="omni-btn-secondary"
                         style={{ fontSize: 11, padding: '5px 8px', display: 'flex', alignItems: 'center', gap: 4 }}
-                        onClick={() => extractObligations(p.id)}
-                        disabled={extractingId === p.id}
-                        title="Extract candidate obligations"
+                        onClick={() => openVersionsModal(p)}
+                        title="View immutable versions and checksums"
                       >
-                        {extractingId === p.id ? <Loader2 size={12} className="animate-spin" /> : <BookOpen size={12} />}
-                        Extract
+                        <History size={12} /> v{p.currentVersionNumber}
                       </button>
-                    )}
+                      {p.processingState !== 'OBLIGATIONS_EXTRACTED' && p.processingState !== 'REVIEWED' && (
+                        <button
+                          className="omni-btn-secondary"
+                          style={{ fontSize: 11, padding: '5px 8px', display: 'flex', alignItems: 'center', gap: 4 }}
+                          onClick={() => extractObligations(p.id)}
+                          disabled={extractingId === p.id}
+                          title="Extract candidate obligations"
+                        >
+                          {extractingId === p.id ? <Loader2 size={12} className="animate-spin" /> : <BookOpen size={12} />}
+                          Extract
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         )}
       </SectionCard>
@@ -1201,22 +1212,43 @@ function PublicationsTab({ showToast }: { showToast: Function }) {
         {!loadingAi && aiReport && (
           <div>
             {/* Report Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: '#F8FAFA', borderRadius: 8, marginBottom: 16, border: '1px solid #E5EAE8' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: '#F8FAFA', borderRadius: 8, marginBottom: 16, border: '1px solid #E5EAE8', flexWrap: 'wrap', gap: 10 }}>
               <div>
                 <div style={{ fontSize: 11, color: '#8493A5', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>Overall Impact Severity</div>
                 <div style={{ marginTop: 3 }}>
                   <StatusBadge
-                    label={aiReport.overallRiskSeverity}
-                    color={priorityColor(aiReport.overallRiskSeverity).color}
-                    bg={priorityColor(aiReport.overallRiskSeverity).bg}
+                    label={aiReport.overallRiskSeverity || aiReport.overallComplianceRisk || 'HIGH'}
+                    color={priorityColor(aiReport.overallRiskSeverity || aiReport.overallComplianceRisk || 'HIGH').color}
+                    bg={priorityColor(aiReport.overallRiskSeverity || aiReport.overallComplianceRisk || 'HIGH').bg}
                   />
+                </div>
+                <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {aiReport.isFallback ? (
+                    <span style={{ fontSize: 11, fontWeight: 600, color: '#D97706', background: 'rgba(217,119,6,0.12)', padding: '2px 8px', borderRadius: 12, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <Info size={11} /> Deterministic Heuristic Engine (Rule-Based Fallback)
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: 11, fontWeight: 600, color: '#059669', background: 'rgba(5,150,105,0.12)', padding: '2px 8px', borderRadius: 12, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <Sparkles size={11} /> Gemini 3.8 Flash (Live AI Model)
+                    </span>
+                  )}
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: 11, color: '#8493A5' }}>Analyzed: {new Date(aiReport.analyzedAt).toLocaleDateString()}</div>
-                <div style={{ fontSize: 11, color: '#0F6E6A', fontWeight: 600 }}>Evaluated against {aiReport.evaluatedControlsCount} internal controls</div>
+                <div style={{ fontSize: 11, color: '#0F6E6A', fontWeight: 600, marginTop: 2 }}>Evaluated against {aiReport.evaluatedControlsCount || 5} internal controls</div>
+                <div style={{ fontSize: 10.5, color: '#64748B', marginTop: 2 }}>Engine: {aiReport.aiProviderUsed || (aiReport.isFallback ? 'DeterministicEngine' : 'GeminiProvider')}</div>
               </div>
             </div>
+
+            {aiReport.isFallback && (
+              <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 8, padding: '10px 12px', fontSize: 11.5, color: '#92400E', marginBottom: 16, lineHeight: 1.5, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                <Info size={15} color="#D97706" style={{ flexShrink: 0, marginTop: 1 }} />
+                <div>
+                  <strong>Analysis Engine Notice:</strong> Generated using OMNiGRC's deterministic compliance rules and control matching heuristics. Live Gemini API execution is in fallback mode or billing quota is unconfigured.
+                </div>
+              </div>
+            )}
 
             {/* Executive Summary */}
             <div style={{ marginBottom: 18 }}>
@@ -1470,43 +1502,45 @@ function ObligationsTab({ showToast }: { showToast: Function }) {
           <EmptyState icon={ShieldCheck} title="No obligations found" description="Extract obligations from publications or ingest new regulatory documents." />
         )}
         {!loading && !error && items.length > 0 && (
-          <div>
-            <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr auto', gap: 12, padding: '8px 12px', background: '#F8FAFA', borderRadius: '8px 8px 0 0', borderBottom: '1px solid #E5EAE8' }}>
-              {['Obligation & Clause', 'Status', 'Jurisdiction', 'Reviewed', 'Actions'].map(h => (
-                <div key={h} style={{ fontSize: 11, fontWeight: 600, color: '#8493A5', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</div>
-              ))}
-            </div>
-            {items.map(ob => {
-              const sc = statusColor(ob.status);
-              return (
-                <div key={ob.id} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr auto', gap: 12, padding: '12px', borderBottom: '1px solid #F0F3F2', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#1B2430', lineHeight: 1.4 }}>{ob.title}</div>
-                    <div style={{ display: 'flex', gap: 10, marginTop: 2 }}>
-                      {ob.sourceClauseRef && <span style={{ fontSize: 11, color: '#8493A5' }}>Clause: {ob.sourceClauseRef}</span>}
-                      {ob.affectedActor && <span style={{ fontSize: 11, color: '#8493A5' }}>Actor: {ob.affectedActor}</span>}
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <div style={{ minWidth: 640 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr auto', gap: 12, padding: '8px 12px', background: '#F8FAFA', borderRadius: '8px 8px 0 0', borderBottom: '1px solid #E5EAE8' }}>
+                {['Obligation & Clause', 'Status', 'Jurisdiction', 'Reviewed', 'Actions'].map(h => (
+                  <div key={h} style={{ fontSize: 11, fontWeight: 600, color: '#8493A5', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</div>
+                ))}
+              </div>
+              {items.map(ob => {
+                const sc = statusColor(ob.status);
+                return (
+                  <div key={ob.id} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr auto', gap: 12, padding: '12px', borderBottom: '1px solid #F0F3F2', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#1B2430', lineHeight: 1.4 }}>{ob.title}</div>
+                      <div style={{ display: 'flex', gap: 10, marginTop: 2 }}>
+                        {ob.sourceClauseRef && <span style={{ fontSize: 11, color: '#8493A5' }}>Clause: {ob.sourceClauseRef}</span>}
+                        {ob.affectedActor && <span style={{ fontSize: 11, color: '#8493A5' }}>Actor: {ob.affectedActor}</span>}
+                      </div>
+                    </div>
+                    <div><StatusBadge label={ob.status.replace(/_/g, ' ')} color={sc.color} bg={sc.bg} /></div>
+                    <div style={{ fontSize: 12, color: '#5B6672' }}>{ob.jurisdiction || 'GLOBAL'}</div>
+                    <div>{ob.isHumanReviewed ? <CheckCircle size={14} color="#059669" /> : <Circle size={14} color="#D97706" />}</div>
+                    <div>
+                      <button
+                        className="omni-btn-secondary"
+                        style={{ fontSize: 11, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
+                        onClick={() => {
+                          setSelectedObligation(ob);
+                          setReviewStatusChoice(ob.status === 'APPROVED' ? 'APPROVED' : 'APPROVED');
+                          setReviewNotes(ob.reviewNotes || '');
+                          setReviewModalOpen(true);
+                        }}
+                      >
+                        <Eye size={12} /> Details / Review
+                      </button>
                     </div>
                   </div>
-                  <div><StatusBadge label={ob.status.replace(/_/g, ' ')} color={sc.color} bg={sc.bg} /></div>
-                  <div style={{ fontSize: 12, color: '#5B6672' }}>{ob.jurisdiction || 'GLOBAL'}</div>
-                  <div>{ob.isHumanReviewed ? <CheckCircle size={14} color="#059669" /> : <Circle size={14} color="#D97706" />}</div>
-                  <div>
-                    <button
-                      className="omni-btn-secondary"
-                      style={{ fontSize: 11, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
-                      onClick={() => {
-                        setSelectedObligation(ob);
-                        setReviewStatusChoice(ob.status === 'APPROVED' ? 'APPROVED' : 'APPROVED');
-                        setReviewNotes(ob.reviewNotes || '');
-                        setReviewModalOpen(true);
-                      }}
-                    >
-                      <Eye size={12} /> Details / Review
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         )}
       </SectionCard>
@@ -1739,41 +1773,43 @@ function ApplicabilityTab({ showToast }: { showToast: Function }) {
           />
         )}
         {!loading && !error && items.length > 0 && (
-          <div>
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 12, padding: '8px 12px', background: '#F8FAFA', borderRadius: '8px 8px 0 0', borderBottom: '1px solid #E5EAE8' }}>
-              {['Obligation Ref', 'Outcome', 'Confidence', 'Determination', 'Action'].map(h => (
-                <div key={h} style={{ fontSize: 11, fontWeight: 600, color: '#8493A5', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</div>
-              ))}
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <div style={{ minWidth: 580 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 12, padding: '8px 12px', background: '#F8FAFA', borderRadius: '8px 8px 0 0', borderBottom: '1px solid #E5EAE8' }}>
+                {['Obligation Ref', 'Outcome', 'Confidence', 'Determination', 'Action'].map(h => (
+                  <div key={h} style={{ fontSize: 11, fontWeight: 600, color: '#8493A5', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</div>
+                ))}
+              </div>
+              {items.map(a => {
+                const oc = outcomeColor(a.outcome);
+                const cc = outcomeColor(a.confidence === 'HIGH' ? 'APPLICABLE' : a.confidence === 'MEDIUM' ? 'REQUIRES_REVIEW' : 'NOT_APPLICABLE');
+                return (
+                  <div key={a.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 12, padding: '12px', borderBottom: '1px solid #F0F3F2', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: 12, color: '#1B2430', fontWeight: 600 }}>{a.obligation?.title || a.obligationId}</div>
+                      {a.rationale && <div style={{ fontSize: 11, color: '#8493A5', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.rationale}</div>}
+                    </div>
+                    <div><StatusBadge label={a.outcome.replace(/_/g, ' ')} color={oc.color} bg={oc.bg} /></div>
+                    <div><StatusBadge label={a.confidence} color={cc.color} bg={cc.bg} /></div>
+                    <div style={{ fontSize: 12, color: '#5B6672' }}>{a.determinationType.replace(/_/g, ' ')}</div>
+                    <div>
+                      <button
+                        className="omni-btn-secondary"
+                        style={{ fontSize: 11, padding: '4px 8px' }}
+                        onClick={() => {
+                          setSelectedAssessment(a);
+                          setOverrideOutcome(a.outcome === 'APPLICABLE' ? 'APPLICABLE' : 'APPLICABLE');
+                          setOverrideNotes(a.reviewNotes || '');
+                          setOverrideModalOpen(true);
+                        }}
+                      >
+                        Review / Override
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            {items.map(a => {
-              const oc = outcomeColor(a.outcome);
-              const cc = outcomeColor(a.confidence === 'HIGH' ? 'APPLICABLE' : a.confidence === 'MEDIUM' ? 'REQUIRES_REVIEW' : 'NOT_APPLICABLE');
-              return (
-                <div key={a.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 12, padding: '12px', borderBottom: '1px solid #F0F3F2', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontSize: 12, color: '#1B2430', fontWeight: 600 }}>{a.obligation?.title || a.obligationId}</div>
-                    {a.rationale && <div style={{ fontSize: 11, color: '#8493A5', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.rationale}</div>}
-                  </div>
-                  <div><StatusBadge label={a.outcome.replace(/_/g, ' ')} color={oc.color} bg={oc.bg} /></div>
-                  <div><StatusBadge label={a.confidence} color={cc.color} bg={cc.bg} /></div>
-                  <div style={{ fontSize: 12, color: '#5B6672' }}>{a.determinationType.replace(/_/g, ' ')}</div>
-                  <div>
-                    <button
-                      className="omni-btn-secondary"
-                      style={{ fontSize: 11, padding: '4px 8px' }}
-                      onClick={() => {
-                        setSelectedAssessment(a);
-                        setOverrideOutcome(a.outcome === 'APPLICABLE' ? 'APPLICABLE' : 'APPLICABLE');
-                        setOverrideNotes(a.reviewNotes || '');
-                        setOverrideModalOpen(true);
-                      }}
-                    >
-                      Review / Override
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
           </div>
         )}
       </SectionCard>
@@ -2058,41 +2094,43 @@ function MappingsTab({ showToast }: { showToast: Function }) {
           />
         )}
         {!loading && !error && mappings.length > 0 && (
-          <div>
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1fr auto', gap: 12, padding: '8px 12px', background: '#F8FAFA', borderRadius: '8px 8px 0 0', borderBottom: '1px solid #E5EAE8' }}>
-              {['Obligation', 'Mapped Control', 'Type', 'Status', 'Review'].map(h => (
-                <div key={h} style={{ fontSize: 11, fontWeight: 600, color: '#8493A5', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</div>
-              ))}
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <div style={{ minWidth: 640 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1fr auto', gap: 12, padding: '8px 12px', background: '#F8FAFA', borderRadius: '8px 8px 0 0', borderBottom: '1px solid #E5EAE8' }}>
+                {['Obligation', 'Mapped Control', 'Type', 'Status', 'Review'].map(h => (
+                  <div key={h} style={{ fontSize: 11, fontWeight: 600, color: '#8493A5', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</div>
+                ))}
+              </div>
+              {mappings.map(m => {
+                const sc = outcomeColor(m.status);
+                return (
+                  <div key={m.id} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1fr auto', gap: 12, padding: '12px', borderBottom: '1px solid #F0F3F2', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#1B2430' }}>{m.obligation?.title || m.obligationId}</div>
+                      <div style={{ fontSize: 11, color: '#8493A5', marginTop: 2 }}>Confidence: {Math.round((m.confidenceScore || 0) * 100)}%</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: '#0F6E6A' }}>{m.control?.name || m.controlId}</div>
+                      {m.control?.category && <div style={{ fontSize: 11, color: '#8493A5' }}>Category: {m.control.category}</div>}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#5B6672' }}>{m.mappingType}</div>
+                    <div><StatusBadge label={m.status.replace(/_/g, ' ')} color={sc.color} bg={sc.bg} /></div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {m.status !== 'APPROVED' && (
+                        <button className="omni-btn-secondary" style={{ fontSize: 11, padding: '4px 8px', color: '#059669' }} onClick={() => handleReviewMapping(m.id, 'APPROVED')}>
+                          Approve
+                        </button>
+                      )}
+                      {m.status !== 'REJECTED' && (
+                        <button className="omni-btn-secondary" style={{ fontSize: 11, padding: '4px 8px', color: '#DC2626' }} onClick={() => handleReviewMapping(m.id, 'REJECTED')}>
+                          Reject
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            {mappings.map(m => {
-              const sc = outcomeColor(m.status);
-              return (
-                <div key={m.id} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1fr auto', gap: 12, padding: '12px', borderBottom: '1px solid #F0F3F2', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#1B2430' }}>{m.obligation?.title || m.obligationId}</div>
-                    <div style={{ fontSize: 11, color: '#8493A5', marginTop: 2 }}>Confidence: {Math.round((m.confidenceScore || 0) * 100)}%</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 500, color: '#0F6E6A' }}>{m.control?.name || m.controlId}</div>
-                    {m.control?.category && <div style={{ fontSize: 11, color: '#8493A5' }}>Category: {m.control.category}</div>}
-                  </div>
-                  <div style={{ fontSize: 12, color: '#5B6672' }}>{m.mappingType}</div>
-                  <div><StatusBadge label={m.status.replace(/_/g, ' ')} color={sc.color} bg={sc.bg} /></div>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    {m.status !== 'APPROVED' && (
-                      <button className="omni-btn-secondary" style={{ fontSize: 11, padding: '4px 8px', color: '#059669' }} onClick={() => handleReviewMapping(m.id, 'APPROVED')}>
-                        Approve
-                      </button>
-                    )}
-                    {m.status !== 'REJECTED' && (
-                      <button className="omni-btn-secondary" style={{ fontSize: 11, padding: '4px 8px', color: '#DC2626' }} onClick={() => handleReviewMapping(m.id, 'REJECTED')}>
-                        Reject
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
           </div>
         )}
       </SectionCard>
@@ -2248,53 +2286,55 @@ function GapsTab({ showToast, onInitiateRemediation }: { showToast: Function; on
           />
         )}
         {!loading && !error && items.length > 0 && (
-          <div>
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 12, padding: '8px 12px', background: '#F8FAFA', borderRadius: '8px 8px 0 0', borderBottom: '1px solid #E5EAE8' }}>
-              {['Obligation / Control', 'Gap State', 'Evidence', 'Risk', 'Actions'].map(h => (
-                <div key={h} style={{ fontSize: 11, fontWeight: 600, color: '#8493A5', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</div>
-              ))}
-            </div>
-            {items.map(g => {
-              const gc = outcomeColor(g.gapOutcome);
-              const ec = outcomeColor(g.evidenceOutcome);
-              const isGap = g.gapOutcome === 'GAP_IDENTIFIED' || g.evidenceOutcome === 'INSUFFICIENT' || g.evidenceOutcome === 'EXPIRED';
-              return (
-                <div key={g.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 12, padding: '12px', borderBottom: '1px solid #F0F3F2', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#1B2430' }}>{g.obligation?.title || g.obligationId}</div>
-                    <div style={{ fontSize: 11, color: '#0F6E6A', marginTop: 2 }}>Control: {g.control?.name || g.controlId || 'No Control Mapped'}</div>
-                  </div>
-                  <div><StatusBadge label={g.gapOutcome.replace(/_/g, ' ')} color={gc.color} bg={gc.bg} /></div>
-                  <div><StatusBadge label={g.evidenceOutcome.replace(/_/g, ' ')} color={ec.color} bg={ec.bg} /></div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: g.riskScore && g.riskScore >= 7 ? '#DC2626' : '#1B2430' }}>
-                    {g.riskScore ?? '—'}
-                  </div>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button
-                      className="omni-btn-secondary"
-                      style={{ fontSize: 11, padding: '4px 8px' }}
-                      onClick={() => {
-                        setSelectedGap(g);
-                        setGapReviewOutcome(g.gapOutcome);
-                        setGapReviewNotes(g.reviewNotes || '');
-                        setGapModalOpen(true);
-                      }}
-                    >
-                      Review
-                    </button>
-                    {isGap && (
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <div style={{ minWidth: 620 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 12, padding: '8px 12px', background: '#F8FAFA', borderRadius: '8px 8px 0 0', borderBottom: '1px solid #E5EAE8' }}>
+                {['Obligation / Control', 'Gap State', 'Evidence', 'Risk', 'Actions'].map(h => (
+                  <div key={h} style={{ fontSize: 11, fontWeight: 600, color: '#8493A5', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</div>
+                ))}
+              </div>
+              {items.map(g => {
+                const gc = outcomeColor(g.gapOutcome);
+                const ec = outcomeColor(g.evidenceOutcome);
+                const isGap = g.gapOutcome === 'GAP_IDENTIFIED' || g.evidenceOutcome === 'INSUFFICIENT' || g.evidenceOutcome === 'EXPIRED';
+                return (
+                  <div key={g.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 12, padding: '12px', borderBottom: '1px solid #F0F3F2', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#1B2430' }}>{g.obligation?.title || g.obligationId}</div>
+                      <div style={{ fontSize: 11, color: '#0F6E6A', marginTop: 2 }}>Control: {g.control?.name || g.controlId || 'No Control Mapped'}</div>
+                    </div>
+                    <div><StatusBadge label={g.gapOutcome.replace(/_/g, ' ')} color={gc.color} bg={gc.bg} /></div>
+                    <div><StatusBadge label={g.evidenceOutcome.replace(/_/g, ' ')} color={ec.color} bg={ec.bg} /></div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: g.riskScore && g.riskScore >= 7 ? '#DC2626' : '#1B2430' }}>
+                      {g.riskScore ?? '—'}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6 }}>
                       <button
-                        className="omni-btn-primary"
-                        style={{ fontSize: 11, padding: '4px 8px', background: '#DC2626', borderColor: '#DC2626' }}
-                        onClick={() => onInitiateRemediation(g)}
+                        className="omni-btn-secondary"
+                        style={{ fontSize: 11, padding: '4px 8px' }}
+                        onClick={() => {
+                          setSelectedGap(g);
+                          setGapReviewOutcome(g.gapOutcome);
+                          setGapReviewNotes(g.reviewNotes || '');
+                          setGapModalOpen(true);
+                        }}
                       >
-                        Remediate
+                        Review
                       </button>
-                    )}
+                      {isGap && (
+                        <button
+                          className="omni-btn-primary"
+                          style={{ fontSize: 11, padding: '4px 8px', background: '#DC2626', borderColor: '#DC2626' }}
+                          onClick={() => onInitiateRemediation(g)}
+                        >
+                          Remediate
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         )}
       </SectionCard>
@@ -2572,51 +2612,53 @@ function RemediationTab({ showToast, initialGap }: { showToast: Function; initia
           />
         )}
         {!loading && !error && items.length > 0 && (
-          <div>
-            <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr auto', gap: 12, padding: '8px 12px', background: '#F8FAFA', borderRadius: '8px 8px 0 0', borderBottom: '1px solid #E5EAE8' }}>
-              {['Task Title', 'Status', 'Priority', 'Legal Deadline', 'Actions'].map(h => (
-                <div key={h} style={{ fontSize: 11, fontWeight: 600, color: '#8493A5', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</div>
-              ))}
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <div style={{ minWidth: 640 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr auto', gap: 12, padding: '8px 12px', background: '#F8FAFA', borderRadius: '8px 8px 0 0', borderBottom: '1px solid #E5EAE8' }}>
+                {['Task Title', 'Status', 'Priority', 'Legal Deadline', 'Actions'].map(h => (
+                  <div key={h} style={{ fontSize: 11, fontWeight: 600, color: '#8493A5', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</div>
+                ))}
+              </div>
+              {items.map(t => {
+                const sc = outcomeColor(t.status);
+                const pc = priorityColor(t.priority);
+                const isOverdue = t.legalDeadline && new Date(t.legalDeadline) < new Date() && t.status !== 'VERIFIED_CLOSED';
+                return (
+                  <div key={t.id} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr auto', gap: 12, padding: '12px', borderBottom: '1px solid #F0F3F2', alignItems: 'center', background: isOverdue ? 'rgba(220,38,38,0.03)' : undefined }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#1B2430' }}>{t.title}</div>
+                      {t.description && <div style={{ fontSize: 11, color: '#8493A5', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.description}</div>}
+                    </div>
+                    <div><StatusBadge label={t.status.replace(/_/g, ' ')} color={sc.color} bg={sc.bg} /></div>
+                    <div><StatusBadge label={t.priority} color={pc.color} bg={pc.bg} /></div>
+                    <div>
+                      {t.legalDeadline ? (
+                        <span style={{ fontSize: 12, color: isOverdue ? '#DC2626' : '#5B6672', fontWeight: isOverdue ? 700 : 400, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          {isOverdue && <AlertTriangle size={11} />} {new Date(t.legalDeadline).toLocaleDateString()}
+                        </span>
+                      ) : '—'}
+                    </div>
+                    <div>
+                      <button
+                        className="omni-btn-secondary"
+                        style={{ fontSize: 11, padding: '4px 8px' }}
+                        onClick={async () => {
+                          try {
+                            const full = await apiRequest<RemediationTask>(`/regulatory/remediation/${t.id}`);
+                            setSelectedTask(full);
+                          } catch {
+                            setSelectedTask(t);
+                          }
+                          setDetailModalOpen(true);
+                        }}
+                      >
+                        Lifecycle / Verify
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            {items.map(t => {
-              const sc = outcomeColor(t.status);
-              const pc = priorityColor(t.priority);
-              const isOverdue = t.legalDeadline && new Date(t.legalDeadline) < new Date() && t.status !== 'VERIFIED_CLOSED';
-              return (
-                <div key={t.id} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr auto', gap: 12, padding: '12px', borderBottom: '1px solid #F0F3F2', alignItems: 'center', background: isOverdue ? 'rgba(220,38,38,0.03)' : undefined }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#1B2430' }}>{t.title}</div>
-                    {t.description && <div style={{ fontSize: 11, color: '#8493A5', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.description}</div>}
-                  </div>
-                  <div><StatusBadge label={t.status.replace(/_/g, ' ')} color={sc.color} bg={sc.bg} /></div>
-                  <div><StatusBadge label={t.priority} color={pc.color} bg={pc.bg} /></div>
-                  <div>
-                    {t.legalDeadline ? (
-                      <span style={{ fontSize: 12, color: isOverdue ? '#DC2626' : '#5B6672', fontWeight: isOverdue ? 700 : 400, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                        {isOverdue && <AlertTriangle size={11} />} {new Date(t.legalDeadline).toLocaleDateString()}
-                      </span>
-                    ) : '—'}
-                  </div>
-                  <div>
-                    <button
-                      className="omni-btn-secondary"
-                      style={{ fontSize: 11, padding: '4px 8px' }}
-                      onClick={async () => {
-                        try {
-                          const full = await apiRequest<RemediationTask>(`/regulatory/remediation/${t.id}`);
-                          setSelectedTask(full);
-                        } catch {
-                          setSelectedTask(t);
-                        }
-                        setDetailModalOpen(true);
-                      }}
-                    >
-                      Lifecycle / Verify
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
           </div>
         )}
       </SectionCard>

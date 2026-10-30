@@ -26,7 +26,7 @@ export class GeminiProvider implements AiProvider {
     if (!this.genAI) {
       throw new Error('Gemini API client not initialized.');
     }
-    const modelName = process.env.GEMINI_MODEL || 'gemini-pro-latest';
+    const modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
     const model = this.genAI.getGenerativeModel({
       model: modelName,
       systemInstruction: systemPrompt,
@@ -76,7 +76,7 @@ CANDIDATE CLAUSES LIST:
 ${JSON.stringify(candidateListPrompt, null, 2)}`;
 
     // Constrain Gemini using native responseSchema and enum tool constraints
-    const modelName = process.env.GEMINI_MODEL || 'gemini-pro-latest';
+    const modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
     const model = this.genAI.getGenerativeModel({
       model: modelName,
       generationConfig: {
