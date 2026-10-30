@@ -131,6 +131,14 @@ export class VerifyRemediationDto {
 
   @IsOptional()
   @IsBoolean()
+  verified?: boolean;
+
+  @IsOptional()
+  @IsString()
+  rejectionReason?: string;
+
+  @IsOptional()
+  @IsBoolean()
   reassessmentRequested?: boolean;
 }
 

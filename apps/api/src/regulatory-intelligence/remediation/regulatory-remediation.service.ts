@@ -667,7 +667,71 @@ export class RegulatoryRemediationService {
       throw new ForbiddenException('Only ADMIN or MSSP_ADMIN roles can verify and close remediation tasks.');
     }
 
+    // Enforce independent verification: the task creator or assigned owner cannot verify their own work
+    if ((task.assignedById && task.assignedById === actorId) || (task.assignedToId && task.assignedToId === actorId)) {
+      throw new ForbiddenException(
+        'Independent verification required: the task creator or assigned owner cannot verify their own remediation task.',
+      );
+    }
+
     const now = new Date();
+
+    // Handle failed verification: return task to actionable state (IN_PROGRESS) with recorded reason
+    if (dto.verified === false) {
+      const reason = dto.rejectionReason || dto.verificationNotes;
+      if (!reason || reason.trim().length < 5) {
+        throw new BadRequestException('A specific reason or notes must be provided when verification fails.');
+      }
+
+      const updated = await this.prisma.$transaction(async (tx) => {
+        const taskUpdated = await tx.regulatoryRemediationTask.update({
+          where: { id },
+          data: {
+            status: RegulatoryRemediationStatus.IN_PROGRESS,
+            verificationNotes: reason,
+            reassessmentRequested: false,
+          },
+          include: { complianceTask: true },
+        });
+
+        // Return ComplianceTask to IN_PROGRESS so it is actionable
+        await tx.complianceTask.update({
+          where: { id: task.complianceTaskId },
+          data: {
+            status: TaskStatus.IN_PROGRESS,
+          },
+        });
+
+        await tx.regulatoryRemediationHistory.create({
+          data: {
+            remediationTaskId: id,
+            organizationId,
+            previousStatus: task.status,
+            newStatus: RegulatoryRemediationStatus.IN_PROGRESS,
+            action: 'VERIFICATION_REJECTED',
+            actorId,
+            rationale: reason,
+          },
+        });
+
+        return taskUpdated;
+      });
+
+      await this.auditLogsService.log({
+        organizationId,
+        actorId,
+        action: 'REGULATORY_REMEDIATION_VERIFICATION_REJECTED',
+        entityType: 'RegulatoryRemediationTask',
+        entityId: id,
+        metadata: {
+          rejectedById: actorId,
+          rejectedAt: now.toISOString(),
+          reason,
+        },
+      });
+
+      return updated;
+    }
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const taskUpdated = await tx.regulatoryRemediationTask.update({

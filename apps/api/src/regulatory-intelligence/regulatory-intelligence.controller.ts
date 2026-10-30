@@ -60,6 +60,11 @@ import {
   ReviewControlGapDto,
 } from './dto/control-gap.dto';
 import { RegulatoryRemediationService } from './remediation/regulatory-remediation.service';
+import { RegulatoryImpactAnalysisService } from './ai/regulatory-impact-analysis.service';
+import {
+  TriggerImpactAnalysisDto,
+  ReviewImpactAnalysisFindingDto,
+} from './dto/regulatory-impact-analysis.dto';
 import {
   CreateRemediationDto,
   AssignRemediationDto,
@@ -85,6 +90,7 @@ export class RegulatoryIntelligenceController {
     private readonly mappingService: ObligationControlMappingService,
     private readonly gapService: RegulatoryControlGapService,
     private readonly remediationService: RegulatoryRemediationService,
+    private readonly impactAnalysisService: RegulatoryImpactAnalysisService,
   ) {}
 
   // ==========================================
@@ -314,6 +320,45 @@ export class RegulatoryIntelligenceController {
     }
 
     return publication;
+  }
+
+  @Post('publications/:id/ai-impact-analysis')
+  @Roles(Role.ADMIN, Role.MSSP_ADMIN, Role.ANALYST)
+  async generatePublicationImpactAnalysis(
+    @Param('id') id: string,
+    @Body() dto: TriggerImpactAnalysisDto,
+    @CurrentUser('id') actorId: string,
+    @CurrentUser('organizationId') organizationId: string,
+  ) {
+    if (!organizationId) {
+      throw new BadRequestException('Organization context required for regulatory impact analysis.');
+    }
+    return this.impactAnalysisService.analyzePublicationImpact(id, organizationId, actorId, dto);
+  }
+
+  @Get('publications/:id/ai-impact-analysis')
+  async getPublicationImpactAnalysis(
+    @Param('id') id: string,
+    @CurrentUser('organizationId') organizationId: string,
+  ) {
+    if (!organizationId) {
+      throw new BadRequestException('Organization context required.');
+    }
+    return this.impactAnalysisService.getPublicationImpact(id, organizationId);
+  }
+
+  @Patch('publications/:id/ai-impact-analysis/review-finding')
+  @Roles(Role.ADMIN, Role.MSSP_ADMIN, Role.ANALYST)
+  async reviewImpactAnalysisFinding(
+    @Param('id') id: string,
+    @Body() dto: ReviewImpactAnalysisFindingDto,
+    @CurrentUser('id') actorId: string,
+    @CurrentUser('organizationId') organizationId: string,
+  ) {
+    if (!organizationId) {
+      throw new BadRequestException('Organization context required.');
+    }
+    return this.impactAnalysisService.reviewFinding(id, organizationId, actorId, dto);
   }
 
   // ==========================================

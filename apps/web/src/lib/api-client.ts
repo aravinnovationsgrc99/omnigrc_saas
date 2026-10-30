@@ -1,5 +1,3 @@
-import { getRegulatoryDemoData } from './regulatory-demo-data';
-
 const rawApiUrl: string =
   process.env.NEXT_PUBLIC_API_URL ||
   (process.env.NODE_ENV === 'production'
@@ -76,10 +74,6 @@ export async function apiRequest<T = any>(
   endpoint: string,
   options: RequestInit = {},
 ): Promise<T> {
-  if (endpoint.startsWith('/regulatory/')) {
-    return Promise.resolve(getRegulatoryDemoData(endpoint) as T);
-  }
-
   const { accessToken, refreshToken } = getStoredTokens();
 
   const headers: Record<string, string> = {

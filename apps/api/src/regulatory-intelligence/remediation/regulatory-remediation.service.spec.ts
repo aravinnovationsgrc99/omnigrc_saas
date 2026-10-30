@@ -543,6 +543,56 @@ describe('RegulatoryRemediationService', () => {
         expect.objectContaining({ action: 'REGULATORY_REMEDIATION_VERIFIED_CLOSED' }),
       );
     });
+
+    it('should reject verification if verifier is the task creator or assigned owner', async () => {
+      prisma.regulatoryRemediationTask.findFirst.mockResolvedValue({
+        id: 'rem-task-1',
+        organizationId: mockOrgId,
+        complianceTaskId: 'comp-1',
+        obligationId: 'ob-1',
+        status: RegulatoryRemediationStatus.COMPLETED,
+        assignedById: mockActorId, // Creator is actor
+      });
+
+      await expect(
+        service.verifyAndClose(mockOrgId, mockActorId, Role.ADMIN, 'rem-task-1', {
+          verificationNotes: 'Attempting to self-verify own work',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should return task to IN_PROGRESS when verification fails', async () => {
+      prisma.regulatoryRemediationTask.findFirst.mockResolvedValue({
+        id: 'rem-task-1',
+        organizationId: mockOrgId,
+        complianceTaskId: 'comp-1',
+        obligationId: 'ob-1',
+        status: RegulatoryRemediationStatus.COMPLETED,
+        assignedById: 'other-admin-1',
+        assignedToId: 'analyst-1',
+      });
+
+      prisma.regulatoryRemediationTask.update.mockResolvedValue({
+        id: 'rem-task-1',
+        status: RegulatoryRemediationStatus.IN_PROGRESS,
+        verificationNotes: 'Evidence screenshot does not match production timestamp.',
+      });
+
+      const res = await service.verifyAndClose(mockOrgId, mockActorId, Role.ADMIN, 'rem-task-1', {
+        verified: false,
+        rejectionReason: 'Evidence screenshot does not match production timestamp.',
+        verificationNotes: 'Evidence screenshot does not match production timestamp.',
+      });
+
+      expect(res.status).toBe(RegulatoryRemediationStatus.IN_PROGRESS);
+      expect(prisma.complianceTask.update).toHaveBeenCalledWith({
+        where: { id: 'comp-1' },
+        data: expect.objectContaining({ status: TaskStatus.IN_PROGRESS }),
+      });
+      expect(auditLogsService.log).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'REGULATORY_REMEDIATION_VERIFICATION_REJECTED' }),
+      );
+    });
   });
 
   describe('6. acceptRisk (Documented Policy Exception Workflow)', () => {

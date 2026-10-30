@@ -22,6 +22,7 @@ describe('RegulatoryIntelligenceController (Internal API & Tenant Isolation)', (
   let mockMappingService: any;
   let mockGapService: any;
   let mockRemediationService: any;
+  let mockImpactAnalysisService: any;
 
   beforeEach(() => {
     mockPrisma = {
@@ -117,6 +118,28 @@ describe('RegulatoryIntelligenceController (Internal API & Tenant Isolation)', (
       acceptRisk: jest.fn(),
     } as any;
 
+    mockImpactAnalysisService = {
+      analyzePublicationImpact: jest.fn().mockResolvedValue({
+        publicationId: 'pub-1',
+        publicationTitle: 'RBI Cyber Resilience',
+        executiveSummary: 'Analysis complete',
+        overallComplianceRisk: 'HIGH',
+        findings: [],
+        affectedControls: [],
+        affectedRemediations: [],
+        humanReviewRequired: true,
+        status: 'PENDING_HUMAN_REVIEW',
+      }),
+      getPublicationImpact: jest.fn().mockResolvedValue({
+        publicationId: 'pub-1',
+        findings: [],
+      }),
+      reviewFinding: jest.fn().mockResolvedValue({
+        publicationId: 'pub-1',
+        status: 'REVIEW_COMPLETED',
+      }),
+    } as any;
+
     controller = new RegulatoryIntelligenceController(
       mockPrisma,
       mockCatalogueService,
@@ -128,6 +151,7 @@ describe('RegulatoryIntelligenceController (Internal API & Tenant Isolation)', (
       mockMappingService,
       mockGapService,
       mockRemediationService,
+      mockImpactAnalysisService,
     );
   });
 
@@ -261,6 +285,32 @@ describe('RegulatoryIntelligenceController (Internal API & Tenant Isolation)', (
       expect(res.versions).toHaveLength(2);
       expect(res.versions[0].versionNumber).toBe(2);
       expect(res.versions[1].versionNumber).toBe(1);
+    });
+
+    it('should generate and retrieve AI regulatory impact analysis', async () => {
+      const res = await controller.generatePublicationImpactAnalysis('pub-1', {}, 'actor-1', 'org-123');
+      expect(res.publicationId).toBe('pub-1');
+      expect(mockImpactAnalysisService.analyzePublicationImpact).toHaveBeenCalledWith('pub-1', 'org-123', 'actor-1', {});
+
+      const getRes = await controller.getPublicationImpactAnalysis('pub-1', 'org-123');
+      expect(getRes.publicationId).toBe('pub-1');
+      expect(mockImpactAnalysisService.getPublicationImpact).toHaveBeenCalledWith('pub-1', 'org-123');
+    });
+
+    it('should record human review on AI impact analysis finding', async () => {
+      const res = await controller.reviewImpactAnalysisFinding(
+        'pub-1',
+        { findingId: 'find-1', decision: 'ACCEPTED', reviewNotes: 'Verified with CISO' },
+        'actor-1',
+        'org-123',
+      );
+      expect(res.status).toBe('REVIEW_COMPLETED');
+      expect(mockImpactAnalysisService.reviewFinding).toHaveBeenCalledWith(
+        'pub-1',
+        'org-123',
+        'actor-1',
+        { findingId: 'find-1', decision: 'ACCEPTED', reviewNotes: 'Verified with CISO' },
+      );
     });
   });
 

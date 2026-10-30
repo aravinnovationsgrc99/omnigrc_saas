@@ -20,6 +20,9 @@ import { ControlGapEngineService } from './gaps/control-gap-engine.service';
 import { RegulatoryControlGapService } from './gaps/regulatory-control-gap.service';
 import { RegulatoryRemediationService } from './remediation/regulatory-remediation.service';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { RegulatoryImpactAnalysisService } from './ai/regulatory-impact-analysis.service';
+import { GeminiProvider } from '../controls/ai/gemini.provider';
+import { MockAiProvider } from '../controls/ai/mock-ai.provider';
 
 @Module({
   imports: [PrismaModule, AuditLogsModule, NotificationsModule],
@@ -41,6 +44,9 @@ import { NotificationsModule } from '../notifications/notifications.module';
     ControlGapEngineService,
     RegulatoryControlGapService,
     RegulatoryRemediationService,
+    RegulatoryImpactAnalysisService,
+    GeminiProvider,
+    MockAiProvider,
   ],
   exports: [
     RegulatoryCatalogueService,
@@ -56,6 +62,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     ControlGapEngineService,
     RegulatoryControlGapService,
     RegulatoryRemediationService,
+    RegulatoryImpactAnalysisService,
   ],
 })
 export class RegulatoryIntelligenceModule {}
