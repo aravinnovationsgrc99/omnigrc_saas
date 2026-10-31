@@ -116,6 +116,12 @@ export class MappingQueueService implements OnModuleInit, OnModuleDestroy {
 
       // Single Queue and Worker instances created ONCE on init
       this.bullQueue = new Queue('control-mapping-queue', { connection: this.redisClient });
+      if (typeof (this.bullQueue as any)?.on === 'function') {
+        (this.bullQueue as any).on('error', (err: any) => {
+          this.isRedisConnected = false;
+          this.logger.warn(`BullMQ Queue error [control-mapping-queue]: ${err.message}`);
+        });
+      }
 
       this.worker = new Worker(
         'control-mapping-queue',

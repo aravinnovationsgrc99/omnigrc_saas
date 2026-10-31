@@ -66,6 +66,12 @@ export class AnalysisQueueService implements OnModuleInit, OnModuleDestroy {
 
       // Single Queue and Worker instances created ONCE on init
       this.bullQueue = new Queue('document-analysis-queue', { connection: this.redisClient });
+      if (typeof (this.bullQueue as any)?.on === 'function') {
+        (this.bullQueue as any).on('error', (err: any) => {
+          this.isRedisConnected = false;
+          this.logger.warn(`BullMQ Queue error [document-analysis-queue]: ${err.message}`);
+        });
+      }
 
       this.worker = new Worker(
         'document-analysis-queue',
@@ -141,14 +147,30 @@ export class AnalysisQueueService implements OnModuleInit, OnModuleDestroy {
       isDurable: true,
     };
 
-    await this.bullQueue.add('analyze-document', jobPayload, {
-      jobId: `doc_analysis_${analysisId}`,
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 3000 },
-    });
+    try {
+      await this.bullQueue.add('analyze-document', jobPayload, {
+        jobId: `doc_analysis_${analysisId}`,
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 3000 },
+      });
 
-    this.logger.log(`Successfully enqueued durable Document Analysis job "doc_analysis_${analysisId}".`);
-    return analysisId;
+      this.logger.log(`Successfully enqueued durable Document Analysis job "doc_analysis_${analysisId}".`);
+      return analysisId;
+    } catch (err: any) {
+      if (isProduction) {
+        this.logger.error(`Production enqueue error for Document Analysis job "doc_analysis_${analysisId}": ${err.message}`);
+        throw new ServiceUnavailableException({
+          code: 'REDIS_UNAVAILABLE',
+          message: 'Durable document analysis processing queue is currently unavailable. Request rejected to guarantee durability.',
+        });
+      }
+
+      this.logger.warn(`Development mode: Enqueuing Document Analysis job "${analysisId}" via non-durable in-memory fallback after BullMQ add failure (${err.message}).`);
+      setImmediate(async () => {
+        await this.processJob({ analysisId, organizationId, userId, evidenceId, isDurable: false });
+      });
+      return analysisId;
+    }
   }
 
   /**

@@ -3,6 +3,7 @@ import { RisksController } from '../risks/risks.controller';
 import { ControlsController } from '../controls/controls.controller';
 import { RisksService } from '../risks/risks.service';
 import { ControlsService } from '../controls/controls.service';
+import { ControlImportService } from '../controls/control-import.service';
 import { MappingQueueService } from '../controls/ai/mapping-queue.service';
 import { RiskControlsService } from './risk-controls.service';
 import { EvidenceService } from '../evidence/evidence.service';
@@ -62,6 +63,7 @@ describe('RiskControls Controllers Integration', () => {
         { provide: RiskControlsService, useValue: riskControlsService },
         { provide: RisksService, useValue: risksService },
         { provide: ControlsService, useValue: controlsService },
+        { provide: ControlImportService, useValue: { analyzeImportFile: jest.fn(), persistImportedControls: jest.fn() } },
         { provide: MappingQueueService, useValue: mappingQueueService },
         { provide: EvidenceService, useValue: evidenceService },
         { provide: BusinessAuditsService, useValue: { getTestsForControl: jest.fn(), createCheckItemForControl: jest.fn() } },
