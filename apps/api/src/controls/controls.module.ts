@@ -16,6 +16,7 @@ import { EvidenceVaultModule } from '../evidence/evidence-vault.module';
 import { BusinessAuditsModule } from '../business-audits/business-audits.module';
 
 import { GrcContextResolver } from './ai/grc-context-resolver';
+import { GrcNlpService } from './ai/grc-nlp.service';
 import { GrcIntelligenceChatService } from './ai/grc-intelligence-chat.service';
 import { ResourceAuthorizationService } from '../auth/resource-authorization.service';
 import { ControlImportService } from './control-import.service';
@@ -39,10 +40,11 @@ import { ControlImportService } from './control-import.service';
     GeminiProvider,
     ClaudeProvider,
     MockAiProvider,
+    GrcNlpService,
     GrcContextResolver,
     GrcIntelligenceChatService,
     ResourceAuthorizationService,
   ],
-  exports: [ControlsService, ControlImportService, AiRouterService, GrcIntelligenceChatService],
+  exports: [ControlsService, ControlImportService, AiRouterService, GrcIntelligenceChatService, GrcNlpService],
 })
 export class ControlsModule {}

@@ -3,9 +3,9 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { AiRouterService } from './ai-router.service';
-import { GrcIntelligenceChatService, GrcChatRequestDto } from './grc-intelligence-chat.service';
+import { GrcIntelligenceChatService } from './grc-intelligence-chat.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { Role } from '@omnigrc/shared';
+import { Role, GrcChatRequestDto, GrcChatResponseDto } from '@omnigrc/shared';
 import { RequireCapability } from '../../common/decorators/require-capability.decorator';
 
 export interface GrcIntelligenceAssistDto {
@@ -37,7 +37,7 @@ export class GrcIntelligenceController {
     @CurrentUser('id') userId: string,
     @CurrentUser('role') role: Role,
     @Body() dto: GrcChatRequestDto,
-  ) {
+  ): Promise<GrcChatResponseDto> {
     return this.chatService.processChat(organizationId, userId, role, dto);
   }
 

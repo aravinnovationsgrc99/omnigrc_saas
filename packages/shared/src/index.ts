@@ -3628,3 +3628,175 @@ export interface ReviewBreakGlassSessionDto {
 
 
 
+
+// ============================================================================
+// STAGE 3: GRC INTELLIGENCE & AI KNOWLEDGE SYSTEM CONTRACTS
+// ============================================================================
+
+export type GrcDomain =
+  | 'governance'
+  | 'risk'
+  | 'compliance'
+  | 'audit'
+  | 'evidence'
+  | 'vendor'
+  | 'regulatory'
+  | 'remediation'
+  | 'general';
+
+export interface GrcSourceCitation {
+  id: string;
+  title: string;
+  domain: GrcDomain;
+  recordType: string;
+  viewTarget?: string;
+  targetId?: string;
+  statusOrDate?: string;
+  snippet?: string;
+}
+
+export interface GrcMetricItem {
+  label: string;
+  value: string | number;
+  trend?: 'good' | 'warning' | 'critical' | 'neutral';
+}
+
+export interface GrcAffectedEntity {
+  type: string;
+  name: string;
+  id?: string;
+  status?: string;
+  viewTarget?: string;
+}
+
+export interface GrcStructuredAnalysis {
+  summary: string;
+  keyFindings: string[];
+  metrics?: GrcMetricItem[];
+  affectedEntities?: GrcAffectedEntity[];
+  recommendations: string[];
+}
+
+export interface GrcChatPageContext {
+  module?: string;
+  resourceId?: string;
+  resourceType?: string;
+  resourceTitle?: string;
+}
+
+export interface GrcChatRequestDto {
+  prompt: string;
+  history?: { role: 'user' | 'assistant'; content: string }[];
+  questionKey?: string;
+  questionPillKey?: string;
+  pageContext?: GrcChatPageContext;
+}
+
+export type GrcInferenceMode = 'LIVE_AI' | 'DETERMINISTIC_FALLBACK' | 'TEST_MODE';
+
+export interface GrcChatResponseDto {
+  answer: string;
+  structuredAnalysis?: GrcStructuredAnalysis;
+  sourcesUsed: string[];
+  citations?: GrcSourceCitation[];
+  suggestedFollowUps?: string[];
+  intent?: string;
+  entitiesDetected?: string[];
+  inferenceMode: GrcInferenceMode;
+  providerName: string;
+  isLiveAi: boolean;
+  disclaimer: string;
+  allowRetry?: boolean;
+}
+
+export interface GrcSuggestedQuestion {
+  key: string;
+  category: string;
+  label: string;
+  prompt: string;
+  domain: GrcDomain;
+  description?: string;
+}
+
+export const EXACT_TEN_PREDEFINED_QUESTIONS: GrcSuggestedQuestion[] = [
+  {
+    key: 'q1-compliance-posture',
+    category: 'Compliance',
+    domain: 'compliance',
+    label: 'Compliance Posture',
+    prompt: 'What is our current compliance posture across all active frameworks?',
+    description: 'Summarizes licensed framework entitlements, control coverage, and overall readiness.',
+  },
+  {
+    key: 'q2-failing-controls',
+    category: 'Controls',
+    domain: 'compliance',
+    label: 'Failing / Ineffective Controls',
+    prompt: 'Which controls are ineffective, failing, or missing evidence?',
+    description: 'Identifies security controls requiring testing, remediation, or evidence linkage.',
+  },
+  {
+    key: 'q3-highest-risks',
+    category: 'Risks',
+    domain: 'risk',
+    label: 'Highest Risk Items',
+    prompt: 'Show me our highest-risk items and explain why they are high risk.',
+    description: 'Analyzes severe risks, likelihood, impact, and existing treatment plans.',
+  },
+  {
+    key: 'q4-overdue-audit-findings',
+    category: 'Audits',
+    domain: 'audit',
+    label: 'Overdue Audit Findings',
+    prompt: 'Which audit findings are overdue or still unresolved?',
+    description: 'Surfaces unresolved internal/external audit findings and overdue CAPAs.',
+  },
+  {
+    key: 'q5-high-risk-vendors',
+    category: 'Vendors',
+    domain: 'vendor',
+    label: 'High-Risk Vendors',
+    prompt: 'Which vendors have high residual risk or expired evidence?',
+    description: 'Tracks third-party inherent/residual risk tiers, due diligence, and expiring certifications.',
+  },
+  {
+    key: 'q6-regulatory-updates',
+    category: 'Regulatory',
+    domain: 'regulatory',
+    label: 'Applicable Regulatory Updates',
+    prompt: 'What regulatory updates could affect our organization?',
+    description: 'Scans published circulars, directives, and regulatory publications from authorities.',
+  },
+  {
+    key: 'q7-unmapped-obligations',
+    category: 'Regulatory',
+    domain: 'regulatory',
+    label: 'Unmapped Obligations',
+    prompt: 'Which regulatory obligations are not yet mapped to controls?',
+    description: 'Pinpoints compliance gaps where published obligations lack assigned security controls.',
+  },
+  {
+    key: 'q8-overdue-remediation',
+    category: 'Remediation',
+    domain: 'remediation',
+    label: 'Overdue Remediation Tasks',
+    prompt: 'What remediation activities are overdue, and who owns them?',
+    description: 'Lists past-due corrective actions across audits, vendors, and regulatory tasks.',
+  },
+  {
+    key: 'q9-policy-governance',
+    category: 'Governance',
+    domain: 'governance',
+    label: 'Policy Governance & Renewals',
+    prompt: 'Which policies require review, approval, or renewal?',
+    description: 'Audits organizational policies past their review cadence or awaiting executive sign-off.',
+  },
+  {
+    key: 'q10-priority-actions',
+    category: 'Executive Summary',
+    domain: 'general',
+    label: 'Weekly GRC Priorities',
+    prompt: 'What are the most important GRC actions our organization should prioritize this week?',
+    description: 'Synthesizes urgent risks, audit deadlines, evidence expirations, and critical tasks.',
+  },
+];

@@ -149,7 +149,11 @@ export default function MainPage() {
                 {view === 'vendors' && <VendorListView />}
                 {view === 'evidence' && <EvidenceVaultView />}
                 {view === 'board' && <ComplianceBoardView />}
-                {view === 'intelligence' && <GrcIntelligenceView />}
+                {view === 'intelligence' && (
+                  <GrcIntelligenceView
+                    onNavigateToView={(v, params) => navigateToView(v, params)}
+                  />
+                )}
                 {view === 'regulatory-intelligence' && <RegulatoryIntelligenceView />}
                 {view === 'integrations' && <IntegrationsView />}
                 {view === 'mssp' && <MsspPartnerPortalView />}
@@ -167,7 +171,13 @@ export default function MainPage() {
           <OnboardingWizard onComplete={() => setShowWizard(false)} />
         )}
 
-        {hasCapability('AI_GRC_CHAT') && <FloatingSupportChat />}
+        {hasCapability('AI_GRC_CHAT') && (
+          <FloatingSupportChat
+            currentView={view}
+            viewParams={viewParams}
+            onNavigateToView={(v, params) => navigateToView(v, params)}
+          />
+        )}
       </div>
     </ToastProvider>
   );
