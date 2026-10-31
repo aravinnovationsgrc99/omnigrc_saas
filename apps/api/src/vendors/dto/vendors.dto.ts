@@ -52,6 +52,49 @@ export class CreateVendorDto {
   @IsString()
   @IsOptional()
   dueDiligenceStatus?: string;
+
+  @IsString()
+  @IsOptional()
+  businessPurpose?: string;
+
+  @IsString()
+  @IsOptional()
+  serviceProvided?: string;
+
+  @IsOptional()
+  countriesOfOperation?: string[];
+
+  @IsOptional()
+  dataHandled?: boolean;
+
+  @IsString()
+  @IsOptional()
+  dataClassification?: string;
+
+  @IsOptional()
+  systemsAccessed?: string[];
+
+  @IsDateString()
+  @IsOptional()
+  engagementStartDate?: string;
+
+  @IsDateString()
+  @IsOptional()
+  engagementEndDate?: string;
+
+  @Type(() => Number)
+  @IsOptional()
+  contractValue?: number;
+
+  @IsDateString()
+  @IsOptional()
+  contractRenewalDate?: string;
+
+  @IsOptional()
+  subcontractors?: string[];
+
+  @IsOptional()
+  isDraft?: boolean;
 }
 
 export class UpdateVendorDto {
@@ -104,6 +147,46 @@ export class UpdateVendorDto {
   @IsString()
   @IsOptional()
   dueDiligenceStatus?: string;
+
+  @IsString()
+  @IsOptional()
+  businessPurpose?: string;
+
+  @IsString()
+  @IsOptional()
+  serviceProvided?: string;
+
+  @IsOptional()
+  countriesOfOperation?: string[];
+
+  @IsOptional()
+  dataHandled?: boolean;
+
+  @IsString()
+  @IsOptional()
+  dataClassification?: string;
+
+  @IsOptional()
+  systemsAccessed?: string[];
+
+  @IsDateString()
+  @IsOptional()
+  engagementStartDate?: string;
+
+  @IsDateString()
+  @IsOptional()
+  engagementEndDate?: string;
+
+  @Type(() => Number)
+  @IsOptional()
+  contractValue?: number;
+
+  @IsDateString()
+  @IsOptional()
+  contractRenewalDate?: string;
+
+  @IsOptional()
+  subcontractors?: string[];
 }
 
 export class VendorQueryDto {
@@ -313,4 +396,149 @@ export class SubmitVendorAssessmentApprovalDto {
   @Min(1)
   @IsOptional()
   dueDays?: number = 7;
+}
+
+export class InherentRiskFactorsDto {
+  @IsString()
+  @IsNotEmpty()
+  dataSensitivity!: 'PUBLIC' | 'INTERNAL' | 'CONFIDENTIAL' | 'RESTRICTED';
+
+  @IsString()
+  @IsNotEmpty()
+  dataVolume!: 'NEGLIGIBLE' | 'MODERATE' | 'LARGE' | 'MASSIVE';
+
+  @IsString()
+  @IsNotEmpty()
+  systemAccess!: 'NONE' | 'BATCH' | 'DIRECT_API' | 'PRIVILEGED_ADMIN';
+
+  @IsString()
+  @IsNotEmpty()
+  businessCriticality!: 'NON_ESSENTIAL' | 'OPERATIONAL_SUPPORT' | 'SIGNIFICANT' | 'MISSION_CRITICAL';
+
+  @IsString()
+  @IsNotEmpty()
+  financialExposure!: 'LOW' | 'MEDIUM' | 'HIGH' | 'VERY_HIGH';
+
+  @IsString()
+  @IsNotEmpty()
+  regulatoryExposure!: 'UNREGULATED' | 'LOW' | 'MODERATE' | 'HIGH';
+
+  @IsString()
+  @IsNotEmpty()
+  subcontractorReliance!: 'NONE' | 'LOW' | 'MODERATE' | 'HEAVY';
+
+  @IsString()
+  @IsOptional()
+  serviceAvailabilityDependency?: 'STANDARD' | 'HIGH_AVAILABILITY' | 'REAL_TIME_CRITICAL';
+
+  @IsString()
+  @IsOptional()
+  businessContinuityImpact?: 'NEGLIGIBLE' | 'MODERATE' | 'SEVERE';
+
+  @IsString()
+  @IsOptional()
+  notes?: string;
+}
+
+export class AssessInherentRiskDto {
+  @IsNotEmpty()
+  factors!: InherentRiskFactorsDto;
+
+  @IsString()
+  @IsOptional()
+  overrideTier?: VendorCriticality;
+
+  @IsString()
+  @IsOptional()
+  overrideRationale?: string;
+}
+
+export class CalculateResidualRiskDto {
+  @IsString()
+  @IsOptional()
+  assessmentId?: string;
+
+  @Type(() => Number)
+  @IsOptional()
+  overrideControlEffectiveness?: number;
+
+  @IsString()
+  @IsOptional()
+  notes?: string;
+}
+
+export class VerifyVendorDocumentDto {
+  @IsString()
+  @IsNotEmpty()
+  verificationStatus!: 'VERIFIED' | 'REJECTED';
+
+  @IsString()
+  @IsOptional()
+  documentType?: 'SOC2' | 'ISO27001' | 'PEN_TEST' | 'BCP_DR' | 'CYBER_INSURANCE' | 'DPA' | 'OTHER';
+
+  @IsDateString()
+  @IsOptional()
+  expiryDate?: string;
+
+  @IsString()
+  @IsOptional()
+  reviewerNotes?: string;
+
+  @IsString()
+  @IsOptional()
+  rejectionReason?: string;
+}
+
+export class VendorOffboardingDto {
+  @IsNotEmpty()
+  accessRevoked!: boolean;
+
+  @IsNotEmpty()
+  dataReturnedOrDestroyed!: boolean;
+
+  @IsNotEmpty()
+  contractTerminated!: boolean;
+
+  @IsNotEmpty()
+  auditEvidenceArchived!: boolean;
+
+  @IsString()
+  @IsOptional()
+  notes?: string;
+}
+
+export class VerifyVendorAssessmentActionDto {
+  @IsNotEmpty()
+  verified!: boolean;
+
+  @IsString()
+  @IsOptional()
+  rejectionReason?: string;
+
+  @IsString()
+  @IsOptional()
+  verificationNotes?: string;
+}
+
+export class ApproveVendorRelationshipDto {
+  @IsNotEmpty()
+  approved!: boolean;
+
+  @IsString()
+  @IsNotEmpty()
+  notes!: string;
+
+  @IsString()
+  @IsOptional()
+  conditionalTerms?: string;
+}
+
+export class LifecycleTransitionDto {
+  @IsString()
+  @IsNotEmpty()
+  targetStage!: string;
+
+  @IsString()
+  @IsOptional()
+  rationale?: string;
 }

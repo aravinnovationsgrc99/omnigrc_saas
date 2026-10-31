@@ -30,6 +30,13 @@ import {
   CreateVendorAssessmentActionDto,
   UpdateVendorAssessmentActionDto,
   SubmitVendorAssessmentApprovalDto,
+  AssessInherentRiskDto,
+  CalculateResidualRiskDto,
+  VerifyVendorDocumentDto,
+  VendorOffboardingDto,
+  VerifyVendorAssessmentActionDto,
+  ApproveVendorRelationshipDto,
+  LifecycleTransitionDto,
 } from './dto/vendors.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -418,5 +425,160 @@ export class VendorsController {
       role: user.role,
     };
     return this.vendorsService.submitAssessmentForApproval(authCtx, id, assessmentId, dto);
+  }
+  // --- TPRM LIFECYCLE CONTROLLER ENDPOINTS ---
+
+  @Post(':id/inherent-risk')
+  @RequiresActiveLicense()
+  @RequireCapability('VENDOR_RISK')
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async assessInherentRisk(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() dto: AssessInherentRiskDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.vendorsService.assessInherentRisk(authCtx, id, dto);
+  }
+
+  @Post(':id/trigger-due-diligence')
+  @RequiresActiveLicense()
+  @RequireCapability('VENDOR_RISK')
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async triggerDueDiligence(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.vendorsService.triggerDueDiligence(authCtx, id);
+  }
+
+  @Patch(':id/documents/:evidenceId/verify')
+  @RequiresActiveLicense()
+  @RequireCapability('VENDOR_RISK')
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async verifyDocument(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Param('evidenceId') evidenceId: string,
+    @Body() dto: VerifyVendorDocumentDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.vendorsService.verifyDocument(authCtx, id, evidenceId, dto);
+  }
+
+  @Post(':id/residual-risk')
+  @RequiresActiveLicense()
+  @RequireCapability('VENDOR_RISK')
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async calculateResidualRisk(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() dto: CalculateResidualRiskDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.vendorsService.calculateResidualRisk(authCtx, id, dto);
+  }
+
+  @Patch(':id/assessments/:assessmentId/actions/:actionId/verify')
+  @RequiresActiveLicense()
+  @RequireCapability('VENDOR_RISK')
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async verifyAssessmentAction(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Param('assessmentId') assessmentId: string,
+    @Param('actionId') actionId: string,
+    @Body() dto: VerifyVendorAssessmentActionDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.vendorsService.verifyAssessmentAction(authCtx, id, assessmentId, actionId, dto);
+  }
+
+  @Post(':id/approve-relationship')
+  @RequiresActiveLicense()
+  @RequireCapability('VENDOR_RISK')
+  @Roles(Role.ADMIN, Role.MSSP_ADMIN)
+  async approveRelationship(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() dto: ApproveVendorRelationshipDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.vendorsService.approveRelationship(authCtx, id, dto);
+  }
+
+  @Post(':id/offboard')
+  @RequiresActiveLicense()
+  @RequireCapability('VENDOR_RISK')
+  @Roles(Role.ADMIN, Role.MSSP_ADMIN)
+  async offboardVendor(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() dto: VendorOffboardingDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.vendorsService.offboardVendor(authCtx, id, dto);
+  }
+
+  @Post(':id/lifecycle-transition')
+  @RequiresActiveLicense()
+  @RequireCapability('VENDOR_RISK')
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async transitionLifecycle(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() dto: LifecycleTransitionDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.vendorsService.transitionLifecycle(authCtx, id, dto);
+  }
+
+  @Post(':id/trigger-reassessment')
+  @RequiresActiveLicense()
+  @RequireCapability('VENDOR_RISK')
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async triggerReassessment(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.vendorsService.triggerReassessment(authCtx, id);
   }
 }

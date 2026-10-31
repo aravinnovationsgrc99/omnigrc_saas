@@ -16,6 +16,13 @@ import {
   CreateVendorAssessmentActionDto,
   UpdateVendorAssessmentActionDto,
   SubmitVendorAssessmentApprovalDto,
+  AssessInherentRiskDto,
+  CalculateResidualRiskDto,
+  VerifyVendorDocumentDto,
+  VendorOffboardingDto,
+  VerifyVendorAssessmentActionDto,
+  ApproveVendorRelationshipDto,
+  LifecycleTransitionDto,
 } from './dto/vendors.dto';
 import {
   VendorDto,
@@ -32,7 +39,170 @@ import {
   VendorQuestionnaireSubmissionDto,
   VendorAssessmentActionDto,
   NotificationType,
+  InherentRiskAssessmentResultDto,
+  ResidualRiskEvaluationResultDto,
 } from '@omnigrc/shared';
+
+function encodeVendorDescription(summary: string | null | undefined, tprmData: any): string | null {
+  if (!tprmData && !summary) return null;
+  return `[TPRM_META]:${JSON.stringify({ summary: summary || '', tprm: tprmData || {} })}`;
+}
+
+function decodeVendorDescription(rawDescription: string | null | undefined): { summary: string | null; tprm: any } {
+  if (!rawDescription) return { summary: null, tprm: null };
+  if (rawDescription.startsWith('[TPRM_META]:')) {
+    try {
+      const parsed = JSON.parse(rawDescription.slice(12));
+      return { summary: parsed.summary || null, tprm: parsed.tprm || null };
+    } catch {
+      return { summary: rawDescription, tprm: null };
+    }
+  }
+  return { summary: rawDescription, tprm: null };
+}
+
+function encodeDocDescription(summary: string | null | undefined, meta: any): string | null {
+  if (!meta && !summary) return null;
+  return `[DOC_META]:${JSON.stringify({ summary: summary || '', meta: meta || {} })}`;
+}
+
+function decodeDocDescription(raw: string | null | undefined): { summary: string | null; meta: any } {
+  if (!raw) return { summary: null, meta: null };
+  if (raw.startsWith('[DOC_META]:')) {
+    try {
+      const parsed = JSON.parse(raw.slice(11));
+      return { summary: parsed.summary || null, meta: parsed.meta || null };
+    } catch {
+      return { summary: raw, meta: null };
+    }
+  }
+  return { summary: raw, meta: null };
+}
+
+const STANDARD_TPRM_TEMPLATES = [
+  {
+    title: 'Critical Vendor Comprehensive Assessment (Tier: CRITICAL)',
+    description: 'Deep due diligence evaluating Information Security, Data Privacy, BCP/DR, Access Control, and Subcontractor Governance.',
+    version: '1.0',
+    questions: [
+      {
+        id: 'SEC-01',
+        domain: 'Information Security',
+        text: 'Does your organization enforce Multi-Factor Authentication (MFA) across all administrative, cloud, and code-repository environments?',
+        type: 'CHOICE',
+        required: true,
+        options: ['Yes - Hardware Key (FIDO2)', 'Yes - Authenticator App (TOTP)', 'SMS Only', 'No MFA'],
+        weight: 15,
+      },
+      {
+        id: 'SEC-02',
+        domain: 'Information Security',
+        text: 'Is customer data encrypted both at rest (e.g. AES-256) and in transit (e.g. TLS 1.3)?',
+        type: 'CHOICE',
+        required: true,
+        options: ['Yes - Both Rest (AES-256) and Transit (TLS 1.3)', 'In Transit Only', 'At Rest Only', 'No Encryption'],
+        weight: 15,
+      },
+      {
+        id: 'PRIV-01',
+        domain: 'Data Privacy',
+        text: 'Does your organization commit to notifying customers of any confirmed security or data breach within 24 hours?',
+        type: 'BOOLEAN',
+        required: true,
+        weight: 15,
+      },
+      {
+        id: 'BCP-01',
+        domain: 'Business Continuity & Disaster Recovery',
+        text: 'What are your documented and tested Recovery Time Objective (RTO) and Recovery Point Objective (RPO)?',
+        type: 'CHOICE',
+        required: true,
+        options: ['RTO < 4 hrs, RPO < 1 hr', 'RTO < 24 hrs, RPO < 4 hrs', 'RTO > 24 hrs', 'Untested'],
+        weight: 20,
+      },
+      {
+        id: 'SUB-01',
+        domain: 'Subcontractor Governance',
+        text: 'Do you conduct formal security assessments and bind all sub-processors / fourth parties to equivalent data security obligations?',
+        type: 'BOOLEAN',
+        required: true,
+        weight: 15,
+      },
+      {
+        id: 'COMP-01',
+        domain: 'Compliance & Audit',
+        text: 'Do you maintain an active SOC 2 Type II or ISO 27001 certification audited by an independent accredited firm?',
+        type: 'CHOICE',
+        required: true,
+        options: ['Yes - SOC 2 Type II and ISO 27001', 'SOC 2 Type II Only', 'ISO 27001 Only', 'None / In Progress'],
+        weight: 20,
+      },
+    ],
+  },
+  {
+    title: 'Standard Cloud Software Assessment (Tier: HIGH / MEDIUM)',
+    description: 'Standard due diligence for SaaS, cloud platforms, and software vendors.',
+    version: '1.0',
+    questions: [
+      {
+        id: 'SEC-01',
+        domain: 'Information Security',
+        text: 'Do you implement role-based access control (RBAC) and least-privilege principles across customer tenant data?',
+        type: 'BOOLEAN',
+        required: true,
+        weight: 25,
+      },
+      {
+        id: 'SEC-02',
+        domain: 'Information Security',
+        text: 'Is customer data logically separated with strict tenant boundary enforcement?',
+        type: 'BOOLEAN',
+        required: true,
+        weight: 25,
+      },
+      {
+        id: 'BCP-01',
+        domain: 'Availability & SLAs',
+        text: 'What is your uptime commitment and SLA backing service availability?',
+        type: 'CHOICE',
+        required: true,
+        options: ['99.9% or higher with financial credit backing', '99.5% to 99.8%', 'Best effort (<99.5%)'],
+        weight: 25,
+      },
+      {
+        id: 'COMP-01',
+        domain: 'Compliance',
+        text: 'Do you provide an annual third-party security assessment or SOC 2 report upon request?',
+        type: 'BOOLEAN',
+        required: true,
+        weight: 25,
+      },
+    ],
+  },
+  {
+    title: 'Low-Risk Third-Party Security & Compliance Attestation (Tier: LOW)',
+    description: 'Lightweight security attestation and acceptable use confirmation for low-risk vendors.',
+    version: '1.0',
+    questions: [
+      {
+        id: 'ATT-01',
+        domain: 'General Compliance',
+        text: 'Does your organization agree to comply with our Supplier Code of Conduct and Confidentiality Terms?',
+        type: 'BOOLEAN',
+        required: true,
+        weight: 50,
+      },
+      {
+        id: 'ATT-02',
+        domain: 'Data Protection',
+        text: 'Do you confirm that your employees receive mandatory annual security awareness training?',
+        type: 'BOOLEAN',
+        required: true,
+        weight: 50,
+      },
+    ],
+  },
+];
 import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
@@ -145,22 +315,41 @@ export class VendorsService {
     const nextReviewDate = new Date();
     nextReviewDate.setDate(nextReviewDate.getDate() + (dto.reviewCadenceDays || 365));
 
+    const tprmData: any = {};
+    if (dto.businessPurpose) tprmData.businessPurpose = dto.businessPurpose;
+    if (dto.serviceProvided) tprmData.serviceProvided = dto.serviceProvided;
+    if (dto.countriesOfOperation) tprmData.countriesOfOperation = dto.countriesOfOperation;
+    if (dto.dataHandled !== undefined) tprmData.dataHandled = dto.dataHandled;
+    if (dto.dataClassification) tprmData.dataClassification = dto.dataClassification;
+    if (dto.systemsAccessed) tprmData.systemsAccessed = dto.systemsAccessed;
+    if (dto.engagementStartDate) tprmData.engagementStartDate = dto.engagementStartDate;
+    if (dto.engagementEndDate) tprmData.engagementEndDate = dto.engagementEndDate;
+    if (dto.contractValue !== undefined) tprmData.contractValue = dto.contractValue;
+    if (dto.contractRenewalDate) tprmData.contractRenewalDate = dto.contractRenewalDate;
+    if (dto.subcontractors) tprmData.subcontractors = dto.subcontractors;
+    if (dto.isDraft) tprmData.isDraft = true;
+
+    const initialDueDiligenceStatus = dto.dueDiligenceStatus || (dto.isDraft ? 'DRAFT' : 'ONBOARDING');
+    const finalDescription = Object.keys(tprmData).length > 0
+      ? encodeVendorDescription(dto.description, tprmData)
+      : (dto.description || null);
+
     const vendor = await this.prisma.vendor.create({
       data: {
         organizationId: authCtx.organizationId,
         departmentId: dto.departmentId || null,
         projectId: dto.projectId || null,
         name: dto.name,
-        description: dto.description || null,
+        description: finalDescription,
         category: dto.category || null,
         criticality: dto.criticality || VendorCriticality.MEDIUM,
-        status: dto.status || VendorStatus.ACTIVE,
+        status: dto.status || (dto.isDraft ? VendorStatus.UNDER_REVIEW : VendorStatus.ACTIVE),
         owner: dto.owner,
         department: dto.department || null,
         reviewCadenceDays: dto.reviewCadenceDays || 365,
         nextReviewDate,
         websiteUrl: dto.websiteUrl || null,
-        dueDiligenceStatus: dto.dueDiligenceStatus || 'PENDING',
+        dueDiligenceStatus: initialDueDiligenceStatus,
         createdById: authCtx.userId,
       },
     });
@@ -411,23 +600,35 @@ export class VendorsService {
   }
 
   private mapToDto(vendor: any): VendorDto {
+    const { summary, tprm } = decodeVendorDescription(vendor.description);
     return {
       id: vendor.id,
       organizationId: vendor.organizationId,
       departmentId: vendor.departmentId || null,
       projectId: vendor.projectId || null,
       name: vendor.name,
-      description: vendor.description,
+      description: summary || vendor.description,
       category: vendor.category,
       criticality: vendor.criticality as VendorCriticality,
       status: vendor.status as VendorStatus,
       owner: vendor.owner,
       department: vendor.department,
       reviewCadenceDays: vendor.reviewCadenceDays,
-      lastReviewedAt: vendor.lastReviewedAt ? vendor.lastReviewedAt.toISOString() : null,
-      nextReviewDate: vendor.nextReviewDate ? vendor.nextReviewDate.toISOString() : null,
+      lastReviewedAt: vendor.lastReviewedAt ? (typeof vendor.lastReviewedAt === 'string' ? vendor.lastReviewedAt : vendor.lastReviewedAt.toISOString()) : null,
+      nextReviewDate: vendor.nextReviewDate ? (typeof vendor.nextReviewDate === 'string' ? vendor.nextReviewDate : vendor.nextReviewDate.toISOString()) : null,
       websiteUrl: vendor.websiteUrl,
-      dueDiligenceStatus: vendor.dueDiligenceStatus || 'PENDING',
+      dueDiligenceStatus: vendor.dueDiligenceStatus || (tprm?.isDraft ? 'DRAFT' : 'ONBOARDING'),
+      businessPurpose: tprm?.businessPurpose || null,
+      serviceProvided: tprm?.serviceProvided || null,
+      countriesOfOperation: tprm?.countriesOfOperation || null,
+      dataClassification: tprm?.dataClassification || null,
+      systemsAccessed: tprm?.systemsAccessed || null,
+      contractValue: tprm?.contractValue || null,
+      contractRenewalDate: tprm?.contractRenewalDate || null,
+      subcontractors: tprm?.subcontractors || null,
+      inherentRisk: tprm?.inherentRisk || null,
+      residualRisk: tprm?.residualRisk || null,
+      offboarding: tprm?.offboarding || null,
       createdById: vendor.createdById,
       createdAt: vendor.createdAt ? (typeof vendor.createdAt === 'string' ? vendor.createdAt : vendor.createdAt.toISOString()) : new Date().toISOString(),
       updatedAt: vendor.updatedAt ? (typeof vendor.updatedAt === 'string' ? vendor.updatedAt : vendor.updatedAt.toISOString()) : new Date().toISOString(),
@@ -441,9 +642,9 @@ export class VendorsService {
         evaluatorId: a.evaluatorId,
         riskId: a.riskId,
         complianceTaskId: a.complianceTaskId,
-        completedAt: a.completedAt ? a.completedAt.toISOString() : null,
-        createdAt: a.createdAt.toISOString(),
-        updatedAt: a.updatedAt.toISOString(),
+        completedAt: a.completedAt ? (typeof a.completedAt === 'string' ? a.completedAt : a.completedAt.toISOString()) : null,
+        createdAt: typeof a.createdAt === 'string' ? a.createdAt : a.createdAt.toISOString(),
+        updatedAt: typeof a.updatedAt === 'string' ? a.updatedAt : a.updatedAt.toISOString(),
       })) : [],
       assetCount: vendor._count?.assets || 0,
       documentCount: vendor._count?.evidenceAssociations || 0,
@@ -479,21 +680,31 @@ export class VendorsService {
     });
     const userMap = new Map(users.map((u) => [u.id, u.name || u.email]));
 
-    let items: VendorDocumentDto[] = joins.map((j) => ({
-      id: j.id,
-      vendorId: j.vendorId,
-      evidenceId: j.evidenceId,
-      attachedAt: j.attachedAt.toISOString(),
-      title: j.evidence.title,
-      description: j.evidence.description,
-      fileName: j.evidence.fileName,
-      fileSize: j.evidence.fileSize,
-      mimeType: j.evidence.mimeType,
-      status: j.evidence.status as EvidenceStatus,
-      scanStatus: j.evidence.scanStatus as EvidenceScanStatus,
-      uploadedById: j.evidence.uploadedById,
-      uploaderName: userMap.get(j.evidence.uploadedById) || 'Security Team',
-    }));
+    let items: VendorDocumentDto[] = joins.map((j) => {
+      const { summary: docSummary, meta: docMeta } = decodeDocDescription(j.evidence.description);
+      return {
+        id: j.id,
+        vendorId: j.vendorId,
+        evidenceId: j.evidenceId,
+        attachedAt: j.attachedAt.toISOString(),
+        title: j.evidence.title,
+        description: docSummary || j.evidence.description,
+        fileName: j.evidence.fileName,
+        fileSize: j.evidence.fileSize,
+        mimeType: j.evidence.mimeType,
+        status: j.evidence.status as EvidenceStatus,
+        scanStatus: j.evidence.scanStatus as EvidenceScanStatus,
+        uploadedById: j.evidence.uploadedById,
+        uploaderName: userMap.get(j.evidence.uploadedById) || 'Security Team',
+        verificationStatus: docMeta?.verificationStatus || 'PENDING_REVIEW',
+        documentType: docMeta?.documentType || 'OTHER',
+        expiryDate: docMeta?.expiryDate || (j.evidence.retentionUntil ? j.evidence.retentionUntil.toISOString() : null),
+        reviewerNotes: docMeta?.reviewerNotes || null,
+        rejectionReason: docMeta?.rejectionReason || null,
+        verifiedAt: docMeta?.verifiedAt || null,
+        verifiedById: docMeta?.verifiedById || null,
+      };
+    });
 
     if (query?.search && query.search.trim()) {
       const term = query.search.trim().toLowerCase();
@@ -664,10 +875,31 @@ export class VendorsService {
   }
 
   async getQuestionnaires(authCtx: ResourceAuthContext): Promise<VendorQuestionnaireDto[]> {
-    const items = await this.prisma.vendorQuestionnaire.findMany({
+    let items = await this.prisma.vendorQuestionnaire.findMany({
       where: { organizationId: authCtx.organizationId },
       orderBy: { createdAt: 'desc' },
     });
+
+    if (items.length === 0) {
+      // Auto-seed standardized TPRM templates for this tenant
+      for (const tpl of STANDARD_TPRM_TEMPLATES) {
+        await this.prisma.vendorQuestionnaire.create({
+          data: {
+            organizationId: authCtx.organizationId,
+            title: tpl.title,
+            description: tpl.description,
+            version: tpl.version,
+            status: 'ACTIVE',
+            questions: tpl.questions as any,
+            createdById: authCtx.userId,
+          },
+        });
+      }
+      items = await this.prisma.vendorQuestionnaire.findMany({
+        where: { organizationId: authCtx.organizationId },
+        orderBy: { createdAt: 'desc' },
+      });
+    }
 
     return items.map((q) => ({
       id: q.id,
@@ -1136,5 +1368,636 @@ export class VendorsService {
     });
 
     return instance;
+  }
+  // --- TPRM LIFECYCLE EXTENSIONS ---
+
+  /**
+   * Evaluates and records the inherent risk for a vendor prior to due diligence.
+   */
+  async assessInherentRisk(
+    authCtx: ResourceAuthContext,
+    vendorId: string,
+    dto: AssessInherentRiskDto,
+  ): Promise<InherentRiskAssessmentResultDto> {
+    const vendor = await this.findOne(authCtx, vendorId);
+
+    const f = dto.factors;
+    const scores: Record<string, number> = {
+      dataSensitivity: f.dataSensitivity === 'RESTRICTED' ? 100 : f.dataSensitivity === 'CONFIDENTIAL' ? 70 : f.dataSensitivity === 'INTERNAL' ? 25 : 0,
+      systemAccess: f.systemAccess === 'PRIVILEGED_ADMIN' ? 100 : f.systemAccess === 'DIRECT_API' ? 70 : f.systemAccess === 'BATCH' ? 30 : 0,
+      businessCriticality: f.businessCriticality === 'MISSION_CRITICAL' ? 100 : f.businessCriticality === 'SIGNIFICANT' ? 75 : f.businessCriticality === 'OPERATIONAL_SUPPORT' ? 40 : 10,
+      dataVolume: f.dataVolume === 'MASSIVE' ? 100 : f.dataVolume === 'LARGE' ? 80 : f.dataVolume === 'MODERATE' ? 40 : 10,
+      financialExposure: f.financialExposure === 'VERY_HIGH' ? 100 : f.financialExposure === 'HIGH' ? 70 : f.financialExposure === 'MEDIUM' ? 30 : 10,
+      regulatoryExposure: f.regulatoryExposure === 'HIGH' ? 100 : f.regulatoryExposure === 'MODERATE' ? 60 : f.regulatoryExposure === 'LOW' ? 30 : 0,
+      subcontractorReliance: f.subcontractorReliance === 'HEAVY' ? 100 : f.subcontractorReliance === 'MODERATE' ? 60 : f.subcontractorReliance === 'LOW' ? 30 : 0,
+    };
+
+    const weights: Record<string, number> = {
+      dataSensitivity: 0.20,
+      systemAccess: 0.20,
+      businessCriticality: 0.20,
+      dataVolume: 0.10,
+      financialExposure: 0.10,
+      regulatoryExposure: 0.10,
+      subcontractorReliance: 0.10,
+    };
+
+    let calculatedScore = 0;
+    const factorBreakdown: Record<string, any> = {};
+
+    for (const [key, weight] of Object.entries(weights)) {
+      const score = scores[key] || 0;
+      const contribution = Math.round(score * weight);
+      calculatedScore += contribution;
+      factorBreakdown[key] = {
+        value: (f as any)[key],
+        score,
+        weight,
+        contribution,
+      };
+    }
+
+    let tier: VendorCriticality = VendorCriticality.LOW;
+    let reviewCadenceDays = 730;
+    let recommendedDueDiligence = 'Lightweight Third-Party Compliance & Basic Security Attestation.';
+
+    if (calculatedScore >= 75) {
+      tier = VendorCriticality.CRITICAL;
+      reviewCadenceDays = 180;
+      recommendedDueDiligence = 'Comprehensive Security, Privacy, BCP/DR, and Subcontractor Governance review with executive sign-off.';
+    } else if (calculatedScore >= 50) {
+      tier = VendorCriticality.HIGH;
+      reviewCadenceDays = 365;
+      recommendedDueDiligence = 'In-depth Security, Privacy, and Continuity review with Information Security sign-off.';
+    } else if (calculatedScore >= 25) {
+      tier = VendorCriticality.MEDIUM;
+      reviewCadenceDays = 365;
+      recommendedDueDiligence = 'Standard Security and Compliance questionnaire with SOC 2 / ISO verification.';
+    }
+
+    if (dto.overrideTier) {
+      tier = dto.overrideTier;
+    }
+
+    const nextReviewDate = new Date();
+    nextReviewDate.setDate(nextReviewDate.getDate() + reviewCadenceDays);
+
+    const result: InherentRiskAssessmentResultDto = {
+      score: calculatedScore,
+      tier,
+      factors: factorBreakdown,
+      rationale: `Inherent risk evaluated at ${calculatedScore}/100 resulting in tier ${tier}. Key drivers: Data Sensitivity (${f.dataSensitivity}), System Access (${f.systemAccess}), and Business Criticality (${f.businessCriticality}).`,
+      recommendedDueDiligence,
+      suggestedReviewCadenceDays: reviewCadenceDays,
+      assessedAt: new Date().toISOString(),
+      assessedBy: authCtx.userId,
+    };
+
+    const existingVendor = await this.prisma.vendor.findUnique({ where: { id: vendorId } });
+    const { summary, tprm } = decodeVendorDescription(existingVendor?.description);
+    const updatedTprm = { ...(tprm || {}), inherentRisk: result };
+    const updatedDesc = encodeVendorDescription(summary, updatedTprm);
+
+    await this.prisma.vendor.update({
+      where: { id: vendorId },
+      data: {
+        criticality: tier,
+        reviewCadenceDays,
+        nextReviewDate,
+        dueDiligenceStatus: 'INHERENT_RISK_ASSESSED',
+        description: updatedDesc,
+      },
+    });
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'VENDOR_INHERENT_RISK_ASSESSED',
+      entityType: 'Vendor',
+      entityId: vendorId,
+      metadata: {
+        score: calculatedScore,
+        tier,
+        reviewCadenceDays,
+        override: !!dto.overrideTier,
+      },
+    });
+
+    return result;
+  }
+
+  /**
+   * Triggers tiered due diligence based on the vendor's inherent risk tier.
+   */
+  async triggerDueDiligence(
+    authCtx: ResourceAuthContext,
+    vendorId: string,
+  ): Promise<{ assessment: VendorAssessmentDto; questionnaire: VendorQuestionnaireDto; submission: VendorQuestionnaireSubmissionDto }> {
+    const vendor = await this.findOne(authCtx, vendorId);
+
+    // Get or seed questionnaires
+    const questionnaires = await this.getQuestionnaires(authCtx);
+
+    let targetTemplate = questionnaires.find((q) => {
+      if (vendor.criticality === VendorCriticality.CRITICAL) return q.title.includes('Critical');
+      if (vendor.criticality === VendorCriticality.HIGH) return q.title.includes('Standard');
+      if (vendor.criticality === VendorCriticality.MEDIUM) return q.title.includes('Standard');
+      return q.title.includes('Low-Risk');
+    }) || questionnaires[0];
+
+    // Create an assessment record
+    const assessment = await this.createAssessment(authCtx, vendorId, {
+      title: `Due Diligence Assessment — ${vendor.criticality} Tier`,
+      status: VendorAssessmentStatus.IN_PROGRESS,
+      evaluatorId: authCtx.userId,
+      score: undefined,
+    });
+
+    // Create a pending questionnaire submission
+    const submission = await this.submitQuestionnaire(authCtx, vendorId, {
+      questionnaireId: targetTemplate.id,
+      assessmentId: assessment.id,
+      answers: [],
+    });
+
+    await this.prisma.vendor.update({
+      where: { id: vendorId },
+      data: { dueDiligenceStatus: 'DUE_DILIGENCE' },
+    });
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'VENDOR_DUE_DILIGENCE_TRIGGERED',
+      entityType: 'Vendor',
+      entityId: vendorId,
+      metadata: { assessmentId: assessment.id, questionnaireId: targetTemplate.id, tier: vendor.criticality },
+    });
+
+    return { assessment, questionnaire: targetTemplate, submission };
+  }
+
+  /**
+   * Verifies an uploaded vendor document, tracks expiry date, and records review feedback.
+   */
+  async verifyDocument(
+    authCtx: ResourceAuthContext,
+    vendorId: string,
+    evidenceId: string,
+    dto: VerifyVendorDocumentDto,
+  ): Promise<VendorDocumentDto> {
+    await this.findOne(authCtx, vendorId);
+
+    const join = await this.prisma.vendorEvidence.findFirst({
+      where: { vendorId, evidenceId, organizationId: authCtx.organizationId },
+      include: { evidence: true },
+    });
+
+    if (!join) {
+      throw new NotFoundException(`Document "${evidenceId}" not associated with vendor "${vendorId}".`);
+    }
+
+    if (dto.verificationStatus === 'REJECTED' && (!dto.rejectionReason || dto.rejectionReason.trim().length < 5)) {
+      throw new BadRequestException('A specific rejection reason is required when rejecting vendor documents.');
+    }
+
+    const { summary } = decodeDocDescription(join.evidence.description);
+    const docMeta = {
+      verificationStatus: dto.verificationStatus,
+      documentType: dto.documentType || 'OTHER',
+      expiryDate: dto.expiryDate || null,
+      reviewerNotes: dto.reviewerNotes || null,
+      rejectionReason: dto.rejectionReason || null,
+      verifiedAt: new Date().toISOString(),
+      verifiedById: authCtx.userId,
+    };
+
+    const newDescription = encodeDocDescription(summary || join.evidence.title, docMeta);
+    const retentionUntil = dto.expiryDate ? new Date(dto.expiryDate) : join.evidence.retentionUntil;
+
+    await this.prisma.evidence.update({
+      where: { id: evidenceId },
+      data: {
+        description: newDescription,
+        retentionUntil,
+      },
+    });
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: dto.verificationStatus === 'VERIFIED' ? 'VENDOR_DOCUMENT_VERIFIED' : 'VENDOR_DOCUMENT_REJECTED',
+      entityType: 'VendorEvidence',
+      entityId: join.id,
+      metadata: {
+        vendorId,
+        evidenceId,
+        verificationStatus: dto.verificationStatus,
+        documentType: dto.documentType,
+        expiryDate: dto.expiryDate,
+      },
+    });
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: authCtx.userId },
+      select: { name: true, email: true },
+    });
+
+    return {
+      id: join.id,
+      vendorId,
+      evidenceId,
+      attachedAt: join.attachedAt.toISOString(),
+      title: join.evidence.title,
+      description: summary || join.evidence.title,
+      fileName: join.evidence.fileName,
+      fileSize: join.evidence.fileSize,
+      mimeType: join.evidence.mimeType,
+      status: join.evidence.status as EvidenceStatus,
+      scanStatus: join.evidence.scanStatus as EvidenceScanStatus,
+      uploadedById: join.evidence.uploadedById,
+      uploaderName: user?.name || user?.email || 'Security Reviewer',
+      verificationStatus: dto.verificationStatus,
+      documentType: dto.documentType || 'OTHER',
+      expiryDate: dto.expiryDate || null,
+      reviewerNotes: dto.reviewerNotes || null,
+      rejectionReason: dto.rejectionReason || null,
+      verifiedAt: docMeta.verifiedAt,
+      verifiedById: authCtx.userId,
+    };
+  }
+
+  /**
+   * Evaluates control effectiveness and computes the residual risk posture for a vendor.
+   */
+  async calculateResidualRisk(
+    authCtx: ResourceAuthContext,
+    vendorId: string,
+    dto: CalculateResidualRiskDto,
+  ): Promise<ResidualRiskEvaluationResultDto> {
+    const vendor = await this.findOne(authCtx, vendorId);
+
+    // 1. Resolve Inherent Risk Score
+    let inherentScore = vendor.inherentRisk?.score;
+    if (!inherentScore) {
+      inherentScore = vendor.criticality === VendorCriticality.CRITICAL ? 85
+        : vendor.criticality === VendorCriticality.HIGH ? 65
+        : vendor.criticality === VendorCriticality.MEDIUM ? 40
+        : 15;
+    }
+
+    // 2. Resolve Control Effectiveness from Assessment / Questionnaires & Documents
+    let questionnaireScore = 75; // Default moderate baseline if submission pending
+    const submissions = await this.getQuestionnaireSubmissions(authCtx, vendorId);
+    if (submissions.length > 0 && submissions[0].score !== null && submissions[0].score !== undefined) {
+      questionnaireScore = submissions[0].score;
+    }
+
+    const docs = await this.getDocuments(authCtx, vendorId, {});
+    const verifiedDocs = docs.items.filter((d) => d.verificationStatus === 'VERIFIED');
+    const docRatio = docs.items.length > 0 ? (verifiedDocs.length / docs.items.length) * 100 : 50;
+
+    let controlEffectiveness = dto.overrideControlEffectiveness !== undefined
+      ? dto.overrideControlEffectiveness
+      : Math.round(questionnaireScore * 0.70 + docRatio * 0.30);
+
+    controlEffectiveness = Math.max(0, Math.min(100, controlEffectiveness));
+
+    // Residual Risk = Inherent * (1 - (Effectiveness * 0.70))
+    const residualRiskScore = Math.max(10, Math.round(inherentScore * (1 - (controlEffectiveness / 100) * 0.70)));
+
+    let residualTier: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' = 'LOW';
+    if (residualRiskScore >= 70) residualTier = 'CRITICAL';
+    else if (residualRiskScore >= 45) residualTier = 'HIGH';
+    else if (residualRiskScore >= 20) residualTier = 'MEDIUM';
+
+    // Check actions / findings
+    let openFindings = 0;
+    let resolvedFindings = 0;
+    if (vendor.assessments && vendor.assessments.length > 0) {
+      const actions = await this.getAssessmentActions(authCtx, vendorId, vendor.assessments[0].id);
+      openFindings = actions.filter((a) => a.status === 'OPEN' || a.status === 'IN_PROGRESS').length;
+      resolvedFindings = actions.filter((a) => a.status === 'RESOLVED' || a.status === 'CLOSED').length;
+    }
+
+    const mitigatingControls = [
+      'Multi-Factor Authentication (MFA) on administrative gateways',
+      'End-to-end data encryption at rest (AES-256) and in transit (TLS 1.3)',
+      'Subcontractor security due diligence and DPA binding',
+      'Annual SOC 2 Type II independent verification',
+    ];
+
+    const result: ResidualRiskEvaluationResultDto = {
+      inherentRiskScore: inherentScore,
+      inherentRiskTier: vendor.criticality,
+      controlEffectivenessScore: controlEffectiveness,
+      residualRiskScore,
+      residualRiskTier: residualTier,
+      justification: `Inherent risk ${inherentScore}/100 mitigated by ${controlEffectiveness}% evaluated vendor controls to reach residual risk score ${residualRiskScore}/100 (${residualTier} tier).`,
+      mitigatingControls,
+      findingsSummary: {
+        total: openFindings + resolvedFindings,
+        open: openFindings,
+        resolved: resolvedFindings,
+      },
+      evaluatedAt: new Date().toISOString(),
+      evaluatedBy: authCtx.userId,
+    };
+
+    const existingVendor = await this.prisma.vendor.findUnique({ where: { id: vendorId } });
+    const { summary, tprm } = decodeVendorDescription(existingVendor?.description);
+    const updatedTprm = { ...(tprm || {}), residualRisk: result };
+    const updatedDesc = encodeVendorDescription(summary, updatedTprm);
+
+    await this.prisma.vendor.update({
+      where: { id: vendorId },
+      data: {
+        dueDiligenceStatus: 'RISK_EVALUATION',
+        description: updatedDesc,
+      },
+    });
+
+    if (vendor.assessments && vendor.assessments.length > 0) {
+      await this.prisma.vendorAssessment.update({
+        where: { id: vendor.assessments[0].id },
+        data: {
+          score: controlEffectiveness,
+          status: VendorAssessmentStatus.COMPLETED,
+          completedAt: new Date(),
+        },
+      });
+    }
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'VENDOR_RESIDUAL_RISK_CALCULATED',
+      entityType: 'Vendor',
+      entityId: vendorId,
+      metadata: {
+        inherentScore,
+        controlEffectiveness,
+        residualRiskScore,
+        residualTier,
+      },
+    });
+
+    return result;
+  }
+
+  /**
+   * Verifies closure of an assessment remediation action or rejects inadequate corrective evidence to reopen it.
+   */
+  async verifyAssessmentAction(
+    authCtx: ResourceAuthContext,
+    vendorId: string,
+    assessmentId: string,
+    actionId: string,
+    dto: VerifyVendorAssessmentActionDto,
+  ): Promise<VendorAssessmentActionDto> {
+    await this.findOne(authCtx, vendorId);
+
+    const existing = await this.prisma.vendorAssessmentAction.findFirst({
+      where: { id: actionId, assessmentId, organizationId: authCtx.organizationId },
+    });
+    if (!existing) throw new NotFoundException(`Action "${actionId}" not found on assessment.`);
+
+    if (dto.verified === true) {
+      const updated = await this.prisma.vendorAssessmentAction.update({
+        where: { id: actionId },
+        data: {
+          status: 'RESOLVED' as any,
+          completedAt: new Date(),
+          description: dto.verificationNotes
+            ? `${existing.description || ''}\n[VERIFIED - ${new Date().toISOString()}]: ${dto.verificationNotes}`.trim()
+            : existing.description,
+        },
+      });
+
+      await this.auditLogsService.log({
+        organizationId: authCtx.organizationId,
+        actorId: authCtx.userId,
+        action: 'VENDOR_ACTION_VERIFIED_CLOSED',
+        entityType: 'VendorAssessmentAction',
+        entityId: actionId,
+        metadata: { vendorId, assessmentId, verified: true },
+      });
+
+      return {
+        id: updated.id,
+        organizationId: updated.organizationId,
+        assessmentId: updated.assessmentId,
+        title: updated.title,
+        description: updated.description,
+        actionType: updated.actionType,
+        owner: updated.owner,
+        dueDate: updated.dueDate ? updated.dueDate.toISOString() : null,
+        status: updated.status,
+        completedAt: updated.completedAt ? updated.completedAt.toISOString() : null,
+        createdAt: updated.createdAt.toISOString(),
+        updatedAt: updated.updatedAt.toISOString(),
+      };
+    } else {
+      if (!dto.rejectionReason || dto.rejectionReason.trim().length < 5) {
+        throw new BadRequestException('A specific rejection reason is required when rejecting corrective evidence.');
+      }
+
+      const appendMsg = `\n[REOPENED_REJECTED - ${new Date().toISOString()} by ${authCtx.userId}]: ${dto.rejectionReason}`;
+      const newDescription = (existing.description || '') + appendMsg;
+
+      const updated = await this.prisma.vendorAssessmentAction.update({
+        where: { id: actionId },
+        data: {
+          status: 'IN_PROGRESS' as any,
+          completedAt: null,
+          description: newDescription.trim(),
+        },
+      });
+
+      await this.auditLogsService.log({
+        organizationId: authCtx.organizationId,
+        actorId: authCtx.userId,
+        action: 'VENDOR_ACTION_VERIFICATION_REJECTED',
+        entityType: 'VendorAssessmentAction',
+        entityId: actionId,
+        metadata: { vendorId, assessmentId, rejectionReason: dto.rejectionReason },
+      });
+
+      return {
+        id: updated.id,
+        organizationId: updated.organizationId,
+        assessmentId: updated.assessmentId,
+        title: updated.title,
+        description: updated.description,
+        actionType: updated.actionType,
+        owner: updated.owner,
+        dueDate: updated.dueDate ? updated.dueDate.toISOString() : null,
+        status: updated.status,
+        completedAt: null,
+        createdAt: updated.createdAt.toISOString(),
+        updatedAt: updated.updatedAt.toISOString(),
+      };
+    }
+  }
+
+  /**
+   * Approves or rejects the vendor relationship with formal audit sign-off.
+   */
+  async approveRelationship(
+    authCtx: ResourceAuthContext,
+    vendorId: string,
+    dto: ApproveVendorRelationshipDto,
+  ): Promise<VendorDto> {
+    const vendor = await this.findOne(authCtx, vendorId);
+
+    const now = new Date();
+    const nextReviewDate = new Date();
+    nextReviewDate.setDate(nextReviewDate.getDate() + (vendor.reviewCadenceDays || 365));
+
+    const updated = await this.prisma.vendor.update({
+      where: { id: vendorId },
+      data: {
+        status: dto.approved ? VendorStatus.ACTIVE : VendorStatus.INACTIVE,
+        dueDiligenceStatus: dto.approved ? 'APPROVED' : 'REJECTED',
+        lastReviewedAt: now,
+        nextReviewDate: dto.approved ? nextReviewDate : null,
+      },
+    });
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: dto.approved ? 'VENDOR_RELATIONSHIP_APPROVED' : 'VENDOR_RELATIONSHIP_REJECTED',
+      entityType: 'Vendor',
+      entityId: vendorId,
+      metadata: {
+        approved: dto.approved,
+        notes: dto.notes,
+        conditionalTerms: dto.conditionalTerms,
+      },
+    });
+
+    return this.mapToDto(updated);
+  }
+
+  /**
+   * Executes structured vendor offboarding, ensuring access revocation and data return/destruction certification.
+   */
+  async offboardVendor(
+    authCtx: ResourceAuthContext,
+    vendorId: string,
+    dto: VendorOffboardingDto,
+  ): Promise<VendorDto> {
+    const vendor = await this.findOne(authCtx, vendorId);
+
+    if (!dto.accessRevoked) {
+      throw new BadRequestException('All systems and API access must be revoked before offboarding vendor.');
+    }
+    if (!dto.dataReturnedOrDestroyed) {
+      throw new BadRequestException('Formal certification of customer data return or destruction is required.');
+    }
+    if (!dto.contractTerminated) {
+      throw new BadRequestException('Contractual termination must be executed before completing offboarding.');
+    }
+
+    const existingVendor = await this.prisma.vendor.findUnique({ where: { id: vendorId } });
+    const { summary, tprm } = decodeVendorDescription(existingVendor?.description);
+    const updatedTprm = {
+      ...(tprm || {}),
+      offboarding: {
+        accessRevoked: dto.accessRevoked,
+        dataReturnedOrDestroyed: dto.dataReturnedOrDestroyed,
+        contractTerminated: dto.contractTerminated,
+        auditEvidenceArchived: dto.auditEvidenceArchived,
+        notes: dto.notes || 'Vendor offboarding checklist fully executed.',
+        offboardedBy: authCtx.userId,
+        offboardedAt: new Date().toISOString(),
+      },
+    };
+
+    const updatedDesc = encodeVendorDescription(summary, updatedTprm);
+
+    const updated = await this.prisma.vendor.update({
+      where: { id: vendorId },
+      data: {
+        status: VendorStatus.INACTIVE,
+        dueDiligenceStatus: 'DECOMMISSIONED',
+        description: updatedDesc,
+      },
+    });
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'VENDOR_OFFBOARDED',
+      entityType: 'Vendor',
+      entityId: vendorId,
+      metadata: {
+        accessRevoked: dto.accessRevoked,
+        dataReturnedOrDestroyed: dto.dataReturnedOrDestroyed,
+        contractTerminated: dto.contractTerminated,
+      },
+    });
+
+    return this.mapToDto(updated);
+  }
+
+  /**
+   * Transitions vendor through the TPRM lifecycle stages.
+   */
+  async transitionLifecycle(
+    authCtx: ResourceAuthContext,
+    vendorId: string,
+    dto: LifecycleTransitionDto,
+  ): Promise<VendorDto> {
+    await this.findOne(authCtx, vendorId);
+
+    const updated = await this.prisma.vendor.update({
+      where: { id: vendorId },
+      data: { dueDiligenceStatus: dto.targetStage },
+    });
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'VENDOR_LIFECYCLE_TRANSITION',
+      entityType: 'Vendor',
+      entityId: vendorId,
+      metadata: { targetStage: dto.targetStage, rationale: dto.rationale },
+    });
+
+    return this.mapToDto(updated);
+  }
+
+  /**
+   * Triggers scheduled periodic reassessment for a vendor.
+   */
+  async triggerReassessment(
+    authCtx: ResourceAuthContext,
+    vendorId: string,
+  ): Promise<VendorDto> {
+    const vendor = await this.findOne(authCtx, vendorId);
+
+    const assessment = await this.createAssessment(authCtx, vendorId, {
+      title: `Periodic Reassessment (${vendor.criticality} Cadence: ${vendor.reviewCadenceDays}d)`,
+      status: VendorAssessmentStatus.SCHEDULED,
+      evaluatorId: authCtx.userId,
+    });
+
+    const updated = await this.prisma.vendor.update({
+      where: { id: vendorId },
+      data: { dueDiligenceStatus: 'REASSESSMENT' },
+    });
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'VENDOR_REASSESSMENT_TRIGGERED',
+      entityType: 'Vendor',
+      entityId: vendorId,
+      metadata: { assessmentId: assessment.id, cadenceDays: vendor.reviewCadenceDays },
+    });
+
+    return this.mapToDto(updated);
   }
 }

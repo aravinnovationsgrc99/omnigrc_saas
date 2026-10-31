@@ -1535,6 +1535,89 @@ export interface VendorAssessmentDto {
   updatedAt: Date | string;
 }
 
+export type VendorLifecycleStage =
+  | 'DRAFT'
+  | 'INHERENT_RISK_ASSESSED'
+  | 'DUE_DILIGENCE'
+  | 'RISK_EVALUATION'
+  | 'PENDING_APPROVAL'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'ACTIVE_MONITORING'
+  | 'REASSESSMENT'
+  | 'OFFBOARDING'
+  | 'DECOMMISSIONED';
+
+export interface InherentRiskFactorsDto {
+  dataSensitivity: 'PUBLIC' | 'INTERNAL' | 'CONFIDENTIAL' | 'RESTRICTED';
+  dataVolume: 'NEGLIGIBLE' | 'MODERATE' | 'LARGE' | 'MASSIVE';
+  systemAccess: 'NONE' | 'BATCH' | 'DIRECT_API' | 'PRIVILEGED_ADMIN';
+  businessCriticality: 'NON_ESSENTIAL' | 'OPERATIONAL_SUPPORT' | 'SIGNIFICANT' | 'MISSION_CRITICAL';
+  financialExposure: 'LOW' | 'MEDIUM' | 'HIGH' | 'VERY_HIGH';
+  regulatoryExposure: 'UNREGULATED' | 'LOW' | 'MODERATE' | 'HIGH';
+  subcontractorReliance: 'NONE' | 'LOW' | 'MODERATE' | 'HEAVY';
+  serviceAvailabilityDependency?: 'STANDARD' | 'HIGH_AVAILABILITY' | 'REAL_TIME_CRITICAL';
+  businessContinuityImpact?: 'NEGLIGIBLE' | 'MODERATE' | 'SEVERE';
+  notes?: string;
+}
+
+export interface InherentRiskAssessmentResultDto {
+  score: number;
+  tier: VendorCriticality;
+  factors: Record<string, { value: string; score: number; weight: number; contribution: number }>;
+  rationale: string;
+  recommendedDueDiligence: string;
+  suggestedReviewCadenceDays: number;
+  assessedAt: string;
+  assessedBy?: string;
+}
+
+export interface ResidualRiskEvaluationResultDto {
+  inherentRiskScore: number;
+  inherentRiskTier: VendorCriticality;
+  controlEffectivenessScore: number;
+  residualRiskScore: number;
+  residualRiskTier: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+  justification: string;
+  mitigatingControls: string[];
+  findingsSummary: {
+    total: number;
+    open: number;
+    resolved: number;
+  };
+  evaluatedAt: string;
+  evaluatedBy?: string;
+}
+
+export interface VerifyVendorDocumentDto {
+  verificationStatus: 'VERIFIED' | 'REJECTED';
+  documentType?: 'SOC2' | 'ISO27001' | 'PEN_TEST' | 'BCP_DR' | 'CYBER_INSURANCE' | 'DPA' | 'OTHER';
+  expiryDate?: string;
+  reviewerNotes?: string;
+  rejectionReason?: string;
+}
+
+export interface VendorOffboardingDto {
+  accessRevoked: boolean;
+  dataReturnedOrDestroyed: boolean;
+  contractTerminated: boolean;
+  auditEvidenceArchived: boolean;
+  notes?: string;
+  offboardedBy?: string;
+}
+
+export interface VerifyVendorAssessmentActionDto {
+  verified: boolean;
+  rejectionReason?: string;
+  verificationNotes?: string;
+}
+
+export interface ApproveVendorRelationshipDto {
+  approved: boolean;
+  notes: string;
+  conditionalTerms?: string;
+}
+
 export interface VendorDto {
   id: string;
   organizationId: string;
@@ -1549,6 +1632,24 @@ export interface VendorDto {
   lastReviewedAt?: Date | string | null;
   nextReviewDate?: Date | string | null;
   websiteUrl?: string | null;
+  dueDiligenceStatus?: string | null;
+  businessPurpose?: string | null;
+  serviceProvided?: string | null;
+  countriesOfOperation?: string[] | null;
+  dataClassification?: string | null;
+  systemsAccessed?: string[] | null;
+  contractValue?: number | null;
+  contractRenewalDate?: string | null;
+  subcontractors?: string[] | null;
+  inherentRisk?: InherentRiskAssessmentResultDto | null;
+  inherentRiskScore?: number | null;
+  inherentRiskTier?: string | null;
+  residualRiskScore?: number | null;
+  residualRiskTier?: string | null;
+  controlEffectivenessScore?: number | null;
+  tprmData?: Record<string, any> | null;
+  residualRisk?: ResidualRiskEvaluationResultDto | null;
+  offboarding?: VendorOffboardingDto | null;
   createdById: string;
   createdAt: Date | string;
   updatedAt: Date | string;
@@ -1571,6 +1672,15 @@ export interface VendorDocumentDto {
   scanStatus: EvidenceScanStatus;
   uploadedById: string;
   uploaderName?: string;
+  verificationStatus?: 'PENDING_REVIEW' | 'VERIFIED' | 'REJECTED' | 'EXPIRED' | string | null;
+  documentType?: string | null;
+  expiryDate?: string | Date | null;
+  expirationDate?: string | Date | null;
+  verifiedByName?: string | null;
+  reviewerNotes?: string | null;
+  rejectionReason?: string | null;
+  verifiedAt?: string | Date | null;
+  verifiedById?: string | null;
 }
 
 export interface PaginatedVendorDocumentsDto {
