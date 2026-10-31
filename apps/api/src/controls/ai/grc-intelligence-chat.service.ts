@@ -67,7 +67,12 @@ export class GrcIntelligenceChatService {
       // 5. Sanitize conversation history
       const sanitizedHistory = this.sanitizeHistory(dto.history);
 
-      // 6. Check Gemini Provider Availability
+      // 6. Predefined Knowledge Base Routing vs. Open-Ended AI Inference
+      const isPredefinedQuestion = Boolean(qKey) ||
+        EXACT_TEN_PREDEFINED_QUESTIONS.some(
+          (q) => q.prompt.trim().toLowerCase() === cleanPrompt.toLowerCase() || q.key === qKey,
+        );
+
       const isGeminiAvailable = this.geminiProvider.isAvailable();
       const isTestEnv = process.env.NODE_ENV === 'test';
 
@@ -76,10 +81,14 @@ export class GrcIntelligenceChatService {
       let inferenceMode: 'LIVE_AI' | 'DETERMINISTIC_FALLBACK' | 'TEST_MODE' = isTestEnv
         ? 'TEST_MODE'
         : 'DETERMINISTIC_FALLBACK';
-      let providerName = 'Deterministic Grounded Engine (Rule-based Fallback)';
+      let providerName = isPredefinedQuestion
+        ? 'OMNiGRC Knowledge Base & Live Organization Context'
+        : 'Deterministic Grounded Engine (Rule-based Fallback)';
 
-      // Attempt Gemini Generation if configured and not test environment
-      if (isGeminiAvailable && !isTestEnv) {
+      // Predefined discovery questions are answered directly and authoritatively
+      // from the OMNiGRC Knowledge Base and verified tenant data without external LLM dependency.
+      // Open-ended queries use Gemini if available and not in test environment.
+      if (!isPredefinedQuestion && isGeminiAvailable && !isTestEnv) {
         try {
           const systemPrompt = this.buildGroundedSystemPrompt(kbSections, liveContext);
           const userPromptWithHistory = this.buildUserPromptWithHistory(sanitizedHistory, cleanPrompt);
@@ -95,12 +104,14 @@ export class GrcIntelligenceChatService {
         }
       }
 
-      // 7. Grounded Deterministic Synthesis Fallback if Gemini unavailable, failed, or in test mode
+      // 7. Grounded Deterministic Synthesis from Knowledge Base & Live Data
       if (!answer || !answer.trim()) {
         answer = this.synthesizeGroundedAnswer(cleanPrompt, analysis, liveContext, kbSections);
         if (isTestEnv) {
           inferenceMode = 'TEST_MODE';
           providerName = 'Test Engine (Grounded Simulation)';
+        } else if (isPredefinedQuestion) {
+          providerName = 'OMNiGRC Knowledge Base & Live Organization Context';
         }
       }
 

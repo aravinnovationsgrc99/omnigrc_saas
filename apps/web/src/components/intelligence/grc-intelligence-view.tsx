@@ -275,8 +275,8 @@ export function GrcIntelligenceView({ onNavigateToView }: GrcIntelligenceViewPro
                           Live AI
                         </span>
                       ) : (
-                        <span className="text-[10px] font-medium bg-amber-100 text-amber-800 px-1.5 py-0.2 rounded-full">
-                          Rule-based Fallback
+                        <span className="text-[10px] font-medium bg-teal-100 text-teal-800 px-1.5 py-0.2 rounded-full">
+                          Knowledge Base & Live Data
                         </span>
                       )}
                     </span>
@@ -292,8 +292,10 @@ export function GrcIntelligenceView({ onNavigateToView }: GrcIntelligenceViewPro
                       : 'bg-white border border-slate-200 text-slate-800 rounded-bl-none'
                   }`}
                 >
-                  {/* Assistant Text Answer */}
-                  <div className="whitespace-pre-wrap leading-relaxed font-normal break-words overflow-hidden text-xs text-slate-800">
+                  {/* Assistant Text Answer or User Query */}
+                  <div className={`whitespace-pre-wrap leading-relaxed break-words overflow-hidden text-xs ${
+                    msg.role === 'user' ? '!text-white font-medium' : msg.isError ? 'text-red-900' : 'text-slate-800'
+                  }`}>
                     {msg.content}
                   </div>
 

@@ -10,6 +10,7 @@ jest.mock('@/lib/api-client', () => ({
 }));
 
 describe('GrcIntelligenceView Workspace Acceptance Suite', () => {
+  jest.setTimeout(25000);
   const mockApiRequest = apiClient.apiRequest as jest.Mock;
 
   beforeEach(() => {

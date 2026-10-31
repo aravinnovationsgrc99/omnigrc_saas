@@ -279,8 +279,8 @@ export function FloatingSupportChat({
                       Live AI
                     </span>
                   ) : (
-                    <span className="text-[10px] font-mono font-bold bg-amber-950 text-amber-300 px-1.5 py-0.5 rounded border border-amber-700 flex-shrink-0">
-                      Fallback
+                    <span className="text-[10px] font-mono font-bold bg-teal-950 text-teal-300 px-1.5 py-0.5 rounded border border-teal-700 flex-shrink-0">
+                      Knowledge Base
                     </span>
                   )}
                 </h3>
@@ -390,7 +390,9 @@ export function FloatingSupportChat({
                   }`}
                 >
                   {/* Primary Assistant Answer or User Query */}
-                  <div className="whitespace-pre-wrap leading-relaxed font-normal break-words overflow-hidden text-xs">
+                  <div className={`whitespace-pre-wrap leading-relaxed break-words overflow-hidden text-xs ${
+                    msg.role === 'user' ? '!text-white font-medium' : msg.isError ? 'text-red-900' : 'text-slate-800'
+                  }`}>
                     {msg.content}
                   </div>
 
