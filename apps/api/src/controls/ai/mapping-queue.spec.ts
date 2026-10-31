@@ -192,6 +192,56 @@ describe('MappingQueueService Bounded Memory Cleanup', () => {
     }
   });
 
+  it('should throw ServiceUnavailableException in production if bullQueue.add fails with Redis error', async () => {
+    const originalEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+
+    await queueService.onModuleInit();
+    const bullQueue = (queueService as any).bullQueue;
+    bullQueue.add.mockRejectedValueOnce(new Error('ERR max requests limit exceeded'));
+
+    try {
+      await expect(
+        queueService.enqueueMappingJob('org-1', 'user-1', 'ctrl-1'),
+      ).rejects.toThrow(ServiceUnavailableException);
+    } finally {
+      process.env.NODE_ENV = originalEnv;
+      await queueService.onModuleDestroy();
+    }
+  });
+
+  it('should restore durable queue submissions when Redis reconnects after an outage', async () => {
+    const originalEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+
+    try {
+      await queueService.onModuleInit();
+      const redisClient = (queueService as any).redisClient;
+
+      // 1. Simulate Redis error/disconnect
+      redisClient.emit('error', new Error('Connection refused'));
+      redisClient.emit('close');
+      expect((queueService as any).isRedisConnected).toBe(false);
+
+      // Submission fails while disconnected
+      await expect(
+        queueService.enqueueMappingJob('org-1', 'user-1', 'ctrl-1'),
+      ).rejects.toThrow(ServiceUnavailableException);
+
+      // 2. Simulate Redis reconnect & ready
+      redisClient.emit('connect');
+      redisClient.emit('ready');
+      expect((queueService as any).isRedisConnected).toBe(true);
+
+      // Submission succeeds after reconnect
+      const jobId = await queueService.enqueueMappingJob('org-1', 'user-1', 'ctrl-1');
+      expect(jobId).toMatch(/^job_/);
+    } finally {
+      process.env.NODE_ENV = originalEnv;
+      await queueService.onModuleDestroy();
+    }
+  });
+
   it('should abort final DB write and record ERR_SERVICE_DISABLED if authorization is revoked mid-flight', async () => {
     const resolver = (queueService as any).effectiveServiceStateResolver;
     jest.spyOn(resolver, 'resolveEffectiveState')
