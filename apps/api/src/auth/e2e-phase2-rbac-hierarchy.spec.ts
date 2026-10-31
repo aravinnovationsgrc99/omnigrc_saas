@@ -7,6 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { Role, ProductAccessStatus } from '@omnigrc/shared';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { TenantContext } from '../tenant/tenant.context';
 
 import { LicenseVerificationService } from '../license-verification/license-verification.service';
 import { FrameworkEntitlementsService } from '../frameworks/framework-entitlements.service';
@@ -68,58 +69,8 @@ describe('E2E Phase 2: Organization Hierarchy, Membership RBAC & Selective Acces
     prisma = module.get<PrismaService>(PrismaService);
     auditLogsService = module.get<AuditLogsService>(AuditLogsService);
 
-    // Clean up test organizations & child entities
-    await prisma.userProject.deleteMany({});
-    await prisma.userDepartment.deleteMany({});
-    await prisma.project.deleteMany({ where: { organizationId: { in: [ORG_A_ID, ORG_B_ID] } } });
-    await prisma.department.deleteMany({ where: { organizationId: { in: [ORG_A_ID, ORG_B_ID] } } });
-    await prisma.organizationMembership.deleteMany({ where: { organizationId: { in: [ORG_A_ID, ORG_B_ID] } } });
-    await prisma.user.deleteMany({ where: { organizationId: { in: [ORG_A_ID, ORG_B_ID] } } });
-    await prisma.organization.deleteMany({ where: { id: { in: [ORG_A_ID, ORG_B_ID] } } });
-
-    // Seed test Organizations
-    await prisma.organization.create({ data: { id: ORG_A_ID, name: 'Org A Enterprise' } });
-    await prisma.organization.create({ data: { id: ORG_B_ID, name: 'Org B Competitor' } });
-
-    // Seed test Users & Memberships
-    await prisma.user.create({
-      data: { id: USER_ADMIN_A, organizationId: ORG_A_ID, name: 'Admin A', email: 'admin.a@orga.com', passwordHash: 'hash', role: Role.ADMIN },
-    });
-    await prisma.organizationMembership.create({
-      data: { organizationId: ORG_A_ID, userId: USER_ADMIN_A, role: Role.ADMIN, status: ProductAccessStatus.ACTIVE },
-    });
-
-    await prisma.user.create({
-      data: { id: USER_ANALYST_A, organizationId: ORG_A_ID, name: 'Analyst A', email: 'analyst.a@orga.com', passwordHash: 'hash', role: Role.ANALYST },
-    });
-    await prisma.organizationMembership.create({
-      data: { organizationId: ORG_A_ID, userId: USER_ANALYST_A, role: Role.ANALYST, status: ProductAccessStatus.ACTIVE },
-    });
-
-    await prisma.user.create({
-      data: { id: USER_AUDITOR_A, organizationId: ORG_A_ID, name: 'Auditor A', email: 'auditor.a@orga.com', passwordHash: 'hash', role: Role.EXTERNAL_AUDITOR },
-    });
-    await prisma.organizationMembership.create({
-      data: { organizationId: ORG_A_ID, userId: USER_AUDITOR_A, role: Role.EXTERNAL_AUDITOR, status: ProductAccessStatus.ACTIVE },
-    });
-
-    await prisma.user.create({
-      data: { id: USER_ADMIN_B, organizationId: ORG_B_ID, name: 'Admin B', email: 'admin.b@orgb.com', passwordHash: 'hash', role: Role.ADMIN },
-    });
-    await prisma.organizationMembership.create({
-      data: { organizationId: ORG_B_ID, userId: USER_ADMIN_B, role: Role.ADMIN, status: ProductAccessStatus.ACTIVE },
-    });
-
-    // Seed Department & Project in Org A
-    const deptA1 = await departmentsService.create(ORG_A_ID, USER_ADMIN_A, { name: 'Engineering', code: 'ENG' });
-    deptA1Id = deptA1.id;
-
-    const projA1 = await projectsService.create(ORG_A_ID, USER_ADMIN_A, { departmentId: deptA1Id, name: 'Cloud Platform' });
-    projA1Id = projA1.id;
-  }, 30000);
-
-  afterAll(async () => {
-    if (prisma) {
+    // Clean up & seed test organizations & child entities in system context
+    await TenantContext.runSystemContext(async () => {
       await prisma.userProject.deleteMany({});
       await prisma.userDepartment.deleteMany({});
       await prisma.project.deleteMany({ where: { organizationId: { in: [ORG_A_ID, ORG_B_ID] } } });
@@ -127,6 +78,60 @@ describe('E2E Phase 2: Organization Hierarchy, Membership RBAC & Selective Acces
       await prisma.organizationMembership.deleteMany({ where: { organizationId: { in: [ORG_A_ID, ORG_B_ID] } } });
       await prisma.user.deleteMany({ where: { organizationId: { in: [ORG_A_ID, ORG_B_ID] } } });
       await prisma.organization.deleteMany({ where: { id: { in: [ORG_A_ID, ORG_B_ID] } } });
+
+      // Seed test Organizations
+      await prisma.organization.create({ data: { id: ORG_A_ID, name: 'Org A Enterprise' } });
+      await prisma.organization.create({ data: { id: ORG_B_ID, name: 'Org B Competitor' } });
+
+      // Seed test Users & Memberships
+      await prisma.user.create({
+        data: { id: USER_ADMIN_A, organizationId: ORG_A_ID, name: 'Admin A', email: 'admin.a@orga.com', passwordHash: 'hash', role: Role.ADMIN },
+      });
+      await prisma.organizationMembership.create({
+        data: { organizationId: ORG_A_ID, userId: USER_ADMIN_A, role: Role.ADMIN, status: ProductAccessStatus.ACTIVE },
+      });
+
+      await prisma.user.create({
+        data: { id: USER_ANALYST_A, organizationId: ORG_A_ID, name: 'Analyst A', email: 'analyst.a@orga.com', passwordHash: 'hash', role: Role.ANALYST },
+      });
+      await prisma.organizationMembership.create({
+        data: { organizationId: ORG_A_ID, userId: USER_ANALYST_A, role: Role.ANALYST, status: ProductAccessStatus.ACTIVE },
+      });
+
+      await prisma.user.create({
+        data: { id: USER_AUDITOR_A, organizationId: ORG_A_ID, name: 'Auditor A', email: 'auditor.a@orga.com', passwordHash: 'hash', role: Role.EXTERNAL_AUDITOR },
+      });
+      await prisma.organizationMembership.create({
+        data: { organizationId: ORG_A_ID, userId: USER_AUDITOR_A, role: Role.EXTERNAL_AUDITOR, status: ProductAccessStatus.ACTIVE },
+      });
+
+      await prisma.user.create({
+        data: { id: USER_ADMIN_B, organizationId: ORG_B_ID, name: 'Admin B', email: 'admin.b@orgb.com', passwordHash: 'hash', role: Role.ADMIN },
+      });
+      await prisma.organizationMembership.create({
+        data: { organizationId: ORG_B_ID, userId: USER_ADMIN_B, role: Role.ADMIN, status: ProductAccessStatus.ACTIVE },
+      });
+
+      // Seed Department & Project in Org A
+      const deptA1 = await departmentsService.create(ORG_A_ID, USER_ADMIN_A, { name: 'Engineering', code: 'ENG' });
+      deptA1Id = deptA1.id;
+
+      const projA1 = await projectsService.create(ORG_A_ID, USER_ADMIN_A, { departmentId: deptA1Id, name: 'Cloud Platform' });
+      projA1Id = projA1.id;
+    });
+  }, 30000);
+
+  afterAll(async () => {
+    if (prisma) {
+      await TenantContext.runSystemContext(async () => {
+        await prisma.userProject.deleteMany({});
+        await prisma.userDepartment.deleteMany({});
+        await prisma.project.deleteMany({ where: { organizationId: { in: [ORG_A_ID, ORG_B_ID] } } });
+        await prisma.department.deleteMany({ where: { organizationId: { in: [ORG_A_ID, ORG_B_ID] } } });
+        await prisma.organizationMembership.deleteMany({ where: { organizationId: { in: [ORG_A_ID, ORG_B_ID] } } });
+        await prisma.user.deleteMany({ where: { organizationId: { in: [ORG_A_ID, ORG_B_ID] } } });
+        await prisma.organization.deleteMany({ where: { id: { in: [ORG_A_ID, ORG_B_ID] } } });
+      });
     }
   });
 

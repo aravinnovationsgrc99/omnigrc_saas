@@ -114,12 +114,29 @@ export class MappingQueueService implements OnModuleInit, OnModuleDestroy {
         this.isRedisConnected = false;
       });
 
+      // Ensure any duplicated ioredis client created by BullMQ inherits an error listener
+      const origDuplicate = this.redisClient.duplicate.bind(this.redisClient);
+      this.redisClient.duplicate = (...args: any[]) => {
+        const dup = origDuplicate(...args);
+        dup.on('error', (err: any) => {
+          this.isRedisConnected = false;
+          this.logger.warn(`MappingQueueService: BullMQ duplicated Redis client connection error: ${err.message}`);
+        });
+        return dup;
+      };
+
       // Single Queue and Worker instances created ONCE on init
       this.bullQueue = new Queue('control-mapping-queue', { connection: this.redisClient });
       if (typeof (this.bullQueue as any)?.on === 'function') {
         (this.bullQueue as any).on('error', (err: any) => {
           this.isRedisConnected = false;
           this.logger.warn(`BullMQ Queue error [control-mapping-queue]: ${err.message}`);
+        });
+      }
+      if ((this.bullQueue as any)?.connection && typeof (this.bullQueue as any).connection.on === 'function') {
+        (this.bullQueue as any).connection.on('error', (err: any) => {
+          this.isRedisConnected = false;
+          this.logger.warn(`BullMQ Queue RedisConnection error [control-mapping-queue]: ${err.message}`);
         });
       }
 
@@ -135,8 +152,15 @@ export class MappingQueueService implements OnModuleInit, OnModuleDestroy {
       );
 
       this.worker.on('error', (err) => {
+        this.isRedisConnected = false;
         this.logger.error(`BullMQ Worker error [control-mapping-queue]: ${err.message}`);
       });
+      if ((this.worker as any)?.connection && typeof (this.worker as any).connection.on === 'function') {
+        (this.worker as any).connection.on('error', (err: any) => {
+          this.isRedisConnected = false;
+          this.logger.warn(`BullMQ Worker RedisConnection error [control-mapping-queue]: ${err.message}`);
+        });
+      }
 
       this.logger.log('MappingQueueService: BullMQ Queue and Worker initialized successfully (Worker count: 1).');
     } catch (err: any) {
