@@ -176,9 +176,9 @@ export function RiskListView({ initialAssetId, onClearAssetFilter, onNavigateToV
         </div>
 
         {/* Filters */}
-        <div className="flex flex-col md:flex-row gap-2.5 items-stretch md:items-center w-full md:w-auto flex-1 md:justify-end">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:flex md:flex-row gap-2.5 items-stretch md:items-center w-full md:w-auto flex-1 md:justify-end">
           {/* Search */}
-          <div className="relative w-full md:w-52">
+          <div className="relative w-full sm:col-span-2 md:w-52">
             <Search size={15} color="#8B95A1" className="absolute left-2.5 top-3" />
             <input
               className="omni-input w-full"
@@ -235,11 +235,13 @@ export function RiskListView({ initialAssetId, onClearAssetFilter, onNavigateToV
           </select>
 
           {/* Compliance Framework Filter */}
-          <ComplianceScopeFilter
-            selectedFrameworkId={frameworkFilter}
-            onFrameworkChange={(fwId) => setFrameworkFilter(fwId)}
-            allOptionLabel="All Frameworks"
-          />
+          <div className="w-full sm:col-span-2 md:col-span-1 md:w-auto">
+            <ComplianceScopeFilter
+              selectedFrameworkId={frameworkFilter}
+              onFrameworkChange={(fwId) => setFrameworkFilter(fwId)}
+              allOptionLabel="All Frameworks"
+            />
+          </div>
         </div>
       </div>
 
@@ -315,18 +317,18 @@ export function RiskListView({ initialAssetId, onClearAssetFilter, onNavigateToV
         <div style={{
           background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10,
           overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-        }} className="overflow-x-auto">
+        }} className="overflow-x-auto w-full omni-scroll">
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
             <thead>
               <tr style={{ background: '#F6F7F6', borderBottom: '1px solid #E2E6E4', color: '#5B6672' }}>
-                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Risk Title & Category</th>
-                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Inherent Score</th>
-                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Residual Score</th>
-                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Status</th>
-                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Owner & Treatment</th>
-                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Framework / Reference</th>
-                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Linked Asset</th>
-                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Updated</th>
+                <th style={{ padding: '12px 14px', fontWeight: 600 }}>Risk Title & Category</th>
+                <th style={{ padding: '12px 12px', fontWeight: 600 }}>Inherent Score</th>
+                <th style={{ padding: '12px 12px', fontWeight: 600 }}>Residual Score</th>
+                <th style={{ padding: '12px 12px', fontWeight: 600 }}>Status</th>
+                <th style={{ padding: '12px 14px', fontWeight: 600 }} className="hidden sm:table-cell">Owner & Treatment</th>
+                <th style={{ padding: '12px 14px', fontWeight: 600 }} className="hidden md:table-cell">Framework / Reference</th>
+                <th style={{ padding: '12px 14px', fontWeight: 600 }} className="hidden lg:table-cell">Linked Asset</th>
+                <th style={{ padding: '12px 14px', fontWeight: 600 }} className="hidden sm:table-cell">Updated</th>
               </tr>
             </thead>
             <tbody>
@@ -350,8 +352,8 @@ export function RiskListView({ initialAssetId, onClearAssetFilter, onNavigateToV
                     }}
                     className="omni-table-row focus:outline-none"
                   >
-                    <td style={{ padding: '14px 16px', fontWeight: 600, color: '#1B2430' }}>
-                      <div className="flex items-center gap-2">
+                    <td style={{ padding: '12px 14px', fontWeight: 600, color: '#1B2430' }}>
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span>{risk.title}</span>
                         {risk.category && (
                           <span style={{ fontSize: 10.5, background: '#EDEFED', color: '#4A5568', padding: '1px 6px', borderRadius: 4, fontWeight: 500 }}>
@@ -365,7 +367,7 @@ export function RiskListView({ initialAssetId, onClearAssetFilter, onNavigateToV
                         </div>
                       )}
                     </td>
-                    <td style={{ padding: '14px 16px' }}>
+                    <td style={{ padding: '12px 12px' }}>
                       <RagStatusBadge
                         status={getRiskRag(risk.score).status}
                         label={`${risk.scoreBand} (${risk.score})`}
@@ -373,7 +375,7 @@ export function RiskListView({ initialAssetId, onClearAssetFilter, onNavigateToV
                         size="sm"
                       />
                     </td>
-                    <td style={{ padding: '14px 16px' }}>
+                    <td style={{ padding: '12px 12px' }}>
                       {risk.residualScore ? (
                         <RagStatusBadge
                           status={getRiskRag(risk.residualScore).status}
@@ -385,12 +387,12 @@ export function RiskListView({ initialAssetId, onClearAssetFilter, onNavigateToV
                         <span style={{ fontSize: 11, color: '#8B95A1' }}>—</span>
                       )}
                     </td>
-                    <td style={{ padding: '14px 16px' }}>
+                    <td style={{ padding: '12px 12px' }}>
                       <span className={statusBadgeClass}>
                         {risk.status}
                       </span>
                     </td>
-                    <td style={{ padding: '14px 16px', color: '#1B2430' }}>
+                    <td style={{ padding: '12px 14px', color: '#1B2430' }} className="hidden sm:table-cell">
                       <div style={{ fontWeight: 600 }}>{risk.owner}</div>
                       {(risk.treatmentStrategy || risk.treatmentOwner || isOverdue) && (
                         <div className="flex items-center gap-1.5 mt-1" style={{ fontSize: 11, color: '#5B6672' }}>
@@ -407,7 +409,7 @@ export function RiskListView({ initialAssetId, onClearAssetFilter, onNavigateToV
                         </div>
                       )}
                     </td>
-                    <td style={{ padding: '14px 16px', color: '#0F6E6A', fontWeight: 600 }}>
+                    <td style={{ padding: '12px 14px', color: '#0F6E6A', fontWeight: 600 }} className="hidden md:table-cell">
                       {risk.frameworkCode ? (
                         <span style={{ background: '#E4F1F0', padding: '2px 8px', borderRadius: 4, fontSize: 11.5 }}>
                           {risk.frameworkCode} {risk.referenceIdentifier ? `(${risk.referenceIdentifier})` : ''}
@@ -416,8 +418,8 @@ export function RiskListView({ initialAssetId, onClearAssetFilter, onNavigateToV
                         <span style={{ color: '#8B95A1' }}>—</span>
                       )}
                     </td>
-                    <td style={{ padding: '14px 16px', color: '#5B6672' }}>{risk.assetName || '—'}</td>
-                    <td style={{ padding: '14px 16px', color: '#8B95A1', fontSize: 12 }}>
+                    <td style={{ padding: '12px 14px', color: '#5B6672' }} className="hidden lg:table-cell">{risk.assetName || '—'}</td>
+                    <td style={{ padding: '12px 14px', color: '#8B95A1', fontSize: 12 }} className="hidden sm:table-cell">
                       {new Date(risk.updatedAt).toLocaleDateString()}
                     </td>
                   </tr>

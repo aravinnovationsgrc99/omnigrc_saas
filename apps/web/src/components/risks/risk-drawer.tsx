@@ -438,13 +438,13 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
           )}
 
           <form id="risk-form" onSubmit={handleSave}>
-            <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
-              <div style={{ flex: 1.5 }}>
+            <div className="flex flex-col sm:flex-row gap-3 mb-4">
+              <div className="flex-[1.5] w-full">
                 <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
                   Risk Title *
                 </label>
                 <input
-                  className={`omni-input ${isTitleInvalid ? 'border-rose-500' : ''}`}
+                  className={`omni-input w-full ${isTitleInvalid ? 'border-rose-500' : ''}`}
                   placeholder="e.g. Unencrypted Patient Health Data in Transit"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
@@ -455,13 +455,13 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
                   <span className="text-xs text-rose-600 font-medium mt-1 block">Risk title is required.</span>
                 )}
               </div>
-              <div style={{ flex: 1 }}>
+              <div className="flex-1 w-full">
                 <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
                   Risk Category
                 </label>
                 <select
                   aria-label="Risk Category"
-                  className="omni-input"
+                  className="omni-input w-full"
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
                 >
@@ -477,13 +477,8 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
             </div>
 
             {/* Inherent vs Residual Score Summary */}
-            <div style={{
-              display: 'flex', gap: 12, marginBottom: 16,
-            }}>
-              <div style={{
-                flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                background: '#F6F7F6', padding: '10px 14px', borderRadius: 8, border: '1px solid #E2E6E4',
-              }}>
+            <div className="flex flex-col sm:flex-row gap-3 mb-4">
+              <div className="flex-1 w-full flex items-center justify-between bg-slate-50 p-2.5 sm:p-3 rounded-lg border border-slate-200">
                 <div>
                   <span style={{ fontSize: 11, fontWeight: 600, color: '#5B6672', display: 'block' }}>Inherent Risk Score</span>
                   <span className="omni-mono" style={{ fontSize: 16, fontWeight: 700 }}>{currentScore}</span>
@@ -491,10 +486,7 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
                 <span className={badgeClass}>{currentScoreBand}</span>
               </div>
 
-              <div style={{
-                flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                background: '#F6F7F6', padding: '10px 14px', borderRadius: 8, border: '1px solid #E2E6E4',
-              }}>
+              <div className="flex-1 w-full flex items-center justify-between bg-slate-50 p-2.5 sm:p-3 rounded-lg border border-slate-200">
                 <div>
                   <span style={{ fontSize: 11, fontWeight: 600, color: '#5B6672', display: 'block' }}>Residual Risk Score</span>
                   <span className="omni-mono" style={{ fontSize: 16, fontWeight: 700 }}>
@@ -510,14 +502,14 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
             </div>
 
             {/* Inherent Likelihood & Impact */}
-            <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
-              <div style={{ flex: 1 }}>
+            <div className="flex flex-col sm:flex-row gap-3 mb-4">
+              <div className="flex-1 w-full">
                 <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
                   Inherent Likelihood (1–5) *
                 </label>
                 <select
                   aria-label="Inherent Likelihood"
-                  className="omni-input"
+                  className="omni-input w-full"
                   value={likelihood}
                   onChange={(e) => setLikelihood(Number(e.target.value))}
                 >
@@ -527,13 +519,13 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
                 </select>
               </div>
 
-              <div style={{ flex: 1 }}>
+              <div className="flex-1 w-full">
                 <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
                   Inherent Impact (1–5) *
                 </label>
                 <select
                   aria-label="Inherent Impact"
-                  className="omni-input"
+                  className="omni-input w-full"
                   value={impact}
                   onChange={(e) => setImpact(Number(e.target.value))}
                 >
@@ -545,14 +537,14 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
             </div>
 
             {/* Residual Likelihood & Impact */}
-            <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
-              <div style={{ flex: 1 }}>
+            <div className="flex flex-col sm:flex-row gap-3 mb-4">
+              <div className="flex-1 w-full">
                 <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
                   Residual Likelihood (Post-treatment)
                 </label>
                 <select
                   aria-label="Residual Likelihood"
-                  className="omni-input"
+                  className="omni-input w-full"
                   value={residualLikelihood}
                   onChange={(e) => setResidualLikelihood(Number(e.target.value))}
                 >
@@ -563,13 +555,13 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
                 </select>
               </div>
 
-              <div style={{ flex: 1 }}>
+              <div className="flex-1 w-full">
                 <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
                   Residual Impact (Post-treatment)
                 </label>
                 <select
                   aria-label="Residual Impact"
-                  className="omni-input"
+                  className="omni-input w-full"
                   value={residualImpact}
                   onChange={(e) => setResidualImpact(Number(e.target.value))}
                 >
@@ -581,13 +573,13 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
-              <div style={{ flex: 1 }}>
+            <div className="flex flex-col sm:flex-row gap-3 mb-4">
+              <div className="flex-1 w-full">
                 <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
                   Status *
                 </label>
                 <select
-                  className="omni-input"
+                  className="omni-input w-full"
                   value={status}
                   onChange={(e) => setStatus(e.target.value as RiskStatus)}
                 >
@@ -598,12 +590,12 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
                 </select>
               </div>
 
-              <div style={{ flex: 1 }}>
+              <div className="flex-1 w-full">
                 <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
                   Risk Owner *
                 </label>
                 <input
-                  className={`omni-input ${isOwnerInvalid ? 'border-rose-500' : ''}`}
+                  className={`omni-input w-full ${isOwnerInvalid ? 'border-rose-500' : ''}`}
                   placeholder="e.g. SecOps Team"
                   value={owner}
                   onChange={(e) => setOwner(e.target.value)}
@@ -1012,16 +1004,13 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
         </div>
 
         {/* Footer actions */}
-        <div style={{
-          height: 64, borderTop: '1px solid #E2E6E4', padding: '0 20px',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#FAFAFA',
-        }}>
+        <div className="min-h-[64px] border-t border-slate-200 px-4 sm:px-5 py-3 flex flex-wrap items-center justify-between gap-2.5 bg-slate-50 shrink-0 pb-safe">
           {isEdit ? (
             <button
               type="button"
               onClick={handleDelete}
               disabled={deleting}
-              className="omni-btn-ghost"
+              className="omni-btn-ghost min-h-[42px] px-3 py-2 text-xs"
               style={{ color: '#B23A48', borderColor: '#F8E6E8', display: 'flex', alignItems: 'center', gap: 6 }}
             >
               <Trash2 size={14} /> {deleting ? 'Deleting...' : 'Delete'}
@@ -1030,15 +1019,15 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
             <div />
           )}
 
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button type="button" onClick={onClose} className="omni-btn-ghost">
+          <div className="flex items-center gap-2.5">
+            <button type="button" onClick={onClose} className="omni-btn-ghost min-h-[42px] px-3.5 py-2 text-xs">
               Cancel
             </button>
             <button
               type="submit"
               form="risk-form"
               disabled={saving}
-              className="omni-btn-primary"
+              className="omni-btn-primary min-h-[42px] px-4 py-2 text-xs"
             >
               {saving ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Risk'}
             </button>

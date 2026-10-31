@@ -407,18 +407,18 @@ export function GrcIntelligenceView({ onNavigateToView }: GrcIntelligenceViewPro
 
         {/* Standardized Predefined Question Pills (Exact 10 Domain Questions) */}
         <div className="p-3.5 sm:p-4 bg-slate-50 border-t border-slate-200 space-y-2.5" data-testid="suggested-questions-panel">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-teal-700" /> Standardized Discovery Questions ({questions.length})
             </div>
-            {/* Domain Filter Pills */}
-            <div className="hidden sm:flex items-center gap-1 overflow-x-auto omni-scroll py-0.5">
-              {domainTabs.slice(0, 5).map((tab) => (
+            {/* Domain Filter Pills (scrollable on mobile) */}
+            <div className="flex items-center gap-1 overflow-x-auto omni-scroll py-0.5 -mx-1 px-1">
+              {domainTabs.slice(0, 6).map((tab) => (
                 <button
                   key={tab.id}
                   type="button"
                   onClick={() => setSelectedDomain(tab.id)}
-                  className={`text-[10px] font-semibold px-2 py-0.5 rounded-full transition ${
+                  className={`text-[10px] font-semibold px-2.5 py-1 rounded-full transition whitespace-nowrap ${
                     selectedDomain === tab.id
                       ? 'bg-teal-800 text-white'
                       : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'

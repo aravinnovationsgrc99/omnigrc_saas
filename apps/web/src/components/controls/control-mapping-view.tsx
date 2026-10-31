@@ -354,73 +354,124 @@ export function ControlMappingView({ onNavigateToView }: ControlMappingViewProps
           onAction={() => setIsDrawerOpen(true)}
         />
       ) : !error ? (
-        <div style={{
-          background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10,
-          overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-        }} className="overflow-x-auto">
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
-            <thead>
-              <tr style={{ background: '#F6F7F6', borderBottom: '1px solid #E2E6E4', color: '#5B6672' }}>
-                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Control Name</th>
-                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Category</th>
-                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Mapping Status</th>
-                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Updated</th>
-                <th style={{ padding: '12px 16px', fontWeight: 600, textAlign: 'right' }}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {controls.map((control, index) => {
-                const summary = getMappingSummaryBadgeClass(control);
-                const isLast = index === controls.length - 1;
-
-                return (
-                  <tr
-                    key={control.id}
-                    onClick={() => setSelectedControlId(control.id)}
-                    tabIndex={0}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedControlId(control.id); }}
-                    style={{
-                      borderBottom: isLast ? 'none' : '1px solid #EDEFED',
-                    }}
-                    className="omni-table-row focus:outline-none"
-                  >
-                    <td style={{ padding: '14px 16px', fontWeight: 600, color: '#1B2430' }}>
-                      {control.name}
-                      <div style={{ fontSize: 11.5, fontWeight: 400, color: '#5B6672', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 420 }}>
-                        {control.description}
+        <>
+          {/* Mobile Cards (< md) */}
+          <div className="md:hidden space-y-3">
+            {controls.map((control) => {
+              const summary = getMappingSummaryBadgeClass(control);
+              return (
+                <div
+                  key={control.id}
+                  onClick={() => setSelectedControlId(control.id)}
+                  tabIndex={0}
+                  role="button"
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedControlId(control.id); }}
+                  className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs hover:border-teal-500 hover:shadow-xs transition cursor-pointer space-y-2.5"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                        <span className="omni-mono text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-semibold">
+                          {control.category || 'General'}
+                        </span>
+                        <span className={summary.className}>
+                          {summary.label}
+                        </span>
                       </div>
-                    </td>
-                    <td style={{ padding: '14px 16px' }}>
-                      <span className="omni-mono" style={{ fontSize: 11.5, background: '#EDEFED', padding: '3px 8px', borderRadius: 4, color: '#5B6672' }}>
-                        {control.category || 'General'}
-                      </span>
-                    </td>
-                    <td style={{ padding: '14px 16px' }}>
-                      <span className={summary.className}>
-                        {summary.label}
-                      </span>
-                    </td>
-                    <td style={{ padding: '14px 16px', color: '#8B95A1', fontSize: 12 }}>
-                      {new Date(control.updatedAt).toLocaleDateString()}
-                    </td>
-                    <td style={{ padding: '14px 16px', textAlign: 'right', color: '#0F6E6A', fontWeight: 600 }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 12.5 }}>
-                        Map <ChevronRight size={14} />
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          <div style={{
-            padding: '12px 16px', background: '#F6F7F6', borderTop: '1px solid #E2E6E4',
-            fontSize: 12, color: '#5B6672', display: 'flex', justifyContent: 'space-between',
-          }}>
-            <span>Showing {controls.length} of {totalCount} controls</span>
-            <span>Tenant scoped</span>
+                      <h4 className="font-bold text-slate-900 text-sm break-words">{control.name}</h4>
+                    </div>
+                    <span className="text-teal-700 inline-flex items-center gap-1 text-xs font-semibold shrink-0 pt-0.5">
+                      Map <ChevronRight size={14} />
+                    </span>
+                  </div>
+
+                  {control.description && (
+                    <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed">
+                      {control.description}
+                    </p>
+                  )}
+
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 pt-2 border-t border-slate-100">
+                    <span>Updated {new Date(control.updatedAt).toLocaleDateString()}</span>
+                    <span className="font-semibold text-teal-800">Tap to edit mappings</span>
+                  </div>
+                </div>
+              );
+            })}
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-500 text-center font-medium">
+              Showing {controls.length} of {totalCount} controls · Tenant scoped
+            </div>
           </div>
-        </div>
+
+          {/* Desktop Table (>= md) */}
+          <div style={{
+            background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10,
+            overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+          }} className="hidden md:block overflow-x-auto">
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: '#F6F7F6', borderBottom: '1px solid #E2E6E4', color: '#5B6672' }}>
+                  <th style={{ padding: '12px 16px', fontWeight: 600 }}>Control Name</th>
+                  <th style={{ padding: '12px 16px', fontWeight: 600 }}>Category</th>
+                  <th style={{ padding: '12px 16px', fontWeight: 600 }}>Mapping Status</th>
+                  <th style={{ padding: '12px 16px', fontWeight: 600 }}>Updated</th>
+                  <th style={{ padding: '12px 16px', fontWeight: 600, textAlign: 'right' }}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {controls.map((control, index) => {
+                  const summary = getMappingSummaryBadgeClass(control);
+                  const isLast = index === controls.length - 1;
+
+                  return (
+                    <tr
+                      key={control.id}
+                      onClick={() => setSelectedControlId(control.id)}
+                      tabIndex={0}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedControlId(control.id); }}
+                      style={{
+                        borderBottom: isLast ? 'none' : '1px solid #EDEFED',
+                      }}
+                      className="omni-table-row focus:outline-none"
+                    >
+                      <td style={{ padding: '14px 16px', fontWeight: 600, color: '#1B2430' }}>
+                        {control.name}
+                        <div style={{ fontSize: 11.5, fontWeight: 400, color: '#5B6672', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 420 }}>
+                          {control.description}
+                        </div>
+                      </td>
+                      <td style={{ padding: '14px 16px' }}>
+                        <span className="omni-mono" style={{ fontSize: 11.5, background: '#EDEFED', padding: '3px 8px', borderRadius: 4, color: '#5B6672' }}>
+                          {control.category || 'General'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '14px 16px' }}>
+                        <span className={summary.className}>
+                          {summary.label}
+                        </span>
+                      </td>
+                      <td style={{ padding: '14px 16px', color: '#8B95A1', fontSize: 12 }}>
+                        {new Date(control.updatedAt).toLocaleDateString()}
+                      </td>
+                      <td style={{ padding: '14px 16px', textAlign: 'right', color: '#0F6E6A', fontWeight: 600 }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 12.5 }}>
+                          Map <ChevronRight size={14} />
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div style={{
+              padding: '12px 16px', background: '#F6F7F6', borderTop: '1px solid #E2E6E4',
+              fontSize: 12, color: '#5B6672', display: 'flex', justifyContent: 'space-between',
+            }}>
+              <span>Showing {controls.length} of {totalCount} controls</span>
+              <span>Tenant scoped</span>
+            </div>
+          </div>
+        </>
       ) : null}
 
       {/* Slide-over Drawer for Create */}

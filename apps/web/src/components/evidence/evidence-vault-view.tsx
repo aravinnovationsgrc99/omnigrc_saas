@@ -306,36 +306,45 @@ export function EvidenceVaultView() {
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-            <table className="w-full text-left text-xs text-slate-800">
+          {/* Priority-Column Evidence Table */}
+          <div className="overflow-x-auto w-full omni-scroll rounded-xl border border-slate-200 bg-white shadow-sm">
+            <table className="w-full text-left text-xs text-slate-800 border-collapse">
               <thead className="bg-slate-50 text-slate-700 font-bold text-[11px] border-b border-slate-200 uppercase tracking-wider">
                 <tr>
-                  <th className="py-3 px-4">Proof Title & File</th>
-                  <th className="py-3 px-4">Evidence Type</th>
-                  <th className="py-3 px-4">Associated Resources & Scopes</th>
-                  <th className="py-3 px-4">Size & Hash</th>
-                  <th className="py-3 px-4">Uploader</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
+                  <th className="py-3 px-3 sm:px-4">Proof Title & File</th>
+                  <th className="py-3 px-2 sm:px-4 hidden sm:table-cell">Evidence Type</th>
+                  <th className="py-3 px-4 hidden md:table-cell">Associated Resources & Scopes</th>
+                  <th className="py-3 px-4 hidden lg:table-cell">Size & Hash</th>
+                  <th className="py-3 px-4 hidden sm:table-cell">Uploader</th>
+                  <th className="py-3 px-3 sm:px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {data.items.map((item) => (
                   <tr key={item.id} className="hover:bg-slate-50/80 transition">
-                    <td className="py-3.5 px-4">
-                      <div className="flex items-center gap-2">
-                        <FileText className="w-4 h-4 text-teal-700 flex-shrink-0" />
+                    <td className="py-3.5 px-3 sm:px-4">
+                      <div className="flex items-start sm:items-center gap-2">
+                        <FileText className="w-4 h-4 text-teal-700 flex-shrink-0 mt-0.5 sm:mt-0" />
                         <div>
                           <span className="font-bold text-slate-900">{item.title}</span>
-                          <div className="text-[11px] text-slate-500 omni-mono">{item.fileName}</div>
+                          <div className="text-[11px] text-slate-500 omni-mono break-all">{item.fileName}</div>
+                          <div className="sm:hidden mt-1 flex flex-wrap gap-1">
+                            <span className="px-1.5 py-0.5 text-[9px] font-semibold rounded bg-slate-100 text-slate-800 border border-slate-200">
+                              {item.evidenceType}
+                            </span>
+                            <span className="text-[10px] text-slate-400">
+                              {formatFileSize(item.fileSize)}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </td>
-                    <td className="py-3.5 px-4">
+                    <td className="py-3.5 px-2 sm:px-4 hidden sm:table-cell">
                       <span className="px-2 py-0.5 text-[10px] font-semibold rounded bg-slate-100 text-slate-800 border border-slate-200">
                         {item.evidenceType}
                       </span>
                     </td>
-                    <td className="py-3.5 px-4">
+                    <td className="py-3.5 px-4 hidden md:table-cell">
                       {item.associations.length === 0 && (!item.frameworkReferences || item.frameworkReferences.length === 0) ? (
                         <span className="italic text-slate-400">Unattached</span>
                       ) : (
@@ -357,7 +366,7 @@ export function EvidenceVaultView() {
                         </div>
                       )}
                     </td>
-                    <td className="py-3.5 px-4 text-xs">
+                    <td className="py-3.5 px-4 text-xs hidden lg:table-cell">
                       <div className="font-mono text-slate-700">{formatFileSize(item.fileSize)}</div>
                       {item.checksum && (
                         <div className="text-[10px] text-slate-400 font-mono truncate max-w-[120px]" title={item.checksum}>
@@ -365,16 +374,16 @@ export function EvidenceVaultView() {
                         </div>
                       )}
                     </td>
-                    <td className="py-3.5 px-4 text-xs font-medium text-slate-600">
+                    <td className="py-3.5 px-4 text-xs font-medium text-slate-600 hidden sm:table-cell">
                       <div>{item.uploaderName}</div>
                       <div className="text-[10px] text-slate-400">{new Date(item.createdAt).toLocaleDateString()}</div>
                     </td>
-                    <td className="py-3.5 px-4 text-right">
+                    <td className="py-3.5 px-3 sm:px-4 text-right">
                       <button
                         onClick={() => handleDownload(item)}
-                        className="inline-flex items-center gap-1 text-xs text-teal-700 hover:text-teal-800 font-bold transition px-2 py-1 bg-teal-50 hover:bg-teal-100 rounded"
+                        className="inline-flex items-center gap-1 text-xs text-teal-700 hover:text-teal-800 font-bold transition px-2 py-1 bg-teal-50 hover:bg-teal-100 rounded min-h-[32px]"
                       >
-                        <Download className="w-3.5 h-3.5" /> Download Stream
+                        <Download className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Download</span> Stream
                       </button>
                     </td>
                   </tr>
@@ -387,8 +396,8 @@ export function EvidenceVaultView() {
 
       {/* UPLOAD MODAL */}
       {showUploadModal && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-lg p-6 shadow-2xl border border-slate-200 space-y-4">
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4">
+          <div className="bg-white rounded-xl w-full max-w-lg p-4 sm:p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[92vh] overflow-y-auto omni-scroll">
             <h3 className="text-base font-bold text-slate-900 m-0 flex items-center gap-2">
               <Upload size={18} className="text-teal-700" /> Upload Evidence
             </h3>

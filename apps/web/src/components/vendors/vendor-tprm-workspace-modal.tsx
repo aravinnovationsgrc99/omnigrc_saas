@@ -559,11 +559,11 @@ export function VendorTprmWorkspaceModal({
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-60 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4"
+      className="fixed inset-0 z-60 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-0 sm:p-4"
     >
-      <div className="bg-white rounded-xl max-w-5xl w-full shadow-2xl max-h-[94dvh] flex flex-col border border-slate-200 overflow-hidden">
+      <div className="bg-white sm:rounded-xl max-w-5xl w-full shadow-2xl h-full sm:h-auto sm:max-h-[94dvh] flex flex-col border border-slate-200 overflow-hidden">
         {/* Modal Header */}
-        <div className="px-5 sm:px-6 py-4 border-b border-slate-200 bg-slate-50/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
+        <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 bg-slate-50/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <Building2 className="w-5 h-5 text-teal-700 shrink-0" />
@@ -600,45 +600,48 @@ export function VendorTprmWorkspaceModal({
           </div>
 
           {/* Quick Metrics Pills */}
-          <div className="flex items-center gap-2">
-            <div className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-center shadow-xs">
-              <span className="text-[9px] text-slate-400 uppercase block font-semibold">Inherent Tier</span>
-              <span
-                className={`text-xs font-bold ${
-                  vendor.inherentRiskTier === 'CRITICAL'
-                    ? 'text-rose-600'
-                    : vendor.inherentRiskTier === 'HIGH'
-                    ? 'text-orange-600'
-                    : 'text-teal-700'
-                }`}
-              >
-                {vendor.inherentRiskTier || vendor.criticality || 'PENDING'}
-                {vendor.inherentRiskScore !== undefined ? ` (${vendor.inherentRiskScore})` : ''}
-              </span>
-            </div>
+          <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
+            <div className="flex items-center gap-2 flex-1 sm:flex-initial">
+              <div className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-center shadow-xs flex-1 sm:flex-initial">
+                <span className="text-[9px] text-slate-400 uppercase block font-semibold">Inherent Tier</span>
+                <span
+                  className={`text-xs font-bold ${
+                    vendor.inherentRiskTier === 'CRITICAL'
+                      ? 'text-rose-600'
+                      : vendor.inherentRiskTier === 'HIGH'
+                      ? 'text-orange-600'
+                      : 'text-teal-700'
+                  }`}
+                >
+                  {vendor.inherentRiskTier || vendor.criticality || 'PENDING'}
+                  {vendor.inherentRiskScore !== undefined ? ` (${vendor.inherentRiskScore})` : ''}
+                </span>
+              </div>
 
-            <div className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-center shadow-xs">
-              <span className="text-[9px] text-slate-400 uppercase block font-semibold">Residual Risk</span>
-              <span
-                className={`text-xs font-bold ${
-                  vendor.residualRiskTier === 'CRITICAL'
-                    ? 'text-rose-600'
-                    : vendor.residualRiskTier === 'HIGH'
-                    ? 'text-orange-600'
-                    : vendor.residualRiskTier
-                    ? 'text-emerald-700'
-                    : 'text-slate-500'
-                }`}
-              >
-                {vendor.residualRiskTier || 'PENDING'}
-                {vendor.residualRiskScore !== undefined ? ` (${vendor.residualRiskScore})` : ''}
-              </span>
+              <div className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-center shadow-xs flex-1 sm:flex-initial">
+                <span className="text-[9px] text-slate-400 uppercase block font-semibold">Residual Risk</span>
+                <span
+                  className={`text-xs font-bold ${
+                    vendor.residualRiskTier === 'CRITICAL'
+                      ? 'text-rose-600'
+                      : vendor.residualRiskTier === 'HIGH'
+                      ? 'text-orange-600'
+                      : vendor.residualRiskTier
+                      ? 'text-emerald-700'
+                      : 'text-slate-500'
+                  }`}
+                >
+                  {vendor.residualRiskTier || 'PENDING'}
+                  {vendor.residualRiskScore !== undefined ? ` (${vendor.residualRiskScore})` : ''}
+                </span>
+              </div>
             </div>
 
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors ml-1"
+              className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors ml-1 min-w-[36px] min-h-[36px] flex items-center justify-center shrink-0"
+              aria-label="Close workspace"
             >
               <X size={18} />
             </button>
@@ -646,7 +649,7 @@ export function VendorTprmWorkspaceModal({
         </div>
 
         {/* Horizontal Navigation Stepper */}
-        <div className="flex border-b border-slate-200 bg-slate-50 px-3 sm:px-6 overflow-x-auto text-xs font-semibold shrink-0">
+        <div className="flex border-b border-slate-200 bg-slate-50 px-3 sm:px-6 overflow-x-auto text-xs font-semibold shrink-0 omni-scroll">
           {lifecycleTabs.map((tab) => {
             const isActive = activeTab === tab.id;
             return (

@@ -163,7 +163,60 @@ export function RemediationView() {
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+          {/* Mobile Cards (< md) */}
+          <div className="md:hidden space-y-3">
+            {data.items.map((item) => (
+              <div
+                key={item.id}
+                className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs space-y-3"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                      {getDomainBadge(item.originatingDomain)}
+                      {getSeverityBadge(item.priorityOrSeverity)}
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-800">
+                        {item.status}
+                      </span>
+                    </div>
+                    <h4 className="font-bold text-slate-900 text-sm break-words">{item.title}</h4>
+                    {item.description && (
+                      <p className="text-xs text-slate-600 line-clamp-2 mt-1">{item.description}</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-100 gap-2">
+                  <div>
+                    <span className="font-semibold text-slate-700">Owner:</span> {item.owner || 'Unassigned'}
+                  </div>
+                  <div>
+                    {item.dueDate ? (
+                      <span className={`inline-flex items-center gap-1 ${item.isOverdue ? 'text-red-700 font-bold' : 'text-slate-700'}`}>
+                        <Clock className="w-3 h-3" />
+                        {new Date(item.dueDate).toLocaleDateString()}
+                        {item.isOverdue && <AlertTriangle className="w-3 h-3 text-red-600" />}
+                      </span>
+                    ) : (
+                      <span>No SLA</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="pt-1">
+                  <a
+                    href={item.sourceReferenceUrl}
+                    className="w-full inline-flex items-center justify-center gap-1.5 text-xs text-teal-800 hover:text-teal-900 font-bold transition px-3 py-2 bg-teal-50 hover:bg-teal-100 rounded-lg min-h-[38px]"
+                  >
+                    View Source Context <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop Table (>= md) */}
+          <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
             <table className="w-full text-left text-sm text-slate-800">
               <thead className="bg-slate-50 text-slate-700 font-bold text-xs border-b border-slate-200 uppercase tracking-wider">
                 <tr>

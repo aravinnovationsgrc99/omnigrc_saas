@@ -318,13 +318,14 @@ export function Sidebar({ view, setView, mobileOpen = false, onCloseMobile }: Si
         </div>
 
         <div
+          className="pb-safe"
           style={{
             borderTop: '1px solid rgba(255,255,255,0.08)',
             paddingTop: 12,
             marginTop: 8,
             fontSize: 11.5,
             color: '#8493A5',
-            padding: '12px 8px 0',
+            padding: '12px 8px 8px',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

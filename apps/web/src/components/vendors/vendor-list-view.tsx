@@ -297,8 +297,102 @@ export function VendorListView() {
   }
 
   async function handleOpenAssessmentModal(v: VendorDto) {
-    // When clicking Assessments & Due Diligence, we open the comprehensive TPRM workspace directly
-    handleOpenTprm(v, 'due-diligence');
+    setSelectedVendor(v);
+    setShowAssessmentModal(true);
+    fetchVendorDetailsAndAssessments(v.id);
+    fetchQuestionnaireSubmissions(v.id);
+  }
+
+  async function handleCreateAssessment(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedVendor) return;
+    setSubmitting(true);
+    try {
+      await apiRequest(`/vendors/${selectedVendor.id}/assessments`, {
+        method: 'POST',
+        body: JSON.stringify({
+          title: assessmentTitle || `Annual Risk Assessment - ${new Date().getFullYear()}`,
+          score: Number(assessmentScore),
+          evaluatorId: selectedVendor.owner || 'Security Team',
+        }),
+      });
+      addToast('Vendor assessment logged.', 'success');
+      setAssessmentTitle('');
+      fetchVendorDetailsAndAssessments(selectedVendor.id);
+      fetchVendors();
+    } catch (err: any) {
+      addToast(`Failed to record assessment: ${err.message}`, 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleAddAssessmentAction(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedVendor || !selectedAssessmentForActions || !newActionTitle.trim() || !newActionOwner.trim()) return;
+    setAddingAssessmentAction(true);
+    try {
+      await apiRequest(`/vendors/${selectedVendor.id}/assessments/${selectedAssessmentForActions.id}/actions`, {
+        method: 'POST',
+        body: JSON.stringify({
+          title: newActionTitle.trim(),
+          owner: newActionOwner.trim(),
+          dueDate: newActionDueDate ? new Date(newActionDueDate).toISOString() : undefined,
+          status: 'OPEN',
+        }),
+      });
+      addToast('Remediation action added.', 'success');
+      setNewActionTitle('');
+      setNewActionOwner('');
+      setNewActionDueDate('');
+      fetchAssessmentActions(selectedVendor.id, selectedAssessmentForActions.id);
+    } catch (err: any) {
+      addToast(`Failed to add action: ${err.message}`, 'error');
+    } finally {
+      setAddingAssessmentAction(false);
+    }
+  }
+
+  async function handleSubmitAssessmentApproval() {
+    if (!selectedVendor || !selectedAssessmentForActions) return;
+    setSubmittingAssessmentApproval(true);
+    setAssessmentApprovalMsg(null);
+    try {
+      await apiRequest(`/vendors/${selectedVendor.id}/assessments/${selectedAssessmentForActions.id}/submit-approval`, {
+        method: 'POST',
+        body: JSON.stringify({
+          title: `Sign-off on Assessment: ${selectedAssessmentForActions.title}`,
+          dueDays: 7,
+        }),
+      });
+      setAssessmentApprovalMsg('Assessment submitted for executive sign-off and approval.');
+      addToast('Submitted for approval.', 'success');
+    } catch (err: any) {
+      addToast(`Approval submission failed: ${err.message}`, 'error');
+    } finally {
+      setSubmittingAssessmentApproval(false);
+    }
+  }
+
+  async function handleReviewSubmission(submissionId: string, status: string) {
+    if (!selectedVendor) return;
+    setReviewingSubmissionId(submissionId);
+    try {
+      await apiRequest(`/vendors/${selectedVendor.id}/questionnaires/submissions/${submissionId}/review`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          status,
+          score: status === 'ACCEPTED' ? 90 : 40,
+          reviewNotes: status === 'ACCEPTED' ? 'Questionnaire answers verified and accepted.' : 'Clarifications requested.',
+        }),
+      });
+      addToast(`Submission marked as ${status}.`, 'success');
+      fetchQuestionnaireSubmissions(selectedVendor.id);
+    } catch (err: any) {
+      addToast(`Failed to review submission: ${err.message}`, 'error');
+    } finally {
+      setReviewingSubmissionId(null);
+    }
   }
 
   async function fetchVendorDetailsAndAssessments(vendorId: string) {
@@ -438,7 +532,7 @@ export function VendorListView() {
         </span>
       </div>
 
-      {/* Vendor Table */}
+      {/* Vendor Priority-Column Table */}
       {loading ? (
         <div className="p-8 text-center text-sm text-slate-500">Loading vendors...</div>
       ) : displayedVendors.length === 0 ? (
@@ -447,19 +541,19 @@ export function VendorListView() {
         </div>
       ) : (
         <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
-          <div className="overflow-x-auto" style={{ minWidth: '640px' }}>
+          <div className="overflow-x-auto w-full omni-scroll">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider">
-                  <th className="py-3 px-4">Vendor Name</th>
-                  <th className="py-3 px-4">Category</th>
-                  <th className="py-3 px-4">Inherent Risk</th>
-                  <th className="py-3 px-4">Residual Risk</th>
-                  <th className="py-3 px-4">Lifecycle Stage</th>
-                  <th className="py-3 px-4">Documents</th>
-                  <th className="py-3 px-4">Owner</th>
-                  <th className="py-3 px-4">Next Review</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
+                <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider text-[11px]">
+                  <th className="py-3 px-3 sm:px-4">Vendor Name</th>
+                  <th className="py-3 px-4 hidden sm:table-cell">Category</th>
+                  <th className="py-3 px-2.5 sm:px-4">Inherent Risk</th>
+                  <th className="py-3 px-2.5 sm:px-4">Residual Risk</th>
+                  <th className="py-3 px-2.5 sm:px-4">Lifecycle Stage</th>
+                  <th className="py-3 px-4 hidden md:table-cell">Documents</th>
+                  <th className="py-3 px-4 hidden lg:table-cell">Owner</th>
+                  <th className="py-3 px-4 hidden lg:table-cell">Next Review</th>
+                  <th className="py-3 px-3 sm:px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -469,12 +563,12 @@ export function VendorListView() {
 
                   return (
                     <tr key={v.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-3 px-4 font-semibold text-slate-900">
-                        <div className="flex items-center gap-2">
+                      <td className="py-3 px-3 sm:px-4 font-semibold text-slate-900">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <button
                             type="button"
                             onClick={() => handleOpenTprm(v, 'overview')}
-                            className="hover:text-teal-700 hover:underline text-left font-bold"
+                            className="hover:text-teal-700 hover:underline text-left font-bold text-xs sm:text-sm"
                           >
                             {v.name}
                           </button>
@@ -490,11 +584,14 @@ export function VendorListView() {
                             </a>
                           )}
                         </div>
+                        <div className="sm:hidden text-[10px] text-slate-500 font-normal mt-0.5">
+                          {v.category || 'General'}
+                        </div>
                       </td>
-                      <td className="py-3 px-4 text-slate-600">{v.category || 'General'}</td>
+                      <td className="py-3 px-4 text-slate-600 hidden sm:table-cell">{v.category || 'General'}</td>
 
                       {/* Inherent Risk Column */}
-                      <td className="py-3 px-4">
+                      <td className="py-3 px-2.5 sm:px-4">
                         <span
                           className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
                             v.inherentRiskTier === 'CRITICAL' || v.criticality === 'CRITICAL'
@@ -512,7 +609,7 @@ export function VendorListView() {
                       </td>
 
                       {/* Residual Risk Column */}
-                      <td className="py-3 px-4">
+                      <td className="py-3 px-2.5 sm:px-4">
                         <span
                           className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
                             v.residualRiskTier === 'CRITICAL'
@@ -530,7 +627,7 @@ export function VendorListView() {
                       </td>
 
                       {/* Lifecycle Stage Column */}
-                      <td className="py-3 px-4">
+                      <td className="py-3 px-2.5 sm:px-4">
                         <span
                           className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
                             isDecommissioned
@@ -547,7 +644,7 @@ export function VendorListView() {
                       </td>
 
                       {/* Document Attachments Column */}
-                      <td className="py-3 px-4">
+                      <td className="py-3 px-4 hidden md:table-cell">
                         <button
                           onClick={() => handleOpenDocuments(v)}
                           className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-[11px] font-semibold transition-colors"
@@ -559,30 +656,31 @@ export function VendorListView() {
                         </button>
                       </td>
 
-                      <td className="py-3 px-4 text-slate-600">{v.owner}</td>
-                      <td className="py-3 px-4 text-slate-600">
+                      <td className="py-3 px-4 text-slate-600 hidden lg:table-cell">{v.owner}</td>
+                      <td className="py-3 px-4 text-slate-600 hidden lg:table-cell">
                         {v.nextReviewDate ? new Date(v.nextReviewDate).toLocaleDateString() : 'N/A'}
                       </td>
 
                       {/* Actions Column */}
-                      <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
+                      <td className="py-3 px-3 sm:px-4 text-right">
+                        <div className="flex flex-wrap sm:flex-nowrap items-center justify-end gap-1.5">
                           <button
                             onClick={() => handleOpenDocuments(v)}
-                            className="px-2.5 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded transition-colors inline-flex items-center gap-1"
+                            className="px-2 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded transition-colors inline-flex items-center gap-1 min-h-[32px]"
+                            title="Vendor Documents"
                           >
                             <Paperclip size={12} />
-                            <span>Documents</span>
+                            <span className="hidden sm:inline">Documents</span>
                           </button>
                           <button
-                            onClick={() => handleOpenTprm(v, 'due-diligence')}
-                            className="px-2.5 py-1 text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 rounded transition-colors"
+                            onClick={() => handleOpenAssessmentModal(v)}
+                            className="px-2 py-1 text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 rounded transition-colors min-h-[32px] whitespace-nowrap"
                           >
                             Assessments & Due Diligence
                           </button>
                           <button
                             onClick={() => handleOpenTprm(v, 'overview')}
-                            className="px-2.5 py-1 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 rounded transition-colors"
+                            className="px-2.5 py-1 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 rounded transition-colors min-h-[32px] whitespace-nowrap"
                           >
                             TPRM Workspace
                           </button>
@@ -820,6 +918,326 @@ export function VendorListView() {
                 className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg transition-colors shadow-xs"
               >
                 Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Legacy / Direct Vendor Assessment & Due Diligence Modal */}
+      {showAssessmentModal && selectedVendor && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-60 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4"
+        >
+          <div className="bg-white rounded-xl max-w-4xl w-full shadow-2xl max-h-[90dvh] flex flex-col border border-slate-200 overflow-hidden">
+            {/* Modal Header */}
+            <div className="px-5 sm:px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/70 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-teal-50 text-teal-700 border border-teal-200">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-slate-900">
+                    Vendor Assessment & Due Diligence: {selectedVendor.name}
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Assess third-party security posture, track remediation actions, and review questionnaire responses.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAssessmentModal(false)}
+                className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Navigation Tabs */}
+            <div className="flex border-b border-slate-200 px-6 bg-slate-50 text-xs font-semibold">
+              <button
+                onClick={() => setAssessmentModalTab('assessments')}
+                className={`py-2.5 px-4 border-b-2 flex items-center gap-2 transition ${
+                  assessmentModalTab === 'assessments'
+                    ? 'border-teal-700 text-teal-800'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <ShieldCheck size={14} /> Security Assessments & Actions ({vendorAssessments.length})
+              </button>
+              <button
+                onClick={() => setAssessmentModalTab('questionnaires')}
+                className={`py-2.5 px-4 border-b-2 flex items-center gap-2 transition ${
+                  assessmentModalTab === 'questionnaires'
+                    ? 'border-teal-700 text-teal-800'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <ClipboardList size={14} /> Questionnaire Submissions ({questionnaireSubmissions.length})
+              </button>
+            </div>
+
+            {/* Modal Scrollable Body */}
+            <div className="p-5 sm:p-6 overflow-y-auto omni-scroll flex-1 space-y-6">
+              {assessmentModalTab === 'assessments' ? (
+                <div className="space-y-6">
+                  {/* Record New Assessment Section */}
+                  <div className="border border-teal-100 rounded-xl p-4 bg-teal-50/20">
+                    <h3 className="text-xs font-bold text-teal-900 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                      <Plus className="w-4 h-4 text-teal-700" /> Log Security Assessment
+                    </h3>
+                    <form onSubmit={handleCreateAssessment} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Assessment Title *</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder={`SOC 2 Review - ${new Date().getFullYear()}`}
+                          value={assessmentTitle}
+                          onChange={(e) => setAssessmentTitle(e.target.value)}
+                          className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal-600"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Score (0ΓÇô100) *</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            required
+                            value={assessmentScore}
+                            onChange={(e) => setAssessmentScore(Number(e.target.value))}
+                            className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal-600"
+                          />
+                          <button
+                            type="submit"
+                            disabled={submitting}
+                            className="px-4 py-1.5 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg shadow-sm shrink-0 disabled:opacity-50"
+                          >
+                            {submitting ? 'Saving...' : 'Record'}
+                          </button>
+                        </div>
+                      </div>
+                    </form>
+                  </div>
+
+                  {/* Existing Assessments List */}
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3">
+                      Completed & In-Progress Assessments
+                    </h3>
+                    {loadingVendorAssessments ? (
+                      <div className="text-xs text-slate-500 py-4 text-center">Loading assessments...</div>
+                    ) : vendorAssessments.length === 0 ? (
+                      <div className="p-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center text-xs text-slate-500">
+                        No security assessments recorded for this vendor yet.
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {vendorAssessments.map((ass) => {
+                          const isSelected = selectedAssessmentForActions?.id === ass.id;
+                          return (
+                            <div
+                              key={ass.id}
+                              onClick={() => {
+                                setSelectedAssessmentForActions(ass);
+                                fetchAssessmentActions(selectedVendor.id, ass.id);
+                              }}
+                              className={`p-4 rounded-xl border cursor-pointer transition ${
+                                isSelected
+                                  ? 'border-teal-500 bg-teal-50/20 shadow-sm'
+                                  : 'border-slate-200 bg-white hover:bg-slate-50'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-bold text-slate-900">{ass.title}</span>
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-teal-100 text-teal-800">
+                                    Score: {ass.score || 'N/A'}%
+                                  </span>
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600">
+                                    {ass.status}
+                                  </span>
+                                </div>
+                                <div className="text-xs text-slate-500">
+                                  {ass.completedAt ? `Completed: ${new Date(ass.completedAt).toLocaleDateString()}` : `Created: ${new Date(ass.createdAt).toLocaleDateString()}`}
+                                </div>
+                              </div>
+
+                              {/* Remediation Actions & Approval if selected */}
+                              {isSelected && (
+                                <div className="mt-4 pt-4 border-t border-slate-200 space-y-4" onClick={(e) => e.stopPropagation()}>
+                                  <div className="flex items-center justify-between">
+                                    <h4 className="text-xs font-bold text-slate-800">
+                                      Remediation Actions for this Assessment ({assessmentActions.length})
+                                    </h4>
+                                    <button
+                                      onClick={handleSubmitAssessmentApproval}
+                                      disabled={submittingAssessmentApproval}
+                                      className="px-3 py-1 text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white rounded-lg flex items-center gap-1.5 transition"
+                                    >
+                                      <CheckCircle2 size={13} />
+                                      {submittingAssessmentApproval ? 'Submitting...' : 'Submit Assessment for Approval'}
+                                    </button>
+                                  </div>
+
+                                  {assessmentApprovalMsg && (
+                                    <div className="p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-lg font-medium">
+                                      {assessmentApprovalMsg}
+                                    </div>
+                                  )}
+
+                                  {loadingAssessmentActions ? (
+                                    <div className="text-xs text-slate-500 py-2">Loading actions...</div>
+                                  ) : assessmentActions.length === 0 ? (
+                                    <p className="text-xs text-slate-500 italic">No remediation actions attached to this assessment.</p>
+                                  ) : (
+                                    <div className="space-y-2">
+                                      {assessmentActions.map((act) => (
+                                        <div key={act.id} className="p-2.5 bg-white border border-slate-200 rounded-lg flex items-center justify-between text-xs">
+                                          <div>
+                                            <span className="font-bold text-slate-900">{act.title}</span>
+                                            <div className="text-slate-500 text-[11px] mt-0.5">
+                                              Owner: {act.owner} {act.dueDate && `| Due: ${new Date(act.dueDate).toLocaleDateString()}`}
+                                            </div>
+                                          </div>
+                                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
+                                            {act.status}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {/* Add Action Form */}
+                                  <form onSubmit={handleAddAssessmentAction} className="flex gap-2 pt-2">
+                                    <input
+                                      type="text"
+                                      required
+                                      placeholder="New corrective action..."
+                                      value={newActionTitle}
+                                      onChange={(e) => setNewActionTitle(e.target.value)}
+                                      className="flex-1 px-2.5 py-1 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal-600"
+                                    />
+                                    <input
+                                      type="text"
+                                      required
+                                      placeholder="Owner..."
+                                      value={newActionOwner}
+                                      onChange={(e) => setNewActionOwner(e.target.value)}
+                                      className="w-32 px-2.5 py-1 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal-600"
+                                    />
+                                    <input
+                                      type="date"
+                                      value={newActionDueDate}
+                                      onChange={(e) => setNewActionDueDate(e.target.value)}
+                                      className="px-2.5 py-1 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal-600"
+                                    />
+                                    <button
+                                      type="submit"
+                                      disabled={addingAssessmentAction || !newActionTitle.trim() || !newActionOwner.trim()}
+                                      className="px-3 py-1 text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white rounded-lg disabled:opacity-50"
+                                    >
+                                      {addingAssessmentAction ? 'Adding...' : 'Add Action'}
+                                    </button>
+                                  </form>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                /* Questionnaires Tab */
+                <div className="space-y-4">
+                  <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                    Security Questionnaire Submissions
+                  </h3>
+                  {loadingSubmissions ? (
+                    <div className="text-xs text-slate-500 py-6 text-center">Loading submissions...</div>
+                  ) : questionnaireSubmissions.length === 0 ? (
+                    <div className="p-6 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center text-xs text-slate-500">
+                      No security questionnaire submissions found for this vendor.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {questionnaireSubmissions.map((sub) => (
+                        <div
+                          key={sub.id}
+                          className="p-4 rounded-xl border border-slate-200 bg-white shadow-sm flex items-start justify-between gap-4"
+                        >
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-slate-900 text-sm">
+                                {sub.questionnaireTitle || 'Security Due Diligence Questionnaire'}
+                              </span>
+                              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 text-slate-600">
+                                v{sub.questionnaireVersion || '1.0'}
+                              </span>
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                sub.status === 'ACCEPTED'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : sub.status === 'REJECTED'
+                                  ? 'bg-rose-100 text-rose-800'
+                                  : 'bg-amber-100 text-amber-800'
+                              }`}>
+                                {sub.status}
+                              </span>
+                            </div>
+                            <div className="text-xs text-slate-500">
+                              Submitted: {sub.submittedAt ? new Date(sub.submittedAt).toLocaleDateString() : 'Draft'}
+                              {sub.score !== undefined && sub.score !== null && ` | Score: ${sub.score}%`}
+                            </div>
+                            {sub.reviewNotes && (
+                              <p className="text-xs text-slate-600 bg-slate-50 p-2 rounded border border-slate-200 mt-2">
+                                Review Note: {sub.reviewNotes}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Review actions */}
+                          {sub.status === 'PENDING_REVIEW' && (
+                            <div className="flex gap-2 shrink-0">
+                              <button
+                                onClick={() => handleReviewSubmission(sub.id, 'ACCEPTED')}
+                                disabled={reviewingSubmissionId === sub.id}
+                                className="px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition"
+                              >
+                                Accept & Score 90%
+                              </button>
+                              <button
+                                onClick={() => handleReviewSubmission(sub.id, 'REJECTED')}
+                                disabled={reviewingSubmissionId === sub.id}
+                                className="px-3 py-1.5 text-xs font-bold rounded-lg bg-rose-600 hover:bg-rose-700 text-white shadow-sm transition"
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
+              <span className="text-xs text-slate-500">Third-Party Risk Profile: {selectedVendor.name}</span>
+              <button
+                type="button"
+                onClick={() => setShowAssessmentModal(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg shadow-sm"
+              >
+                Close
               </button>
             </div>
           </div>

@@ -134,66 +134,80 @@ export function Topbar({ onToggleMobileSidebar, mobileSidebarOpen, onNavigateToV
   };
 
   return (
-    <header 
-      className="w-full max-w-full px-3 sm:px-6 sticky top-0 shrink-0 z-40"
-      style={{
-        height: 56, minHeight: 56, borderBottom: '1px solid #E2E6E4',
-        background: 'linear-gradient(90deg, #FFFFFF 0%, #FAFCFB 60%, rgba(15, 110, 106, 0.03) 85%, rgba(181, 117, 10, 0.02) 100%)',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, fontWeight: 500, color: '#1B2430', minWidth: 0 }}>
-        {onToggleMobileSidebar && (
-          <button
-            onClick={onToggleMobileSidebar}
-            className="lg:hidden omni-btn-ghost shrink-0 flex items-center justify-center p-2 rounded-lg text-slate-700 hover:text-slate-900 hover:bg-slate-100 touch-manipulation focus:outline-none focus:ring-2 focus:ring-teal-600 min-w-[40px] min-h-[40px]"
-            aria-label={mobileSidebarOpen ? "Close navigation menu" : "Open navigation menu"}
-            aria-expanded={mobileSidebarOpen}
-          >
-            <Menu size={20} />
-          </button>
-        )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-          <Building2 size={15} color="#5B6672" className="shrink-0" />
-          <span className="truncate max-w-[120px] sm:max-w-[200px] md:max-w-none font-bold text-slate-900">{orgName}</span>
-          <span className="text-slate-400 font-normal hidden md:inline">· Pilot workspace</span>
+    <>
+      {/* Click-outside backdrop for active popovers */}
+      {(notifOpen || menuOpen) && (
+        <div
+          className="fixed inset-0 z-40 bg-transparent"
+          onClick={() => {
+            setNotifOpen(false);
+            setMenuOpen(false);
+          }}
+          aria-hidden="true"
+        />
+      )}
+
+      <header 
+        className="w-full max-w-full px-2.5 sm:px-6 sticky top-0 shrink-0 z-40"
+        style={{
+          height: 56, minHeight: 56, borderBottom: '1px solid #E2E6E4',
+          background: 'linear-gradient(90deg, #FFFFFF 0%, #FAFCFB 60%, rgba(15, 110, 106, 0.03) 85%, rgba(181, 117, 10, 0.02) 100%)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, fontWeight: 500, color: '#1B2430', minWidth: 0 }}>
+          {onToggleMobileSidebar && (
+            <button
+              onClick={onToggleMobileSidebar}
+              className="lg:hidden omni-btn-ghost shrink-0 flex items-center justify-center p-2 rounded-lg text-slate-700 hover:text-slate-900 hover:bg-slate-100 touch-manipulation focus:outline-none focus:ring-2 focus:ring-teal-600 min-w-[44px] min-h-[44px]"
+              aria-label={mobileSidebarOpen ? "Close navigation menu" : "Open navigation menu"}
+              aria-expanded={mobileSidebarOpen}
+            >
+              <Menu size={20} />
+            </button>
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            <Building2 size={15} color="#5B6672" className="shrink-0" />
+            <span className="truncate max-w-[100px] xs:max-w-[140px] sm:max-w-[200px] md:max-w-none font-bold text-slate-900">{orgName}</span>
+            <span className="text-slate-400 font-normal hidden md:inline">· Pilot workspace</span>
+          </div>
         </div>
-      </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }} className="shrink-0">
-        {/* Notification Bell Icon */}
-        <div style={{ position: 'relative' }}>
-          <button
-            onClick={handleToggleNotif}
-            aria-label={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ''}`}
-            aria-expanded={notifOpen}
-            style={{
-              background: notifOpen ? '#F4F6F5' : 'transparent', border: 'none', borderRadius: 8,
-              padding: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: notifOpen ? '#0F6E6A' : '#5B6672', transition: 'background 0.15s ease',
-            }}
-            title="Notifications"
-          >
-            <Bell size={18} />
-            {unreadCount > 0 && (
-              <span style={{
-                position: 'absolute', top: 3, right: 3, background: '#B23A48', color: '#FFF',
-                fontSize: 10, fontWeight: 700, borderRadius: 999, minWidth: 16, height: 16,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px',
-                border: '2px solid #FFF',
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} className="shrink-0">
+          {/* Notification Bell Icon */}
+          <div style={{ position: 'relative' }}>
+            <button
+              onClick={handleToggleNotif}
+              aria-label={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ''}`}
+              aria-expanded={notifOpen}
+              className="min-w-[44px] min-h-[44px] flex items-center justify-center"
+              style={{
+                background: notifOpen ? '#F4F6F5' : 'transparent', border: 'none', borderRadius: 8,
+                padding: 7, cursor: 'pointer',
+                color: notifOpen ? '#0F6E6A' : '#5B6672', transition: 'background 0.15s ease',
+              }}
+              title="Notifications"
+            >
+              <Bell size={18} />
+              {unreadCount > 0 && (
+                <span style={{
+                  position: 'absolute', top: 5, right: 5, background: '#B23A48', color: '#FFF',
+                  fontSize: 10, fontWeight: 700, borderRadius: 999, minWidth: 16, height: 16,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px',
+                  border: '2px solid #FFF',
+                }}>
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
+
+
+            {/* Notifications Dropdown Popover */}
+            {notifOpen && (
+              <div className="omni-fade-in right-0 w-[290px] sm:w-[340px] max-w-[calc(100vw-20px)]" style={{
+                position: 'absolute', top: 46, background: '#FFFFFF', border: '1px solid #E2E6E4',
+                borderRadius: 10, boxShadow: '0 12px 30px rgba(15,23,42,0.15)', overflow: 'hidden', zIndex: 100,
               }}>
-                {unreadCount > 9 ? '9+' : unreadCount}
-              </span>
-            )}
-          </button>
-
-
-          {/* Notifications Dropdown Popover */}
-          {notifOpen && (
-            <div className="omni-fade-in right-0 w-[300px] sm:w-[340px] max-w-[calc(100vw-24px)]" style={{
-              position: 'absolute', top: 44, background: '#FFFFFF', border: '1px solid #E2E6E4',
-              borderRadius: 10, boxShadow: '0 12px 30px rgba(15,23,42,0.15)', overflow: 'hidden', zIndex: 100,
-            }}>
               <div style={{
                 padding: '12px 14px', borderBottom: '1px solid #EDEFED', display: 'flex',
                 justifyContent: 'space-between', alignItems: 'center', background: '#FAFBFB',
@@ -342,5 +356,6 @@ export function Topbar({ onToggleMobileSidebar, mobileSidebarOpen, onNavigateToV
         </div>
       </div>
     </header>
+  </>
   );
 }

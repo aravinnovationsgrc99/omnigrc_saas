@@ -105,20 +105,20 @@ export function VendorCreateModal({ isOpen, onClose, onCreated }: VendorCreateMo
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-60 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4"
+      className="fixed inset-0 z-60 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-0 sm:p-4"
     >
-      <div className="bg-white rounded-xl max-w-2xl w-full shadow-2xl max-h-[92dvh] flex flex-col border border-slate-200 overflow-hidden">
+      <div className="bg-white sm:rounded-xl max-w-2xl w-full shadow-2xl h-full sm:h-auto sm:max-h-[92dvh] flex flex-col border border-slate-200 overflow-hidden">
         {/* Modal Header */}
-        <div className="px-5 sm:px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/70 shrink-0">
-          <div className="flex items-center gap-3">
+        <div className="px-4 sm:px-6 py-3.5 border-b border-slate-200 flex items-center justify-between bg-slate-50/70 shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3">
             <div className="p-2 rounded-lg bg-teal-50 text-teal-700 border border-teal-200">
               <Building2 className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-900">
+              <h2 className="text-sm sm:text-base font-bold text-slate-900">
                 Register Third-Party Vendor (TPRM Intake)
               </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5">
                 Progressive intake with enterprise security profiling and contractual scoping.
               </p>
             </div>
@@ -133,11 +133,11 @@ export function VendorCreateModal({ isOpen, onClose, onCreated }: VendorCreateMo
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-slate-200 px-6 bg-slate-50/50 text-xs font-semibold shrink-0">
+        <div className="flex border-b border-slate-200 px-3 sm:px-6 bg-slate-50/50 text-xs font-semibold shrink-0 overflow-x-auto omni-scroll">
           <button
             type="button"
             onClick={() => setTab('general')}
-            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 transition ${
+            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 transition whitespace-nowrap ${
               tab === 'general'
                 ? 'border-teal-700 text-teal-800'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -148,7 +148,7 @@ export function VendorCreateModal({ isOpen, onClose, onCreated }: VendorCreateMo
           <button
             type="button"
             onClick={() => setTab('security')}
-            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 transition ${
+            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 transition whitespace-nowrap ${
               tab === 'security'
                 ? 'border-teal-700 text-teal-800'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -159,7 +159,7 @@ export function VendorCreateModal({ isOpen, onClose, onCreated }: VendorCreateMo
           <button
             type="button"
             onClick={() => setTab('contracts')}
-            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 transition ${
+            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 transition whitespace-nowrap ${
               tab === 'contracts'
                 ? 'border-teal-700 text-teal-800'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -410,13 +410,13 @@ export function VendorCreateModal({ isOpen, onClose, onCreated }: VendorCreateMo
         </div>
 
         {/* Modal Footer */}
-        <div className="px-5 sm:px-6 py-3 border-t border-slate-200 bg-slate-50/70 flex items-center justify-between shrink-0">
+        <div className="px-4 sm:px-6 py-3 border-t border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2.5 shrink-0 pb-safe">
           <div className="flex items-center gap-2">
             {tab !== 'general' && (
               <button
                 type="button"
                 onClick={() => setTab(tab === 'contracts' ? 'security' : 'general')}
-                className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg transition-colors flex items-center gap-1"
+                className="px-3 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg transition-colors flex items-center gap-1 min-h-[38px]"
               >
                 <ChevronLeft size={13} /> Back
               </button>
@@ -425,7 +425,7 @@ export function VendorCreateModal({ isOpen, onClose, onCreated }: VendorCreateMo
               <button
                 type="button"
                 onClick={() => setTab(tab === 'general' ? 'security' : 'contracts')}
-                className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg transition-colors flex items-center gap-1"
+                className="px-3 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg transition-colors flex items-center gap-1 min-h-[38px]"
               >
                 Next <ChevronRight size={13} />
               </button>
@@ -437,18 +437,18 @@ export function VendorCreateModal({ isOpen, onClose, onCreated }: VendorCreateMo
               type="button"
               disabled={submitting}
               onClick={() => handleSubmit(true)}
-              className="px-3.5 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg disabled:opacity-50 transition-colors flex items-center gap-1.5"
+              className="px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg disabled:opacity-50 transition-colors flex items-center gap-1.5 min-h-[38px]"
             >
-              <Save size={13} /> Save as Draft
+              <Save size={13} /> Save Draft
             </button>
             <button
               type="button"
               disabled={submitting || !name.trim()}
               onClick={() => handleSubmit(false)}
-              className="px-4 py-1.5 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg disabled:opacity-50 transition-colors shadow-xs flex items-center gap-1.5"
+              className="px-4 py-2 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg disabled:opacity-50 transition-colors shadow-xs flex items-center gap-1.5 min-h-[38px]"
             >
               <Send size={13} />
-              <span>{submitting ? 'Registering...' : 'Register Vendor'}</span>
+              <span>{submitting ? 'Registering...' : 'Register'}</span>
             </button>
           </div>
         </div>
