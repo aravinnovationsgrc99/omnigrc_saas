@@ -729,6 +729,60 @@ export class EvidenceService {
     return this.mapToDto(evidenceId);
   }
 
+  public isAllowedLegacyDestination(rawUrl: string): boolean {
+    if (!rawUrl || typeof rawUrl !== 'string') return false;
+    const url = rawUrl.trim();
+    if (!url) return false;
+
+    // Reject protocol-relative URLs (e.g. //attacker.com/malware)
+    if (url.startsWith('//')) return false;
+
+    // Reject backslashes (Windows path separator / UNC path evasion)
+    if (url.includes('\\')) return false;
+
+    // Reject filesystem paths or hazardous schemes
+    if (url.startsWith('file:') || url.startsWith('javascript:') || url.startsWith('data:') || /^[a-zA-Z]:/.test(url)) {
+      return false;
+    }
+
+    // Reject directory traversal
+    if (url.includes('..')) return false;
+
+    // Relative URL within application (must start with single '/')
+    if (url.startsWith('/')) {
+      return true;
+    }
+
+    // Absolute HTTP/HTTPS URL with strict host allowlist
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return false;
+      }
+
+      const hostname = parsed.hostname.toLowerCase();
+      const envHosts = (process.env.ALLOWED_LEGACY_EVIDENCE_HOSTS || '')
+        .split(',')
+        .map((h) => h.trim().toLowerCase())
+        .filter(Boolean);
+
+      const defaultAllowedHosts = [
+        'vault.omnigrc.internal',
+        'localhost',
+        '127.0.0.1',
+      ];
+
+      const allowedHosts = new Set([...defaultAllowedHosts, ...envHosts]);
+      if (allowedHosts.has(hostname) || hostname.endsWith('.omnigrc.internal')) {
+        return true;
+      }
+
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
   async downloadEvidence(
     authCtx: ResourceAuthContext,
     evidenceId: string,
@@ -748,21 +802,12 @@ export class EvidenceService {
       if (!legacy) throw new NotFoundException(`Evidence record "${evidenceId}" not found.`);
 
       const url = (legacy.fileUrl || '').trim();
-      const isRelative = url.startsWith('/') && !url.startsWith('//');
-      let isAllowedHttp = false;
-      try {
-        if (!isRelative) {
-          const parsed = new URL(url);
-          if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-            isAllowedHttp = true;
-          }
-        }
-      } catch {
-        // Invalid URL format
+      if (!url) {
+        throw new BadRequestException(`Legacy evidence record "${evidenceId}" has no valid fileUrl or storage destination.`);
       }
 
-      if (!isRelative && !isAllowedHttp) {
-        throw new BadRequestException(`Unsafe legacy evidence redirect URL format: "${legacy.fileUrl}".`);
+      if (!this.isAllowedLegacyDestination(url)) {
+        throw new BadRequestException(`Unapproved or unsafe legacy evidence redirect destination: "${legacy.fileUrl}".`);
       }
 
       await this.auditLogsService.log({

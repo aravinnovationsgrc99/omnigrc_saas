@@ -821,5 +821,230 @@ describe('EvidenceService - Control Evidence Association Suite', () => {
         select: { id: true, name: true, email: true },
       });
     });
+
+    it('downloadEvidence rejects cross-tenant legacy evidence download with NotFoundException', async () => {
+      prisma.evidence.findFirst.mockResolvedValue(null);
+      prisma.auditEvidence.findFirst.mockResolvedValue(null); // Simulated foreign tenant record not matched
+
+      const mockRes: any = { redirect: jest.fn() };
+      await expect(service.downloadEvidence(authCtx, 'foreign-legacy-ev-id', mockRes)).rejects.toThrow(NotFoundException);
+      expect(prisma.auditEvidence.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'foreign-legacy-ev-id', organizationId: 'org-1' },
+        }),
+      );
+      expect(mockRes.redirect).not.toHaveBeenCalled();
+    });
+
+    it('downloadEvidence rejects protocol-relative URLs (//attacker.com/malware) with BadRequestException', async () => {
+      prisma.evidence.findFirst.mockResolvedValue(null);
+      prisma.auditEvidence.findFirst.mockResolvedValue({
+        id: 'leg-proto-rel',
+        organizationId: 'org-1',
+        fileName: 'leak.pdf',
+        fileUrl: '//evil.com/leak.pdf',
+      });
+
+      const mockRes: any = { redirect: jest.fn() };
+      await expect(service.downloadEvidence(authCtx, 'leg-proto-rel', mockRes)).rejects.toThrow(BadRequestException);
+      expect(mockRes.redirect).not.toHaveBeenCalled();
+    });
+
+    it('downloadEvidence rejects unapproved external HTTP/HTTPS host with BadRequestException', async () => {
+      prisma.evidence.findFirst.mockResolvedValue(null);
+      prisma.auditEvidence.findFirst.mockResolvedValue({
+        id: 'leg-unapproved-host',
+        organizationId: 'org-1',
+        fileName: 'exploit.pdf',
+        fileUrl: 'https://malicious-external-storage.com/exploit.pdf',
+      });
+
+      const mockRes: any = { redirect: jest.fn() };
+      await expect(service.downloadEvidence(authCtx, 'leg-unapproved-host', mockRes)).rejects.toThrow(BadRequestException);
+      expect(mockRes.redirect).not.toHaveBeenCalled();
+    });
+
+    it('downloadEvidence rejects directory traversal and Windows filesystem paths with BadRequestException', async () => {
+      prisma.evidence.findFirst.mockResolvedValue(null);
+      const mockRes: any = { redirect: jest.fn() };
+
+      // Directory traversal
+      prisma.auditEvidence.findFirst.mockResolvedValueOnce({
+        id: 'leg-traversal',
+        organizationId: 'org-1',
+        fileName: 'traversal.pdf',
+        fileUrl: '/uploads/evidence/../../etc/passwd',
+      });
+      await expect(service.downloadEvidence(authCtx, 'leg-traversal', mockRes)).rejects.toThrow(BadRequestException);
+
+      // Windows filesystem path
+      prisma.auditEvidence.findFirst.mockResolvedValueOnce({
+        id: 'leg-win-path',
+        organizationId: 'org-1',
+        fileName: 'calc.exe',
+        fileUrl: 'C:\\Windows\\System32\\calc.exe',
+      });
+      await expect(service.downloadEvidence(authCtx, 'leg-win-path', mockRes)).rejects.toThrow(BadRequestException);
+
+      expect(mockRes.redirect).not.toHaveBeenCalled();
+    });
+
+    it('downloadEvidence rejects missing or empty fileUrl with BadRequestException', async () => {
+      prisma.evidence.findFirst.mockResolvedValue(null);
+      const mockRes: any = { redirect: jest.fn() };
+
+      prisma.auditEvidence.findFirst.mockResolvedValueOnce({
+        id: 'leg-empty-url',
+        organizationId: 'org-1',
+        fileName: 'empty.pdf',
+        fileUrl: '',
+      });
+      await expect(service.downloadEvidence(authCtx, 'leg-empty-url', mockRes)).rejects.toThrow(BadRequestException);
+
+      prisma.auditEvidence.findFirst.mockResolvedValueOnce({
+        id: 'leg-ws-url',
+        organizationId: 'org-1',
+        fileName: 'ws.pdf',
+        fileUrl: '   ',
+      });
+      await expect(service.downloadEvidence(authCtx, 'leg-ws-url', mockRes)).rejects.toThrow(BadRequestException);
+
+      expect(mockRes.redirect).not.toHaveBeenCalled();
+    });
+
+    it('downloadEvidence throws NotFoundException for invalid or non-existent evidence identifiers', async () => {
+      prisma.evidence.findFirst.mockResolvedValue(null);
+      prisma.auditEvidence.findFirst.mockResolvedValue(null);
+
+      const mockRes: any = { redirect: jest.fn() };
+      await expect(service.downloadEvidence(authCtx, 'completely-invalid-id', mockRes)).rejects.toThrow(NotFoundException);
+      expect(mockRes.redirect).not.toHaveBeenCalled();
+    });
+
+    it('findAll enforces canonical-first partitioned order across disparate timestamps', async () => {
+      // Canonical record created EARLIER (2026-01-01) than legacy record (2026-02-01)
+      prisma.evidence.count.mockResolvedValue(1);
+      prisma.auditEvidence.count.mockResolvedValue(1);
+
+      prisma.evidence.findMany.mockResolvedValue([
+        {
+          id: 'can-older',
+          organizationId: 'org-1',
+          title: 'Older Canonical Record',
+          fileName: 'older_can.pdf',
+          fileSize: 100,
+          mimeType: 'application/pdf',
+          storageKey: 'k-old',
+          status: 'ACTIVE',
+          scanStatus: 'CLEAN',
+          uploadedById: 'u-1',
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+          updatedAt: new Date('2026-01-01T00:00:00Z'),
+          controlAssociations: [],
+          riskAssociations: [],
+          policyAssociations: [],
+          auditCheckAssociations: [],
+          auditFindingAssociations: [],
+          vendorAssociations: [],
+          vulnerabilityAssociations: [],
+          incidentAssociations: [],
+          frameworkReferences: [],
+        },
+      ]);
+
+      prisma.auditEvidence.findMany.mockResolvedValue([
+        {
+          id: 'leg-newer',
+          organizationId: 'org-1',
+          fileName: 'newer_legacy.pdf',
+          fileUrl: 'https://vault.omnigrc.internal/newer_legacy.pdf',
+          fileSize: 50,
+          mimeType: 'application/pdf',
+          uploadedById: 'u-leg',
+          createdAt: new Date('2026-02-01T00:00:00Z'), // newer date
+          checkItemId: null,
+          findingId: null,
+        },
+      ]);
+
+      const res = await service.findAll(authCtx, { page: 1, limit: 10 });
+      expect(res.total).toBe(2);
+      expect(res.items).toHaveLength(2);
+      // Contract verification: Canonical-first partition order takes precedence
+      expect(res.items[0].id).toBe('can-older');
+      expect(res.items[1].id).toBe('leg-newer');
+    });
+
+    it('findAll applies search filtering across both partitions and updates total accurately', async () => {
+      prisma.evidence.count.mockResolvedValue(1);
+      prisma.auditEvidence.count.mockResolvedValue(1);
+
+      prisma.evidence.findMany.mockResolvedValue([
+        {
+          id: 'can-filtered',
+          organizationId: 'org-1',
+          title: 'Firewall Policy Proof',
+          fileName: 'firewall_proof.pdf',
+          fileSize: 100,
+          mimeType: 'application/pdf',
+          storageKey: 'k-fw',
+          status: 'ACTIVE',
+          scanStatus: 'CLEAN',
+          uploadedById: 'u-1',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          controlAssociations: [],
+          riskAssociations: [],
+          policyAssociations: [],
+          auditCheckAssociations: [],
+          auditFindingAssociations: [],
+          vendorAssociations: [],
+          vulnerabilityAssociations: [],
+          incidentAssociations: [],
+          frameworkReferences: [],
+        },
+      ]);
+
+      prisma.auditEvidence.findMany.mockResolvedValue([
+        {
+          id: 'leg-filtered',
+          organizationId: 'org-1',
+          fileName: 'firewall_legacy_audit.txt',
+          fileUrl: 'https://vault.omnigrc.internal/firewall_legacy_audit.txt',
+          fileSize: 50,
+          mimeType: 'text/plain',
+          uploadedById: 'u-leg',
+          createdAt: new Date(),
+          checkItemId: null,
+          findingId: null,
+        },
+      ]);
+
+      const res = await service.findAll(authCtx, { page: 1, limit: 10, search: 'Firewall' });
+      expect(res.total).toBe(2);
+      expect(res.items).toHaveLength(2);
+
+      // Verify search criteria was passed to both count and findMany queries
+      expect(prisma.evidence.count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: expect.arrayContaining([
+              { title: { contains: 'Firewall', mode: 'insensitive' } },
+              { fileName: { contains: 'Firewall', mode: 'insensitive' } },
+            ]),
+          }),
+        }),
+      );
+      expect(prisma.auditEvidence.count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: expect.arrayContaining([
+              { fileName: { contains: 'Firewall', mode: 'insensitive' } },
+              { fileUrl: { contains: 'Firewall', mode: 'insensitive' } },
+            ]),
+          }),
+        }),
+      );
+    });
   });
 });

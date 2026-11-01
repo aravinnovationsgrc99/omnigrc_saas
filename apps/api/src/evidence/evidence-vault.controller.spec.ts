@@ -3,8 +3,10 @@ import { Reflector } from '@nestjs/core';
 import { ExecutionContext } from '@nestjs/common';
 import { EvidenceVaultController } from './evidence-vault.controller';
 import { EvidenceVaultService } from './evidence-vault.service';
+import { EvidenceController } from './evidence.controller';
+import { EvidenceService } from './evidence.service';
 import { RolesGuard } from '../auth/guards/roles.guard';
-import { Role, EvidenceVaultQueryDto } from '@omnigrc/shared';
+import { Role, EvidenceVaultQueryDto, PaginatedEvidenceDto, PaginatedEvidenceVaultDto } from '@omnigrc/shared';
 import { ROLES_KEY } from '../auth/decorators/roles.decorator';
 
 describe('EvidenceVaultController RBAC & Scoping Unit Suite', () => {
@@ -129,6 +131,66 @@ describe('EvidenceVaultController RBAC & Scoping Unit Suite', () => {
 
       expect(mockEvidenceVaultService.findAll).toHaveBeenCalledWith('org-tenant-42', query);
       expect(result).toBe(expectedResult);
+    });
+  });
+
+  describe('4. Canonical vs Legacy Route Independence & Contract Suite', () => {
+    let canonicalController: EvidenceController;
+    const mockEvidenceService = {
+      findAll: jest.fn(),
+    };
+
+    beforeEach(async () => {
+      const module: TestingModule = await Test.createTestingModule({
+        controllers: [EvidenceController],
+        providers: [
+          Reflector,
+          RolesGuard,
+          {
+            provide: EvidenceService,
+            useValue: mockEvidenceService,
+          },
+        ],
+      }).compile();
+
+      canonicalController = module.get<EvidenceController>(EvidenceController);
+    });
+
+    it('EvidenceController: class routes to "evidence" and handler maps to sub-path "vault"', () => {
+      const classPath = Reflect.getMetadata('path', EvidenceController);
+      const handlerPath = Reflect.getMetadata('path', EvidenceController.prototype.getVaultItems);
+      expect(classPath).toBe('evidence');
+      expect(handlerPath).toBe('vault');
+    });
+
+    it('EvidenceController: delegates to EvidenceService.findAll with authCtx and returns PaginatedEvidenceDto', async () => {
+      const mockDto: PaginatedEvidenceDto = { items: [], total: 0, page: 1, limit: 15 };
+      mockEvidenceService.findAll.mockResolvedValue(mockDto);
+
+      const user = { userId: 'u-1', organizationId: 'org-tenant-1', role: Role.ADMIN };
+      const query: EvidenceVaultQueryDto = { page: 1, limit: 15 };
+      const res = await canonicalController.getVaultItems(user, query);
+
+      expect(mockEvidenceService.findAll).toHaveBeenCalledWith(
+        { userId: 'u-1', organizationId: 'org-tenant-1', role: Role.ADMIN },
+        query,
+      );
+      expect(res).toBe(mockDto);
+    });
+
+    it('EvidenceVaultController: class routes to "evidence" and handler maps to distinct sub-path "vault/legacy"', () => {
+      const classPath = Reflect.getMetadata('path', EvidenceVaultController);
+      const handlerPath = Reflect.getMetadata('path', EvidenceVaultController.prototype.getVaultItems);
+      expect(classPath).toBe('evidence');
+      expect(handlerPath).toBe('vault/legacy');
+    });
+
+    it('Route path distinction guarantees no collision between canonical and legacy endpoints', () => {
+      const canonicalHandlerPath = Reflect.getMetadata('path', EvidenceController.prototype.getVaultItems);
+      const legacyHandlerPath = Reflect.getMetadata('path', EvidenceVaultController.prototype.getVaultItems);
+      expect(canonicalHandlerPath).not.toBe(legacyHandlerPath);
+      expect(canonicalHandlerPath).toBe('vault');
+      expect(legacyHandlerPath).toBe('vault/legacy');
     });
   });
 });
