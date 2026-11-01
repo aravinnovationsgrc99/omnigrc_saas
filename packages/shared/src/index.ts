@@ -1753,6 +1753,34 @@ export enum CapaStatus {
   CLOSED = "CLOSED",
 }
 
+export enum CapaApplicability {
+  UNASSESSED = "UNASSESSED",
+  REQUIRED = "REQUIRED",
+  NOT_REQUIRED = "NOT_REQUIRED",
+}
+
+export enum AuditFindingLifecycleAction {
+  VERIFICATION_PASSED = "VERIFICATION_PASSED",
+  VERIFICATION_REJECTED = "VERIFICATION_REJECTED",
+  FINDING_REOPENED = "FINDING_REOPENED",
+  STATUS_TRANSITIONED = "STATUS_TRANSITIONED",
+}
+
+export interface AuditFindingVerificationHistoryDto {
+  id: string;
+  organizationId: string;
+  findingId: string;
+  action: AuditFindingLifecycleAction;
+  priorStatus: FindingStatus;
+  newStatus: FindingStatus;
+  actorId: string;
+  actorName?: string | null;
+  actorEmail?: string | null;
+  reason?: string | null;
+  notes?: string | null;
+  createdAt: Date | string;
+}
+
 export interface AuditEvidenceDto {
   id: string;
   organizationId: string;
@@ -1800,6 +1828,7 @@ export interface AuditCapaDto {
   verifiedAt?: Date | string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
+  version?: number;
 }
 
 export interface AuditFindingDto {
@@ -1829,6 +1858,9 @@ export interface AuditFindingDto {
   updatedAt: Date | string;
   capas?: AuditCapaDto[];
   evidence?: AuditEvidenceDto[];
+  capaApplicability?: CapaApplicability;
+  version?: number;
+  verificationHistories?: AuditFindingVerificationHistoryDto[];
 }
 
 export interface AuditAssessmentDto {
@@ -1904,6 +1936,7 @@ export interface AuditPlanDto {
   schedules?: AuditScheduleDto[];
   assessments?: AuditAssessmentDto[];
   scopeReferences?: AuditPlanScopeReferenceDto[];
+  version?: number;
 }
 
 /**

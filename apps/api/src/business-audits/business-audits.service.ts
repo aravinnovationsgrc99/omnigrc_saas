@@ -28,6 +28,9 @@ import {
   ControlTestingSummaryDto,
   ControlEffectivenessStatus,
   VulnerabilitySeverity,
+  CapaApplicability,
+  AuditFindingLifecycleAction,
+  AuditFindingVerificationHistoryDto,
 } from '@omnigrc/shared';
 import {
   ReopenAuditFindingDto,
@@ -314,6 +317,7 @@ export class BusinessAuditsService {
           plannedStartDate: dto.plannedStartDate ? new Date(dto.plannedStartDate) : null,
           plannedEndDate: dto.plannedEndDate ? new Date(dto.plannedEndDate) : null,
           status: AuditPlanStatus.DRAFT,
+          version: 1,
           createdById: authCtx.userId,
         },
       });
@@ -525,6 +529,17 @@ export class BusinessAuditsService {
       this.checkOptimisticLock('AuditPlan', existing.updatedAt, dto.expectedUpdatedAt);
     }
 
+    if (dto.expectedVersion !== undefined) {
+      if (existing.version !== undefined && existing.version !== dto.expectedVersion) {
+        throw new ConflictException({
+          statusCode: 409,
+          error: 'Conflict',
+          message: 'AuditPlan has been modified concurrently. Please refresh the latest state before retrying.',
+          code: 'STALE_RECORD_CONFLICT',
+        });
+      }
+    }
+
     let resolvedOwnerId: string | undefined;
     if (dto.ownerId) {
       resolvedOwnerId = await this.assertEligibleUser(
@@ -685,6 +700,7 @@ export class BusinessAuditsService {
             frameworkVersionId: fwScope.frameworkVersionId,
             frameworkCode: fwScope.frameworkCode,
           }),
+          version: { increment: 1 },
         },
       });
 
@@ -994,16 +1010,23 @@ export class BusinessAuditsService {
       'FINDING_OWNER',
     );
 
-    let remediationPlan = dto.remediationPlan || null;
-    if (dto.capaRequired === false) {
+    let capaApplicability = dto.capaApplicability || CapaApplicability.UNASSESSED;
+    let capaRationale: string | null = null;
+
+    if (dto.capaApplicability === CapaApplicability.NOT_REQUIRED || dto.capaRequired === false) {
       if (!dto.capaRationale || !dto.capaRationale.trim()) {
         throw new BadRequestException(
           'A documented rationale is required when CAPA is marked as not required (capaRequired: false).',
         );
       }
-      const tag = `[NO_CAPA_REQUIRED: ${dto.capaRationale.trim()}]`;
-      remediationPlan = remediationPlan ? `${tag} ${remediationPlan}` : tag;
+      capaApplicability = CapaApplicability.NOT_REQUIRED;
+      capaRationale = dto.capaRationale.trim();
+    } else if (dto.capaApplicability === CapaApplicability.REQUIRED || dto.capaRequired === true) {
+      capaApplicability = CapaApplicability.REQUIRED;
+      capaRationale = dto.capaRationale?.trim() || null;
     }
+
+    const remediationPlan = dto.remediationPlan ? dto.remediationPlan.trim() : null;
 
     const finding = await this.prisma.auditFinding.create({
       data: {
@@ -1018,6 +1041,9 @@ export class BusinessAuditsService {
         dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
         riskId: dto.riskId || null,
         remediationPlan,
+        capaApplicability,
+        capaRationale,
+        version: 1,
         createdById: authCtx.userId,
       },
       include: {
@@ -1063,6 +1089,28 @@ export class BusinessAuditsService {
       this.checkOptimisticLock('AuditFinding', finding.updatedAt, dto.expectedUpdatedAt);
     }
 
+    if (dto.expectedVersion !== undefined) {
+      if (finding.version !== undefined && finding.version !== dto.expectedVersion) {
+        throw new ConflictException({
+          statusCode: 409,
+          error: 'Conflict',
+          message: 'AuditFinding has been modified concurrently. Please refresh the latest state before retrying.',
+          code: 'STALE_RECORD_CONFLICT',
+        });
+      }
+    }
+
+    if (dto.expectedVersion !== undefined) {
+      if (finding.version !== undefined && finding.version !== dto.expectedVersion) {
+        throw new ConflictException({
+          statusCode: 409,
+          error: 'Conflict',
+          message: 'AuditFinding has been modified concurrently. Please refresh the latest state before retrying.',
+          code: 'STALE_RECORD_CONFLICT',
+        });
+      }
+    }
+
     if (finding.status === FindingStatus.VERIFIED || finding.status === FindingStatus.CLOSED) {
       throw new BadRequestException(
         `Findings in ${finding.status} status can only be modified through controlled reopening.`,
@@ -1080,6 +1128,25 @@ export class BusinessAuditsService {
         dto.ownerId,
         'FINDING_OWNER',
       );
+    }
+
+    let targetCapaApplicability: CapaApplicability | undefined = dto.capaApplicability;
+    let targetCapaRationale: string | null | undefined = dto.capaRationale !== undefined ? (dto.capaRationale?.trim() || null) : undefined;
+
+    if (dto.capaRequired === false || targetCapaApplicability === CapaApplicability.NOT_REQUIRED) {
+      targetCapaApplicability = CapaApplicability.NOT_REQUIRED;
+      const effectiveRationale = targetCapaRationale ?? finding.capaRationale;
+      const legacyTagMatch = finding.remediationPlan?.match(/\[NO_CAPA_REQUIRED:\s*([^\]]+)\]/);
+      const effectiveLegacyRationale = legacyTagMatch ? legacyTagMatch[1].trim() : null;
+      const finalRationale = effectiveRationale || effectiveLegacyRationale;
+      if (!finalRationale) {
+        throw new BadRequestException(
+          'A documented rationale is required when CAPA is marked as not required (capaRequired: false).',
+        );
+      }
+      targetCapaRationale = finalRationale;
+    } else if (dto.capaRequired === true || targetCapaApplicability === CapaApplicability.REQUIRED) {
+      targetCapaApplicability = CapaApplicability.REQUIRED;
     }
 
     if (dto.status && dto.status !== finding.status) {
@@ -1102,9 +1169,12 @@ export class BusinessAuditsService {
             );
           }
         } else {
+          const effectiveApplicability = targetCapaApplicability !== undefined ? targetCapaApplicability : finding.capaApplicability;
           const effectivePlan = dto.remediationPlan !== undefined ? dto.remediationPlan : finding.remediationPlan;
           const isCapaExplicitlyNotRequired =
+            effectiveApplicability === CapaApplicability.NOT_REQUIRED ||
             dto.capaRequired === false ||
+            Boolean(finding.capaRationale) ||
             Boolean(effectivePlan && effectivePlan.includes('[NO_CAPA_REQUIRED:'));
           if (!isCapaExplicitlyNotRequired) {
             throw new BadRequestException(
@@ -1115,24 +1185,8 @@ export class BusinessAuditsService {
       }
     }
 
-    let updatedRemediationPlan = dto.remediationPlan !== undefined ? dto.remediationPlan : finding.remediationPlan;
-    if (dto.capaRequired === false) {
-      const rationale = dto.capaRationale?.trim();
-      if (!rationale && (!updatedRemediationPlan || !updatedRemediationPlan.includes('[NO_CAPA_REQUIRED:'))) {
-        throw new BadRequestException(
-          'A documented rationale is required when CAPA is marked as not required (capaRequired: false).',
-        );
-      }
-      if (rationale) {
-        const cleaned = (updatedRemediationPlan || '').replace(/\[NO_CAPA_REQUIRED:[^\]]*\]\s*/g, '').trim();
-        const tag = `[NO_CAPA_REQUIRED: ${rationale}]`;
-        updatedRemediationPlan = cleaned ? `${tag} ${cleaned}` : tag;
-      }
-    } else if (dto.capaRequired === true) {
-      if (updatedRemediationPlan) {
-        updatedRemediationPlan = updatedRemediationPlan.replace(/\[NO_CAPA_REQUIRED:[^\]]*\]\s*/g, '').trim() || null;
-      }
-    }
+
+    const updatedRemediationPlan = dto.remediationPlan !== undefined ? dto.remediationPlan : finding.remediationPlan;
 
     const updated = await this.prisma.auditFinding.update({
       where: { id },
@@ -1144,14 +1198,34 @@ export class BusinessAuditsService {
         ...(resolvedOwnerId && { ownerId: resolvedOwnerId }),
         ...(dto.dueDate !== undefined && { dueDate: dto.dueDate ? new Date(dto.dueDate) : null }),
         ...(updatedRemediationPlan !== undefined && { remediationPlan: updatedRemediationPlan }),
+        ...(targetCapaApplicability !== undefined && { capaApplicability: targetCapaApplicability }),
+        ...(targetCapaRationale !== undefined && { capaRationale: targetCapaRationale }),
         ...(dto.verificationNotes !== undefined && { verificationNotes: dto.verificationNotes }),
+        version: { increment: 1 },
       },
       include: {
         capas: true,
         evidence: true,
         evidenceAssociations: { include: { evidence: true } },
+        verificationHistories: { orderBy: { createdAt: 'desc' } },
       },
     });
+
+    if (dto.status && dto.status !== finding.status) {
+      if (this.prisma.auditFindingVerificationHistory?.create) {
+        await this.prisma.auditFindingVerificationHistory.create({
+          data: {
+            organizationId: authCtx.organizationId,
+            findingId: id,
+            action: AuditFindingLifecycleAction.STATUS_TRANSITIONED,
+            priorStatus: finding.status as FindingStatus,
+            newStatus: dto.status as FindingStatus,
+            actorId: authCtx.userId,
+            notes: dto.verificationNotes || null,
+          },
+        }).catch(() => {});
+      }
+    }
 
     await this.auditLogsService.log({
       organizationId: authCtx.organizationId,
@@ -1175,11 +1249,13 @@ export class BusinessAuditsService {
     let targetStatus: FindingStatus;
     let verificationNotes: string | undefined;
     let expectedUpdatedAt: string | undefined;
+    let expectedVersion: number | undefined;
 
     if (typeof statusOrDto === 'object' && statusOrDto !== null) {
       targetStatus = (statusOrDto.status as FindingStatus) || FindingStatus.VERIFIED;
       verificationNotes = statusOrDto.verificationNotes;
       expectedUpdatedAt = statusOrDto.expectedUpdatedAt;
+      expectedVersion = statusOrDto.expectedVersion;
     } else {
       targetStatus = statusOrDto || FindingStatus.VERIFIED;
       verificationNotes = legacyNotes;
@@ -1206,6 +1282,17 @@ export class BusinessAuditsService {
     // 3. Optimistic concurrency check
     if (expectedUpdatedAt) {
       this.checkOptimisticLock('AuditFinding', finding.updatedAt, expectedUpdatedAt);
+    }
+
+    if (expectedVersion !== undefined) {
+      if (finding.version !== undefined && finding.version !== expectedVersion) {
+        throw new ConflictException({
+          statusCode: 409,
+          error: 'Conflict',
+          message: 'AuditFinding has been modified concurrently. Please refresh the latest state before retrying.',
+          code: 'STALE_RECORD_CONFLICT',
+        });
+      }
     }
 
     // 4. Segregation of Duties (SoD)
@@ -1250,8 +1337,10 @@ export class BusinessAuditsService {
         }
       } else {
         const hasRationale = Boolean(
-          finding.remediationPlan &&
-            (finding.remediationPlan.includes('[NO_CAPA_REQUIRED:') || finding.remediationPlan.trim().length > 0),
+          finding.capaApplicability === CapaApplicability.NOT_REQUIRED ||
+          finding.capaRationale ||
+          (finding.remediationPlan &&
+            (finding.remediationPlan.includes('[NO_CAPA_REQUIRED:') || finding.remediationPlan.trim().length > 0)),
         );
         if (!hasRationale) {
           throw new BadRequestException(
@@ -1267,13 +1356,29 @@ export class BusinessAuditsService {
           verifiedById: authCtx.userId,
           verifiedAt: new Date(),
           verificationNotes: verificationNotes !== undefined ? verificationNotes : finding.verificationNotes,
+          version: { increment: 1 },
         },
         include: {
           capas: true,
           evidence: true,
           evidenceAssociations: { include: { evidence: true } },
+          verificationHistories: { orderBy: { createdAt: 'desc' } },
         },
       });
+
+      if (this.prisma.auditFindingVerificationHistory?.create) {
+        await this.prisma.auditFindingVerificationHistory.create({
+          data: {
+            organizationId: authCtx.organizationId,
+            findingId: id,
+            action: AuditFindingLifecycleAction.VERIFICATION_PASSED,
+            priorStatus: finding.status as FindingStatus,
+            newStatus: targetStatus,
+            actorId: authCtx.userId,
+            notes: verificationNotes || null,
+          },
+        }).catch(() => {});
+      }
 
       await this.auditLogsService.log({
         organizationId: authCtx.organizationId,
@@ -1305,13 +1410,30 @@ export class BusinessAuditsService {
         data: {
           status: FindingStatus.IN_REMEDIATION,
           verificationNotes: updatedNotes,
+          version: { increment: 1 },
         },
         include: {
           capas: true,
           evidence: true,
           evidenceAssociations: { include: { evidence: true } },
+          verificationHistories: { orderBy: { createdAt: 'desc' } },
         },
       });
+
+      if (this.prisma.auditFindingVerificationHistory?.create) {
+        await this.prisma.auditFindingVerificationHistory.create({
+          data: {
+            organizationId: authCtx.organizationId,
+            findingId: id,
+            action: AuditFindingLifecycleAction.VERIFICATION_REJECTED,
+            priorStatus: finding.status as FindingStatus,
+            newStatus: FindingStatus.IN_REMEDIATION,
+            actorId: authCtx.userId,
+            notes: verificationNotes.trim(),
+            reason: 'Verification rejected by auditor',
+          },
+        }).catch(() => {});
+      }
 
       await this.auditLogsService.log({
         organizationId: authCtx.organizationId,
@@ -1374,6 +1496,17 @@ export class BusinessAuditsService {
       this.checkOptimisticLock('AuditFinding', finding.updatedAt, dto.expectedUpdatedAt);
     }
 
+    if (dto.expectedVersion !== undefined) {
+      if (finding.version !== undefined && finding.version !== dto.expectedVersion) {
+        throw new ConflictException({
+          statusCode: 409,
+          error: 'Conflict',
+          message: 'AuditFinding has been modified concurrently. Please refresh the latest state before retrying.',
+          code: 'STALE_RECORD_CONFLICT',
+        });
+      }
+    }
+
     if (finding.status !== FindingStatus.VERIFIED && finding.status !== FindingStatus.CLOSED) {
       throw new BadRequestException(
         `Only VERIFIED or CLOSED findings can be reopened. Finding "${id}" is currently in status "${finding.status}".`,
@@ -1386,9 +1519,9 @@ export class BusinessAuditsService {
 
     const isAdmin = authCtx.role === Role.ADMIN || authCtx.role === Role.MSSP_ADMIN;
     const isOwner = finding.ownerId === authCtx.userId;
-    const isPlanOwner = finding.assessment.auditPlan.ownerId === authCtx.userId;
-    const isLeadAuditor = finding.assessment.auditPlan.schedules?.some((s: any) => s.leadAuditorId === authCtx.userId);
-    const isAssessmentAuditor = finding.assessment.auditorId === authCtx.userId;
+    const isPlanOwner = finding.assessment?.auditPlan?.ownerId === authCtx.userId;
+    const isLeadAuditor = finding.assessment?.auditPlan?.schedules?.some((s: any) => s.leadAuditorId === authCtx.userId);
+    const isAssessmentAuditor = finding.assessment?.auditorId === authCtx.userId;
 
     if (!isAdmin && !isOwner && !isPlanOwner && !isLeadAuditor && !isAssessmentAuditor) {
       throw new ForbiddenException(
@@ -1408,13 +1541,30 @@ export class BusinessAuditsService {
       data: {
         status: FindingStatus.IN_REMEDIATION,
         verificationNotes: updatedNotes,
+        version: { increment: 1 },
       },
       include: {
         capas: true,
         evidence: true,
         evidenceAssociations: { include: { evidence: true } },
+        verificationHistories: { orderBy: { createdAt: 'desc' } },
       },
     });
+
+    if (this.prisma.auditFindingVerificationHistory?.create) {
+      await this.prisma.auditFindingVerificationHistory.create({
+        data: {
+          organizationId: authCtx.organizationId,
+          findingId: id,
+          action: AuditFindingLifecycleAction.FINDING_REOPENED,
+          priorStatus,
+          newStatus: FindingStatus.IN_REMEDIATION,
+          actorId: authCtx.userId,
+          reason: dto.reason.trim(),
+          notes: reopenNote,
+        },
+      }).catch(() => {});
+    }
 
     await this.auditLogsService.log({
       organizationId: authCtx.organizationId,
@@ -1467,14 +1617,31 @@ export class BusinessAuditsService {
         ownerId: resolvedOwnerId,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
         status: CapaStatus.OPEN,
+        version: 1,
       },
     });
 
     if (finding.status === FindingStatus.OPEN || finding.status === FindingStatus.READY_FOR_VERIFICATION) {
       await this.prisma.auditFinding.update({
         where: { id: dto.findingId },
-        data: { status: FindingStatus.IN_REMEDIATION },
+        data: {
+          status: FindingStatus.IN_REMEDIATION,
+          version: { increment: 1 },
+        },
       });
+      if (this.prisma.auditFindingVerificationHistory?.create) {
+        await this.prisma.auditFindingVerificationHistory.create({
+          data: {
+            organizationId: authCtx.organizationId,
+            findingId: dto.findingId,
+            action: AuditFindingLifecycleAction.STATUS_TRANSITIONED,
+            priorStatus: finding.status as FindingStatus,
+            newStatus: FindingStatus.IN_REMEDIATION,
+            actorId: authCtx.userId,
+            notes: 'Finding transitioned to IN_REMEDIATION upon addition of CAPA.',
+          },
+        }).catch(() => {});
+      }
     }
 
     await this.auditLogsService.log({
@@ -1508,6 +1675,17 @@ export class BusinessAuditsService {
       this.checkOptimisticLock('AuditCapa', capa.updatedAt, dto.expectedUpdatedAt);
     }
 
+    if (dto.expectedVersion !== undefined) {
+      if (capa.version !== undefined && capa.version !== dto.expectedVersion) {
+        throw new ConflictException({
+          statusCode: 409,
+          error: 'Conflict',
+          message: 'AuditCapa has been modified concurrently. Please refresh the latest state before retrying.',
+          code: 'STALE_RECORD_CONFLICT',
+        });
+      }
+    }
+
     let resolvedOwnerId: string | undefined;
     if (dto.ownerId !== undefined) {
       resolvedOwnerId = await this.assertEligibleUser(
@@ -1527,6 +1705,7 @@ export class BusinessAuditsService {
         ...(dto.dueDate !== undefined && { dueDate: dto.dueDate ? new Date(dto.dueDate) : null }),
         ...(dto.status !== undefined && { status: dto.status }),
         ...(dto.status === CapaStatus.COMPLETED && { completedAt: new Date() }),
+        version: { increment: 1 },
       },
     });
 
@@ -1547,15 +1726,47 @@ export class BusinessAuditsService {
           if (capa.finding.status === FindingStatus.IN_REMEDIATION) {
             await this.prisma.auditFinding.update({
               where: { id: capa.findingId },
-              data: { status: FindingStatus.READY_FOR_VERIFICATION },
+              data: {
+                status: FindingStatus.READY_FOR_VERIFICATION,
+                version: { increment: 1 },
+              },
             });
+            if (this.prisma.auditFindingVerificationHistory?.create) {
+              await this.prisma.auditFindingVerificationHistory.create({
+                data: {
+                  organizationId: authCtx.organizationId,
+                  findingId: capa.findingId,
+                  action: AuditFindingLifecycleAction.STATUS_TRANSITIONED,
+                  priorStatus: FindingStatus.IN_REMEDIATION,
+                  newStatus: FindingStatus.READY_FOR_VERIFICATION,
+                  actorId: authCtx.userId,
+                  notes: 'All CAPAs completed. Finding automatically transitioned to READY_FOR_VERIFICATION.',
+                },
+              }).catch(() => {});
+            }
           }
         } else {
           if (capa.finding.status === FindingStatus.READY_FOR_VERIFICATION) {
             await this.prisma.auditFinding.update({
               where: { id: capa.findingId },
-              data: { status: FindingStatus.IN_REMEDIATION },
+              data: {
+                status: FindingStatus.IN_REMEDIATION,
+                version: { increment: 1 },
+              },
             });
+            if (this.prisma.auditFindingVerificationHistory?.create) {
+              await this.prisma.auditFindingVerificationHistory.create({
+                data: {
+                  organizationId: authCtx.organizationId,
+                  findingId: capa.findingId,
+                  action: AuditFindingLifecycleAction.STATUS_TRANSITIONED,
+                  priorStatus: FindingStatus.READY_FOR_VERIFICATION,
+                  newStatus: FindingStatus.IN_REMEDIATION,
+                  actorId: authCtx.userId,
+                  notes: 'CAPA status reverted from COMPLETED. Finding returned to IN_REMEDIATION.',
+                },
+              }).catch(() => {});
+            }
           }
         }
       } else {
@@ -1643,6 +1854,9 @@ export class BusinessAuditsService {
             include: {
               auditPlan: true,
             },
+          },
+          verificationHistories: {
+            orderBy: { createdAt: 'desc' },
           },
         },
       }),
@@ -1780,6 +1994,7 @@ export class BusinessAuditsService {
       createdById: p.createdById,
       createdAt: p.createdAt.toISOString(),
       updatedAt: p.updatedAt.toISOString(),
+      version: p.version ?? 1,
       schedules: p.schedules ? p.schedules.map((s: any) => this.mapScheduleToDto(s)) : [],
       assessments: p.assessments ? p.assessments.map((a: any) => this.mapAssessmentToDto(a, userMap)) : [],
       scopeReferences: p.scopeReferences
@@ -1920,15 +2135,37 @@ export class BusinessAuditsService {
         createdAt: this.toIso(e.createdAt),
       }));
 
-    let capaRequired = true;
-    let capaRationale: string | null = null;
-    if (f.remediationPlan && f.remediationPlan.includes('[NO_CAPA_REQUIRED:')) {
-      capaRequired = false;
-      const match = f.remediationPlan.match(/\[NO_CAPA_REQUIRED:\s*([^\]]+)\]/);
+    let capaApplicability = (f.capaApplicability as CapaApplicability) || CapaApplicability.UNASSESSED;
+    let capaRationale: string | null = f.capaRationale || null;
+    let remediationPlan: string | null = f.remediationPlan || null;
+
+    if (remediationPlan && remediationPlan.includes('[NO_CAPA_REQUIRED:')) {
+      const match = remediationPlan.match(/\[NO_CAPA_REQUIRED:\s*([^\]]+)\]/);
       if (match) {
-        capaRationale = match[1].trim();
+        if (!capaRationale) capaRationale = match[1].trim();
+        if (capaApplicability === CapaApplicability.UNASSESSED) {
+          capaApplicability = CapaApplicability.NOT_REQUIRED;
+        }
       }
+      remediationPlan = remediationPlan.replace(/\[NO_CAPA_REQUIRED:[^\]]*\]\s*/g, '').trim() || null;
     }
+
+    const capaRequired = capaApplicability !== CapaApplicability.NOT_REQUIRED;
+
+    const verificationHistories: AuditFindingVerificationHistoryDto[] = (f.verificationHistories || []).map((h: any) => ({
+      id: h.id,
+      organizationId: h.organizationId,
+      findingId: h.findingId,
+      action: h.action,
+      priorStatus: h.priorStatus,
+      newStatus: h.newStatus,
+      actorId: h.actorId,
+      actorName: userMap?.get(h.actorId)?.name || null,
+      actorEmail: userMap?.get(h.actorId)?.email || null,
+      reason: h.reason || null,
+      notes: h.notes || null,
+      createdAt: this.toIso(h.createdAt),
+    }));
 
     return {
       id: f.id,
@@ -1944,9 +2181,11 @@ export class BusinessAuditsService {
       ownerEmail: ownerInfo?.email || null,
       dueDate: this.toNullableIso(f.dueDate),
       riskId: f.riskId,
-      remediationPlan: f.remediationPlan,
+      remediationPlan,
+      capaApplicability,
       capaRequired,
       capaRationale,
+      version: f.version ?? 1,
       verificationNotes: f.verificationNotes,
       verifiedById: f.verifiedById,
       verifiedByName: verifierInfo?.name || verifierInfo?.email || null,
@@ -1956,6 +2195,7 @@ export class BusinessAuditsService {
       updatedAt: this.toIso(f.updatedAt),
       capas: f.capas ? f.capas.map((c: any) => this.mapCapaToDto(c, userMap)) : [],
       evidence: [...legacyEv, ...canonicalEv],
+      verificationHistories,
     };
   }
 
@@ -1980,6 +2220,7 @@ export class BusinessAuditsService {
       verifiedAt: this.toNullableIso(c.verifiedAt),
       createdAt: this.toIso(c.createdAt),
       updatedAt: this.toIso(c.updatedAt),
+      version: c.version ?? 1,
     };
   }
 

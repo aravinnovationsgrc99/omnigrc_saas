@@ -7,6 +7,8 @@ import {
   CapaStatus,
   VulnerabilitySeverity,
   ObligationCadence,
+  CapaApplicability,
+  AuditFindingLifecycleAction,
 } from '@omnigrc/shared';
 
 export class CreateAuditPlanDto {
@@ -39,6 +41,7 @@ export class UpdateAuditPlanDto {
   departmentId?: string;
   projectId?: string;
   expectedUpdatedAt?: string;
+  expectedVersion?: number;
 }
 
 export class CreateAuditScheduleDto {
@@ -73,6 +76,7 @@ export class CreateAuditFindingDto {
   remediationPlan?: string;
   capaRequired?: boolean;
   capaRationale?: string;
+  capaApplicability?: CapaApplicability;
 }
 
 export class UpdateAuditFindingDto {
@@ -86,18 +90,22 @@ export class UpdateAuditFindingDto {
   verificationNotes?: string;
   capaRequired?: boolean;
   capaRationale?: string;
+  capaApplicability?: CapaApplicability;
   expectedUpdatedAt?: string;
+  expectedVersion?: number;
 }
 
 export class ReopenAuditFindingDto {
   reason: string;
   expectedUpdatedAt?: string;
+  expectedVersion?: number;
 }
 
 export class VerifyAuditFindingDto {
   status?: FindingStatus.VERIFIED | FindingStatus.CLOSED | FindingStatus.IN_REMEDIATION;
   verificationNotes?: string;
   expectedUpdatedAt?: string;
+  expectedVersion?: number;
 }
 
 export class CreateAuditCapaDto {
@@ -117,6 +125,7 @@ export class UpdateAuditCapaDto {
   dueDate?: string;
   status?: CapaStatus;
   expectedUpdatedAt?: string;
+  expectedVersion?: number;
 }
 
 export class CreateAuditEvidenceDto {

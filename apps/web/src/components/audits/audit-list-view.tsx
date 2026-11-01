@@ -598,7 +598,7 @@ export function AuditListView() {
     }
   }
 
-  async function handleUpdateCapaStatus(capaId: string, status: CapaStatus, expectedUpdatedAt?: Date | string) {
+  async function handleUpdateCapaStatus(capaId: string, status: CapaStatus, expectedUpdatedAt?: Date | string, expectedVersion?: number) {
     setUpdatingCapaId(capaId);
     try {
       await apiRequest(`/business-audits/capas/${capaId}`, {
@@ -606,6 +606,7 @@ export function AuditListView() {
         body: JSON.stringify({
           status,
           ...(expectedUpdatedAt && { expectedUpdatedAt: typeof expectedUpdatedAt === 'string' ? expectedUpdatedAt : expectedUpdatedAt.toISOString() }),
+          ...(expectedVersion !== undefined && { expectedVersion }),
         }),
       });
 
@@ -657,6 +658,7 @@ export function AuditListView() {
           status: verifyStatus,
           verificationNotes: verifyNotes.trim() || undefined,
           expectedUpdatedAt: verifyTarget.updatedAt,
+          expectedVersion: verifyTarget.version,
         }),
       });
 
@@ -711,6 +713,7 @@ export function AuditListView() {
         body: JSON.stringify({
           reason: reopenReason.trim(),
           expectedUpdatedAt: reopenTarget.updatedAt,
+          expectedVersion: reopenTarget.version,
         }),
       });
 
@@ -775,6 +778,7 @@ export function AuditListView() {
           severity: logFindingForm.severity,
           remediationPlan: logFindingForm.remediationPlan.trim() || undefined,
           ownerId: logFindingForm.ownerId.trim() || (orgMembers.length > 0 ? orgMembers[0].id : 'Compliance Lead'),
+          capaApplicability: logFindingForm.capaRequired ? 'REQUIRED' : 'NOT_REQUIRED',
           capaRequired: logFindingForm.capaRequired,
           capaRationale: !logFindingForm.capaRequired ? logFindingForm.capaRationale.trim() : undefined,
         }),
@@ -1304,6 +1308,9 @@ export function AuditListView() {
                         </div>
 
                         {f.description && <p className="text-xs text-slate-600 line-clamp-1">{f.description}</p>}
+                        {f.capaRationale && (
+                          <p className="text-[11px] text-amber-700 font-medium">CAPA Rationale: {f.capaRationale}</p>
+                        )}
                         {f.remediationPlan && (
                           <p className="text-[11px] text-slate-500 italic">Plan: {f.remediationPlan}</p>
                         )}
@@ -1463,7 +1470,7 @@ export function AuditListView() {
                         <button
                           type="button"
                           disabled={updatingCapaId === capa.id}
-                          onClick={() => handleUpdateCapaStatus(capa.id, CapaStatus.COMPLETED, capa.updatedAt)}
+                          onClick={() => handleUpdateCapaStatus(capa.id, CapaStatus.COMPLETED, capa.updatedAt, capa.version)}
                           className="px-2.5 py-1 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded transition-colors disabled:opacity-50"
                         >
                           {updatingCapaId === capa.id ? 'Marking...' : 'Mark Completed'}
@@ -2468,7 +2475,7 @@ export function AuditListView() {
                               <button
                                 type="button"
                                 disabled={updatingCapaId === capa.id}
-                                onClick={() => handleUpdateCapaStatus(capa.id, CapaStatus.COMPLETED)}
+                                onClick={() => handleUpdateCapaStatus(capa.id, CapaStatus.COMPLETED, capa.updatedAt, capa.version)}
                                 className="px-2 py-1 text-[10px] font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded transition-colors disabled:opacity-50"
                               >
                                 {updatingCapaId === capa.id ? 'Marking...' : 'Mark Completed'}

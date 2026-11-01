@@ -230,6 +230,7 @@ model Organization {
   policies        Policy[]
   policyCategories PolicyCategory[]
   auditPlans      AuditPlan[]
+  auditFindingVerificationHistories AuditFindingVerificationHistory[]
   incidents       Incident[]
   dashboardPreferences UserDashboardPreference[]
   frameworkEntitlements OrganizationFrameworkEntitlement[]
@@ -436,6 +437,7 @@ model User {
   notifications       Notification[]
   invitationsSent     Invitation[]             @relation("InvitedUsers")
   dashboardPreferences UserDashboardPreference[]
+  auditFindingVerificationHistories AuditFindingVerificationHistory[]
 
   @@index([organizationId])
   @@map("users")
@@ -1136,6 +1138,19 @@ enum CapaStatus {
   CLOSED
 }
 
+enum CapaApplicability {
+  UNASSESSED
+  REQUIRED
+  NOT_REQUIRED
+}
+
+enum AuditFindingLifecycleAction {
+  VERIFICATION_PASSED
+  VERIFICATION_REJECTED
+  FINDING_REOPENED
+  STATUS_TRANSITIONED
+}
+
 model AuditPlan {
   id               String          @id @default(uuid())
   organizationId   String
@@ -1154,6 +1169,7 @@ model AuditPlan {
   createdById      String
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
+  version          Int             @default(1)
 
   organization     Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   departmentRef    Department?        @relation(fields: [departmentId], references: [id], onDelete: SetNull)
@@ -1301,6 +1317,9 @@ model AuditFinding {
   verifiedAt        DateTime?
   createdById       String
   createdAt         DateTime              @default(now())
+  capaApplicability CapaApplicability     @default(UNASSESSED)
+  capaRationale     String?
+  version           Int                   @default(1)
   updatedAt         DateTime              @updatedAt
 
   assessment AuditAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
@@ -1310,8 +1329,10 @@ model AuditFinding {
   evidence   AuditEvidence[]
   evidenceAssociations AuditFindingEvidence[]
   approvalAssociations AuditFindingApproval[]
+  verificationHistories AuditFindingVerificationHistory[]
 
   @@index([organizationId])
+  @@index([organizationId, capaApplicability])
   @@index([assessmentId])
   @@index([status])
   @@index([severity])
@@ -1333,6 +1354,7 @@ model AuditCapa {
   verifiedById     String?
   verifiedAt       DateTime?
   createdAt        DateTime   @default(now())
+  version          Int        @default(1)
   updatedAt        DateTime   @updatedAt
 
   finding AuditFinding @relation(fields: [findingId], references: [id], onDelete: Cascade)
@@ -1341,6 +1363,29 @@ model AuditCapa {
   @@index([findingId])
   @@index([status])
   @@map("audit_capas")
+}
+
+model AuditFindingVerificationHistory {
+  id             String                      @id @default(uuid())
+  organizationId String
+  findingId      String
+  action         AuditFindingLifecycleAction
+  priorStatus    FindingStatus
+  newStatus      FindingStatus
+  actorId        String
+  reason         String?
+  notes          String?
+  createdAt      DateTime                    @default(now())
+
+  finding        AuditFinding                @relation(fields: [findingId], references: [id], onDelete: Restrict)
+  organization   Organization                @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  actor          User                        @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId])
+  @@index([findingId])
+  @@index([actorId])
+  @@index([createdAt])
+  @@map("audit_finding_verification_histories")
 }
 
 // Phase 14 Model: UserDashboardPreference
