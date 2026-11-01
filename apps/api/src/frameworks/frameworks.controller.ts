@@ -59,12 +59,40 @@ export class FrameworksController {
     return this.frameworksService.getVersions(organizationId, idOrCode);
   }
 
+  @Get(':idOrCode/versions/:versionId/clauses')
+  @RequireFrameworkEntitlement('idOrCode')
+  async getVersionClauses(
+    @CurrentUser('organizationId') organizationId: string,
+    @Param('idOrCode') idOrCode: string,
+    @Param('versionId') versionId: string,
+    @Query('search') search?: string,
+    @Query('type') type?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.frameworksService.getVersionClauses(organizationId, idOrCode, versionId, {
+      search,
+      type,
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
+  }
+
   @Get('versions/:versionId/references')
   async getReferences(
     @CurrentUser('organizationId') organizationId: string,
     @Param('versionId') versionId: string,
+    @Query('search') search?: string,
+    @Query('type') type?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
-    return this.frameworksService.getReferences(organizationId, versionId);
+    return this.frameworksService.getReferences(organizationId, versionId, {
+      search,
+      type,
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
   }
 
   @Get('references/:refId')
@@ -117,4 +145,3 @@ export class FrameworksController {
     return this.frameworksService.importCustomFramework(dto);
   }
 }
-

@@ -5,14 +5,23 @@ import { Building2, ChevronDown, LogOut, Bell, CheckCheck, Clock, Menu } from 'l
 import { useAuth } from '@/context/auth-context';
 import { apiRequest } from '@/lib/api-client';
 import { NotificationDto, PaginatedNotificationsDto, NotificationType } from '@omnigrc/shared';
+import { Breadcrumbs } from './breadcrumbs';
 
 interface TopbarProps {
   onToggleMobileSidebar?: () => void;
   mobileSidebarOpen?: boolean;
-  onNavigateToView?: (view: string) => void;
+  onNavigateToView?: (view: string, params?: Record<string, any>) => void;
+  currentView?: string;
+  viewParams?: Record<string, any>;
 }
 
-export function Topbar({ onToggleMobileSidebar, mobileSidebarOpen, onNavigateToView }: TopbarProps) {
+export function Topbar({
+  onToggleMobileSidebar,
+  mobileSidebarOpen,
+  onNavigateToView,
+  currentView,
+  viewParams,
+}: TopbarProps) {
   const { user, organization, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -155,7 +164,7 @@ export function Topbar({ onToggleMobileSidebar, mobileSidebarOpen, onNavigateToV
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, fontWeight: 500, color: '#1B2430', minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13.5, fontWeight: 500, color: '#1B2430', minWidth: 0, flex: 1 }}>
           {onToggleMobileSidebar && (
             <button
               onClick={onToggleMobileSidebar}
@@ -166,10 +175,21 @@ export function Topbar({ onToggleMobileSidebar, mobileSidebarOpen, onNavigateToV
               <Menu size={20} />
             </button>
           )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }} className="shrink-0">
             <Building2 size={15} color="#5B6672" className="shrink-0" />
-            <span className="truncate max-w-[100px] xs:max-w-[140px] sm:max-w-[200px] md:max-w-none font-bold text-slate-900">{orgName}</span>
-            <span className="text-slate-400 font-normal hidden md:inline">· Pilot workspace</span>
+            <span className="truncate max-w-[100px] xs:max-w-[130px] sm:max-w-[170px] font-bold text-slate-900 text-xs sm:text-sm">{orgName}</span>
+            <span className="text-slate-400 font-normal hidden lg:inline text-xs">· Pilot workspace</span>
+          </div>
+
+          <span className="text-slate-300 font-light hidden sm:inline select-none" aria-hidden="true">|</span>
+
+          {/* Standardized Breadcrumbs Navigation */}
+          <div className="hidden sm:flex items-center min-w-0 flex-1 overflow-hidden">
+            <Breadcrumbs
+              currentView={currentView}
+              viewParams={viewParams}
+              onNavigateToView={onNavigateToView}
+            />
           </div>
         </div>
 

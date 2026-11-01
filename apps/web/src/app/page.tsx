@@ -35,6 +35,7 @@ import { OnboardingWizard } from '@/components/onboarding/onboarding-wizard';
 import { ToastProvider } from '@/context/toast-context';
 import { FloatingSupportChat } from '@/components/intelligence/floating-support-chat';
 import { ModuleNotLicensedView } from '@/components/ui/module-not-licensed-view';
+import { ScrollNavigator } from '@/components/ui/scroll-navigator';
 import { Lock, ShieldAlert } from 'lucide-react';
 
 export default function MainPage() {
@@ -43,22 +44,53 @@ export default function MainPage() {
   const [viewParams, setViewParams] = useState<Record<string, any>>({});
   const [showWizard, setShowWizard] = useState<boolean>(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const contentScrollRef = React.useRef<HTMLDivElement>(null);
+
+  // Restore persisted sidebar collapsed state
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('omnigrc_sidebar_collapsed');
+      if (saved === 'true') {
+        setSidebarCollapsed(true);
+      }
+    }
+  }, []);
+
+  const toggleSidebarCollapsed = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('omnigrc_sidebar_collapsed', String(next));
+      }
+      return next;
+    });
+  };
 
   const navigateToView = (nextView: string, params?: Record<string, any>) => {
     setView(nextView);
     setViewParams(params || {});
     setMobileSidebarOpen(false);
+
+    if (typeof window !== 'undefined') {
+      const url = nextView === 'dashboard' ? window.location.pathname : `?view=${encodeURIComponent(nextView)}`;
+      window.history.pushState({ view: nextView, params }, '', url);
+    }
   };
 
-  // Sync view from URL search param if present on initial mount
+  // Sync view from URL search param if present on initial mount and handle popstate (browser back/forward)
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const urlView = params.get('view');
-      if (urlView) {
+    const handleUrlSync = () => {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        const urlView = params.get('view') || 'dashboard';
         setView(urlView);
       }
-    }
+    };
+
+    handleUrlSync();
+    window.addEventListener('popstate', handleUrlSync);
+    return () => window.removeEventListener('popstate', handleUrlSync);
   }, []);
 
   useEffect(() => {
@@ -101,6 +133,8 @@ export default function MainPage() {
           setView={(v) => navigateToView(v)}
           mobileOpen={mobileSidebarOpen}
           onCloseMobile={() => setMobileSidebarOpen(false)}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={toggleSidebarCollapsed}
         />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
           {isReadOnly && (
@@ -112,9 +146,15 @@ export default function MainPage() {
           <Topbar
             onToggleMobileSidebar={() => setMobileSidebarOpen((v) => !v)}
             mobileSidebarOpen={mobileSidebarOpen}
-            onNavigateToView={(v) => navigateToView(v)}
+            onNavigateToView={(v, params) => navigateToView(v, params)}
+            currentView={view}
+            viewParams={viewParams}
           />
-          <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }} className="omni-scroll w-full max-w-full p-3.5 sm:p-6">
+          <div
+            ref={contentScrollRef}
+            style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}
+            className="omni-scroll w-full max-w-full p-3.5 sm:p-6"
+          >
             {!isLicensed && activeItem?.capabilityCode ? (
               <ModuleNotLicensedView
                 moduleName={activeItem.label}
@@ -165,6 +205,7 @@ export default function MainPage() {
               </>
             )}
           </div>
+          <ScrollNavigator scrollContainerRef={contentScrollRef} />
         </div>
 
         {showWizard && (

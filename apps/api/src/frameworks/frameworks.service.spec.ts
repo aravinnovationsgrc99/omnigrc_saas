@@ -2,7 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { FrameworksService } from './frameworks.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FrameworkEntitlementsService } from './framework-entitlements.service';
-import { NotFoundException, ForbiddenException } from '@nestjs/common';
+import { NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { FrameworkCode } from '@omnigrc/shared';
 
 describe('FrameworksService', () => {
   let service: FrameworksService;
@@ -134,6 +135,88 @@ describe('FrameworksService', () => {
         'org-1',
         'fw-iso27001',
         'ver-iso-2013',
+      );
+    });
+  });
+
+  describe('getVersionClauses', () => {
+    it('should retrieve version clauses when version belongs to framework and org is entitled', async () => {
+      const fwId = 'fw-1';
+      const verId = 'ver-1';
+      const orgId = 'org-1';
+
+      prisma.framework.findFirst.mockResolvedValue({ id: fwId, code: FrameworkCode.ISO27001 });
+      prisma.frameworkVersion.findUnique.mockResolvedValue({ id: verId, frameworkId: fwId, version: '2022' });
+      prisma.frameworkReference.findMany.mockResolvedValue([
+        {
+          id: 'ref-1',
+          frameworkVersionId: verId,
+          parentRefId: null,
+          type: 'CONTROL',
+          identifier: 'A.5.1',
+          title: 'Policies for information security',
+          description: 'Policies description',
+          normativeText: null,
+          sortOrder: 1,
+          provenance: null,
+          createdAt: new Date('2026-01-01'),
+          updatedAt: new Date('2026-01-01'),
+        },
+      ]);
+      entitlementsService.assertEntitled.mockResolvedValue(undefined);
+
+      const result = await service.getVersionClauses(orgId, fwId, verId);
+
+      expect(entitlementsService.assertEntitled).toHaveBeenCalledWith(orgId, fwId);
+      expect(entitlementsService.assertEntitled).toHaveBeenCalledWith(orgId, fwId, verId);
+      expect(result).toHaveLength(1);
+      expect(result[0].identifier).toBe('A.5.1');
+      expect(result[0].title).toBe('Policies for information security');
+    });
+
+    it('should throw BadRequestException if version belongs to a different framework', async () => {
+      const fwId = 'fw-1';
+      const verId = 'ver-wrong';
+      const orgId = 'org-1';
+
+      prisma.framework.findFirst.mockResolvedValue({ id: fwId, code: FrameworkCode.ISO27001 });
+      prisma.frameworkVersion.findUnique.mockResolvedValue({ id: verId, frameworkId: 'fw-other', version: '2023' });
+      entitlementsService.assertEntitled.mockResolvedValue(undefined);
+
+      await expect(service.getVersionClauses(orgId, fwId, verId)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('should throw NotFoundException if framework not found', async () => {
+      prisma.framework.findFirst.mockResolvedValue(null);
+      entitlementsService.assertEntitled.mockResolvedValue(undefined);
+
+      await expect(service.getVersionClauses('org-1', 'nonexistent', 'ver-1')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('should support search and type filters in query', async () => {
+      const fwId = 'fw-1';
+      const verId = 'ver-1';
+      const orgId = 'org-1';
+
+      prisma.framework.findFirst.mockResolvedValue({ id: fwId, code: FrameworkCode.ISO27001 });
+      prisma.frameworkVersion.findUnique.mockResolvedValue({ id: verId, frameworkId: fwId, version: '2022' });
+      prisma.frameworkReference.findMany.mockResolvedValue([]);
+      entitlementsService.assertEntitled.mockResolvedValue(undefined);
+
+      await service.getVersionClauses(orgId, fwId, verId, { search: 'Access', type: 'CONTROL' });
+
+      expect(prisma.frameworkReference.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            frameworkVersionId: verId,
+            type: 'CONTROL',
+            OR: expect.any(Array),
+          }),
+        }),
       );
     });
   });
