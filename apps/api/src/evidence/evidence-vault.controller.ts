@@ -12,7 +12,7 @@ import { EvidenceVaultQueryDto, PaginatedEvidenceVaultDto, Role } from '@omnigrc
 export class EvidenceVaultController {
   constructor(private readonly evidenceVaultService: EvidenceVaultService) {}
 
-  @Get('vault')
+  @Get('vault/legacy')
   @Roles(Role.ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
   async getVaultItems(
     @CurrentUser('organizationId') organizationId: string,

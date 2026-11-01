@@ -86,6 +86,18 @@ describe('BusinessAuditsService', () => {
         createMany: jest.fn(),
         deleteMany: jest.fn(),
       },
+      evidence: {
+        findFirst: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      auditCheckItemEvidence: {
+        create: jest.fn().mockResolvedValue({}),
+        deleteMany: jest.fn(),
+      },
+      auditFindingEvidence: {
+        create: jest.fn().mockResolvedValue({}),
+        deleteMany: jest.fn(),
+      },
       user: {
         findMany: jest.fn().mockResolvedValue([]),
       },
@@ -1454,6 +1466,192 @@ describe('BusinessAuditsService', () => {
         expect(history[1].action).toBe('AUDIT_ASSESSMENT_STARTED');
         expect(history[1].actorName).toBe('Bob Auditor');
       });
+    });
+  });
+
+  describe('WP1: Evidence Architecture & Legacy Compatibility Suite', () => {
+    const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+
+    it('addEvidence: creates legacy AuditEvidence record for backward compatibility', async () => {
+      prisma.auditCheckItem.findFirst.mockResolvedValue({
+        id: 'ci-100',
+        organizationId: 'org-1',
+        assessment: { auditPlan: { id: 'plan-1', organizationId: 'org-1' } },
+      });
+      prisma.auditEvidence.create.mockResolvedValue({
+        id: 'ev-legacy-1',
+        organizationId: 'org-1',
+        checkItemId: 'ci-100',
+        fileName: 'screenshot.png',
+        fileUrl: 'https://vault.omnigrc.internal/screenshot.png',
+        uploadedById: 'user-1',
+      });
+
+      const res = await service.addEvidence(authCtx, {
+        checkItemId: 'ci-100',
+        fileName: 'screenshot.png',
+        fileUrl: 'https://vault.omnigrc.internal/screenshot.png',
+      });
+
+      expect(res.id).toBe('ev-legacy-1');
+      expect(prisma.auditEvidence.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            organizationId: 'org-1',
+            checkItemId: 'ci-100',
+            fileName: 'screenshot.png',
+            fileUrl: 'https://vault.omnigrc.internal/screenshot.png',
+          }),
+        }),
+      );
+    });
+
+    it('addEvidence: links canonical Evidence record when evidenceId is provided', async () => {
+      prisma.auditCheckItem.findFirst.mockResolvedValue({
+        id: 'ci-100',
+        organizationId: 'org-1',
+        assessment: { auditPlan: { id: 'plan-1', organizationId: 'org-1' } },
+      });
+      prisma.evidence.findFirst.mockResolvedValue({
+        id: 'can-ev-55',
+        organizationId: 'org-1',
+        fileName: 'mfa_report.pdf',
+        deletedAt: null,
+      });
+      prisma.auditEvidence.create.mockResolvedValue({
+        id: 'ev-legacy-2',
+        organizationId: 'org-1',
+        checkItemId: 'ci-100',
+        fileName: 'mfa_report.pdf',
+        fileUrl: '/evidence/can-ev-55/download',
+      });
+
+      await service.addEvidence(authCtx, {
+        checkItemId: 'ci-100',
+        evidenceId: 'can-ev-55',
+        fileName: 'mfa_report.pdf',
+        fileUrl: '/evidence/can-ev-55/download',
+      });
+
+      expect(prisma.auditCheckItemEvidence.create).toHaveBeenCalledWith({
+        data: {
+          organizationId: 'org-1',
+          checkItemId: 'ci-100',
+          evidenceId: 'can-ev-55',
+        },
+      });
+    });
+
+    it('addEvidence: rejects foreign tenant evidenceId with NotFoundException', async () => {
+      prisma.auditCheckItem.findFirst.mockResolvedValue({
+        id: 'ci-100',
+        organizationId: 'org-1',
+        assessment: { auditPlan: { id: 'plan-1', organizationId: 'org-1' } },
+      });
+      prisma.evidence.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.addEvidence(authCtx, {
+          checkItemId: 'ci-100',
+          evidenceId: 'foreign-evidence-id',
+          fileName: 'foreign.pdf',
+          fileUrl: '',
+        }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('findOnePlan: seamlessly merges legacy evidence and canonical evidenceAssociations on check items', async () => {
+      resourceAuthService.getScopeWhereClause.mockResolvedValue({ organizationId: 'org-1' });
+
+      prisma.auditPlan.findFirst.mockResolvedValue({
+        id: 'plan-merged-1',
+        organizationId: 'org-1',
+        title: 'Unified Evidence Audit Plan',
+        ownerId: 'user-1',
+        createdById: 'user-1',
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+        assessments: [
+          {
+            id: 'ass-merged-1',
+            organizationId: 'org-1',
+            status: 'IN_PROGRESS',
+            score: 100,
+            startedAt: new Date(),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            createdById: 'user-1',
+            checkItems: [
+              {
+                id: 'ci-merged-1',
+                organizationId: 'org-1',
+                title: 'Firewall Rules Review',
+                result: 'COMPLIANT',
+                createdById: 'user-1',
+                createdAt: new Date('2026-01-01T00:00:00Z'),
+                updatedAt: new Date('2026-01-01T00:00:00Z'),
+                // Legacy evidence record
+                evidence: [
+                  {
+                    id: 'leg-ev-1',
+                    organizationId: 'org-1',
+                    checkItemId: 'ci-merged-1',
+                    fileName: 'legacy_firewall_export.txt',
+                    fileUrl: 'https://vault.omnigrc.internal/legacy_firewall_export.txt',
+                    fileSize: 1024,
+                    mimeType: 'text/plain',
+                    uploadedById: 'user-1',
+                    createdAt: new Date('2026-01-01T00:00:00Z'),
+                  },
+                ],
+                // Canonical junction association
+                evidenceAssociations: [
+                  {
+                    evidence: {
+                      id: 'can-ev-1',
+                      organizationId: 'org-1',
+                      fileName: 'modern_firewall_config.json',
+                      fileSize: 4096,
+                      mimeType: 'application/json',
+                      uploadedById: 'user-1',
+                      createdAt: new Date('2026-02-01T00:00:00Z'),
+                    },
+                  },
+                ],
+              },
+            ],
+            findings: [],
+          },
+        ],
+        frameworkRef: null,
+        versionRef: null,
+        departmentRef: null,
+        scopeReferences: [],
+      });
+
+      const plan = await service.findOnePlan(authCtx, 'plan-merged-1');
+      expect(plan).toBeDefined();
+      const checkItem = plan.assessments![0].checkItems![0];
+      expect(checkItem.evidence).toHaveLength(2);
+
+      // Check legacy item
+      expect(checkItem.evidence![0]).toEqual(
+        expect.objectContaining({
+          id: 'leg-ev-1',
+          fileName: 'legacy_firewall_export.txt',
+          fileUrl: 'https://vault.omnigrc.internal/legacy_firewall_export.txt',
+        }),
+      );
+
+      // Check canonical item mapped into DTO format
+      expect(checkItem.evidence![1]).toEqual(
+        expect.objectContaining({
+          id: 'can-ev-1',
+          fileName: 'modern_firewall_config.json',
+          fileUrl: '/evidence/can-ev-1/download',
+          fileSize: 4096,
+        }),
+      );
     });
   });
 });

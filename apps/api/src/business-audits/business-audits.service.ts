@@ -335,8 +335,23 @@ export class BusinessAuditsService {
         schedules: true,
         assessments: {
           include: {
-            checkItems: { include: { evidence: true } },
-            findings: { include: { capas: true, evidence: true } },
+            checkItems: {
+              include: {
+                evidence: true,
+                evidenceAssociations: {
+                  include: { evidence: true },
+                },
+              },
+            },
+            findings: {
+              include: {
+                capas: true,
+                evidence: true,
+                evidenceAssociations: {
+                  include: { evidence: true },
+                },
+              },
+            },
           },
         },
         frameworkRef: true,
@@ -1085,6 +1100,9 @@ export class BusinessAuditsService {
         include: {
           capas: true,
           evidence: true,
+          evidenceAssociations: {
+            include: { evidence: true },
+          },
           assessment: {
             include: {
               auditPlan: true,
@@ -1133,13 +1151,47 @@ export class BusinessAuditsService {
       await this.resourceAuthService.assertResourceAccess(authCtx, finding.assessment.auditPlan);
     }
 
+    // Canonical universal Evidence Vault association
+    if (dto.evidenceId) {
+      const canonical = await this.prisma.evidence.findFirst({
+        where: { id: dto.evidenceId, organizationId: authCtx.organizationId, deletedAt: null },
+      });
+      if (!canonical) {
+        throw new NotFoundException(`Canonical Evidence "${dto.evidenceId}" not found or out of scope`);
+      }
+
+      if (dto.checkItemId) {
+        await this.prisma.auditCheckItemEvidence.create({
+          data: {
+            organizationId: authCtx.organizationId,
+            checkItemId: dto.checkItemId,
+            evidenceId: dto.evidenceId,
+          },
+        }).catch((err) => {
+          if (err?.code !== 'P2002') throw err;
+        });
+      }
+
+      if (dto.findingId) {
+        await this.prisma.auditFindingEvidence.create({
+          data: {
+            organizationId: authCtx.organizationId,
+            findingId: dto.findingId,
+            evidenceId: dto.evidenceId,
+          },
+        }).catch((err) => {
+          if (err?.code !== 'P2002') throw err;
+        });
+      }
+    }
+
     return this.prisma.auditEvidence.create({
       data: {
         organizationId: authCtx.organizationId,
         checkItemId: dto.checkItemId || null,
         findingId: dto.findingId || null,
         fileName: dto.fileName,
-        fileUrl: dto.fileUrl,
+        fileUrl: dto.fileUrl || (dto.evidenceId ? `/evidence/${dto.evidenceId}/download` : ''),
         fileSize: dto.fileSize || null,
         mimeType: dto.mimeType || null,
         uploadedById: authCtx.userId,
@@ -1245,18 +1297,32 @@ export class BusinessAuditsService {
         description: c.description,
         result: c.result as AuditCheckResult,
         notes: c.notes,
-        evidence: c.evidence ? c.evidence.map((e: any) => ({
-          id: e.id,
-          organizationId: e.organizationId,
-          checkItemId: e.checkItemId,
-          findingId: e.findingId,
-          fileName: e.fileName,
-          fileUrl: e.fileUrl,
-          fileSize: e.fileSize,
-          mimeType: e.mimeType,
-          uploadedById: e.uploadedById,
-          createdAt: this.toIso(e.createdAt),
-        })) : [],
+        evidence: [
+          ...(c.evidence ? c.evidence.map((e: any) => ({
+            id: e.id,
+            organizationId: e.organizationId,
+            checkItemId: e.checkItemId,
+            findingId: e.findingId,
+            fileName: e.fileName,
+            fileUrl: e.fileUrl,
+            fileSize: e.fileSize,
+            mimeType: e.mimeType,
+            uploadedById: e.uploadedById,
+            createdAt: this.toIso(e.createdAt),
+          })) : []),
+          ...(c.evidenceAssociations ? c.evidenceAssociations.filter((ea: any) => ea.evidence).map((ea: any) => ({
+            id: ea.evidence.id,
+            organizationId: ea.evidence.organizationId,
+            checkItemId: c.id,
+            findingId: null,
+            fileName: ea.evidence.fileName,
+            fileUrl: `/evidence/${ea.evidence.id}/download`,
+            fileSize: ea.evidence.fileSize,
+            mimeType: ea.evidence.mimeType,
+            uploadedById: ea.evidence.uploadedById,
+            createdAt: this.toIso(ea.evidence.createdAt),
+          })) : []),
+        ],
         createdById: c.createdById,
         createdAt: this.toIso(c.createdAt),
         updatedAt: this.toIso(c.updatedAt),
@@ -1291,18 +1357,32 @@ export class BusinessAuditsService {
       createdAt: this.toIso(f.createdAt),
       updatedAt: this.toIso(f.updatedAt),
       capas: f.capas ? f.capas.map((c: any) => this.mapCapaToDto(c, userMap)) : [],
-      evidence: f.evidence ? f.evidence.map((e: any) => ({
-        id: e.id,
-        organizationId: e.organizationId,
-        checkItemId: e.checkItemId,
-        findingId: e.findingId,
-        fileName: e.fileName,
-        fileUrl: e.fileUrl,
-        fileSize: e.fileSize,
-        mimeType: e.mimeType,
-        uploadedById: e.uploadedById,
-        createdAt: this.toIso(e.createdAt),
-      })) : [],
+      evidence: [
+        ...(f.evidence ? f.evidence.map((e: any) => ({
+          id: e.id,
+          organizationId: e.organizationId,
+          checkItemId: e.checkItemId,
+          findingId: e.findingId,
+          fileName: e.fileName,
+          fileUrl: e.fileUrl,
+          fileSize: e.fileSize,
+          mimeType: e.mimeType,
+          uploadedById: e.uploadedById,
+          createdAt: this.toIso(e.createdAt),
+        })) : []),
+        ...(f.evidenceAssociations ? f.evidenceAssociations.filter((ea: any) => ea.evidence).map((ea: any) => ({
+          id: ea.evidence.id,
+          organizationId: ea.evidence.organizationId,
+          checkItemId: null,
+          findingId: f.id,
+          fileName: ea.evidence.fileName,
+          fileUrl: `/evidence/${ea.evidence.id}/download`,
+          fileSize: ea.evidence.fileSize,
+          mimeType: ea.evidence.mimeType,
+          uploadedById: ea.evidence.uploadedById,
+          createdAt: this.toIso(ea.evidence.createdAt),
+        })) : []),
+      ],
     };
   }
 

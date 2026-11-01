@@ -58,6 +58,27 @@ describe('EvidenceService - Control Evidence Association Suite', () => {
         create: jest.fn(),
         deleteMany: jest.fn(),
       },
+      auditEvidence: {
+        findFirst: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0),
+      },
+      auditCheckItem: {
+        findFirst: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      auditFinding: {
+        findFirst: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      auditCheckItemEvidence: {
+        create: jest.fn(),
+        deleteMany: jest.fn(),
+      },
+      auditFindingEvidence: {
+        create: jest.fn(),
+        deleteMany: jest.fn(),
+      },
       evidence: {
         findFirst: jest.fn(),
         findUnique: jest.fn(),
@@ -79,6 +100,7 @@ describe('EvidenceService - Control Evidence Association Suite', () => {
     resourceAuthService = {
       getScopeWhereClause: jest.fn().mockResolvedValue({ organizationId: 'org-1' }),
       authorize: jest.fn().mockResolvedValue(undefined),
+      assertResourceAccess: jest.fn().mockResolvedValue(true),
     };
 
     storageService = {
@@ -520,6 +542,169 @@ describe('EvidenceService - Control Evidence Association Suite', () => {
           }),
         }),
       );
+    });
+
+    it('returns tenant-scoped audit check items with result and audit plan details', async () => {
+      prisma.auditCheckItem.findMany.mockResolvedValue([
+        {
+          id: 'check-1',
+          title: 'Verify MFA Enforcement',
+          result: 'COMPLIANT',
+          description: 'All admins must have hardware MFA',
+          assessment: { auditPlan: { title: 'Q4 SOC 2 Audit' } },
+        },
+      ]);
+
+      const res = await service.getTargetResources(authCtx, 'AUDIT_CHECK', 'MFA');
+      expect(prisma.auditCheckItem.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            organizationId: 'org-1',
+          }),
+        }),
+      );
+      expect(res).toHaveLength(1);
+      expect(res[0]).toEqual({
+        id: 'check-1',
+        name: 'Verify MFA Enforcement',
+        code: 'COMPLIANT',
+        type: 'AUDIT_CHECK',
+        details: 'Audit: Q4 SOC 2 Audit',
+      });
+    });
+
+    it('returns tenant-scoped audit findings with severity and status', async () => {
+      prisma.auditFinding.findMany.mockResolvedValue([
+        {
+          id: 'finding-1',
+          title: 'Unpatched Jenkins Server',
+          severity: 'HIGH',
+          status: 'OPEN',
+          description: 'CVE-2024-XXXX unpatched',
+          assessment: { auditPlan: { title: 'ISO 27001 Internal' } },
+        },
+      ]);
+
+      const res = await service.getTargetResources(authCtx, 'AUDIT_FINDING');
+      expect(prisma.auditFinding.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            organizationId: 'org-1',
+          }),
+        }),
+      );
+      expect(res).toHaveLength(1);
+      expect(res[0]).toEqual({
+        id: 'finding-1',
+        name: 'Unpatched Jenkins Server',
+        code: 'HIGH / OPEN',
+        type: 'AUDIT_FINDING',
+        details: 'Audit: ISO 27001 Internal',
+      });
+    });
+  });
+
+  describe('Legacy AuditEvidence Compatibility Suite (WP1)', () => {
+    it('findOne falls back to legacy AuditEvidence when canonical Evidence record is missing', async () => {
+      prisma.evidence.findFirst.mockResolvedValue(null);
+      prisma.auditEvidence.findFirst.mockResolvedValue({
+        id: 'leg-1',
+        organizationId: 'org-1',
+        fileName: 'historical_audit_proof.pdf',
+        fileUrl: 'https://vault.omnigrc.internal/legacy/historical_audit_proof.pdf',
+        fileSize: 1048576,
+        mimeType: 'application/pdf',
+        uploadedById: 'user-legacy',
+        createdAt: new Date('2025-01-15T10:00:00Z'),
+        checkItemId: 'check-item-123',
+        checkItem: { id: 'check-item-123', title: 'Legacy Check' },
+        findingId: null,
+      });
+
+      const res = await service.findOne(authCtx, 'leg-1');
+      expect(res).toBeDefined();
+      expect(res.id).toBe('leg-1');
+      expect(res.fileName).toBe('historical_audit_proof.pdf');
+      expect(res.storageKey).toBe('https://vault.omnigrc.internal/legacy/historical_audit_proof.pdf');
+      expect(res.checksum).toBeNull();
+      expect(res.associations).toEqual([
+        { resourceType: 'AUDIT_CHECK', resourceId: 'check-item-123', resourceTitle: 'Legacy Check' },
+      ]);
+    });
+
+    it('findOne rejects legacy evidence when belonging to a foreign tenant', async () => {
+      prisma.evidence.findFirst.mockResolvedValue(null);
+      prisma.auditEvidence.findFirst.mockResolvedValue(null);
+
+      await expect(service.findOne(authCtx, 'foreign-leg-id')).rejects.toThrow(NotFoundException);
+      expect(prisma.auditEvidence.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'foreign-leg-id', organizationId: 'org-1' },
+        }),
+      );
+    });
+
+    it('attachEvidence links canonical evidence to AUDIT_CHECK within tenant', async () => {
+      prisma.evidence.findFirst.mockResolvedValue({
+        id: 'ev-can-1',
+        organizationId: 'org-1',
+        deletedAt: null,
+        controlAssociations: [],
+        riskAssociations: [],
+        policyAssociations: [],
+        auditCheckAssociations: [],
+        auditFindingAssociations: [],
+        vendorAssociations: [],
+        vulnerabilityAssociations: [],
+        incidentAssociations: [],
+        frameworkReferences: [],
+      });
+      prisma.evidence.findUnique.mockResolvedValue({
+        id: 'ev-can-1',
+        organizationId: 'org-1',
+        title: 'PenTest Report',
+        fileName: 'pentest.pdf',
+        fileSize: 500000,
+        mimeType: 'application/pdf',
+        storageKey: 'key-123',
+        status: EvidenceStatus.ACTIVE,
+        scanStatus: EvidenceScanStatus.CLEAN,
+        uploadedById: 'user-1',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        controlAssociations: [],
+        riskAssociations: [],
+        policyAssociations: [],
+        auditCheckAssociations: [],
+        auditFindingAssociations: [],
+        vendorAssociations: [],
+        vulnerabilityAssociations: [],
+        incidentAssociations: [],
+        frameworkReferences: [],
+      });
+      prisma.auditCheckItem.findFirst.mockResolvedValue({
+        id: 'ci-42',
+        organizationId: 'org-1',
+        assessment: { auditPlan: { id: 'plan-1', organizationId: 'org-1' } },
+      });
+
+      await service.attachEvidence(authCtx, 'ev-can-1', 'AUDIT_CHECK', 'ci-42');
+      expect(prisma.auditCheckItemEvidence.create).toHaveBeenCalledWith({
+        data: { organizationId: 'org-1', evidenceId: 'ev-can-1', checkItemId: 'ci-42' },
+      });
+    });
+
+    it('attachEvidence rejects linking evidence to foreign-tenant AUDIT_CHECK', async () => {
+      prisma.evidence.findFirst.mockResolvedValue({
+        id: 'ev-can-1',
+        organizationId: 'org-1',
+        deletedAt: null,
+      });
+      prisma.auditCheckItem.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.attachEvidence(authCtx, 'ev-can-1', 'AUDIT_CHECK', 'foreign-ci'),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 });

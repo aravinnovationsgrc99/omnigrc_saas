@@ -104,6 +104,7 @@ export class UpdateAuditCapaDto {
 export class CreateAuditEvidenceDto {
   checkItemId?: string;
   findingId?: string;
+  evidenceId?: string;
   fileName: string;
   fileUrl: string;
   fileSize?: number;

@@ -21,7 +21,7 @@ export class EvidenceVaultService {
 
     const items: EvidenceVaultItemDto[] = [];
 
-    // 1. Audit Evidence records
+    // 1. Audit Evidence records (legacy)
     if (!domainFilter || domainFilter === 'AUDIT') {
       const auditEvidences = await this.prisma.auditEvidence.findMany({
         where: { organizationId },
@@ -46,6 +46,62 @@ export class EvidenceVaultService {
           evidenceUrl: ev.fileUrl,
           fileSize: ev.fileSize || null,
           mimeType: ev.mimeType || null,
+          uploadedById: ev.uploadedById,
+          createdAt: ev.createdAt.toISOString(),
+          associatedReference: assocRef || null,
+        });
+      }
+    }
+
+    // 2. Canonical Evidence Vault records mapped to legacy format
+    const canonicalEvidences = await this.prisma.evidence.findMany({
+      where: { organizationId, deletedAt: null },
+      include: {
+        controlAssociations: { include: { control: true } },
+        auditCheckAssociations: { include: { checkItem: true } },
+        auditFindingAssociations: { include: { finding: true } },
+        policyAssociations: { include: { policy: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    for (const ev of canonicalEvidences) {
+      let domain: 'AUDIT' | 'CONTROL' | 'POLICY' | 'TASK' | 'INCIDENT' = 'AUDIT';
+      let assocRef = '';
+      let sourceEntityId: string | null = null;
+
+      if (ev.auditCheckAssociations && ev.auditCheckAssociations.length > 0) {
+        domain = 'AUDIT';
+        const ca = ev.auditCheckAssociations[0];
+        sourceEntityId = ca.checkItemId;
+        assocRef = `Audit Check: ${ca.checkItem?.title || ca.checkItemId}`;
+      } else if (ev.auditFindingAssociations && ev.auditFindingAssociations.length > 0) {
+        domain = 'AUDIT';
+        const fa = ev.auditFindingAssociations[0];
+        sourceEntityId = fa.findingId;
+        assocRef = `Audit Finding: ${fa.finding?.title || fa.findingId}`;
+      } else if (ev.controlAssociations && ev.controlAssociations.length > 0) {
+        domain = 'CONTROL';
+        const ctrl = ev.controlAssociations[0];
+        sourceEntityId = ctrl.controlId;
+        assocRef = `Control: ${ctrl.control?.name || ctrl.controlId}`;
+      } else if (ev.policyAssociations && ev.policyAssociations.length > 0) {
+        domain = 'POLICY';
+        const pol = ev.policyAssociations[0];
+        sourceEntityId = pol.policyId;
+        assocRef = `Policy: ${pol.policy?.title || pol.policyId}`;
+      }
+
+      if (!domainFilter || domainFilter === domain) {
+        items.push({
+          id: ev.id,
+          title: ev.title || ev.fileName,
+          description: ev.description || (ev.mimeType ? `MIME: ${ev.mimeType}` : null),
+          sourceDomain: domain,
+          sourceEntityId,
+          evidenceUrl: `/evidence/${ev.id}/download`,
+          fileSize: ev.fileSize,
+          mimeType: ev.mimeType,
           uploadedById: ev.uploadedById,
           createdAt: ev.createdAt.toISOString(),
           associatedReference: assocRef || null,

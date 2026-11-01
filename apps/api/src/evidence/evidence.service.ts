@@ -248,9 +248,68 @@ export class EvidenceService {
       } as any;
     });
 
+    // Seamless Legacy AuditEvidence Compatibility Aggregation
+    const shouldIncludeLegacy = !query.domain || query.domain === 'AUDIT';
+    let combinedItems = dtos;
+    let combinedTotal = total;
+
+    if (shouldIncludeLegacy && !query.frameworkId && !query.frameworkReferenceId && this.prisma.auditEvidence?.findMany) {
+      const legacyWhere: any = { organizationId: authCtx.organizationId };
+      if (search) {
+        legacyWhere.OR = [
+          { fileName: { contains: search, mode: 'insensitive' } },
+          { fileUrl: { contains: search, mode: 'insensitive' } },
+        ];
+      }
+
+      const [legacyList, legacyCount] = await Promise.all([
+        this.prisma.auditEvidence.findMany({
+          where: legacyWhere,
+          include: { checkItem: true, finding: true },
+          orderBy: { createdAt: 'desc' },
+          take: limit,
+        }),
+        this.prisma.auditEvidence.count({ where: legacyWhere }),
+      ]);
+
+      const legacyDtos: EvidenceDto[] = legacyList.map((leg: any) => ({
+        id: leg.id,
+        organizationId: leg.organizationId,
+        departmentId: null,
+        projectId: null,
+        title: leg.fileName,
+        description: leg.mimeType ? `Legacy Audit Evidence (${leg.mimeType})` : 'Legacy Audit Evidence',
+        evidenceType: EvidenceType.DOCUMENT,
+        fileName: leg.fileName,
+        fileSize: leg.fileSize || 0,
+        mimeType: leg.mimeType || 'application/octet-stream',
+        storageKey: leg.fileUrl,
+        checksum: null,
+        status: EvidenceStatus.ACTIVE,
+        scanStatus: EvidenceScanStatus.CLEAN,
+        uploadedById: leg.uploadedById,
+        uploaderName: 'Legacy Auditor',
+        retentionUntil: null,
+        createdAt: leg.createdAt.toISOString(),
+        updatedAt: leg.createdAt.toISOString(),
+        associations: [
+          ...(leg.checkItemId ? [{ resourceType: 'AUDIT_CHECK' as const, resourceId: leg.checkItemId, resourceTitle: leg.checkItem?.title }] : []),
+          ...(leg.findingId ? [{ resourceType: 'AUDIT_FINDING' as const, resourceId: leg.findingId, resourceTitle: leg.finding?.title }] : []),
+        ],
+        frameworkReferences: [],
+      }));
+
+      // Combine canonical and legacy items up to the requested limit
+      combinedTotal = total + legacyCount;
+      if (dtos.length < limit) {
+        const remainingCapacity = limit - dtos.length;
+        combinedItems = [...dtos, ...legacyDtos.slice(0, remainingCapacity)];
+      }
+    }
+
     return {
-      items: dtos,
-      total,
+      items: combinedItems,
+      total: combinedTotal,
       page,
       limit,
     };
@@ -396,6 +455,77 @@ export class EvidenceService {
         }));
       }
 
+      case 'AUDIT_CHECK': {
+        const where: any = { organizationId: authCtx.organizationId };
+        if (searchTerm) {
+          where.OR = [
+            { title: { contains: searchTerm, mode: 'insensitive' } },
+            { description: { contains: searchTerm, mode: 'insensitive' } },
+          ];
+        }
+        const checks = await this.prisma.auditCheckItem.findMany({
+          where,
+          select: {
+            id: true,
+            title: true,
+            result: true,
+            description: true,
+            assessment: {
+              select: {
+                auditPlan: { select: { title: true } },
+              },
+            },
+          },
+          take: 50,
+          orderBy: { createdAt: 'desc' },
+        });
+        return checks.map((c: any) => ({
+          id: c.id,
+          name: c.title,
+          code: c.result,
+          type: 'AUDIT_CHECK',
+          details: c.assessment?.auditPlan?.title
+            ? `Audit: ${c.assessment.auditPlan.title}`
+            : (c.description ? c.description.slice(0, 80) : undefined),
+        }));
+      }
+
+      case 'AUDIT_FINDING': {
+        const where: any = { organizationId: authCtx.organizationId };
+        if (searchTerm) {
+          where.OR = [
+            { title: { contains: searchTerm, mode: 'insensitive' } },
+            { description: { contains: searchTerm, mode: 'insensitive' } },
+          ];
+        }
+        const findings = await this.prisma.auditFinding.findMany({
+          where,
+          select: {
+            id: true,
+            title: true,
+            severity: true,
+            status: true,
+            description: true,
+            assessment: {
+              select: {
+                auditPlan: { select: { title: true } },
+              },
+            },
+          },
+          take: 50,
+          orderBy: { createdAt: 'desc' },
+        });
+        return findings.map((f: any) => ({
+          id: f.id,
+          name: f.title,
+          code: `${f.severity} / ${f.status}`,
+          type: 'AUDIT_FINDING',
+          details: f.assessment?.auditPlan?.title
+            ? `Audit: ${f.assessment.auditPlan.title}`
+            : (f.description ? f.description.slice(0, 80) : undefined),
+        }));
+      }
+
       default:
         throw new BadRequestException(`Unsupported resource type "${type}".`);
     }
@@ -408,7 +538,60 @@ export class EvidenceService {
     });
 
     if (!evidence) {
-      throw new NotFoundException(`Evidence record "${evidenceId}" not found.`);
+      // Legacy AuditEvidence fallback
+      const legacy = this.prisma.auditEvidence?.findFirst
+        ? await this.prisma.auditEvidence.findFirst({
+            where: { id: evidenceId, organizationId: authCtx.organizationId },
+            include: {
+              checkItem: true,
+              finding: true,
+            },
+          })
+        : null;
+
+      if (!legacy) {
+        throw new NotFoundException(`Evidence record "${evidenceId}" not found.`);
+      }
+
+      const associations: ResourceAssociationDto[] = [];
+      if (legacy.checkItemId) {
+        associations.push({
+          resourceType: 'AUDIT_CHECK',
+          resourceId: legacy.checkItemId,
+          resourceTitle: legacy.checkItem?.title || undefined,
+        });
+      }
+      if (legacy.findingId) {
+        associations.push({
+          resourceType: 'AUDIT_FINDING',
+          resourceId: legacy.findingId,
+          resourceTitle: legacy.finding?.title || undefined,
+        });
+      }
+
+      return {
+        id: legacy.id,
+        organizationId: legacy.organizationId,
+        departmentId: null,
+        projectId: null,
+        title: legacy.fileName,
+        description: legacy.mimeType ? `Legacy Audit Evidence (${legacy.mimeType})` : 'Legacy Audit Evidence',
+        evidenceType: EvidenceType.DOCUMENT,
+        fileName: legacy.fileName,
+        fileSize: legacy.fileSize || 0,
+        mimeType: legacy.mimeType || 'application/octet-stream',
+        storageKey: legacy.fileUrl,
+        checksum: null,
+        status: EvidenceStatus.ACTIVE,
+        scanStatus: EvidenceScanStatus.CLEAN,
+        uploadedById: legacy.uploadedById,
+        uploaderName: 'Legacy Auditor',
+        retentionUntil: null,
+        createdAt: legacy.createdAt.toISOString(),
+        updatedAt: legacy.createdAt.toISOString(),
+        associations,
+        frameworkReferences: [],
+      } as any;
     }
 
     return this.mapToDto(evidenceId);
@@ -425,9 +608,11 @@ export class EvidenceService {
     });
 
     if (!evidence) {
-      const legacy = await this.prisma.auditEvidence.findFirst({
-        where: { id: evidenceId, organizationId: authCtx.organizationId },
-      });
+      const legacy = this.prisma.auditEvidence?.findFirst
+        ? await this.prisma.auditEvidence.findFirst({
+            where: { id: evidenceId, organizationId: authCtx.organizationId },
+          })
+        : null;
       if (!legacy) throw new NotFoundException(`Evidence record "${evidenceId}" not found.`);
 
       res.redirect(legacy.fileUrl);
@@ -633,12 +818,28 @@ export class EvidenceService {
       case 'POLICY':
         exists = !!(await this.prisma.policy.findFirst({ where: { id: resourceId, ...scopeWhere } }));
         break;
-      case 'AUDIT_CHECK':
-        exists = !!(await this.prisma.auditCheckItem.findFirst({ where: { id: resourceId, organizationId: authCtx.organizationId } }));
+      case 'AUDIT_CHECK': {
+        const checkItem = await this.prisma.auditCheckItem.findFirst({
+          where: { id: resourceId, organizationId: authCtx.organizationId },
+          include: { assessment: { include: { auditPlan: true } } },
+        });
+        exists = !!checkItem;
+        if (checkItem?.assessment?.auditPlan && typeof this.resourceAuthService?.assertResourceAccess === 'function') {
+          await this.resourceAuthService.assertResourceAccess(authCtx, checkItem.assessment.auditPlan);
+        }
         break;
-      case 'AUDIT_FINDING':
-        exists = !!(await this.prisma.auditFinding.findFirst({ where: { id: resourceId, organizationId: authCtx.organizationId } }));
+      }
+      case 'AUDIT_FINDING': {
+        const finding = await this.prisma.auditFinding.findFirst({
+          where: { id: resourceId, organizationId: authCtx.organizationId },
+          include: { assessment: { include: { auditPlan: true } } },
+        });
+        exists = !!finding;
+        if (finding?.assessment?.auditPlan && typeof this.resourceAuthService?.assertResourceAccess === 'function') {
+          await this.resourceAuthService.assertResourceAccess(authCtx, finding.assessment.auditPlan);
+        }
         break;
+      }
       case 'VENDOR':
         exists = !!(await this.prisma.vendor.findFirst({ where: { id: resourceId, ...scopeWhere } }));
         break;
@@ -692,7 +893,10 @@ export class EvidenceService {
           await this.prisma.incidentEvidence.create({ data: { organizationId, evidenceId, incidentId: resourceId } });
           break;
       }
-    } catch {
+    } catch (err: any) {
+      if (err?.code !== 'P2002') {
+        throw err;
+      }
     }
   }
 
