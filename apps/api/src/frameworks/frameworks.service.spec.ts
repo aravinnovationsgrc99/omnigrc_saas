@@ -219,5 +219,54 @@ describe('FrameworksService', () => {
         }),
       );
     });
+
+    it('should preserve parentRefId hierarchy links when returning version clauses', async () => {
+      const fwId = 'fw-hipaa';
+      const verId = 'ver-hipaa-1996';
+      const orgId = 'org-1';
+
+      prisma.framework.findFirst.mockResolvedValue({ id: fwId, code: FrameworkCode.HIPAA });
+      prisma.frameworkVersion.findUnique.mockResolvedValue({ id: verId, frameworkId: fwId, version: '1996' });
+      prisma.frameworkReference.findMany.mockResolvedValue([
+        {
+          id: 'ref-std-1',
+          frameworkVersionId: verId,
+          parentRefId: null,
+          type: 'REQUIREMENT',
+          identifier: '164.308(a)(1)',
+          title: 'Security management process',
+          description: null,
+          normativeText: null,
+          sortOrder: 1,
+          provenance: null,
+          createdAt: new Date('2026-01-01'),
+          updatedAt: new Date('2026-01-01'),
+        },
+        {
+          id: 'ref-spec-1',
+          frameworkVersionId: verId,
+          parentRefId: 'ref-std-1',
+          type: 'IMPLEMENTATION_SPECIFICATION',
+          identifier: '164.308(a)(1)(ii)(A)',
+          title: 'Risk Analysis (R)',
+          description: null,
+          normativeText: null,
+          sortOrder: 2,
+          provenance: null,
+          createdAt: new Date('2026-01-01'),
+          updatedAt: new Date('2026-01-01'),
+        },
+      ]);
+      entitlementsService.assertEntitled.mockResolvedValue(undefined);
+
+      const result = await service.getVersionClauses(orgId, fwId, verId);
+
+      expect(result).toHaveLength(2);
+      expect(result[0].parentRefId).toBeNull();
+      expect(result[0].type).toBe('REQUIREMENT');
+      expect(result[1].parentRefId).toBe('ref-std-1');
+      expect(result[1].type).toBe('IMPLEMENTATION_SPECIFICATION');
+      expect(result[1].identifier).toBe('164.308(a)(1)(ii)(A)');
+    });
   });
 });

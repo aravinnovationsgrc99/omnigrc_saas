@@ -197,45 +197,71 @@ const CATALOG_DATASETS: FrameworkCatalogSeed[] = [
       { identifier: 'Clause 10', title: 'Improvement', type: FrameworkReferenceType.CLAUSE },
       { identifier: 'Clause 10.1', title: 'Continual improvement of AI management system', type: FrameworkReferenceType.CLAUSE, parentIdentifier: 'Clause 10' },
       { identifier: 'Clause 10.2', title: 'Nonconformity and corrective action for AI', type: FrameworkReferenceType.CLAUSE, parentIdentifier: 'Clause 10' },
-      // Annex A AI Controls (A.2.1 – A.10.2: 38 controls)
-      { identifier: 'A.2.1', title: 'AI Policy alignment with organizational objectives', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.2.2', title: 'Alignment with relevant laws, regulations and societal expectations', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.2.3', title: 'Review of AI policy', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.2.4', title: 'Communication of AI policy', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.3.1', title: 'AI roles and responsibilities assignment', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.3.2', title: 'Reporting structure for AI management', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.3.3', title: 'Competence assessment for AI personnel', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.4.1', title: 'Data resources management for AI', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.4.2', title: 'Tooling and infrastructure resources for AI', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.4.3', title: 'Human resources allocation for AI systems', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.4.4', title: 'Compute capacity and hardware resources for AI', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.4.5', title: 'Domain knowledge and expertise resources', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.4.6', title: 'Financial resources allocation for AI controls', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.4.7', title: 'External resource dependency management', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.5.1', title: 'Assessing societal and individual impacts of AI systems', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.5.2', title: 'AI system risk and hazard classification', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.5.3', title: 'Fairness, bias and non-discrimination impact assessment', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.6.1', title: 'AI system concept and feasibility evaluation', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.6.2', title: 'Requirements specification for AI systems', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.6.3', title: 'AI system design and architecture specification', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.6.4', title: 'AI model training and development controls', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.6.5', title: 'Verification and validation of AI systems', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.6.6', title: 'Deployment and commissioning of AI systems', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.6.7', title: 'Operation and monitoring of live AI models', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.6.8', title: 'AI system maintenance and continuous updates', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.6.9', title: 'Decommissioning and retirement of AI models', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.7.1', title: 'Data provenance and quality for AI training', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.7.2', title: 'Data prep, cleaning and annotation quality', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.7.3', title: 'Data privacy and PII protection in AI datasets', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.7.4', title: 'Representativeness and bias control in data', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.7.5', title: 'Data security and access controls for AI training data', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.8.1', title: 'Transparency and explainability of AI system outputs', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.8.2', title: 'User documentation and operational guidelines', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.8.3', title: 'Incident and malfunction reporting mechanisms for users', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.9.1', title: 'Responsible and acceptable use guidelines for AI systems', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.9.2', title: 'Human oversight and override capability (Human-in-the-loop)', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.10.1', title: 'Third-party AI component and model vendor risk assessment', type: FrameworkReferenceType.CONTROL },
-      { identifier: 'A.10.2', title: 'Supplier agreements and data processing terms for AI services', type: FrameworkReferenceType.CONTROL },
+      // Annex A AI Control Objectives & Controls (ISO/IEC 42001:2023 Table A.1: 9 Objectives, 38 Controls)
+      // A.2 Policies related to AI
+      { identifier: 'A.2.1', title: 'Policies related to AI (Control Objective)', type: FrameworkReferenceType.CLAUSE },
+      { identifier: 'A.2.2', title: 'AI policy', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.2.1' },
+      { identifier: 'A.2.3', title: 'Alignment with other organizational policies', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.2.1' },
+      { identifier: 'A.2.4', title: 'Review of the AI policy', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.2.1' },
+
+      // A.3 Internal organization
+      { identifier: 'A.3.1', title: 'Internal organization (Control Objective)', type: FrameworkReferenceType.CLAUSE },
+      { identifier: 'A.3.2', title: 'AI roles and responsibilities', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.3.1' },
+      { identifier: 'A.3.3', title: 'Reporting of concerns', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.3.1' },
+
+      // A.4 Resources for AI systems
+      { identifier: 'A.4.1', title: 'Resources for AI systems (Control Objective)', type: FrameworkReferenceType.CLAUSE },
+      { identifier: 'A.4.2', title: 'Resource documentation', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.4.1' },
+      { identifier: 'A.4.3', title: 'Human resources for AI systems', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.4.1' },
+      { identifier: 'A.4.4', title: 'Tooling and infrastructure resources', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.4.1' },
+      { identifier: 'A.4.5', title: 'Data resources for AI systems', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.4.1' },
+      { identifier: 'A.4.6', title: 'Financial resources allocation', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.4.1' },
+
+      // A.5 Assessing impacts of AI systems
+      { identifier: 'A.5.1', title: 'Assessing impacts of AI systems (Control Objective)', type: FrameworkReferenceType.CLAUSE },
+      { identifier: 'A.5.2', title: 'AI system impact assessment process', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.5.1' },
+      { identifier: 'A.5.3', title: 'Documentation of AI system impact assessments', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.5.1' },
+      { identifier: 'A.5.4', title: 'Assessment of societal and individual impacts', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.5.1' },
+      { identifier: 'A.5.5', title: 'Ongoing impact monitoring', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.5.1' },
+
+      // A.6 AI system life cycle
+      { identifier: 'A.6.1', title: 'AI system life cycle (Control Objective)', type: FrameworkReferenceType.CLAUSE },
+      { identifier: 'A.6.2', title: 'AI system concept and requirements definition', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.6.1' },
+      { identifier: 'A.6.3', title: 'AI system design and architecture', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.6.1' },
+      { identifier: 'A.6.4', title: 'AI system development and model training', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.6.1' },
+      { identifier: 'A.6.5', title: 'Verification and validation of AI systems', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.6.1' },
+      { identifier: 'A.6.6', title: 'Deployment and commissioning of AI systems', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.6.1' },
+      { identifier: 'A.6.7', title: 'Operation and monitoring of AI systems', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.6.1' },
+      { identifier: 'A.6.8', title: 'Technical documentation of AI systems', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.6.1' },
+      { identifier: 'A.6.9', title: 'AI system maintenance and continuous updates', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.6.1' },
+      { identifier: 'A.6.10', title: 'Decommissioning and retirement of AI systems', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.6.1' },
+
+      // A.7 Data for AI systems
+      { identifier: 'A.7.1', title: 'Data for AI systems (Control Objective)', type: FrameworkReferenceType.CLAUSE },
+      { identifier: 'A.7.2', title: 'Data acquisition and provenance', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.7.1' },
+      { identifier: 'A.7.3', title: 'Data quality and preparation', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.7.1' },
+      { identifier: 'A.7.4', title: 'Data privacy and intellectual property in AI datasets', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.7.1' },
+      { identifier: 'A.7.5', title: 'Data security and access control for AI systems', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.7.1' },
+      { identifier: 'A.7.6', title: 'Ongoing data monitoring and validation', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.7.1' },
+
+      // A.8 Information for interested parties of AI systems
+      { identifier: 'A.8.1', title: 'Information for interested parties of AI systems (Control Objective)', type: FrameworkReferenceType.CLAUSE },
+      { identifier: 'A.8.2', title: 'System documentation and operational guidelines', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.8.1' },
+      { identifier: 'A.8.3', title: 'Transparency and explainability of AI system outputs', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.8.1' },
+      { identifier: 'A.8.4', title: 'Incident and malfunction reporting mechanisms', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.8.1' },
+      { identifier: 'A.8.5', title: 'Communication with users and impacted individuals', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.8.1' },
+
+      // A.9 Use of AI systems
+      { identifier: 'A.9.1', title: 'Use of AI systems (Control Objective)', type: FrameworkReferenceType.CLAUSE },
+      { identifier: 'A.9.2', title: 'Processes for responsible use of AI systems', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.9.1' },
+      { identifier: 'A.9.3', title: 'Human oversight and intervention capabilities', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.9.1' },
+      { identifier: 'A.9.4', title: 'Operational monitoring of AI system performance', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.9.1' },
+
+      // A.10 Third-party and customer relationships
+      { identifier: 'A.10.1', title: 'Third-party and customer relationships (Control Objective)', type: FrameworkReferenceType.CLAUSE },
+      { identifier: 'A.10.2', title: 'Allocating responsibilities in third-party relationships', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.10.1' },
+      { identifier: 'A.10.3', title: 'Supplier and vendor AI risk assessment', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.10.1' },
+      { identifier: 'A.10.4', title: 'Customer agreements and data rights for AI services', type: FrameworkReferenceType.CONTROL, parentIdentifier: 'A.10.1' },
     ],
   },
   {
@@ -327,6 +353,12 @@ const CATALOG_DATASETS: FrameworkCatalogSeed[] = [
         12: 'Transparent information and communication', 13: 'Information to be provided where personal data collected', 14: 'Information to be provided where data not obtained from subject', 15: 'Right of access by data subject', 16: 'Right to rectification', 17: 'Right to erasure (right to be forgotten)', 18: 'Right to restriction of processing', 19: 'Notification obligation regarding rectification/erasure', 20: 'Right to data portability', 21: 'Right to object', 22: 'Automated individual decision-making, including profiling', 23: 'Restrictions',
         24: 'Responsibility of the controller', 25: 'Data protection by design and by default', 26: 'Joint controllers', 27: 'Representatives of controllers not established in Union', 28: 'Processor obligations and terms', 29: 'Processing under authority of controller/processor', 30: 'Records of processing activities (ROPA)', 31: 'Cooperation with supervisory authority', 32: 'Security of processing', 33: 'Notification of personal data breach to supervisory authority', 34: 'Communication of personal data breach to data subject', 35: 'Data protection impact assessment (DPIA)', 36: 'Prior consultation', 37: 'Designation of data protection officer (DPO)', 38: 'Position of data protection officer', 39: 'Tasks of data protection officer', 40: 'Codes of conduct', 41: 'Monitoring of approved codes of conduct', 42: 'Certification', 43: 'Certification bodies',
         44: 'General principle for international transfers', 45: 'Transfers on basis of adequacy decision', 46: 'Transfers subject to appropriate safeguards (SCCs)', 47: 'Binding corporate rules (BCRs)', 48: 'Transfers not authorized by Union law', 49: 'Derogations for specific situations', 50: 'International cooperation for protection of personal data',
+        51: 'Supervisory authority', 52: 'Independence', 53: 'General conditions for the members of the supervisory authority', 54: 'Rules on the establishment of the supervisory authority', 55: 'Competence', 56: 'Competence of the lead supervisory authority', 57: 'Tasks of the supervisory authority', 58: 'Powers of the supervisory authority', 59: 'Activity reports',
+        60: 'Cooperation between the lead supervisory authority and other supervisory authorities', 61: 'Mutual assistance', 62: 'Joint operations of supervisory authorities', 63: 'Consistency mechanism', 64: 'Opinion of the Board', 65: 'Dispute resolution by the Board', 66: 'Urgency procedure', 67: 'Exchange of information', 68: 'European Data Protection Board', 69: 'Independence of the Board', 70: 'Tasks of the Board', 71: 'Reports of the Board', 72: 'Procedure of the Board', 73: 'Chair of the Board', 74: 'Tasks of the Chair', 75: 'Secretariat of the Board', 76: 'Confidentiality of Board proceedings',
+        77: 'Right to lodge a complaint with a supervisory authority', 78: 'Right to an effective judicial remedy against a supervisory authority', 79: 'Right to an effective judicial remedy against a controller or processor', 80: 'Representation of data subjects', 81: 'Suspension of proceedings', 82: 'Right to compensation and liability', 83: 'General conditions for imposing administrative fines', 84: 'Penalties',
+        85: 'Processing and freedom of expression and information', 86: 'Processing and public access to official documents', 87: 'Processing of national identification number', 88: 'Processing in the context of employment', 89: 'Safeguards and derogations for archiving, scientific/historical research, or statistical purposes', 90: 'Obligations of secrecy', 91: 'Existing data protection rules of churches and religious associations',
+        92: 'Exercise of the delegation', 93: 'Committee procedure',
+        94: 'Repeal of Directive 95/46/EC', 95: 'Relationship with Directive 2002/58/EC', 96: 'Relationship with previously concluded agreements', 97: 'Commission reports', 98: 'Review of other Union legal acts on data protection', 99: 'Entry into force and application',
       };
       return {
         identifier: `Art. ${artNum}`,
@@ -366,51 +398,118 @@ const CATALOG_DATASETS: FrameworkCatalogSeed[] = [
     publisher: 'US HHS',
     effectiveDate: new Date('1996-08-21'),
     references: [
-      // Administrative Safeguards (23 specs under 164.308)
-      { identifier: '164.308(a)(1)(ii)(A)', title: 'Risk Analysis (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.308(a)(1)(ii)(B)', title: 'Risk Management (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.308(a)(1)(ii)(C)', title: 'Sanction Policy (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.308(a)(1)(ii)(D)', title: 'Information System Activity Review (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.308(a)(2)', title: 'Assigned Security Responsibility (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.308(a)(3)(ii)(A)', title: 'Authorization and/or Supervision (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.308(a)(3)(ii)(B)', title: 'Workforce Clearance Procedure (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.308(a)(3)(ii)(C)', title: 'Termination Procedures (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.308(a)(4)(ii)(A)', title: 'Isolating Health Care Clearinghouse Functions (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.308(a)(4)(ii)(B)', title: 'Access Authorization (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.308(a)(4)(ii)(C)', title: 'Access Establishment and Modification (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.308(a)(5)(ii)(A)', title: 'Security Reminders (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.308(a)(5)(ii)(B)', title: 'Protection from Malicious Software (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.308(a)(5)(ii)(C)', title: 'Log-in Monitoring (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.308(a)(5)(ii)(D)', title: 'Password Management (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.308(a)(6)(ii)', title: 'Response and Reporting (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.308(a)(7)(ii)(A)', title: 'Data Backup Plan (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.308(a)(7)(ii)(B)', title: 'Disaster Recovery Plan (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.308(a)(7)(ii)(C)', title: 'Emergency Mode Operation Plan (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.308(a)(7)(ii)(D)', title: 'Testing and Revision Procedures (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.308(a)(7)(ii)(E)', title: 'Applications and Data Criticality Analysis (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.308(a)(8)', title: 'Evaluation (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.308(b)(1)', title: 'Business Associate Contracts and Other Arrangements (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      // Physical Safeguards (10 specs under 164.310)
-      { identifier: '164.310(a)(2)(i)', title: 'Contingency Operations (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.310(a)(2)(ii)', title: 'Facility Security Plan (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.310(a)(2)(iii)', title: 'Access Control and Validation Procedures (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.310(a)(2)(iv)', title: 'Maintenance Records (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.310(b)', title: 'Workstation Use (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.310(c)', title: 'Workstation Security (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.310(d)(2)(i)', title: 'Disposal (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.310(d)(2)(ii)', title: 'Media Re-use (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.310(d)(2)(iii)', title: 'Accountability (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.310(d)(2)(iv)', title: 'Data Backup and Storage (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      // Technical Safeguards (9 specs under 164.312)
-      { identifier: '164.312(a)(2)(i)', title: 'Unique User Identification (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.312(a)(2)(ii)', title: 'Emergency Access Procedure (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.312(a)(2)(iii)', title: 'Automatic Logoff (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.312(a)(2)(iv)', title: 'Encryption and Decryption (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.312(b)', title: 'Audit Controls (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.312(c)(2)', title: 'Mechanism to Authenticate Electronic Protected Health Information (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.312(d)', title: 'Person or Entity Authentication (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.312(e)(2)(i)', title: 'Integrity Controls (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
-      { identifier: '164.312(e)(2)(ii)', title: 'Encryption (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION },
+      // 1. Administrative Safeguards (45 CFR § 164.308)
+      // Standard: Security management process
+      { identifier: '164.308(a)(1)', title: 'Security management process', type: FrameworkReferenceType.REQUIREMENT },
+      { identifier: '164.308(a)(1)(ii)(A)', title: 'Risk Analysis (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.308(a)(1)' },
+      { identifier: '164.308(a)(1)(ii)(B)', title: 'Risk Management (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.308(a)(1)' },
+      { identifier: '164.308(a)(1)(ii)(C)', title: 'Sanction Policy (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.308(a)(1)' },
+      { identifier: '164.308(a)(1)(ii)(D)', title: 'Information System Activity Review (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.308(a)(1)' },
+
+      // Standard: Assigned security responsibility (Standalone standard)
+      { identifier: '164.308(a)(2)', title: 'Assigned security responsibility', type: FrameworkReferenceType.REQUIREMENT },
+
+      // Standard: Workforce security
+      { identifier: '164.308(a)(3)', title: 'Workforce security', type: FrameworkReferenceType.REQUIREMENT },
+      { identifier: '164.308(a)(3)(ii)(A)', title: 'Authorization and/or Supervision (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.308(a)(3)' },
+      { identifier: '164.308(a)(3)(ii)(B)', title: 'Workforce Clearance Procedure (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.308(a)(3)' },
+      { identifier: '164.308(a)(3)(ii)(C)', title: 'Termination Procedures (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.308(a)(3)' },
+
+      // Standard: Information access management
+      { identifier: '164.308(a)(4)', title: 'Information access management', type: FrameworkReferenceType.REQUIREMENT },
+      { identifier: '164.308(a)(4)(ii)(A)', title: 'Isolating Health Care Clearinghouse Functions (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.308(a)(4)' },
+      { identifier: '164.308(a)(4)(ii)(B)', title: 'Access Authorization (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.308(a)(4)' },
+      { identifier: '164.308(a)(4)(ii)(C)', title: 'Access Establishment and Modification (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.308(a)(4)' },
+
+      // Standard: Security awareness and training
+      { identifier: '164.308(a)(5)', title: 'Security awareness and training', type: FrameworkReferenceType.REQUIREMENT },
+      { identifier: '164.308(a)(5)(ii)(A)', title: 'Security Reminders (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.308(a)(5)' },
+      { identifier: '164.308(a)(5)(ii)(B)', title: 'Protection from Malicious Software (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.308(a)(5)' },
+      { identifier: '164.308(a)(5)(ii)(C)', title: 'Log-in Monitoring (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.308(a)(5)' },
+      { identifier: '164.308(a)(5)(ii)(D)', title: 'Password Management (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.308(a)(5)' },
+
+      // Standard: Security incident procedures
+      { identifier: '164.308(a)(6)', title: 'Security incident procedures', type: FrameworkReferenceType.REQUIREMENT },
+      { identifier: '164.308(a)(6)(ii)', title: 'Response and Reporting (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.308(a)(6)' },
+
+      // Standard: Contingency plan
+      { identifier: '164.308(a)(7)', title: 'Contingency plan', type: FrameworkReferenceType.REQUIREMENT },
+      { identifier: '164.308(a)(7)(ii)(A)', title: 'Data Backup Plan (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.308(a)(7)' },
+      { identifier: '164.308(a)(7)(ii)(B)', title: 'Disaster Recovery Plan (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.308(a)(7)' },
+      { identifier: '164.308(a)(7)(ii)(C)', title: 'Emergency Mode Operation Plan (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.308(a)(7)' },
+      { identifier: '164.308(a)(7)(ii)(D)', title: 'Testing and Revision Procedures (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.308(a)(7)' },
+      { identifier: '164.308(a)(7)(ii)(E)', title: 'Applications and Data Criticality Analysis (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.308(a)(7)' },
+
+      // Standard: Evaluation (Standalone standard)
+      { identifier: '164.308(a)(8)', title: 'Evaluation', type: FrameworkReferenceType.REQUIREMENT },
+
+      // Standard: Business associate contracts and other arrangements
+      { identifier: '164.308(b)(1)', title: 'Business associate contracts and other arrangements', type: FrameworkReferenceType.REQUIREMENT },
+      { identifier: '164.308(b)(4)', title: 'Written Contract or Other Arrangement (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.308(b)(1)' },
+
+      // 2. Physical Safeguards (45 CFR § 164.310)
+      // Standard: Facility access controls
+      { identifier: '164.310(a)(1)', title: 'Facility access controls', type: FrameworkReferenceType.REQUIREMENT },
+      { identifier: '164.310(a)(2)(i)', title: 'Contingency Operations (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.310(a)(1)' },
+      { identifier: '164.310(a)(2)(ii)', title: 'Facility Security Plan (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.310(a)(1)' },
+      { identifier: '164.310(a)(2)(iii)', title: 'Access Control and Validation Procedures (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.310(a)(1)' },
+      { identifier: '164.310(a)(2)(iv)', title: 'Maintenance Records (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.310(a)(1)' },
+
+      // Standard: Workstation use (Standalone standard)
+      { identifier: '164.310(b)', title: 'Workstation use', type: FrameworkReferenceType.REQUIREMENT },
+
+      // Standard: Workstation security (Standalone standard)
+      { identifier: '164.310(c)', title: 'Workstation security', type: FrameworkReferenceType.REQUIREMENT },
+
+      // Standard: Device and media controls
+      { identifier: '164.310(d)(1)', title: 'Device and media controls', type: FrameworkReferenceType.REQUIREMENT },
+      { identifier: '164.310(d)(2)(i)', title: 'Disposal (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.310(d)(1)' },
+      { identifier: '164.310(d)(2)(ii)', title: 'Media Re-use (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.310(d)(1)' },
+      { identifier: '164.310(d)(2)(iii)', title: 'Accountability (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.310(d)(1)' },
+      { identifier: '164.310(d)(2)(iv)', title: 'Data Backup and Storage (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.310(d)(1)' },
+
+      // 3. Technical Safeguards (45 CFR § 164.312)
+      // Standard: Access control
+      { identifier: '164.312(a)(1)', title: 'Access control', type: FrameworkReferenceType.REQUIREMENT },
+      { identifier: '164.312(a)(2)(i)', title: 'Unique User Identification (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.312(a)(1)' },
+      { identifier: '164.312(a)(2)(ii)', title: 'Emergency Access Procedure (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.312(a)(1)' },
+      { identifier: '164.312(a)(2)(iii)', title: 'Automatic Logoff (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.312(a)(1)' },
+      { identifier: '164.312(a)(2)(iv)', title: 'Encryption and Decryption (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.312(a)(1)' },
+
+      // Standard: Audit controls (Standalone standard)
+      { identifier: '164.312(b)', title: 'Audit controls', type: FrameworkReferenceType.REQUIREMENT },
+
+      // Standard: Integrity
+      { identifier: '164.312(c)(1)', title: 'Integrity', type: FrameworkReferenceType.REQUIREMENT },
+      { identifier: '164.312(c)(2)', title: 'Mechanism to Authenticate Electronic Protected Health Information (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.312(c)(1)' },
+
+      // Standard: Person or entity authentication (Standalone standard)
+      { identifier: '164.312(d)', title: 'Person or entity authentication', type: FrameworkReferenceType.REQUIREMENT },
+
+      // Standard: Transmission security
+      { identifier: '164.312(e)(1)', title: 'Transmission security', type: FrameworkReferenceType.REQUIREMENT },
+      { identifier: '164.312(e)(2)(i)', title: 'Integrity Controls (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.312(e)(1)' },
+      { identifier: '164.312(e)(2)(ii)', title: 'Encryption (A)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.312(e)(1)' },
+
+      // 4. Organizational Requirements (45 CFR § 164.314)
+      // Standard: Business associate contracts
+      { identifier: '164.314(a)(1)', title: 'Business associate contracts', type: FrameworkReferenceType.REQUIREMENT },
+      { identifier: '164.314(a)(2)(i)', title: 'Business Associate Contracts Specifications (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.314(a)(1)' },
+      { identifier: '164.314(a)(2)(ii)', title: 'Other Arrangements Specifications (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.314(a)(1)' },
+
+      // Standard: Requirements for group health plans
+      { identifier: '164.314(b)(1)', title: 'Requirements for group health plans', type: FrameworkReferenceType.REQUIREMENT },
+      { identifier: '164.314(b)(2)', title: 'Plan Documents Implementation Specifications (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.314(b)(1)' },
+
+      // 5. Policies and Procedures and Documentation Requirements (45 CFR § 164.316)
+      // Standard: Policies and procedures (Standalone standard)
+      { identifier: '164.316(a)', title: 'Policies and procedures', type: FrameworkReferenceType.REQUIREMENT },
+
+      // Standard: Documentation
+      { identifier: '164.316(b)(1)', title: 'Documentation', type: FrameworkReferenceType.REQUIREMENT },
+      { identifier: '164.316(b)(2)(i)', title: 'Time Limit (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.316(b)(1)' },
+      { identifier: '164.316(b)(2)(ii)', title: 'Availability (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.316(b)(1)' },
+      { identifier: '164.316(b)(2)(iii)', title: 'Updates (R)', type: FrameworkReferenceType.IMPLEMENTATION_SPECIFICATION, parentIdentifier: '164.316(b)(1)' },
     ],
   },
 ];
@@ -462,10 +561,13 @@ async function ingestCatalog() {
 
     console.log(`[VERSION] Framework ${catalog.code} Version ${catalog.version} (${versionRecord.id}) ready.`);
 
-    // 2. Upsert FrameworkReference items using natural composite key [frameworkVersionId, identifier]
+    // 2. Pass 1: Upsert FrameworkReference items using natural composite key [frameworkVersionId, identifier]
+    const refMap = new Map<string, string>(); // identifier -> referenceId
     let refCount = 0;
+    let sortIdx = 1;
+
     for (const refItem of catalog.references) {
-      await prisma.frameworkReference.upsert({
+      const record = await prisma.frameworkReference.upsert({
         where: {
           frameworkVersionId_identifier: {
             frameworkVersionId: versionRecord.id,
@@ -476,6 +578,7 @@ async function ingestCatalog() {
           title: refItem.title,
           description: refItem.description || refItem.title,
           type: refItem.type,
+          sortOrder: sortIdx++,
         },
         create: {
           frameworkVersionId: versionRecord.id,
@@ -483,17 +586,48 @@ async function ingestCatalog() {
           title: refItem.title,
           description: refItem.description || refItem.title,
           type: refItem.type,
+          sortOrder: sortIdx++,
           provenance: {
             source: 'Deterministic Framework Catalog Ingestion',
             ingestedAt: new Date().toISOString(),
           },
         },
       });
+      refMap.set(refItem.identifier, record.id);
       refCount++;
     }
 
+    // 3. Pass 2: Resolve and link parent-child hierarchy safely and idempotently
+    let linkedCount = 0;
+    for (const refItem of catalog.references) {
+      const currentId = refMap.get(refItem.identifier);
+      if (!currentId) continue;
+
+      if (refItem.parentIdentifier) {
+        const parentId = refMap.get(refItem.parentIdentifier);
+        if (parentId) {
+          await prisma.frameworkReference.update({
+            where: { id: currentId },
+            data: { parentRefId: parentId },
+          });
+          linkedCount++;
+        } else {
+          console.warn(
+            `[HIERARCHY WARNING] Parent '${refItem.parentIdentifier}' not found for '${refItem.identifier}' in ${catalog.code} v${catalog.version}.`
+          );
+        }
+      } else {
+        await prisma.frameworkReference.update({
+          where: { id: currentId },
+          data: { parentRefId: null },
+        });
+      }
+    }
+
     totalIngestedRefs += refCount;
-    console.log(`[REFERENCES] Ingested ${refCount} verified references for ${catalog.code} v${catalog.version}.`);
+    console.log(
+      `[REFERENCES] Ingested ${refCount} references (${linkedCount} hierarchy links) for ${catalog.code} v${catalog.version}.`
+    );
   }
 
   // Idempotency Validation
