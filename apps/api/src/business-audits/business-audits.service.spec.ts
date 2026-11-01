@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ResourceAuthorizationService } from '../auth/resource-authorization.service';
-import { NotFoundException, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { NotFoundException, BadRequestException, ConflictException, ForbiddenException, InternalServerErrorException } from '@nestjs/common';
 import {
   ProductAccessStatus,
   AuditPlanStatus,
@@ -160,7 +160,7 @@ describe('BusinessAuditsService', () => {
         }),
       },
       $transaction: jest.fn((cb) => cb(prisma)),
-      $queryRaw: jest.fn().mockResolvedValue([]),
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 'finding-1' }]),
     };
 
     auditLogsService = {
@@ -3087,6 +3087,134 @@ describe('BusinessAuditsService', () => {
           });
 
           // Finding must NOT be updated or advanced!
+          expect(findingUpdateSpy).not.toHaveBeenCalled();
+        });
+
+        it('lock acquisition failure (deadlock/timeout) aborts transaction and commits no state changes', async () => {
+          const capa1 = {
+            id: 'capa-lock-err',
+            findingId: 'finding-lock-err',
+            organizationId: 'org-1',
+            status: CapaStatus.OPEN,
+            version: 1,
+            ownerId: 'owner-1',
+            updatedAt: new Date(),
+            finding: {
+              id: 'finding-lock-err',
+              status: FindingStatus.IN_REMEDIATION,
+              assessment: { auditPlan: { id: 'p-1', organizationId: 'org-1' } },
+            },
+          };
+
+          prisma.auditCapa.findFirst.mockResolvedValueOnce(capa1);
+          prisma.auditCapa.updateMany.mockResolvedValueOnce({ count: 1 });
+          prisma.auditCapa.update.mockResolvedValueOnce({
+            ...capa1,
+            status: CapaStatus.COMPLETED,
+            version: 2,
+          });
+
+          // Row lock query fails with database deadlock/timeout error
+          prisma.$queryRaw.mockRejectedValueOnce(new Error('canceling statement due to lock timeout / deadlock detected'));
+
+          const findingUpdateSpy = jest.spyOn(prisma.auditFinding, 'update');
+          findingUpdateSpy.mockClear();
+          const historyCreateSpy = jest.spyOn(prisma.auditFindingVerificationHistory, 'create');
+          historyCreateSpy.mockClear();
+
+          await expect(
+            service.updateCapa(authCtx, 'capa-lock-err', {
+              status: CapaStatus.COMPLETED,
+              expectedVersion: 1,
+            }),
+          ).rejects.toThrow('canceling statement due to lock timeout / deadlock detected');
+
+          // Ensure no finding status or history mutation occurred
+          expect(findingUpdateSpy).not.toHaveBeenCalled();
+          expect(historyCreateSpy).not.toHaveBeenCalled();
+        });
+
+        it('missing $queryRaw client method aborts with InternalServerErrorException rather than silently continuing', async () => {
+          const capa1 = {
+            id: 'capa-no-raw',
+            findingId: 'finding-no-raw',
+            organizationId: 'org-1',
+            status: CapaStatus.OPEN,
+            version: 1,
+            ownerId: 'owner-1',
+            updatedAt: new Date(),
+            finding: {
+              id: 'finding-no-raw',
+              status: FindingStatus.IN_REMEDIATION,
+              assessment: { auditPlan: { id: 'p-1', organizationId: 'org-1' } },
+            },
+          };
+
+          prisma.auditCapa.findFirst.mockResolvedValueOnce(capa1);
+          prisma.auditCapa.updateMany.mockResolvedValueOnce({ count: 1 });
+          prisma.auditCapa.update.mockResolvedValueOnce({
+            ...capa1,
+            status: CapaStatus.COMPLETED,
+            version: 2,
+          });
+
+          const originalQueryRaw = prisma.$queryRaw;
+          delete prisma.$queryRaw;
+
+          const findingUpdateSpy = jest.spyOn(prisma.auditFinding, 'update');
+          findingUpdateSpy.mockClear();
+
+          try {
+            await expect(
+              service.updateCapa(authCtx, 'capa-no-raw', {
+                status: CapaStatus.COMPLETED,
+                expectedVersion: 1,
+              }),
+            ).rejects.toBeInstanceOf(InternalServerErrorException);
+
+            expect(findingUpdateSpy).not.toHaveBeenCalled();
+          } finally {
+            prisma.$queryRaw = originalQueryRaw;
+          }
+        });
+
+        it('zero-row lock acquisition (finding not found or foreign tenant) aborts with NotFoundException', async () => {
+          const capa1 = {
+            id: 'capa-foreign-finding',
+            findingId: 'finding-foreign',
+            organizationId: 'org-1',
+            status: CapaStatus.OPEN,
+            version: 1,
+            ownerId: 'owner-1',
+            updatedAt: new Date(),
+            finding: {
+              id: 'finding-foreign',
+              status: FindingStatus.IN_REMEDIATION,
+              assessment: { auditPlan: { id: 'p-1', organizationId: 'org-1' } },
+            },
+          };
+
+          prisma.auditCapa.findFirst.mockResolvedValueOnce(capa1);
+          prisma.auditCapa.updateMany.mockResolvedValueOnce({ count: 1 });
+          prisma.auditCapa.update.mockResolvedValueOnce({
+            ...capa1,
+            status: CapaStatus.COMPLETED,
+            version: 2,
+          });
+
+          // Lock query returns 0 rows (row does not exist or belongs to another tenant)
+          prisma.$queryRaw.mockResolvedValueOnce([]);
+
+          const findingUpdateSpy = jest.spyOn(prisma.auditFinding, 'update');
+          findingUpdateSpy.mockClear();
+
+          await expect(
+            service.updateCapa(authCtx, 'capa-foreign-finding', {
+              status: CapaStatus.COMPLETED,
+              expectedVersion: 1,
+            }),
+          ).rejects.toBeInstanceOf(NotFoundException);
+
           expect(findingUpdateSpy).not.toHaveBeenCalled();
         });
       });

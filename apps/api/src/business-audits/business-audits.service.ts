@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, ConflictException, Optional } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, ConflictException, InternalServerErrorException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -1907,12 +1907,19 @@ export class BusinessAuditsService {
       });
 
       if (dto.status !== undefined) {
-        if (typeof tx.$queryRaw === 'function') {
-          try {
-            await tx.$queryRaw`SELECT id FROM audit_findings WHERE id = ${capa.findingId} AND "organizationId" = ${authCtx.organizationId} FOR UPDATE`;
-          } catch (lockErr) {
-            // Non-fatal if test harness mocks do not support raw SQL
-          }
+        if (typeof tx.$queryRaw !== 'function') {
+          throw new InternalServerErrorException(
+            'Database transaction client does not support raw SQL queries for row locking. Parent finding synchronization aborted.',
+          );
+        }
+
+        // Acquire exclusive row lock on parent finding scoped to organization
+        const lockedRows: any = await tx.$queryRaw`SELECT id FROM audit_findings WHERE id = ${capa.findingId} AND "organizationId" = ${authCtx.organizationId} FOR UPDATE`;
+
+        if (!Array.isArray(lockedRows) || lockedRows.length === 0) {
+          throw new NotFoundException(
+            `Parent Audit Finding "${capa.findingId}" not found or does not belong to organization "${authCtx.organizationId}".`,
+          );
         }
 
         const lockedFinding = await tx.auditFinding.findFirst({
