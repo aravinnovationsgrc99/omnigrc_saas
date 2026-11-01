@@ -6,6 +6,8 @@ import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resou
 import { FrameworkEntitlementsService } from '../frameworks/framework-entitlements.service';
 import { TenantContext } from '../tenant/tenant.context';
 import {
+  ProductAccessStatus,
+  Role,
   AuditPlanStatus,
   AuditScheduleStatus,
   AuditAssessmentStatus,
@@ -28,6 +30,8 @@ import {
   VulnerabilitySeverity,
 } from '@omnigrc/shared';
 import {
+  ReopenAuditFindingDto,
+  VerifyAuditFindingDto,
   CreateAuditPlanDto,
   UpdateAuditPlanDto,
   CreateAuditScheduleDto,
@@ -41,8 +45,125 @@ import {
 } from './dto/business-audits.dto';
 import { CreateControlTestDto, ControlTestQueryDto } from '../controls/dto/controls.dto';
 
+export type AuditResponsibility =
+  | 'PLAN_OWNER'
+  | 'LEAD_AUDITOR'
+  | 'ASSESSMENT_AUDITOR'
+  | 'FINDING_OWNER'
+  | 'CAPA_OWNER'
+  | 'VERIFIER';
+
 @Injectable()
 export class BusinessAuditsService {
+  private static readonly VALID_FINDING_TRANSITIONS: Record<FindingStatus, FindingStatus[]> = {
+    [FindingStatus.OPEN]: [FindingStatus.IN_REMEDIATION],
+    [FindingStatus.IN_REMEDIATION]: [FindingStatus.READY_FOR_VERIFICATION],
+    [FindingStatus.READY_FOR_VERIFICATION]: [FindingStatus.VERIFIED, FindingStatus.CLOSED, FindingStatus.IN_REMEDIATION],
+    [FindingStatus.VERIFIED]: [FindingStatus.CLOSED, FindingStatus.IN_REMEDIATION],
+    [FindingStatus.CLOSED]: [FindingStatus.IN_REMEDIATION],
+  };
+
+  private checkOptimisticLock(entityName: string, actualUpdatedAt: Date, expectedUpdatedAt?: string): void {
+    if (!expectedUpdatedAt) return;
+    const expectedTime = new Date(expectedUpdatedAt).getTime();
+    const actualTime = actualUpdatedAt.getTime();
+    if (isNaN(expectedTime) || actualTime !== expectedTime) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: `${entityName} has been modified concurrently. Please refresh the latest state before retrying.`,
+        code: 'STALE_RECORD_CONFLICT',
+        serverUpdatedAt: actualUpdatedAt.toISOString(),
+        expectedUpdatedAt,
+      });
+    }
+  }
+
+  private assertRoleEligible(
+    userId: string,
+    role: Role | string,
+    responsibility: AuditResponsibility,
+  ): void {
+    const ALLOWED: Record<AuditResponsibility, (Role | string)[]> = {
+      PLAN_OWNER: [Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST],
+      LEAD_AUDITOR: [Role.ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR, Role.MSSP_ADMIN, Role.MSSP_ANALYST],
+      ASSESSMENT_AUDITOR: [Role.ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR, Role.MSSP_ADMIN, Role.MSSP_ANALYST],
+      FINDING_OWNER: [Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST],
+      CAPA_OWNER: [Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST],
+      VERIFIER: [Role.ADMIN, Role.MSSP_ADMIN],
+    };
+
+    const allowedRoles = ALLOWED[responsibility] || [];
+    if (!allowedRoles.includes(role as Role)) {
+      throw new BadRequestException(
+        `User "${userId}" with role "${role}" is not eligible for assignment as ${responsibility}. Allowed roles: ${allowedRoles.join(', ')}.`,
+      );
+    }
+  }
+
+  private async assertEligibleUser(
+    organizationId: string,
+    userIdOrMembershipId: string,
+    responsibility: AuditResponsibility,
+  ): Promise<string> {
+    if (!userIdOrMembershipId || typeof userIdOrMembershipId !== 'string' || !userIdOrMembershipId.trim()) {
+      throw new BadRequestException(`A valid user ID is required for responsibility "${responsibility}".`);
+    }
+    const rawId = userIdOrMembershipId.trim();
+
+    // 1. Check organization membership if available
+    let membership: any = null;
+    if (this.prisma.organizationMembership) {
+      try {
+        membership = await this.prisma.organizationMembership.findFirst({
+          where: {
+            organizationId,
+            OR: [{ userId: rawId }, { id: rawId }],
+          },
+          include: { user: true },
+        });
+      } catch {
+        membership = null;
+      }
+    }
+
+    if (membership) {
+      if (membership.status !== 'ACTIVE' && membership.status !== ProductAccessStatus.ACTIVE) {
+        throw new BadRequestException(
+          `User "${membership.userId}" is not active in this organization (membership status: ${membership.status}).`,
+        );
+      }
+      const role = membership.role || membership.user?.role || Role.ANALYST;
+      this.assertRoleEligible(membership.userId, role, responsibility);
+      return membership.userId;
+    }
+
+    // 2. Fallback to User table (e.g. implicit home organization member)
+    let user: any = null;
+    if (this.prisma.user) {
+      try {
+        user = await this.prisma.user.findFirst({
+          where: { id: rawId },
+        });
+      } catch {
+        user = null;
+      }
+    }
+
+    if (user) {
+      if (user.organizationId !== organizationId) {
+        throw new BadRequestException(
+          `User "${rawId}" belongs to another organization tenant (cross-tenant assignment prohibited).`,
+        );
+      }
+      const role = user.role || Role.ANALYST;
+      this.assertRoleEligible(user.id, role, responsibility);
+      return user.id;
+    }
+
+    // 3. Neither membership nor user record found
+    throw new BadRequestException(`User "${rawId}" was not found in this organization tenant.`);
+  }
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
@@ -163,6 +284,12 @@ export class BusinessAuditsService {
       dto.projectId,
     );
 
+    const resolvedOwnerId = await this.assertEligibleUser(
+      authCtx.organizationId,
+      dto.ownerId,
+      'PLAN_OWNER',
+    );
+
     const fwScope = await this.validateFrameworkScope(
       authCtx.organizationId,
       dto.frameworkId,
@@ -183,7 +310,7 @@ export class BusinessAuditsService {
           frameworkCode: fwScope.frameworkCode,
           frameworkId: fwScope.frameworkId,
           frameworkVersionId: fwScope.frameworkVersionId,
-          ownerId: dto.ownerId,
+          ownerId: resolvedOwnerId,
           plannedStartDate: dto.plannedStartDate ? new Date(dto.plannedStartDate) : null,
           plannedEndDate: dto.plannedEndDate ? new Date(dto.plannedEndDate) : null,
           status: AuditPlanStatus.DRAFT,
@@ -394,6 +521,19 @@ export class BusinessAuditsService {
 
     if (!existing) throw new NotFoundException(`Audit Plan with ID "${id}" not found`);
 
+    if (dto.expectedUpdatedAt) {
+      this.checkOptimisticLock('AuditPlan', existing.updatedAt, dto.expectedUpdatedAt);
+    }
+
+    let resolvedOwnerId: string | undefined;
+    if (dto.ownerId) {
+      resolvedOwnerId = await this.assertEligibleUser(
+        authCtx.organizationId,
+        dto.ownerId,
+        'PLAN_OWNER',
+      );
+    }
+
     if (dto.departmentId !== undefined || dto.projectId !== undefined) {
       const targetDeptId = dto.departmentId !== undefined ? dto.departmentId : existing.departmentId || undefined;
       const targetProjId = dto.projectId !== undefined ? dto.projectId : existing.projectId || undefined;
@@ -534,7 +674,7 @@ export class BusinessAuditsService {
           ...(dto.title && { title: dto.title }),
           ...(dto.objective !== undefined && { objective: dto.objective }),
           ...(dto.scope !== undefined && { scope: dto.scope }),
-          ...(dto.ownerId && { ownerId: dto.ownerId }),
+          ...(resolvedOwnerId && { ownerId: resolvedOwnerId }),
           ...(dto.plannedStartDate !== undefined && { plannedStartDate: dto.plannedStartDate ? new Date(dto.plannedStartDate) : null }),
           ...(dto.plannedEndDate !== undefined && { plannedEndDate: dto.plannedEndDate ? new Date(dto.plannedEndDate) : null }),
           ...(dto.status && { status: dto.status }),
@@ -677,13 +817,19 @@ export class BusinessAuditsService {
   async createSchedule(authCtx: ResourceAuthContext, dto: CreateAuditScheduleDto): Promise<AuditScheduleDto> {
     const plan = await this.findOnePlan(authCtx, dto.auditPlanId);
 
+    const resolvedLeadAuditorId = await this.assertEligibleUser(
+      authCtx.organizationId,
+      dto.leadAuditorId,
+      'LEAD_AUDITOR',
+    );
+
     const schedule = await this.prisma.auditSchedule.create({
       data: {
         organizationId: authCtx.organizationId,
         auditPlanId: dto.auditPlanId,
         scheduledStartDate: new Date(dto.scheduledStartDate),
         scheduledEndDate: new Date(dto.scheduledEndDate),
-        leadAuditorId: dto.leadAuditorId,
+        leadAuditorId: resolvedLeadAuditorId,
         recurrence: dto.recurrence || null,
         status: AuditScheduleStatus.SCHEDULED,
       },
@@ -719,6 +865,12 @@ export class BusinessAuditsService {
   async createAssessment(authCtx: ResourceAuthContext, dto: CreateAuditAssessmentDto): Promise<AuditAssessmentDto> {
     const plan = await this.findOnePlan(authCtx, dto.auditPlanId);
 
+    const resolvedAuditorId = await this.assertEligibleUser(
+      authCtx.organizationId,
+      dto.auditorId,
+      'ASSESSMENT_AUDITOR',
+    );
+
     const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
 
     const controls = await this.prisma.control.findMany({
@@ -732,7 +884,7 @@ export class BusinessAuditsService {
           organizationId: authCtx.organizationId,
           auditPlanId: dto.auditPlanId,
           scheduleId: dto.scheduleId || null,
-          auditorId: dto.auditorId,
+          auditorId: resolvedAuditorId,
           summary: dto.summary,
           status: AuditAssessmentStatus.IN_PROGRESS,
           score: 0,
@@ -836,6 +988,23 @@ export class BusinessAuditsService {
 
     await this.resourceAuthService.assertResourceAccess(authCtx, assessment.auditPlan);
 
+    const resolvedOwnerId = await this.assertEligibleUser(
+      authCtx.organizationId,
+      dto.ownerId,
+      'FINDING_OWNER',
+    );
+
+    let remediationPlan = dto.remediationPlan || null;
+    if (dto.capaRequired === false) {
+      if (!dto.capaRationale || !dto.capaRationale.trim()) {
+        throw new BadRequestException(
+          'A documented rationale is required when CAPA is marked as not required (capaRequired: false).',
+        );
+      }
+      const tag = `[NO_CAPA_REQUIRED: ${dto.capaRationale.trim()}]`;
+      remediationPlan = remediationPlan ? `${tag} ${remediationPlan}` : tag;
+    }
+
     const finding = await this.prisma.auditFinding.create({
       data: {
         organizationId: authCtx.organizationId,
@@ -845,11 +1014,16 @@ export class BusinessAuditsService {
         description: dto.description,
         severity: dto.severity,
         status: FindingStatus.OPEN,
-        ownerId: dto.ownerId,
+        ownerId: resolvedOwnerId,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
         riskId: dto.riskId || null,
-        remediationPlan: dto.remediationPlan,
+        remediationPlan,
         createdById: authCtx.userId,
+      },
+      include: {
+        capas: true,
+        evidence: true,
+        evidenceAssociations: { include: { evidence: true } },
       },
     });
 
@@ -873,15 +1047,91 @@ export class BusinessAuditsService {
   ): Promise<AuditFindingDto> {
     const finding = await this.prisma.auditFinding.findFirst({
       where: { id, organizationId: authCtx.organizationId },
-      include: { assessment: { include: { auditPlan: true } } },
+      include: {
+        assessment: { include: { auditPlan: true } },
+        capas: true,
+        evidence: true,
+        evidenceAssociations: { include: { evidence: true } },
+      },
     });
 
     if (!finding) throw new NotFoundException(`Audit Finding "${id}" not found`);
 
     await this.resourceAuthService.assertResourceAccess(authCtx, finding.assessment.auditPlan);
 
+    if (dto.expectedUpdatedAt) {
+      this.checkOptimisticLock('AuditFinding', finding.updatedAt, dto.expectedUpdatedAt);
+    }
+
+    if (finding.status === FindingStatus.VERIFIED || finding.status === FindingStatus.CLOSED) {
+      throw new BadRequestException(
+        `Findings in ${finding.status} status can only be modified through controlled reopening.`,
+      );
+    }
+
     if (dto.status === FindingStatus.VERIFIED || dto.status === FindingStatus.CLOSED) {
       throw new BadRequestException('Formal verification and closure must be performed via the dedicated verify endpoint.');
+    }
+
+    let resolvedOwnerId: string | undefined;
+    if (dto.ownerId) {
+      resolvedOwnerId = await this.assertEligibleUser(
+        authCtx.organizationId,
+        dto.ownerId,
+        'FINDING_OWNER',
+      );
+    }
+
+    if (dto.status && dto.status !== finding.status) {
+      const allowedNext = BusinessAuditsService.VALID_FINDING_TRANSITIONS[finding.status as FindingStatus] || [];
+      if (!allowedNext.includes(dto.status)) {
+        throw new BadRequestException(
+          `Invalid finding status transition from "${finding.status}" to "${dto.status}". Findings must follow the lifecycle: OPEN -> IN_REMEDIATION -> READY_FOR_VERIFICATION -> VERIFIED -> CLOSED.`,
+        );
+      }
+
+      if (dto.status === FindingStatus.READY_FOR_VERIFICATION) {
+        const capas = await this.prisma.auditCapa.findMany({
+          where: { findingId: id },
+        });
+        if (capas.length > 0) {
+          const incomplete = capas.filter((c: any) => c.status !== CapaStatus.COMPLETED);
+          if (incomplete.length > 0) {
+            throw new BadRequestException(
+              `Cannot advance finding to READY_FOR_VERIFICATION: ${incomplete.length} CAPA item(s) are still incomplete. All CAPAs must be COMPLETED before verification.`,
+            );
+          }
+        } else {
+          const effectivePlan = dto.remediationPlan !== undefined ? dto.remediationPlan : finding.remediationPlan;
+          const isCapaExplicitlyNotRequired =
+            dto.capaRequired === false ||
+            Boolean(effectivePlan && effectivePlan.includes('[NO_CAPA_REQUIRED:'));
+          if (!isCapaExplicitlyNotRequired) {
+            throw new BadRequestException(
+              'Cannot advance finding to READY_FOR_VERIFICATION without either completing associated CAPA actions or providing a documented non-applicability rationale.',
+            );
+          }
+        }
+      }
+    }
+
+    let updatedRemediationPlan = dto.remediationPlan !== undefined ? dto.remediationPlan : finding.remediationPlan;
+    if (dto.capaRequired === false) {
+      const rationale = dto.capaRationale?.trim();
+      if (!rationale && (!updatedRemediationPlan || !updatedRemediationPlan.includes('[NO_CAPA_REQUIRED:'))) {
+        throw new BadRequestException(
+          'A documented rationale is required when CAPA is marked as not required (capaRequired: false).',
+        );
+      }
+      if (rationale) {
+        const cleaned = (updatedRemediationPlan || '').replace(/\[NO_CAPA_REQUIRED:[^\]]*\]\s*/g, '').trim();
+        const tag = `[NO_CAPA_REQUIRED: ${rationale}]`;
+        updatedRemediationPlan = cleaned ? `${tag} ${cleaned}` : tag;
+      }
+    } else if (dto.capaRequired === true) {
+      if (updatedRemediationPlan) {
+        updatedRemediationPlan = updatedRemediationPlan.replace(/\[NO_CAPA_REQUIRED:[^\]]*\]\s*/g, '').trim() || null;
+      }
     }
 
     const updated = await this.prisma.auditFinding.update({
@@ -891,10 +1141,15 @@ export class BusinessAuditsService {
         ...(dto.description !== undefined && { description: dto.description }),
         ...(dto.severity && { severity: dto.severity }),
         ...(dto.status && { status: dto.status }),
-        ...(dto.ownerId && { ownerId: dto.ownerId }),
+        ...(resolvedOwnerId && { ownerId: resolvedOwnerId }),
         ...(dto.dueDate !== undefined && { dueDate: dto.dueDate ? new Date(dto.dueDate) : null }),
-        ...(dto.remediationPlan !== undefined && { remediationPlan: dto.remediationPlan }),
+        ...(updatedRemediationPlan !== undefined && { remediationPlan: updatedRemediationPlan }),
         ...(dto.verificationNotes !== undefined && { verificationNotes: dto.verificationNotes }),
+      },
+      include: {
+        capas: true,
+        evidence: true,
+        evidenceAssociations: { include: { evidence: true } },
       },
     });
 
@@ -914,39 +1169,266 @@ export class BusinessAuditsService {
   async verifyFinding(
     authCtx: ResourceAuthContext,
     id: string,
-    status: FindingStatus.VERIFIED | FindingStatus.CLOSED,
-    verificationNotes?: string,
+    statusOrDto: FindingStatus.VERIFIED | FindingStatus.CLOSED | FindingStatus.IN_REMEDIATION | VerifyAuditFindingDto,
+    legacyNotes?: string,
   ): Promise<AuditFindingDto> {
+    let targetStatus: FindingStatus;
+    let verificationNotes: string | undefined;
+    let expectedUpdatedAt: string | undefined;
+
+    if (typeof statusOrDto === 'object' && statusOrDto !== null) {
+      targetStatus = (statusOrDto.status as FindingStatus) || FindingStatus.VERIFIED;
+      verificationNotes = statusOrDto.verificationNotes;
+      expectedUpdatedAt = statusOrDto.expectedUpdatedAt;
+    } else {
+      targetStatus = statusOrDto || FindingStatus.VERIFIED;
+      verificationNotes = legacyNotes;
+    }
+
+    // 1. Assert verifier role eligibility
+    await this.assertEligibleUser(authCtx.organizationId, authCtx.userId, 'VERIFIER');
+
+    // 2. Fetch finding with plan and capas
     const finding = await this.prisma.auditFinding.findFirst({
       where: { id, organizationId: authCtx.organizationId },
-      include: { assessment: { include: { auditPlan: true } } },
+      include: {
+        assessment: { include: { auditPlan: true } },
+        capas: true,
+        evidence: true,
+        evidenceAssociations: { include: { evidence: true } },
+      },
     });
 
     if (!finding) throw new NotFoundException(`Audit Finding "${id}" not found`);
 
     await this.resourceAuthService.assertResourceAccess(authCtx, finding.assessment.auditPlan);
 
-    if (finding.status !== FindingStatus.READY_FOR_VERIFICATION && finding.status !== FindingStatus.IN_REMEDIATION) {
-      throw new BadRequestException(`Finding must be IN_REMEDIATION or READY_FOR_VERIFICATION before verification/closure.`);
+    // 3. Optimistic concurrency check
+    if (expectedUpdatedAt) {
+      this.checkOptimisticLock('AuditFinding', finding.updatedAt, expectedUpdatedAt);
     }
+
+    // 4. Segregation of Duties (SoD)
+    if (finding.ownerId === authCtx.userId) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: 'Forbidden',
+        message: 'Segregation of duties violation: Finding owner cannot verify or close their own finding.',
+        code: 'SEGREGATION_OF_DUTIES_VIOLATION',
+      });
+    }
+
+    const isCapaOwner = (finding.capas || []).some((c: any) => c.ownerId === authCtx.userId);
+    if (isCapaOwner) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: 'Forbidden',
+        message: 'Segregation of duties violation: A CAPA owner cannot verify or close this finding.',
+        code: 'SEGREGATION_OF_DUTIES_VIOLATION',
+      });
+    }
+
+    // 5. Verification status handling
+    if (targetStatus === FindingStatus.VERIFIED || targetStatus === FindingStatus.CLOSED) {
+      if (
+        finding.status !== FindingStatus.READY_FOR_VERIFICATION &&
+        finding.status !== FindingStatus.IN_REMEDIATION &&
+        !(finding.status === FindingStatus.VERIFIED && targetStatus === FindingStatus.CLOSED)
+      ) {
+        throw new BadRequestException(
+          `Finding must be READY_FOR_VERIFICATION or IN_REMEDIATION before verification/closure (current status: ${finding.status}).`,
+        );
+      }
+
+      // Check CAPA completion prerequisites
+      if (finding.capas && finding.capas.length > 0) {
+        const incomplete = finding.capas.filter((c: any) => c.status !== CapaStatus.COMPLETED);
+        if (incomplete.length > 0) {
+          throw new BadRequestException(
+            `Cannot verify finding: ${incomplete.length} CAPA item(s) are not completed.`,
+          );
+        }
+      } else {
+        const hasRationale = Boolean(
+          finding.remediationPlan &&
+            (finding.remediationPlan.includes('[NO_CAPA_REQUIRED:') || finding.remediationPlan.trim().length > 0),
+        );
+        if (!hasRationale) {
+          throw new BadRequestException(
+            'Cannot verify finding without either completed CAPAs or a documented non-applicability rationale.',
+          );
+        }
+      }
+
+      const updated = await this.prisma.auditFinding.update({
+        where: { id },
+        data: {
+          status: targetStatus,
+          verifiedById: authCtx.userId,
+          verifiedAt: new Date(),
+          verificationNotes: verificationNotes !== undefined ? verificationNotes : finding.verificationNotes,
+        },
+        include: {
+          capas: true,
+          evidence: true,
+          evidenceAssociations: { include: { evidence: true } },
+        },
+      });
+
+      await this.auditLogsService.log({
+        organizationId: authCtx.organizationId,
+        actorId: authCtx.userId,
+        action: targetStatus === FindingStatus.VERIFIED ? 'AUDIT_FINDING_VERIFIED' : 'AUDIT_FINDING_CLOSED',
+        entityType: 'AuditFinding',
+        entityId: id,
+        metadata: { status: targetStatus, verifierId: authCtx.userId },
+      });
+
+      const userMap = await this.resolveUserMap(authCtx.organizationId, [updated.ownerId, updated.verifiedById]);
+      return this.mapFindingToDto(updated, userMap);
+    } else if (targetStatus === FindingStatus.IN_REMEDIATION) {
+      // Verification Rejection / Failure
+      if (!verificationNotes || !verificationNotes.trim()) {
+        throw new BadRequestException(
+          'Verification notes explaining the deficiency/failure are required when rejecting verification.',
+        );
+      }
+
+      const failureTimestamp = new Date().toISOString();
+      const rejectionNote = `[VERIFICATION REJECTED ${failureTimestamp} by ${authCtx.userId}]: ${verificationNotes.trim()}`;
+      const updatedNotes = finding.verificationNotes
+        ? `${finding.verificationNotes}\n${rejectionNote}`
+        : rejectionNote;
+
+      const updated = await this.prisma.auditFinding.update({
+        where: { id },
+        data: {
+          status: FindingStatus.IN_REMEDIATION,
+          verificationNotes: updatedNotes,
+        },
+        include: {
+          capas: true,
+          evidence: true,
+          evidenceAssociations: { include: { evidence: true } },
+        },
+      });
+
+      await this.auditLogsService.log({
+        organizationId: authCtx.organizationId,
+        actorId: authCtx.userId,
+        action: 'AUDIT_FINDING_VERIFICATION_FAILED',
+        entityType: 'AuditFinding',
+        entityId: id,
+        metadata: {
+          priorStatus: finding.status,
+          newStatus: FindingStatus.IN_REMEDIATION,
+          notes: verificationNotes.trim(),
+          verifierId: authCtx.userId,
+        },
+      });
+
+      if (this.notificationsService?.notify && updated.ownerId) {
+        await this.notificationsService.notify({
+          organizationId: authCtx.organizationId,
+          userId: updated.ownerId,
+          type: NotificationType.TASK_ASSIGNED,
+          message: `Verification for finding "${updated.title}" was rejected: ${verificationNotes.trim()}`,
+          entityType: 'AuditFinding',
+          entityId: id,
+        }).catch(() => {});
+      }
+
+      const userMap = await this.resolveUserMap(authCtx.organizationId, [updated.ownerId, updated.verifiedById]);
+      return this.mapFindingToDto(updated, userMap);
+    } else {
+      throw new BadRequestException(`Invalid verification status "${targetStatus}".`);
+    }
+  }
+
+  async reopenFinding(
+    authCtx: ResourceAuthContext,
+    id: string,
+    dto: ReopenAuditFindingDto,
+  ): Promise<AuditFindingDto> {
+    const finding = await this.prisma.auditFinding.findFirst({
+      where: { id, organizationId: authCtx.organizationId },
+      include: {
+        assessment: {
+          include: {
+            auditPlan: {
+              include: { schedules: true },
+            },
+          },
+        },
+        capas: true,
+        evidence: true,
+        evidenceAssociations: { include: { evidence: true } },
+      },
+    });
+
+    if (!finding) throw new NotFoundException(`Audit Finding "${id}" not found`);
+
+    await this.resourceAuthService.assertResourceAccess(authCtx, finding.assessment.auditPlan);
+
+    if (dto.expectedUpdatedAt) {
+      this.checkOptimisticLock('AuditFinding', finding.updatedAt, dto.expectedUpdatedAt);
+    }
+
+    if (finding.status !== FindingStatus.VERIFIED && finding.status !== FindingStatus.CLOSED) {
+      throw new BadRequestException(
+        `Only VERIFIED or CLOSED findings can be reopened. Finding "${id}" is currently in status "${finding.status}".`,
+      );
+    }
+
+    if (!dto.reason || typeof dto.reason !== 'string' || !dto.reason.trim()) {
+      throw new BadRequestException('A documented justification/reason is required to reopen a finding.');
+    }
+
+    const isAdmin = authCtx.role === Role.ADMIN || authCtx.role === Role.MSSP_ADMIN;
+    const isOwner = finding.ownerId === authCtx.userId;
+    const isPlanOwner = finding.assessment.auditPlan.ownerId === authCtx.userId;
+    const isLeadAuditor = finding.assessment.auditPlan.schedules?.some((s: any) => s.leadAuditorId === authCtx.userId);
+    const isAssessmentAuditor = finding.assessment.auditorId === authCtx.userId;
+
+    if (!isAdmin && !isOwner && !isPlanOwner && !isLeadAuditor && !isAssessmentAuditor) {
+      throw new ForbiddenException(
+        'You are not authorized to reopen this finding. Reopening requires lead auditor, finding owner, or administrator privileges.',
+      );
+    }
+
+    const priorStatus = finding.status;
+    const reopenTimestamp = new Date().toISOString();
+    const reopenNote = `[REOPENED ${reopenTimestamp} by ${authCtx.userId}]: ${dto.reason.trim()}`;
+    const updatedNotes = finding.verificationNotes
+      ? `${finding.verificationNotes}\n${reopenNote}`
+      : reopenNote;
 
     const updated = await this.prisma.auditFinding.update({
       where: { id },
       data: {
-        status,
-        verifiedById: authCtx.userId,
-        verifiedAt: new Date(),
-        verificationNotes: verificationNotes || finding.verificationNotes,
+        status: FindingStatus.IN_REMEDIATION,
+        verificationNotes: updatedNotes,
+      },
+      include: {
+        capas: true,
+        evidence: true,
+        evidenceAssociations: { include: { evidence: true } },
       },
     });
 
     await this.auditLogsService.log({
       organizationId: authCtx.organizationId,
       actorId: authCtx.userId,
-      action: status === FindingStatus.VERIFIED ? 'AUDIT_FINDING_VERIFIED' : 'AUDIT_FINDING_CLOSED',
+      action: 'AUDIT_FINDING_REOPENED',
       entityType: 'AuditFinding',
       entityId: id,
-      metadata: { status },
+      metadata: {
+        priorStatus,
+        newStatus: FindingStatus.IN_REMEDIATION,
+        reason: dto.reason.trim(),
+        userId: authCtx.userId,
+        timestamp: reopenTimestamp,
+      },
     });
 
     const userMap = await this.resolveUserMap(authCtx.organizationId, [updated.ownerId, updated.verifiedById]);
@@ -963,6 +1445,18 @@ export class BusinessAuditsService {
 
     await this.resourceAuthService.assertResourceAccess(authCtx, finding.assessment.auditPlan);
 
+    const resolvedOwnerId = await this.assertEligibleUser(
+      authCtx.organizationId,
+      dto.ownerId,
+      'CAPA_OWNER',
+    );
+
+    if (finding.status === FindingStatus.VERIFIED || finding.status === FindingStatus.CLOSED) {
+      throw new BadRequestException(
+        `Cannot add CAPA to a finding in "${finding.status}" status. Reopen the finding first.`,
+      );
+    }
+
     const capa = await this.prisma.auditCapa.create({
       data: {
         organizationId: authCtx.organizationId,
@@ -970,13 +1464,13 @@ export class BusinessAuditsService {
         title: dto.title.trim(),
         correctiveAction: dto.correctiveAction.trim(),
         preventiveAction: dto.preventiveAction?.trim() || null,
-        ownerId: dto.ownerId.trim(),
+        ownerId: resolvedOwnerId,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
         status: CapaStatus.OPEN,
       },
     });
 
-    if (finding.status === FindingStatus.OPEN) {
+    if (finding.status === FindingStatus.OPEN || finding.status === FindingStatus.READY_FOR_VERIFICATION) {
       await this.prisma.auditFinding.update({
         where: { id: dto.findingId },
         data: { status: FindingStatus.IN_REMEDIATION },
@@ -1010,31 +1504,73 @@ export class BusinessAuditsService {
 
     await this.resourceAuthService.assertResourceAccess(authCtx, capa.finding.assessment.auditPlan);
 
+    if (dto.expectedUpdatedAt) {
+      this.checkOptimisticLock('AuditCapa', capa.updatedAt, dto.expectedUpdatedAt);
+    }
+
+    let resolvedOwnerId: string | undefined;
+    if (dto.ownerId !== undefined) {
+      resolvedOwnerId = await this.assertEligibleUser(
+        authCtx.organizationId,
+        dto.ownerId,
+        'CAPA_OWNER',
+      );
+    }
+
     const updated = await this.prisma.auditCapa.update({
       where: { id },
       data: {
         ...(dto.title !== undefined && { title: dto.title.trim() }),
         ...(dto.correctiveAction !== undefined && { correctiveAction: dto.correctiveAction.trim() }),
         ...(dto.preventiveAction !== undefined && { preventiveAction: dto.preventiveAction?.trim() || null }),
-        ...(dto.ownerId !== undefined && { ownerId: dto.ownerId.trim() }),
+        ...(resolvedOwnerId !== undefined && { ownerId: resolvedOwnerId }),
         ...(dto.dueDate !== undefined && { dueDate: dto.dueDate ? new Date(dto.dueDate) : null }),
         ...(dto.status !== undefined && { status: dto.status }),
         ...(dto.status === CapaStatus.COMPLETED && { completedAt: new Date() }),
       },
     });
 
-    if (dto.status === CapaStatus.COMPLETED && capa.finding.status === FindingStatus.IN_REMEDIATION) {
-      const remainingOpenCapas = await this.prisma.auditCapa.count({
-        where: {
-          findingId: capa.findingId,
-          status: { in: [CapaStatus.OPEN, CapaStatus.IN_PROGRESS] },
-        },
-      });
-      if (remainingOpenCapas === 0) {
-        await this.prisma.auditFinding.update({
-          where: { id: capa.findingId },
-          data: { status: FindingStatus.READY_FOR_VERIFICATION },
+    if (dto.status !== undefined) {
+      let allCapas: any[] = [];
+      if (this.prisma.auditCapa.findMany) {
+        allCapas = (await this.prisma.auditCapa.findMany({
+          where: { findingId: capa.findingId },
+        })) || [];
+      }
+
+      if (Array.isArray(allCapas) && allCapas.length > 0) {
+        const remainingIncomplete = allCapas.filter((c: any) =>
+          (c.id === id ? dto.status : c.status) !== CapaStatus.COMPLETED,
+        );
+
+        if (remainingIncomplete.length === 0) {
+          if (capa.finding.status === FindingStatus.IN_REMEDIATION) {
+            await this.prisma.auditFinding.update({
+              where: { id: capa.findingId },
+              data: { status: FindingStatus.READY_FOR_VERIFICATION },
+            });
+          }
+        } else {
+          if (capa.finding.status === FindingStatus.READY_FOR_VERIFICATION) {
+            await this.prisma.auditFinding.update({
+              where: { id: capa.findingId },
+              data: { status: FindingStatus.IN_REMEDIATION },
+            });
+          }
+        }
+      } else {
+        const remainingCount = await this.prisma.auditCapa.count({
+          where: {
+            findingId: capa.findingId,
+            status: { in: [CapaStatus.OPEN, CapaStatus.IN_PROGRESS] },
+          },
         });
+        if (remainingCount === 0 && capa.finding.status === FindingStatus.IN_REMEDIATION) {
+          await this.prisma.auditFinding.update({
+            where: { id: capa.findingId },
+            data: { status: FindingStatus.READY_FOR_VERIFICATION },
+          });
+        }
       }
     }
 
@@ -1384,6 +1920,16 @@ export class BusinessAuditsService {
         createdAt: this.toIso(e.createdAt),
       }));
 
+    let capaRequired = true;
+    let capaRationale: string | null = null;
+    if (f.remediationPlan && f.remediationPlan.includes('[NO_CAPA_REQUIRED:')) {
+      capaRequired = false;
+      const match = f.remediationPlan.match(/\[NO_CAPA_REQUIRED:\s*([^\]]+)\]/);
+      if (match) {
+        capaRationale = match[1].trim();
+      }
+    }
+
     return {
       id: f.id,
       organizationId: f.organizationId,
@@ -1399,6 +1945,8 @@ export class BusinessAuditsService {
       dueDate: this.toNullableIso(f.dueDate),
       riskId: f.riskId,
       remediationPlan: f.remediationPlan,
+      capaRequired,
+      capaRationale,
       verificationNotes: f.verificationNotes,
       verifiedById: f.verifiedById,
       verifiedByName: verifierInfo?.name || verifierInfo?.email || null,

@@ -38,6 +38,7 @@ export class UpdateAuditPlanDto {
   status?: AuditPlanStatus;
   departmentId?: string;
   projectId?: string;
+  expectedUpdatedAt?: string;
 }
 
 export class CreateAuditScheduleDto {
@@ -70,6 +71,8 @@ export class CreateAuditFindingDto {
   dueDate?: string;
   riskId?: string;
   remediationPlan?: string;
+  capaRequired?: boolean;
+  capaRationale?: string;
 }
 
 export class UpdateAuditFindingDto {
@@ -81,6 +84,20 @@ export class UpdateAuditFindingDto {
   dueDate?: string;
   remediationPlan?: string;
   verificationNotes?: string;
+  capaRequired?: boolean;
+  capaRationale?: string;
+  expectedUpdatedAt?: string;
+}
+
+export class ReopenAuditFindingDto {
+  reason: string;
+  expectedUpdatedAt?: string;
+}
+
+export class VerifyAuditFindingDto {
+  status?: FindingStatus.VERIFIED | FindingStatus.CLOSED | FindingStatus.IN_REMEDIATION;
+  verificationNotes?: string;
+  expectedUpdatedAt?: string;
 }
 
 export class CreateAuditCapaDto {
@@ -99,6 +116,7 @@ export class UpdateAuditCapaDto {
   ownerId?: string;
   dueDate?: string;
   status?: CapaStatus;
+  expectedUpdatedAt?: string;
 }
 
 export class CreateAuditEvidenceDto {

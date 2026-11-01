@@ -19,6 +19,14 @@ const mockShowToast = jest.fn();
 jest.mock('../src/context/toast-context', () => ({
   useToast: () => ({ showToast: mockShowToast, addToast: mockAddToast }),
 }));
+jest.mock('../src/context/auth-context', () => ({
+  useAuth: () => ({
+    user: { id: 'admin-1', role: 'ADMIN', name: 'Admin User', email: 'admin@example.com' },
+    organization: { id: 'org-test', name: 'Test Org' },
+    hasCapability: () => true,
+    getCapabilityState: () => ({ enabled: true }),
+  }),
+}));
 
 // Mock ComplianceScopeFilter to avoid external dependencies in this test
 jest.mock('../src/components/ui/compliance-scope-filter', () => ({
@@ -532,6 +540,120 @@ describe('Phase 2 — Audit Management Workspace and Workflow', () => {
 
       await waitFor(() => {
         expect(screen.queryByText(/Attach Audit Evidence Artifact/i)).not.toBeInTheDocument();
+      });
+    });
+
+    describe('7. WP2 Frontend Lifecycle Integration', () => {
+      it('renders controlled reopening button for CLOSED findings and prompts for mandatory justification', async () => {
+        mockedApiRequest.mockImplementation((url: string) => {
+          if (url.includes('/business-audits/findings')) {
+            return Promise.resolve({
+              items: [
+                {
+                  id: 'f-closed-1',
+                  organizationId: 'org-test',
+                  assessmentId: 'assess-1',
+                  title: 'Archived Audit Finding',
+                  description: 'Remediated vulnerability',
+                  severity: VulnerabilitySeverity.MEDIUM,
+                  status: FindingStatus.CLOSED,
+                  ownerId: 'owner-1',
+                  ownerName: 'Bob Remediation',
+                  updatedAt: new Date().toISOString(),
+                  capas: [],
+                  evidence: [],
+                },
+              ],
+              total: 1,
+              page: 1,
+              limit: 20,
+              totalPages: 1,
+            });
+          }
+          if (url.includes('/organization-members')) {
+            return Promise.resolve([
+              { id: 'mem-1', userId: 'user-1', name: 'Alice Admin', role: 'ADMIN' },
+              { id: 'mem-2', userId: 'user-2', name: 'Bob Remediation', role: 'ANALYST' },
+            ]);
+          }
+          return Promise.resolve([]);
+        });
+
+        render(<AuditListView />);
+
+        const findingsTab = screen.getByRole('button', { name: /audit findings & verification/i });
+        fireEvent.click(findingsTab);
+
+        await waitFor(() => {
+          expect(screen.getByText('Archived Audit Finding')).toBeInTheDocument();
+        });
+
+        const reopenBtn = screen.getByRole('button', { name: /reopen/i });
+        expect(reopenBtn).toBeInTheDocument();
+
+        fireEvent.click(reopenBtn);
+
+        await waitFor(() => {
+          expect(screen.getByText(/Controlled Reopening of Audit Finding/i)).toBeInTheDocument();
+          expect(screen.getByText(/Reopening Justification \/ Reason/i)).toBeInTheDocument();
+        });
+
+        const submitBtn = screen.getByRole('button', { name: /confirm reopen/i });
+        expect(submitBtn).toBeDisabled();
+      });
+
+      it('renders Segregation of Duties warning and disables verification button when current user is finding owner', async () => {
+        mockedApiRequest.mockImplementation((url: string) => {
+          if (url.includes('/business-audits/findings')) {
+            return Promise.resolve({
+              items: [
+                {
+                  id: 'f-ready-1',
+                  organizationId: 'org-test',
+                  assessmentId: 'assess-1',
+                  title: 'Firewall Port Finding',
+                  severity: VulnerabilitySeverity.HIGH,
+                  status: FindingStatus.READY_FOR_VERIFICATION,
+                  ownerId: 'admin-1',
+                  ownerName: 'Admin User',
+                  updatedAt: new Date().toISOString(),
+                  capas: [],
+                  evidence: [],
+                },
+              ],
+              total: 1,
+              page: 1,
+              limit: 20,
+              totalPages: 1,
+            });
+          }
+          if (url.includes('/organization-members')) {
+            return Promise.resolve([
+              { id: 'mem-1', userId: 'admin-1', name: 'Admin User', role: 'ADMIN' },
+            ]);
+          }
+          return Promise.resolve([]);
+        });
+
+        render(<AuditListView />);
+
+        const findingsTab = screen.getByRole('button', { name: /audit findings & verification/i });
+        fireEvent.click(findingsTab);
+
+        await waitFor(() => {
+          expect(screen.getByText('Firewall Port Finding')).toBeInTheDocument();
+        });
+
+        const verifyBtn = screen.getByRole('button', { name: /verify/i });
+        fireEvent.click(verifyBtn);
+
+        await waitFor(() => {
+          expect(screen.getByText(/Formal Finding Verification Sign-Off/i)).toBeInTheDocument();
+          expect(screen.getByText(/Segregation of Duties Violation/i)).toBeInTheDocument();
+        });
+
+        const signOffBtn = screen.getByRole('button', { name: /sign off verification/i });
+        expect(signOffBtn).toBeDisabled();
       });
     });
   });

@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   ClipboardList, Plus, CheckCircle, AlertOctagon, Clock, ShieldCheck,
   FileText, Play, CheckCircle2, XCircle, HelpCircle, Layers, Search, Filter, X, Loader2,
-  AlertCircle, CheckSquare, Wrench, ArrowRight, ArrowLeft, Check, Eye, Tag,
+  AlertCircle, CheckSquare, Wrench, ArrowRight, ArrowLeft, Check, Eye, Tag, RotateCcw, AlertTriangle,
   History, Paperclip, UploadCloud, User, Users, Calendar, Building2, Download
 } from 'lucide-react';
 import { apiRequest } from '@/lib/api-client';
@@ -26,6 +26,7 @@ import {
   formatOwnerDisplay,
 } from '@omnigrc/shared';
 import { useToast } from '@/context/toast-context';
+import { useAuth } from '@/context/auth-context';
 import { ComplianceScopeFilter } from '@/components/ui/compliance-scope-filter';
 import { RagStatusBadge, getAuditPlanRag } from '@/components/ui/rag-status-badge';
 
@@ -56,6 +57,18 @@ interface OrgMemberOption {
 
 export function AuditListView() {
   const { addToast } = useToast();
+  let currentUser: any = null;
+  try {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const auth = useAuth();
+    currentUser = auth?.user || null;
+  } catch {
+    currentUser = null;
+  }
+  const [showReopenModal, setShowReopenModal] = useState(false);
+  const [reopenTarget, setReopenTarget] = useState<AuditFindingDto | null>(null);
+  const [reopenReason, setReopenReason] = useState('');
+  const [submittingReopen, setSubmittingReopen] = useState(false);
   const toastRef = React.useRef(addToast);
   toastRef.current = addToast;
   const [activeTab, setActiveTab] = useState<'plans' | 'assessments' | 'findings'>('plans');
@@ -117,7 +130,7 @@ export function AuditListView() {
 
   // Finding Verification Modal State
   const [verifyTarget, setVerifyTarget] = useState<AuditFindingDto | null>(null);
-  const [verifyStatus, setVerifyStatus] = useState<FindingStatus.VERIFIED | FindingStatus.CLOSED>(FindingStatus.VERIFIED);
+  const [verifyStatus, setVerifyStatus] = useState<FindingStatus.VERIFIED | FindingStatus.CLOSED | FindingStatus.IN_REMEDIATION>(FindingStatus.VERIFIED);
   const [verifyNotes, setVerifyNotes] = useState('');
   const [submittingVerify, setSubmittingVerify] = useState(false);
 
@@ -128,7 +141,9 @@ export function AuditListView() {
     description: '',
     severity: VulnerabilitySeverity.HIGH,
     remediationPlan: '',
-    ownerId: 'Compliance Lead',
+    ownerId: '',
+    capaRequired: true,
+    capaRationale: '',
   });
   const [submittingFinding, setSubmittingFinding] = useState(false);
 
@@ -155,7 +170,7 @@ export function AuditListView() {
       .then((res) => {
         if (Array.isArray(res)) {
           const normalized: OrgMemberOption[] = res.map((m: any, idx: number) => {
-            const id = m.id || m.user?.id || m.userId || `mem-${idx}`;
+            const id = m.userId || m.user?.id || m.id || `mem-${idx}`;
             const firstName = m.user?.firstName || m.firstName || '';
             const lastName = m.user?.lastName || m.lastName || '';
             const fullName = `${firstName} ${lastName}`.trim();
@@ -165,6 +180,10 @@ export function AuditListView() {
             return { id, name, email, role };
           });
           setOrgMembers(normalized);
+          if (normalized.length > 0) {
+            setCapaForm((prev) => (prev.ownerId === 'Remediation Lead' || !prev.ownerId ? { ...prev, ownerId: normalized[0].id } : prev));
+            setLogFindingForm((prev) => (!prev.ownerId ? { ...prev, ownerId: normalized[0].id } : prev));
+          }
         }
       })
       .catch(() => {
@@ -579,12 +598,15 @@ export function AuditListView() {
     }
   }
 
-  async function handleUpdateCapaStatus(capaId: string, status: CapaStatus) {
+  async function handleUpdateCapaStatus(capaId: string, status: CapaStatus, expectedUpdatedAt?: Date | string) {
     setUpdatingCapaId(capaId);
     try {
       await apiRequest(`/business-audits/capas/${capaId}`, {
         method: 'PATCH',
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({
+          status,
+          ...(expectedUpdatedAt && { expectedUpdatedAt: typeof expectedUpdatedAt === 'string' ? expectedUpdatedAt : expectedUpdatedAt.toISOString() }),
+        }),
       });
 
       addToast(`CAPA status updated to ${status}`, 'success');
@@ -602,7 +624,15 @@ export function AuditListView() {
       fetchFindings();
       fetchPlans();
     } catch (err: any) {
-      addToast(`Failed to update CAPA status: ${err.message}`, 'error');
+      if (err.status === 409 || err.message?.includes('409') || err.message?.toLowerCase().includes('conflict')) {
+        addToast('Conflict: This CAPA has been modified concurrently. Reloading latest state...', 'error');
+        if (selectedPlan) {
+          apiRequest<AuditPlanDto>(`/business-audits/plans/${selectedPlan.id}`).then(setSelectedPlan).catch(() => {});
+        }
+        fetchFindings();
+      } else {
+        addToast(`Failed to update CAPA status: ${err.message}`, 'error');
+      }
     } finally {
       setUpdatingCapaId(null);
     }
@@ -626,10 +656,14 @@ export function AuditListView() {
         body: JSON.stringify({
           status: verifyStatus,
           verificationNotes: verifyNotes.trim() || undefined,
+          expectedUpdatedAt: verifyTarget.updatedAt,
         }),
       });
 
-      addToast(`Finding successfully ${verifyStatus === FindingStatus.VERIFIED ? 'verified' : 'closed'}!`, 'success');
+      const outcomeMsg = verifyStatus === FindingStatus.IN_REMEDIATION
+        ? 'Finding verification rejected and returned to IN_REMEDIATION'
+        : `Finding successfully ${verifyStatus === FindingStatus.VERIFIED ? 'verified' : 'closed'}!`;
+      addToast(outcomeMsg, 'success');
       setShowVerifyModal(false);
       setVerifyTarget(null);
 
@@ -640,9 +674,70 @@ export function AuditListView() {
       fetchFindings();
       fetchPlans();
     } catch (err: any) {
-      addToast(`Verification failed: ${err.message}`, 'error');
+      if (err.status === 409 || err.message?.includes('409') || err.message?.toLowerCase().includes('conflict')) {
+        addToast('Conflict: This finding was modified concurrently by another user. Reloading latest state...', 'error');
+        setShowVerifyModal(false);
+        setVerifyTarget(null);
+        if (selectedPlan) {
+          apiRequest<AuditPlanDto>(`/business-audits/plans/${selectedPlan.id}`).then(setSelectedPlan).catch(() => {});
+        }
+        fetchFindings();
+      } else {
+        addToast(`Verification failed: ${err.message}`, 'error');
+      }
     } finally {
       setSubmittingVerify(false);
+    }
+  }
+
+  function handleOpenReopenModal(finding: AuditFindingDto) {
+    setReopenTarget(finding);
+    setReopenReason('');
+    setShowReopenModal(true);
+  }
+
+  async function handleConfirmReopen(e: React.FormEvent) {
+    e.preventDefault();
+    if (!reopenTarget) return;
+    if (!reopenReason.trim()) {
+      addToast('A documented justification/reason is required to reopen this finding.', 'error');
+      return;
+    }
+
+    setSubmittingReopen(true);
+    try {
+      await apiRequest(`/business-audits/findings/${reopenTarget.id}/reopen`, {
+        method: 'POST',
+        body: JSON.stringify({
+          reason: reopenReason.trim(),
+          expectedUpdatedAt: reopenTarget.updatedAt,
+        }),
+      });
+
+      addToast('Finding successfully reopened to IN_REMEDIATION!', 'success');
+      setShowReopenModal(false);
+      setReopenTarget(null);
+
+      if (selectedPlan) {
+        const updated = await apiRequest<AuditPlanDto>(`/business-audits/plans/${selectedPlan.id}`);
+        setSelectedPlan(updated);
+      }
+      fetchFindings();
+      fetchPlans();
+    } catch (err: any) {
+      if (err.status === 409 || err.message?.includes('409') || err.message?.toLowerCase().includes('conflict')) {
+        addToast('Conflict: This finding was modified concurrently. Reloading latest state...', 'error');
+        setShowReopenModal(false);
+        setReopenTarget(null);
+        if (selectedPlan) {
+          apiRequest<AuditPlanDto>(`/business-audits/plans/${selectedPlan.id}`).then(setSelectedPlan).catch(() => {});
+        }
+        fetchFindings();
+      } else {
+        addToast(`Failed to reopen finding: ${err.message}`, 'error');
+      }
+    } finally {
+      setSubmittingReopen(false);
     }
   }
 
@@ -653,7 +748,9 @@ export function AuditListView() {
       description: '',
       severity: VulnerabilitySeverity.HIGH,
       remediationPlan: '',
-      ownerId: 'Compliance Lead',
+      ownerId: orgMembers.length > 0 ? orgMembers[0].id : '',
+      capaRequired: true,
+      capaRationale: '',
     });
     setShowLogFindingModal(true);
   }
@@ -677,7 +774,9 @@ export function AuditListView() {
           description: logFindingForm.description.trim() || undefined,
           severity: logFindingForm.severity,
           remediationPlan: logFindingForm.remediationPlan.trim() || undefined,
-          ownerId: logFindingForm.ownerId.trim() || 'Compliance Lead',
+          ownerId: logFindingForm.ownerId.trim() || (orgMembers.length > 0 ? orgMembers[0].id : 'Compliance Lead'),
+          capaRequired: logFindingForm.capaRequired,
+          capaRationale: !logFindingForm.capaRequired ? logFindingForm.capaRationale.trim() : undefined,
         }),
       });
 
@@ -1277,6 +1376,16 @@ export function AuditListView() {
                             <span>Verify & Close</span>
                           </button>
                         )}
+                        {(f.status === FindingStatus.VERIFIED || f.status === FindingStatus.CLOSED) && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenReopenModal(f)}
+                            className="px-3 py-1.5 text-xs font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
+                          >
+                            <RotateCcw size={13} />
+                            <span>Reopen Finding</span>
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -1354,7 +1463,7 @@ export function AuditListView() {
                         <button
                           type="button"
                           disabled={updatingCapaId === capa.id}
-                          onClick={() => handleUpdateCapaStatus(capa.id, CapaStatus.COMPLETED)}
+                          onClick={() => handleUpdateCapaStatus(capa.id, CapaStatus.COMPLETED, capa.updatedAt)}
                           className="px-2.5 py-1 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded transition-colors disabled:opacity-50"
                         >
                           {updatingCapaId === capa.id ? 'Marking...' : 'Mark Completed'}
@@ -2097,6 +2206,16 @@ export function AuditListView() {
                           <span>Verify</span>
                         </button>
                       )}
+                      {(f.status === FindingStatus.VERIFIED || f.status === FindingStatus.CLOSED) && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenReopenModal(f)}
+                          className="px-3 py-1.5 text-xs font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Reopen</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -2495,31 +2614,114 @@ export function AuditListView() {
               </button>
             </div>
 
-            <form onSubmit={handleConfirmVerification} className="space-y-4">
-              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs">
-                <div className="font-bold text-slate-900">{verifyTarget.title}</div>
-                <div className="text-slate-500 mt-1">Severity: {verifyTarget.severity} • Status: {verifyTarget.status}</div>
+            {(() => {
+              const isFindingOwner = Boolean(currentUser?.id && verifyTarget.ownerId === currentUser.id);
+              const isCapaOwner = Boolean(currentUser?.id && verifyTarget.capas?.some((c) => c.ownerId === currentUser.id));
+              const isSodViolation = isFindingOwner || isCapaOwner;
+
+              return (
+                <form onSubmit={handleConfirmVerification} className="space-y-4">
+                  <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs">
+                    <div className="font-bold text-slate-900">{verifyTarget.title}</div>
+                    <div className="text-slate-500 mt-1">Severity: {verifyTarget.severity} • Status: {verifyTarget.status}</div>
+                    <div className="text-slate-500 mt-0.5">Finding Owner: {verifyTarget.ownerName || verifyTarget.ownerId}</div>
+                  </div>
+
+                  {isSodViolation && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800 flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                      <div>
+                        <strong>Segregation of Duties Violation:</strong> You cannot verify or close this finding because you are designated as the finding owner or a CAPA action owner. An independent administrator must perform effectiveness verification.
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Verification Outcome *</label>
+                    <select
+                      value={verifyStatus}
+                      onChange={(e) => setVerifyStatus(e.target.value as any)}
+                      className="w-full text-xs border rounded-lg p-2.5 bg-white border-slate-300"
+                    >
+                      <option value={FindingStatus.VERIFIED}>PASS / VERIFIED — Remediation inspected and confirmed effective</option>
+                      <option value={FindingStatus.CLOSED}>PASS / CLOSED — Fully verified and formally archived</option>
+                      <option value={FindingStatus.IN_REMEDIATION}>FAIL / REJECT — Remediation ineffective (revert to IN_REMEDIATION)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Auditor Verification Notes {verifyStatus === FindingStatus.IN_REMEDIATION && <span className="text-red-600">*</span>}
+                    </label>
+                    <textarea
+                      rows={3}
+                      required={verifyStatus === FindingStatus.IN_REMEDIATION}
+                      placeholder={
+                        verifyStatus === FindingStatus.IN_REMEDIATION
+                          ? "Specify mandatory deficiency observations and reasons why verification failed..."
+                          : "Record formal verification observations, evidence links, or compliance conclusions..."
+                      }
+                      value={verifyNotes}
+                      onChange={(e) => setVerifyNotes(e.target.value)}
+                      className="w-full text-xs border rounded-lg p-2.5 bg-white border-slate-300"
+                    />
+                  </div>
+
+                  <div className="pt-2 flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowVerifyModal(false)}
+                      className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={submittingVerify || isSodViolation || (verifyStatus === FindingStatus.IN_REMEDIATION && !verifyNotes.trim())}
+                      className={`px-4 py-2 text-xs font-bold text-white rounded-lg shadow-sm disabled:opacity-50 ${
+                        verifyStatus === FindingStatus.IN_REMEDIATION
+                          ? 'bg-red-700 hover:bg-red-800'
+                          : 'bg-emerald-700 hover:bg-emerald-800'
+                      }`}
+                    >
+                      {submittingVerify ? 'Processing...' : verifyStatus === FindingStatus.IN_REMEDIATION ? 'Reject Verification' : 'Sign Off Verification'}
+                    </button>
+                  </div>
+                </form>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+            {/* CONTROLLED REOPEN MODAL */}
+      {showReopenModal && reopenTarget && (
+        <div role="dialog" aria-modal="true" className="fixed inset-0 z-70 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between border-b pb-3 mb-4">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <RotateCcw className="w-5 h-5 text-amber-600" />
+                <span>Controlled Reopening of Audit Finding</span>
+              </h3>
+              <button type="button" onClick={() => setShowReopenModal(false)} className="text-slate-400 hover:text-slate-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmReopen} className="space-y-4">
+              <div className="p-3 bg-amber-50 rounded-lg border border-amber-200 text-xs">
+                <div className="font-bold text-amber-900">{reopenTarget.title}</div>
+                <div className="text-amber-700 mt-1">Current Status: <strong>{reopenTarget.status}</strong> • Reopening will safely transition this finding back to <strong>IN_REMEDIATION</strong>.</div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Verification Status *</label>
-                <select
-                  value={verifyStatus}
-                  onChange={(e) => setVerifyStatus(e.target.value as any)}
-                  className="w-full text-xs border rounded-lg p-2.5 bg-white border-slate-300"
-                >
-                  <option value={FindingStatus.VERIFIED}>VERIFIED — Remediation inspected and confirmed effective</option>
-                  <option value={FindingStatus.CLOSED}>CLOSED — Fully verified and formally archived</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Auditor Verification Notes</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Reopening Justification / Reason *</label>
                 <textarea
                   rows={3}
-                  placeholder="Record formal verification observations, evidence links, or compliance conclusions..."
-                  value={verifyNotes}
-                  onChange={(e) => setVerifyNotes(e.target.value)}
+                  required
+                  placeholder="Document specific reasons for reopening (e.g. recurrence, new non-conformance, ineffective remediation)..."
+                  value={reopenReason}
+                  onChange={(e) => setReopenReason(e.target.value)}
                   className="w-full text-xs border rounded-lg p-2.5 bg-white border-slate-300"
                 />
               </div>
@@ -2527,17 +2729,17 @@ export function AuditListView() {
               <div className="pt-2 flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setShowVerifyModal(false)}
+                  onClick={() => setShowReopenModal(false)}
                   className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={submittingVerify}
-                  className="px-4 py-2 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg shadow-sm disabled:opacity-50"
+                  disabled={submittingReopen || !reopenReason.trim()}
+                  className="px-4 py-2 text-xs font-bold text-white bg-amber-700 hover:bg-amber-800 rounded-lg shadow-sm disabled:opacity-50"
                 >
-                  {submittingVerify ? 'Verifying...' : 'Sign Off Verification'}
+                  {submittingReopen ? 'Reopening...' : 'Confirm Reopen'}
                 </button>
               </div>
             </form>
@@ -2627,6 +2829,32 @@ export function AuditListView() {
                   )}
                 </div>
               </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">CAPA Action Plan Required?</label>
+                <select
+                  value={logFindingForm.capaRequired ? 'true' : 'false'}
+                  onChange={(e) => setLogFindingForm({ ...logFindingForm, capaRequired: e.target.value === 'true' })}
+                  className="w-full text-xs border rounded-lg p-2.5 bg-white border-slate-300"
+                >
+                  <option value="true">Yes — Corrective & Preventive Action (CAPA) is required</option>
+                  <option value="false">No — Direct remediation without formal CAPA tracking</option>
+                </select>
+              </div>
+
+              {!logFindingForm.capaRequired && (
+                <div>
+                  <label className="block text-xs font-semibold text-amber-800 mb-1">Documented Non-Applicability Rationale *</label>
+                  <textarea
+                    rows={2}
+                    required
+                    placeholder="Provide mandatory technical or business rationale why CAPA is not required..."
+                    value={logFindingForm.capaRationale}
+                    onChange={(e) => setLogFindingForm({ ...logFindingForm, capaRationale: e.target.value })}
+                    className="w-full text-xs border rounded-lg p-2.5 bg-white border-amber-300 bg-amber-50/50"
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Target Remediation Plan</label>

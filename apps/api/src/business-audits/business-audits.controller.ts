@@ -26,6 +26,8 @@ import {
   UpdateCheckItemDto,
   CreateAuditFindingDto,
   UpdateAuditFindingDto,
+  ReopenAuditFindingDto,
+  VerifyAuditFindingDto,
   CreateAuditCapaDto,
   UpdateAuditCapaDto,
   CreateAuditEvidenceDto,
@@ -231,15 +233,31 @@ export class BusinessAuditsController {
   async verifyFinding(
     @CurrentUser() user: any,
     @Param('id') id: string,
-    @Body('status') status: FindingStatus.VERIFIED | FindingStatus.CLOSED,
-    @Body('verificationNotes') verificationNotes?: string,
+    @Body() dto: VerifyAuditFindingDto,
+
   ) {
     const authCtx: ResourceAuthContext = {
       userId: user.userId,
       organizationId: user.organizationId,
       role: user.role,
     };
-    return this.businessAuditsService.verifyFinding(authCtx, id, status, verificationNotes);
+    return this.businessAuditsService.verifyFinding(authCtx, id, dto);
+  }
+
+  @Post('findings/:id/reopen')
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  @RequiresActiveLicense()
+  async reopenFinding(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() dto: ReopenAuditFindingDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.businessAuditsService.reopenFinding(authCtx, id, dto);
   }
 
   @Post('capas')

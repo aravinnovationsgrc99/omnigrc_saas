@@ -1818,6 +1818,8 @@ export interface AuditFindingDto {
   dueDate?: Date | string | null;
   riskId?: string | null;
   remediationPlan?: string | null;
+  capaRequired?: boolean;
+  capaRationale?: string | null;
   verificationNotes?: string | null;
   verifiedById?: string | null;
   verifiedByName?: string | null;

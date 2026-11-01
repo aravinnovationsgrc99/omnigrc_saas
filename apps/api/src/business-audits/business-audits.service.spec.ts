@@ -6,6 +6,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { ResourceAuthorizationService } from '../auth/resource-authorization.service';
 import { NotFoundException, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import {
+  ProductAccessStatus,
   AuditPlanStatus,
   AuditAssessmentStatus,
   AuditCheckResult,
@@ -98,8 +99,56 @@ describe('BusinessAuditsService', () => {
         create: jest.fn().mockResolvedValue({}),
         deleteMany: jest.fn(),
       },
+      organizationMembership: {
+        findFirst: jest.fn().mockImplementation(({ where }) => {
+          const rawId = where?.OR?.[0]?.userId || where?.userId || where?.OR?.[1]?.id;
+          if (rawId === 'foreign-user' || rawId === 'non-existent' || rawId === 'user-org-2') {
+            return null;
+          }
+          if (rawId === 'suspended-user') {
+            return {
+              id: 'mem-suspended',
+              userId: 'suspended-user',
+              organizationId: where?.organizationId || 'org-1',
+              role: Role.ANALYST,
+              status: ProductAccessStatus.SUSPENDED,
+            };
+          }
+          if (rawId === 'external-auditor-1') {
+            return {
+              id: 'mem-auditor',
+              userId: 'external-auditor-1',
+              organizationId: where?.organizationId || 'org-1',
+              role: Role.EXTERNAL_AUDITOR,
+              status: ProductAccessStatus.ACTIVE,
+            };
+          }
+          return {
+            id: 'mem-default',
+            userId: rawId || 'auditor-1',
+            organizationId: where?.organizationId || 'org-1',
+            role: Role.ADMIN,
+            status: ProductAccessStatus.ACTIVE,
+          };
+        }),
+        findUnique: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+        create: jest.fn(),
+        update: jest.fn(),
+      },
       user: {
         findMany: jest.fn().mockResolvedValue([]),
+        findUnique: jest.fn(),
+        findFirst: jest.fn().mockImplementation(({ where }) => {
+          const rawId = where?.id;
+          if (rawId === 'foreign-user' || rawId === 'user-org-2') {
+            return { id: rawId, organizationId: 'org-2', role: Role.ADMIN };
+          }
+          if (rawId === 'non-existent') {
+            return null;
+          }
+          return { id: rawId || 'auditor-1', organizationId: 'org-1', role: Role.ADMIN };
+        }),
       },
       $transaction: jest.fn((cb) => cb(prisma)),
     };
@@ -214,9 +263,12 @@ describe('BusinessAuditsService', () => {
     const mockFinding = {
       id: 'finding-1',
       organizationId: 'org-1',
+      ownerId: 'owner-user',
       status: FindingStatus.READY_FOR_VERIFICATION,
+      remediationPlan: '[NO_CAPA_REQUIRED: Verified directly in staging configuration]',
       createdAt: new Date(),
       updatedAt: new Date(),
+      capas: [],
       assessment: {
         auditPlan: { id: 'plan-1', organizationId: 'org-1' },
       },
@@ -1731,6 +1783,555 @@ describe('BusinessAuditsService', () => {
       // Canonical item takes precedence; legacy shadow row is suppressed
       expect(checkItem.evidence).toHaveLength(1);
       expect(checkItem.evidence![0].id).toBe('can-ev-dup');
+    });
+  });
+
+  describe('WP2: Audit & Finding Lifecycle Integrity Suite', () => {
+    const authCtx = { userId: 'admin-1', organizationId: 'org-1', role: Role.ADMIN };
+
+    describe('WP2-A: Owner validation & tenant authorization', () => {
+      it('rejects plan creation when ownerId does not exist', async () => {
+        await expect(
+          service.createPlan(authCtx, {
+            title: 'Plan with bad owner',
+            ownerId: 'non-existent',
+          }),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('rejects cross-tenant owner assignment on audit plan', async () => {
+        await expect(
+          service.createPlan(authCtx, {
+            title: 'Plan with foreign owner',
+            ownerId: 'foreign-user',
+          }),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('rejects suspended organization member for plan owner', async () => {
+        await expect(
+          service.createPlan(authCtx, {
+            title: 'Plan with suspended owner',
+            ownerId: 'suspended-user',
+          }),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('rejects external auditor attempting to be assigned as finding owner', async () => {
+        prisma.auditAssessment.findFirst.mockResolvedValueOnce({
+          id: 'assess-1',
+          organizationId: 'org-1',
+          auditPlan: { id: 'plan-1', organizationId: 'org-1' },
+        });
+
+        await expect(
+          service.createFinding(authCtx, {
+            assessmentId: 'assess-1',
+            title: 'Config issue',
+            severity: VulnerabilitySeverity.HIGH,
+            ownerId: 'external-auditor-1',
+          }),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('rejects non-admin/mssp-admin user attempting verification', async () => {
+        const analystCtx = { userId: 'analyst-1', organizationId: 'org-1', role: Role.ANALYST };
+        prisma.organizationMembership.findFirst.mockResolvedValueOnce({
+          id: 'mem-analyst',
+          userId: 'analyst-1',
+          organizationId: 'org-1',
+          role: Role.ANALYST,
+          status: ProductAccessStatus.ACTIVE,
+        });
+
+        await expect(
+          service.verifyFinding(analystCtx, 'finding-1', FindingStatus.VERIFIED),
+        ).rejects.toThrow(BadRequestException);
+      });
+    });
+
+    describe('WP2-B: Finding lifecycle & transition integrity', () => {
+      it('rejects direct jump from OPEN to CLOSED', async () => {
+        prisma.auditFinding.findFirst.mockResolvedValueOnce({
+          id: 'finding-open',
+          organizationId: 'org-1',
+          status: FindingStatus.OPEN,
+          updatedAt: new Date(),
+          assessment: { auditPlan: { id: 'plan-1', organizationId: 'org-1' } },
+        });
+
+        await expect(
+          service.updateFindingStatus(authCtx, 'finding-open', {
+            status: FindingStatus.CLOSED,
+          }),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('rejects direct jump from OPEN to READY_FOR_VERIFICATION', async () => {
+        prisma.auditFinding.findFirst.mockResolvedValueOnce({
+          id: 'finding-open',
+          organizationId: 'org-1',
+          status: FindingStatus.OPEN,
+          updatedAt: new Date(),
+          assessment: { auditPlan: { id: 'plan-1', organizationId: 'org-1' } },
+        });
+
+        await expect(
+          service.updateFindingStatus(authCtx, 'finding-open', {
+            status: FindingStatus.READY_FOR_VERIFICATION,
+          }),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('rejects setting VERIFIED or CLOSED via updateFindingStatus', async () => {
+        prisma.auditFinding.findFirst.mockResolvedValueOnce({
+          id: 'finding-remed',
+          organizationId: 'org-1',
+          status: FindingStatus.READY_FOR_VERIFICATION,
+          updatedAt: new Date(),
+          assessment: { auditPlan: { id: 'plan-1', organizationId: 'org-1' } },
+        });
+
+        await expect(
+          service.updateFindingStatus(authCtx, 'finding-remed', {
+            status: FindingStatus.VERIFIED,
+          }),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      describe('Controlled Reopening', () => {
+        it('rejects reopening finding that is still in OPEN or IN_REMEDIATION status', async () => {
+          prisma.auditFinding.findFirst.mockResolvedValueOnce({
+            id: 'finding-open',
+            organizationId: 'org-1',
+            status: FindingStatus.OPEN,
+            updatedAt: new Date(),
+            assessment: { auditPlan: { id: 'plan-1', organizationId: 'org-1' } },
+          });
+
+          await expect(
+            service.reopenFinding(authCtx, 'finding-open', {
+              reason: 'Recheck required',
+            }),
+          ).rejects.toThrow(BadRequestException);
+        });
+
+        it('rejects reopening finding without justification reason', async () => {
+          prisma.auditFinding.findFirst.mockResolvedValueOnce({
+            id: 'finding-closed',
+            organizationId: 'org-1',
+            status: FindingStatus.CLOSED,
+            updatedAt: new Date(),
+            assessment: { auditPlan: { id: 'plan-1', organizationId: 'org-1' } },
+          });
+
+          await expect(
+            service.reopenFinding(authCtx, 'finding-closed', {
+              reason: '   ',
+            }),
+          ).rejects.toThrow(BadRequestException);
+        });
+
+        it('rejects unauthorized user attempting to reopen finding', async () => {
+          const unauthorizedCtx = { userId: 'unauthorized-user', organizationId: 'org-1', role: Role.EXTERNAL_AUDITOR };
+          prisma.auditFinding.findFirst.mockResolvedValueOnce({
+            id: 'finding-closed',
+            organizationId: 'org-1',
+            ownerId: 'owner-user',
+            status: FindingStatus.CLOSED,
+            updatedAt: new Date(),
+            assessment: {
+              auditorId: 'auditor-user',
+              auditPlan: {
+                id: 'plan-1',
+                organizationId: 'org-1',
+                ownerId: 'plan-owner',
+                schedules: [{ leadAuditorId: 'lead-auditor' }],
+              },
+            },
+          });
+
+          await expect(
+            service.reopenFinding(unauthorizedCtx, 'finding-closed', {
+              reason: 'Valid reason but unauthorized user',
+            }),
+          ).rejects.toThrow(ForbiddenException);
+        });
+
+        it('successfully reopens CLOSED finding to IN_REMEDIATION and records audit log', async () => {
+          const findingDate = new Date();
+          prisma.auditFinding.findFirst.mockResolvedValueOnce({
+            id: 'finding-closed',
+            organizationId: 'org-1',
+            ownerId: 'owner-user',
+            status: FindingStatus.CLOSED,
+            verificationNotes: 'Initial verification approved by admin',
+            updatedAt: findingDate,
+            assessment: {
+              auditPlan: {
+                id: 'plan-1',
+                organizationId: 'org-1',
+                ownerId: 'admin-1',
+              },
+            },
+          });
+
+          prisma.auditFinding.update.mockResolvedValueOnce({
+            id: 'finding-closed',
+            organizationId: 'org-1',
+            ownerId: 'owner-user',
+            status: FindingStatus.IN_REMEDIATION,
+            verificationNotes: 'Initial verification approved by admin\n[REOPENED ...]: Non-conformance reoccurred in production',
+            createdAt: findingDate,
+            updatedAt: new Date(),
+            capas: [],
+            evidence: [],
+            evidenceAssociations: [],
+          });
+
+          const res = await service.reopenFinding(authCtx, 'finding-closed', {
+            reason: 'Non-conformance reoccurred in production',
+          });
+
+          expect(res.status).toBe(FindingStatus.IN_REMEDIATION);
+          expect(auditLogsService.log).toHaveBeenCalledWith(
+            expect.objectContaining({ action: 'AUDIT_FINDING_REOPENED' }),
+          );
+        });
+      });
+    });
+
+    describe('WP2-C: CAPA lifecycle integrity', () => {
+      it('rejects finding creation when capaRequired is false without a rationale', async () => {
+        prisma.auditAssessment.findFirst.mockResolvedValueOnce({
+          id: 'assess-1',
+          organizationId: 'org-1',
+          auditPlan: { id: 'plan-1', organizationId: 'org-1' },
+        });
+
+        await expect(
+          service.createFinding(authCtx, {
+            assessmentId: 'assess-1',
+            title: 'No CAPA finding without rationale',
+            severity: VulnerabilitySeverity.LOW,
+            ownerId: 'owner-1',
+            capaRequired: false,
+            capaRationale: '   ',
+          }),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('creates finding with capaRequired: false and extracts rationale in DTO', async () => {
+        prisma.auditAssessment.findFirst.mockResolvedValueOnce({
+          id: 'assess-1',
+          organizationId: 'org-1',
+          auditPlan: { id: 'plan-1', organizationId: 'org-1' },
+        });
+
+        prisma.auditFinding.create.mockResolvedValueOnce({
+          id: 'finding-nocapa',
+          organizationId: 'org-1',
+          ownerId: 'owner-1',
+          title: 'Config typo',
+          severity: VulnerabilitySeverity.LOW,
+          status: FindingStatus.OPEN,
+          remediationPlan: '[NO_CAPA_REQUIRED: One-off typo resolved directly during audit]',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          capas: [],
+          evidence: [],
+          evidenceAssociations: [],
+        });
+
+        const finding = await service.createFinding(authCtx, {
+          assessmentId: 'assess-1',
+          title: 'Config typo',
+          severity: VulnerabilitySeverity.LOW,
+          ownerId: 'owner-1',
+          capaRequired: false,
+          capaRationale: 'One-off typo resolved directly during audit',
+        });
+
+        expect(finding.capaRequired).toBe(false);
+        expect(finding.capaRationale).toBe('One-off typo resolved directly during audit');
+      });
+
+      it('keeps finding IN_REMEDIATION when some CAPAs remain incomplete', async () => {
+        prisma.auditCapa.findFirst.mockResolvedValueOnce({
+          id: 'capa-1',
+          findingId: 'finding-1',
+          organizationId: 'org-1',
+          updatedAt: new Date(),
+          finding: {
+            status: FindingStatus.IN_REMEDIATION,
+            assessment: { auditPlan: { id: 'plan-1', organizationId: 'org-1' } },
+          },
+        });
+
+        prisma.auditCapa.update.mockResolvedValueOnce({
+          id: 'capa-1',
+          findingId: 'finding-1',
+          organizationId: 'org-1',
+          status: CapaStatus.COMPLETED,
+          ownerId: 'owner-1',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+
+        // 2 CAPAs exist for finding: capa-1 is COMPLETED, capa-2 is still OPEN
+        prisma.auditCapa.findMany.mockResolvedValueOnce([
+          { id: 'capa-1', status: CapaStatus.COMPLETED },
+          { id: 'capa-2', status: CapaStatus.OPEN },
+        ]);
+
+        await service.updateCapa(authCtx, 'capa-1', { status: CapaStatus.COMPLETED });
+
+        // Finding should NOT be promoted to READY_FOR_VERIFICATION
+        expect(prisma.auditFinding.update).not.toHaveBeenCalledWith(
+          expect.objectContaining({ data: { status: FindingStatus.READY_FOR_VERIFICATION } }),
+        );
+      });
+
+      it('auto-advances finding to READY_FOR_VERIFICATION when all CAPAs reach COMPLETED', async () => {
+        prisma.auditCapa.findFirst.mockResolvedValueOnce({
+          id: 'capa-2',
+          findingId: 'finding-1',
+          organizationId: 'org-1',
+          updatedAt: new Date(),
+          finding: {
+            status: FindingStatus.IN_REMEDIATION,
+            assessment: { auditPlan: { id: 'plan-1', organizationId: 'org-1' } },
+          },
+        });
+
+        prisma.auditCapa.update.mockResolvedValueOnce({
+          id: 'capa-2',
+          findingId: 'finding-1',
+          organizationId: 'org-1',
+          status: CapaStatus.COMPLETED,
+          ownerId: 'owner-1',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+
+        // Both CAPAs now completed
+        prisma.auditCapa.findMany.mockResolvedValueOnce([
+          { id: 'capa-1', status: CapaStatus.COMPLETED },
+          { id: 'capa-2', status: CapaStatus.COMPLETED },
+        ]);
+
+        await service.updateCapa(authCtx, 'capa-2', { status: CapaStatus.COMPLETED });
+
+        expect(prisma.auditFinding.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: 'finding-1' },
+            data: { status: FindingStatus.READY_FOR_VERIFICATION },
+          }),
+        );
+      });
+
+      it('reverts finding to IN_REMEDIATION if a CAPA is reopened from COMPLETED to IN_PROGRESS', async () => {
+        prisma.auditCapa.findFirst.mockResolvedValueOnce({
+          id: 'capa-1',
+          findingId: 'finding-1',
+          organizationId: 'org-1',
+          updatedAt: new Date(),
+          finding: {
+            status: FindingStatus.READY_FOR_VERIFICATION,
+            assessment: { auditPlan: { id: 'plan-1', organizationId: 'org-1' } },
+          },
+        });
+
+        prisma.auditCapa.update.mockResolvedValueOnce({
+          id: 'capa-1',
+          findingId: 'finding-1',
+          organizationId: 'org-1',
+          status: CapaStatus.IN_PROGRESS,
+          ownerId: 'owner-1',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+
+        prisma.auditCapa.findMany.mockResolvedValueOnce([
+          { id: 'capa-1', status: CapaStatus.IN_PROGRESS },
+          { id: 'capa-2', status: CapaStatus.COMPLETED },
+        ]);
+
+        await service.updateCapa(authCtx, 'capa-1', { status: CapaStatus.IN_PROGRESS });
+
+        expect(prisma.auditFinding.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: 'finding-1' },
+            data: { status: FindingStatus.IN_REMEDIATION },
+          }),
+        );
+      });
+    });
+
+    describe('WP2-D: Effectiveness verification & reviewer authorization', () => {
+      it('rejects finding owner self-verifying their finding (Segregation of Duties)', async () => {
+        prisma.auditFinding.findFirst.mockResolvedValueOnce({
+          id: 'finding-1',
+          organizationId: 'org-1',
+          ownerId: 'admin-1', // same as authCtx.userId
+          status: FindingStatus.READY_FOR_VERIFICATION,
+          remediationPlan: '[NO_CAPA_REQUIRED: Done]',
+          updatedAt: new Date(),
+          capas: [],
+          assessment: { auditPlan: { id: 'plan-1', organizationId: 'org-1' } },
+        });
+
+        await expect(
+          service.verifyFinding(authCtx, 'finding-1', FindingStatus.VERIFIED),
+        ).rejects.toThrow(ForbiddenException);
+      });
+
+      it('rejects CAPA owner verifying finding (Segregation of Duties)', async () => {
+        prisma.auditFinding.findFirst.mockResolvedValueOnce({
+          id: 'finding-1',
+          organizationId: 'org-1',
+          ownerId: 'user-other',
+          status: FindingStatus.READY_FOR_VERIFICATION,
+          remediationPlan: '[NO_CAPA_REQUIRED: Done]',
+          updatedAt: new Date(),
+          capas: [{ id: 'capa-1', ownerId: 'admin-1' }], // admin-1 owns this CAPA
+          assessment: { auditPlan: { id: 'plan-1', organizationId: 'org-1' } },
+        });
+
+        await expect(
+          service.verifyFinding(authCtx, 'finding-1', FindingStatus.VERIFIED),
+        ).rejects.toThrow(ForbiddenException);
+      });
+
+      it('rejects verification failure attempt without explanatory notes', async () => {
+        prisma.auditFinding.findFirst.mockResolvedValueOnce({
+          id: 'finding-1',
+          organizationId: 'org-1',
+          ownerId: 'user-other',
+          status: FindingStatus.READY_FOR_VERIFICATION,
+          updatedAt: new Date(),
+          capas: [],
+          assessment: { auditPlan: { id: 'plan-1', organizationId: 'org-1' } },
+        });
+
+        await expect(
+          service.verifyFinding(authCtx, 'finding-1', {
+            status: FindingStatus.IN_REMEDIATION,
+            verificationNotes: '   ',
+          }),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('handles verification failure: reverts finding to IN_REMEDIATION and logs AUDIT_FINDING_VERIFICATION_FAILED', async () => {
+        const findingDate = new Date();
+        prisma.auditFinding.findFirst.mockResolvedValueOnce({
+          id: 'finding-1',
+          organizationId: 'org-1',
+          ownerId: 'user-other',
+          status: FindingStatus.READY_FOR_VERIFICATION,
+          updatedAt: findingDate,
+          capas: [],
+          assessment: { auditPlan: { id: 'plan-1', organizationId: 'org-1' } },
+        });
+
+        prisma.auditFinding.update.mockResolvedValueOnce({
+          id: 'finding-1',
+          organizationId: 'org-1',
+          ownerId: 'user-other',
+          status: FindingStatus.IN_REMEDIATION,
+          verificationNotes: '[VERIFICATION REJECTED]: Controls testing demonstrated firewall port 22 still exposed',
+          createdAt: findingDate,
+          updatedAt: new Date(),
+          capas: [],
+          evidence: [],
+          evidenceAssociations: [],
+        });
+
+        const res = await service.verifyFinding(authCtx, 'finding-1', {
+          status: FindingStatus.IN_REMEDIATION,
+          verificationNotes: 'Controls testing demonstrated firewall port 22 still exposed',
+        });
+
+        expect(res.status).toBe(FindingStatus.IN_REMEDIATION);
+        expect(auditLogsService.log).toHaveBeenCalledWith(
+          expect.objectContaining({ action: 'AUDIT_FINDING_VERIFICATION_FAILED' }),
+        );
+      });
+    });
+
+    describe('WP2-E: Optimistic concurrency & stale-update protection', () => {
+      it('throws 409 ConflictException when updating audit plan with stale timestamp', async () => {
+        const serverDate = new Date('2026-11-01T12:00:00Z');
+        prisma.auditPlan.findFirst.mockResolvedValueOnce({
+          id: 'plan-1',
+          organizationId: 'org-1',
+          updatedAt: serverDate,
+          scopeReferences: [],
+        });
+
+        await expect(
+          service.updatePlan(authCtx, 'plan-1', {
+            title: 'Concurrent update',
+            expectedUpdatedAt: '2026-11-01T11:00:00Z',
+          }),
+        ).rejects.toThrow(ConflictException);
+      });
+
+      it('throws 409 ConflictException when updating finding with stale timestamp', async () => {
+        const serverDate = new Date('2026-11-01T14:30:00Z');
+        prisma.auditFinding.findFirst.mockResolvedValueOnce({
+          id: 'finding-1',
+          organizationId: 'org-1',
+          updatedAt: serverDate,
+          status: FindingStatus.IN_REMEDIATION,
+          assessment: { auditPlan: { id: 'plan-1', organizationId: 'org-1' } },
+        });
+
+        await expect(
+          service.updateFindingStatus(authCtx, 'finding-1', {
+            title: 'Stale title update',
+            expectedUpdatedAt: '2026-11-01T14:00:00Z',
+          }),
+        ).rejects.toThrow(ConflictException);
+      });
+
+      it('throws 409 ConflictException when verifying finding with stale timestamp', async () => {
+        const serverDate = new Date('2026-11-01T15:00:00Z');
+        prisma.auditFinding.findFirst.mockResolvedValueOnce({
+          id: 'finding-1',
+          organizationId: 'org-1',
+          ownerId: 'user-other',
+          status: FindingStatus.READY_FOR_VERIFICATION,
+          remediationPlan: '[NO_CAPA_REQUIRED: Checked]',
+          updatedAt: serverDate,
+          capas: [],
+          assessment: { auditPlan: { id: 'plan-1', organizationId: 'org-1' } },
+        });
+
+        await expect(
+          service.verifyFinding(authCtx, 'finding-1', {
+            status: FindingStatus.VERIFIED,
+            expectedUpdatedAt: '2026-11-01T14:59:00Z',
+          }),
+        ).rejects.toThrow(ConflictException);
+      });
+
+      it('throws 409 ConflictException when updating CAPA with stale timestamp', async () => {
+        const serverDate = new Date('2026-11-01T16:00:00Z');
+        prisma.auditCapa.findFirst.mockResolvedValueOnce({
+          id: 'capa-1',
+          organizationId: 'org-1',
+          updatedAt: serverDate,
+          finding: { assessment: { auditPlan: { id: 'plan-1', organizationId: 'org-1' } } },
+        });
+
+        await expect(
+          service.updateCapa(authCtx, 'capa-1', {
+            status: CapaStatus.COMPLETED,
+            expectedUpdatedAt: '2026-11-01T15:30:00Z',
+          }),
+        ).rejects.toThrow(ConflictException);
+      });
     });
   });
 });
