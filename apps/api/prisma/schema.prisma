@@ -1358,6 +1358,7 @@ model AuditCapa {
   updatedAt        DateTime   @updatedAt
 
   finding AuditFinding @relation(fields: [findingId], references: [id], onDelete: Cascade)
+  verificationHistories AuditFindingVerificationHistory[]
 
   @@index([organizationId])
   @@index([findingId])
@@ -1369,6 +1370,7 @@ model AuditFindingVerificationHistory {
   id             String                      @id @default(uuid())
   organizationId String
   findingId      String
+  capaId         String?                     @map("capa_id")
   action         AuditFindingLifecycleAction
   priorStatus    FindingStatus
   newStatus      FindingStatus
@@ -1380,9 +1382,11 @@ model AuditFindingVerificationHistory {
   finding        AuditFinding                @relation(fields: [findingId], references: [id], onDelete: Restrict)
   organization   Organization                @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   actor          User                        @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  capa           AuditCapa?                  @relation(fields: [capaId], references: [id], onDelete: Restrict)
 
   @@index([organizationId])
   @@index([findingId])
+  @@index([capaId])
   @@index([actorId])
   @@index([createdAt])
   @@map("audit_finding_verification_histories")

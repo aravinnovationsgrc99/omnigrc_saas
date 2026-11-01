@@ -34,6 +34,7 @@ describe('BusinessAuditsService', () => {
         findFirst: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       auditSchedule: {
         create: jest.fn(),
@@ -159,6 +160,7 @@ describe('BusinessAuditsService', () => {
         }),
       },
       $transaction: jest.fn((cb) => cb(prisma)),
+      $queryRaw: jest.fn().mockResolvedValue([]),
     };
 
     auditLogsService = {
@@ -1374,10 +1376,12 @@ describe('BusinessAuditsService', () => {
         });
 
         expect(result.status).toBe(CapaStatus.COMPLETED);
-        expect(prisma.auditFinding.update).toHaveBeenCalledWith({
-          where: { id: 'f-1' },
-          data: { status: FindingStatus.READY_FOR_VERIFICATION },
-        });
+        expect(prisma.auditFinding.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: 'f-1' },
+            data: expect.objectContaining({ status: FindingStatus.READY_FOR_VERIFICATION }),
+          }),
+        );
         expect(auditLogsService.log).toHaveBeenCalledWith(
           expect.objectContaining({
             action: 'AUDIT_CAPA_UPDATED',
@@ -2676,6 +2680,414 @@ describe('BusinessAuditsService', () => {
             actorId: authCtx.userId,
             reason: 'Security control regressed after deployment',
           }),
+        });
+      });
+    });
+
+    describe('WP2 Targeted Concurrency & Transactional History Remediation Suite', () => {
+      const authCtx = {
+        userId: 'auditor-verifier-1',
+        organizationId: 'org-1',
+        role: Role.ADMIN,
+      };
+
+      describe('Genuinely Atomic Optimistic Locking & CAS', () => {
+        it('two concurrent updates using same expectedVersion: exactly one succeeds, the other receives 409', async () => {
+          const findingBase = {
+            id: 'finding-cas-1',
+            organizationId: 'org-1',
+            version: 3,
+            status: FindingStatus.OPEN,
+            ownerId: 'owner-1',
+            updatedAt: new Date('2026-11-01T12:00:00Z'),
+            assessment: { auditPlan: { id: 'plan-1', organizationId: 'org-1' } },
+            capas: [],
+            evidence: [],
+            evidenceAssociations: [],
+          };
+
+          prisma.auditFinding.findFirst.mockResolvedValue(findingBase);
+
+          // Update 1: matches version 3, updates 1 row
+          prisma.auditFinding.updateMany.mockResolvedValueOnce({ count: 1 });
+          prisma.auditFinding.update.mockResolvedValueOnce({
+            ...findingBase,
+            title: 'Updated by Worker 1',
+            version: 4,
+          });
+
+          const result1 = await service.updateFindingStatus(authCtx, 'finding-cas-1', {
+            title: 'Updated by Worker 1',
+            expectedVersion: 3,
+          });
+          expect(result1.title).toBe('Updated by Worker 1');
+
+          // Update 2: concurrent call with expectedVersion 3 fails because database version was bumped to 4 (updateMany returns count: 0)
+          prisma.auditFinding.updateMany.mockResolvedValueOnce({ count: 0 });
+          // findFirst finds existing record at version 4
+          prisma.auditFinding.findFirst.mockResolvedValueOnce({ ...findingBase, version: 4 });
+
+          await expect(
+            service.updateFindingStatus(authCtx, 'finding-cas-1', {
+              title: 'Updated by Worker 2',
+              expectedVersion: 3,
+            }),
+          ).rejects.toMatchObject({
+            status: 409,
+            response: expect.objectContaining({
+              code: 'STALE_RECORD_CONFLICT',
+            }),
+          });
+        });
+
+        it('omitted expectedVersion binds to transaction read-version (safe compatibility policy)', async () => {
+          const planBase = {
+            id: 'plan-compat-1',
+            organizationId: 'org-1',
+            version: 5,
+            status: AuditPlanStatus.IN_PROGRESS,
+            ownerId: 'owner-1',
+            createdById: 'owner-1',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            title: 'Audit Plan Compat',
+            scopeReferences: [],
+          };
+
+          prisma.auditPlan.findFirst.mockResolvedValueOnce(planBase);
+          prisma.auditPlan.updateMany.mockResolvedValueOnce({ count: 1 });
+          prisma.auditPlan.update.mockResolvedValueOnce({
+            ...planBase,
+            title: 'Audit Plan Compat Updated',
+            version: 6,
+          });
+          prisma.auditPlan.findFirst.mockResolvedValueOnce({
+            ...planBase,
+            title: 'Audit Plan Compat Updated',
+            version: 6,
+          });
+
+          // Call without expectedVersion or expectedUpdatedAt
+          const result = await service.updatePlan(authCtx, 'plan-compat-1', {
+            title: 'Audit Plan Compat Updated',
+          });
+
+          expect(result.title).toBe('Audit Plan Compat Updated');
+          expect(prisma.auditPlan.updateMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+              where: {
+                id: 'plan-compat-1',
+                organizationId: 'org-1',
+                version: 5, // Pinned to the version read at start of transaction!
+              },
+              data: expect.objectContaining({
+                version: { increment: 1 },
+              }),
+            }),
+          );
+        });
+
+        it('omitted expectedVersion fails with 409 STALE_RECORD_CONFLICT if concurrent transaction modified version between read and CAS', async () => {
+          const findingBase = {
+            id: 'finding-stale-blind',
+            organizationId: 'org-1',
+            version: 2,
+            status: FindingStatus.OPEN,
+            ownerId: 'owner-1',
+            updatedAt: new Date(),
+            assessment: { auditPlan: { id: 'plan-1', organizationId: 'org-1' } },
+            capas: [],
+            evidence: [],
+            evidenceAssociations: [],
+          };
+
+          prisma.auditFinding.findFirst.mockResolvedValueOnce(findingBase);
+          // Between findFirst and updateMany, another process committed, causing count: 0
+          prisma.auditFinding.updateMany.mockResolvedValueOnce({ count: 0 });
+          prisma.auditFinding.findFirst.mockResolvedValueOnce({ ...findingBase, version: 3 });
+
+          await expect(
+            service.updateFindingStatus(authCtx, 'finding-stale-blind', {
+              title: 'Concurrent update without explicit version token',
+            }),
+          ).rejects.toMatchObject({
+            status: 409,
+            response: expect.objectContaining({ code: 'STALE_RECORD_CONFLICT' }),
+          });
+        });
+
+        it('zero-row conditional update throws 404 NotFoundException when entity does not exist in tenant', async () => {
+          prisma.auditFinding.findFirst.mockResolvedValueOnce({
+            id: 'f-ghost',
+            organizationId: 'org-1',
+            version: 1,
+            status: FindingStatus.OPEN,
+            ownerId: 'owner-1',
+            updatedAt: new Date(),
+            assessment: { auditPlan: { id: 'plan-1', organizationId: 'org-1' } },
+            capas: [],
+            evidence: [],
+            evidenceAssociations: [],
+          });
+          prisma.auditFinding.updateMany.mockResolvedValueOnce({ count: 0 });
+          // In tx, existence check returns null (e.g. record deleted or belonging to other tenant)
+          prisma.auditFinding.findFirst.mockResolvedValueOnce(null);
+
+          await expect(
+            service.updateFindingStatus(authCtx, 'f-ghost', {
+              title: 'Ghost record',
+              expectedVersion: 1,
+            }),
+          ).rejects.toBeInstanceOf(NotFoundException);
+        });
+      });
+
+      describe('Transactional Lifecycle State & History Writes', () => {
+        it('history insertion failure rolls back state change (unswallowed exception)', async () => {
+          const findingToVerify = {
+            id: 'finding-tx-rollback',
+            organizationId: 'org-1',
+            version: 2,
+            status: FindingStatus.READY_FOR_VERIFICATION,
+            ownerId: 'different-owner',
+            updatedAt: new Date(),
+            capas: [{ id: 'c-1', status: CapaStatus.COMPLETED, ownerId: 'capa-owner' }],
+            assessment: { auditorId: authCtx.userId, auditPlan: { id: 'p-1', organizationId: 'org-1' } },
+          };
+
+          prisma.auditFinding.findFirst.mockResolvedValue(findingToVerify);
+          prisma.auditFinding.updateMany.mockResolvedValueOnce({ count: 1 });
+          prisma.auditFinding.update.mockResolvedValueOnce({
+            ...findingToVerify,
+            status: FindingStatus.VERIFIED,
+            version: 3,
+          });
+
+          // History insertion fails (e.g. DB constraint or serialization failure)
+          prisma.auditFindingVerificationHistory.create.mockRejectedValueOnce(
+            new Error('Database foreign key or disk error during verification history insert'),
+          );
+
+          await expect(
+            service.verifyFinding(authCtx, 'finding-tx-rollback', {
+              status: FindingStatus.VERIFIED,
+              verificationNotes: 'Testing transactional rollback',
+              expectedVersion: 2,
+            }),
+          ).rejects.toThrow('Database foreign key or disk error during verification history insert');
+        });
+
+        it('derives actorId and organizationId strictly from authenticated context, ignoring request body', async () => {
+          const findingToVerify = {
+            id: 'finding-spoof-check',
+            organizationId: 'org-1',
+            version: 1,
+            status: FindingStatus.READY_FOR_VERIFICATION,
+            ownerId: 'target-owner',
+            updatedAt: new Date(),
+            capas: [{ id: 'c-1', status: CapaStatus.COMPLETED, ownerId: 'capa-owner' }],
+            assessment: { auditorId: authCtx.userId, auditPlan: { id: 'p-1', organizationId: 'org-1' } },
+          };
+
+          prisma.auditFinding.findFirst.mockResolvedValue(findingToVerify);
+          prisma.auditFinding.updateMany.mockResolvedValueOnce({ count: 1 });
+          prisma.auditFinding.update.mockResolvedValueOnce({
+            ...findingToVerify,
+            status: FindingStatus.VERIFIED,
+            version: 2,
+          });
+
+          await service.verifyFinding(authCtx, 'finding-spoof-check', {
+            status: FindingStatus.VERIFIED,
+            verificationNotes: 'Auditor approved',
+            expectedVersion: 1,
+          });
+
+          expect(prisma.auditFindingVerificationHistory.create).toHaveBeenCalledWith({
+            data: expect.objectContaining({
+              organizationId: 'org-1', // Derived from authCtx.organizationId
+              actorId: 'auditor-verifier-1', // Derived from authCtx.userId
+            }),
+          });
+        });
+
+        it('createCapa transactionally advances finding to IN_REMEDIATION and writes history with capaId attribution', async () => {
+          const openFinding = {
+            id: 'finding-for-capa',
+            organizationId: 'org-1',
+            version: 1,
+            status: FindingStatus.OPEN,
+            ownerId: 'owner-1',
+            assessment: { auditPlan: { id: 'plan-1', organizationId: 'org-1' } },
+          };
+
+          prisma.auditFinding.findFirst.mockResolvedValueOnce(openFinding);
+          prisma.auditCapa.create.mockResolvedValueOnce({
+            id: 'capa-new-1',
+            organizationId: 'org-1',
+            findingId: 'finding-for-capa',
+            title: 'Fix patch',
+            correctiveAction: 'Deploy kernel update',
+            ownerId: 'owner-1',
+            status: CapaStatus.OPEN,
+            version: 1,
+          });
+          prisma.auditFinding.update.mockResolvedValueOnce({
+            ...openFinding,
+            status: FindingStatus.IN_REMEDIATION,
+            version: 2,
+          });
+
+          const created = await service.createCapa(authCtx, {
+            findingId: 'finding-for-capa',
+            title: 'Fix patch',
+            correctiveAction: 'Deploy kernel update',
+            ownerId: 'owner-1',
+          });
+
+          expect(created.id).toBe('capa-new-1');
+          expect(prisma.auditFinding.update).toHaveBeenCalledWith(
+            expect.objectContaining({
+              where: { id: 'finding-for-capa' },
+              data: expect.objectContaining({
+                status: FindingStatus.IN_REMEDIATION,
+                version: { increment: 1 },
+              }),
+            }),
+          );
+          expect(prisma.auditFindingVerificationHistory.create).toHaveBeenCalledWith({
+            data: expect.objectContaining({
+              findingId: 'finding-for-capa',
+              capaId: 'capa-new-1',
+              action: AuditFindingLifecycleAction.STATUS_TRANSITIONED,
+              priorStatus: FindingStatus.OPEN,
+              newStatus: FindingStatus.IN_REMEDIATION,
+              actorId: authCtx.userId,
+            }),
+          });
+        });
+      });
+
+      describe('Multi-CAPA Concurrency & Sibling Synchronization', () => {
+        it('serializes on parent finding with row lock and advances finding when all sibling CAPAs are completed', async () => {
+          const capa1 = {
+            id: 'capa-101',
+            findingId: 'finding-multi-1',
+            organizationId: 'org-1',
+            status: CapaStatus.OPEN,
+            version: 1,
+            ownerId: 'owner-1',
+            updatedAt: new Date(),
+            finding: {
+              id: 'finding-multi-1',
+              status: FindingStatus.IN_REMEDIATION,
+              assessment: { auditPlan: { id: 'p-1', organizationId: 'org-1' } },
+            },
+          };
+
+          prisma.auditCapa.findFirst.mockResolvedValueOnce(capa1);
+          prisma.auditCapa.updateMany.mockResolvedValueOnce({ count: 1 });
+          prisma.auditCapa.update.mockResolvedValueOnce({
+            ...capa1,
+            status: CapaStatus.COMPLETED,
+            version: 2,
+          });
+
+          // Locked finding re-read returns IN_REMEDIATION
+          prisma.auditFinding.findFirst.mockResolvedValueOnce({
+            id: 'finding-multi-1',
+            status: FindingStatus.IN_REMEDIATION,
+          });
+
+          // Both sibling CAPAs are now COMPLETED
+          prisma.auditCapa.findMany.mockResolvedValueOnce([
+            { id: 'capa-101', status: CapaStatus.COMPLETED },
+            { id: 'capa-102', status: CapaStatus.COMPLETED },
+          ]);
+
+          prisma.auditFinding.update.mockResolvedValueOnce({
+            id: 'finding-multi-1',
+            status: FindingStatus.READY_FOR_VERIFICATION,
+            version: 2,
+          });
+
+          await service.updateCapa(authCtx, 'capa-101', {
+            status: CapaStatus.COMPLETED,
+            expectedVersion: 1,
+          });
+
+          // Row lock query executed on parent finding
+          expect(prisma.$queryRaw).toHaveBeenCalled();
+
+          // Parent finding advanced with version increment
+          expect(prisma.auditFinding.update).toHaveBeenCalledWith(
+            expect.objectContaining({
+              where: { id: 'finding-multi-1' },
+              data: expect.objectContaining({
+                status: FindingStatus.READY_FOR_VERIFICATION,
+                version: { increment: 1 },
+              }),
+            }),
+          );
+
+          // History record written with capaId attribution
+          expect(prisma.auditFindingVerificationHistory.create).toHaveBeenCalledWith({
+            data: expect.objectContaining({
+              findingId: 'finding-multi-1',
+              capaId: 'capa-101',
+              action: AuditFindingLifecycleAction.STATUS_TRANSITIONED,
+              priorStatus: FindingStatus.IN_REMEDIATION,
+              newStatus: FindingStatus.READY_FOR_VERIFICATION,
+              actorId: authCtx.userId,
+            }),
+          });
+        });
+
+        it('keeps parent finding IN_REMEDIATION when some sibling CAPAs remain incomplete', async () => {
+          const capa1 = {
+            id: 'capa-201',
+            findingId: 'finding-multi-2',
+            organizationId: 'org-1',
+            status: CapaStatus.OPEN,
+            version: 1,
+            ownerId: 'owner-1',
+            updatedAt: new Date(),
+            finding: {
+              id: 'finding-multi-2',
+              status: FindingStatus.IN_REMEDIATION,
+              assessment: { auditPlan: { id: 'p-1', organizationId: 'org-1' } },
+            },
+          };
+
+          prisma.auditCapa.findFirst.mockResolvedValueOnce(capa1);
+          prisma.auditCapa.updateMany.mockResolvedValueOnce({ count: 1 });
+          prisma.auditCapa.update.mockResolvedValueOnce({
+            ...capa1,
+            status: CapaStatus.COMPLETED,
+            version: 2,
+          });
+
+          prisma.auditFinding.findFirst.mockResolvedValueOnce({
+            id: 'finding-multi-2',
+            status: FindingStatus.IN_REMEDIATION,
+          });
+
+          // Sibling capa-202 is STILL OPEN!
+          prisma.auditCapa.findMany.mockResolvedValueOnce([
+            { id: 'capa-201', status: CapaStatus.COMPLETED },
+            { id: 'capa-202', status: CapaStatus.OPEN },
+          ]);
+
+          const findingUpdateSpy = jest.spyOn(prisma.auditFinding, 'update');
+          findingUpdateSpy.mockClear();
+
+          await service.updateCapa(authCtx, 'capa-201', {
+            status: CapaStatus.COMPLETED,
+            expectedVersion: 1,
+          });
+
+          // Finding must NOT be updated or advanced!
+          expect(findingUpdateSpy).not.toHaveBeenCalled();
         });
       });
     });

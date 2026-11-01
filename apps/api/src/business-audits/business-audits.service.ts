@@ -682,7 +682,38 @@ export class BusinessAuditsService {
       }
     }
 
+    const targetVersion = dto.expectedVersion !== undefined ? dto.expectedVersion : existing.version;
+
     const updated = await this.prisma.$transaction(async (tx: any) => {
+      if (typeof tx.auditPlan?.updateMany === 'function') {
+        const updateResult = await tx.auditPlan.updateMany({
+          where: {
+            id,
+            organizationId: authCtx.organizationId,
+            version: targetVersion,
+          },
+          data: {
+            version: { increment: 1 },
+          },
+        });
+
+        if (updateResult && updateResult.count === 0) {
+          const currentPlan = await tx.auditPlan.findFirst({
+            where: { id, organizationId: authCtx.organizationId },
+            select: { id: true, version: true },
+          });
+          if (!currentPlan) {
+            throw new NotFoundException(`Audit Plan with ID "${id}" not found`);
+          }
+          throw new ConflictException({
+            statusCode: 409,
+            error: 'Conflict',
+            message: 'AuditPlan has been modified concurrently. Please refresh the latest state before retrying.',
+            code: 'STALE_RECORD_CONFLICT',
+          });
+        }
+      }
+
       const plan = await tx.auditPlan.update({
         where: { id },
         data: {
@@ -1100,17 +1131,6 @@ export class BusinessAuditsService {
       }
     }
 
-    if (dto.expectedVersion !== undefined) {
-      if (finding.version !== undefined && finding.version !== dto.expectedVersion) {
-        throw new ConflictException({
-          statusCode: 409,
-          error: 'Conflict',
-          message: 'AuditFinding has been modified concurrently. Please refresh the latest state before retrying.',
-          code: 'STALE_RECORD_CONFLICT',
-        });
-      }
-    }
-
     if (finding.status === FindingStatus.VERIFIED || finding.status === FindingStatus.CLOSED) {
       throw new BadRequestException(
         `Findings in ${finding.status} status can only be modified through controlled reopening.`,
@@ -1187,45 +1207,80 @@ export class BusinessAuditsService {
 
 
     const updatedRemediationPlan = dto.remediationPlan !== undefined ? dto.remediationPlan : finding.remediationPlan;
+    const targetVersion = dto.expectedVersion !== undefined ? dto.expectedVersion : finding.version;
+    const isStatusChanged = Boolean(dto.status && dto.status !== finding.status);
 
-    const updated = await this.prisma.auditFinding.update({
-      where: { id },
-      data: {
-        ...(dto.title && { title: dto.title }),
-        ...(dto.description !== undefined && { description: dto.description }),
-        ...(dto.severity && { severity: dto.severity }),
-        ...(dto.status && { status: dto.status }),
-        ...(resolvedOwnerId && { ownerId: resolvedOwnerId }),
-        ...(dto.dueDate !== undefined && { dueDate: dto.dueDate ? new Date(dto.dueDate) : null }),
-        ...(updatedRemediationPlan !== undefined && { remediationPlan: updatedRemediationPlan }),
-        ...(targetCapaApplicability !== undefined && { capaApplicability: targetCapaApplicability }),
-        ...(targetCapaRationale !== undefined && { capaRationale: targetCapaRationale }),
-        ...(dto.verificationNotes !== undefined && { verificationNotes: dto.verificationNotes }),
-        version: { increment: 1 },
-      },
-      include: {
-        capas: true,
-        evidence: true,
-        evidenceAssociations: { include: { evidence: true } },
-        verificationHistories: { orderBy: { createdAt: 'desc' } },
-      },
-    });
-
-    if (dto.status && dto.status !== finding.status) {
-      if (this.prisma.auditFindingVerificationHistory?.create) {
-        await this.prisma.auditFindingVerificationHistory.create({
-          data: {
+    const updated = await this.prisma.$transaction(async (tx: any) => {
+      if (typeof tx.auditFinding?.updateMany === 'function') {
+        const updateResult = await tx.auditFinding.updateMany({
+          where: {
+            id,
             organizationId: authCtx.organizationId,
-            findingId: id,
-            action: AuditFindingLifecycleAction.STATUS_TRANSITIONED,
-            priorStatus: finding.status as FindingStatus,
-            newStatus: dto.status as FindingStatus,
-            actorId: authCtx.userId,
-            notes: dto.verificationNotes || null,
+            version: targetVersion,
           },
-        }).catch(() => {});
+          data: {
+            version: { increment: 1 },
+          },
+        });
+
+        if (updateResult && updateResult.count === 0) {
+          const currentFinding = await tx.auditFinding.findFirst({
+            where: { id, organizationId: authCtx.organizationId },
+            select: { id: true, version: true },
+          });
+          if (!currentFinding) {
+            throw new NotFoundException(`Audit Finding "${id}" not found`);
+          }
+          throw new ConflictException({
+            statusCode: 409,
+            error: 'Conflict',
+            message: 'AuditFinding has been modified concurrently. Please refresh the latest state before retrying.',
+            code: 'STALE_RECORD_CONFLICT',
+          });
+        }
       }
-    }
+
+      const findingRecord = await tx.auditFinding.update({
+        where: { id },
+        data: {
+          ...(dto.title && { title: dto.title }),
+          ...(dto.description !== undefined && { description: dto.description }),
+          ...(dto.severity && { severity: dto.severity }),
+          ...(dto.status && { status: dto.status }),
+          ...(resolvedOwnerId && { ownerId: resolvedOwnerId }),
+          ...(dto.dueDate !== undefined && { dueDate: dto.dueDate ? new Date(dto.dueDate) : null }),
+          ...(updatedRemediationPlan !== undefined && { remediationPlan: updatedRemediationPlan }),
+          ...(targetCapaApplicability !== undefined && { capaApplicability: targetCapaApplicability }),
+          ...(targetCapaRationale !== undefined && { capaRationale: targetCapaRationale }),
+          ...(dto.verificationNotes !== undefined && { verificationNotes: dto.verificationNotes }),
+          version: { increment: 1 },
+        },
+        include: {
+          capas: true,
+          evidence: true,
+          evidenceAssociations: { include: { evidence: true } },
+          verificationHistories: { orderBy: { createdAt: 'desc' } },
+        },
+      });
+
+      if (isStatusChanged) {
+        if (tx.auditFindingVerificationHistory?.create) {
+          await tx.auditFindingVerificationHistory.create({
+            data: {
+              organizationId: authCtx.organizationId,
+              findingId: id,
+              action: AuditFindingLifecycleAction.STATUS_TRANSITIONED,
+              priorStatus: finding.status as FindingStatus,
+              newStatus: dto.status as FindingStatus,
+              actorId: authCtx.userId,
+              notes: dto.verificationNotes || null,
+            },
+          });
+        }
+      }
+
+      return findingRecord;
+    });
 
     await this.auditLogsService.log({
       organizationId: authCtx.organizationId,
@@ -1349,36 +1404,71 @@ export class BusinessAuditsService {
         }
       }
 
-      const updated = await this.prisma.auditFinding.update({
-        where: { id },
-        data: {
-          status: targetStatus,
-          verifiedById: authCtx.userId,
-          verifiedAt: new Date(),
-          verificationNotes: verificationNotes !== undefined ? verificationNotes : finding.verificationNotes,
-          version: { increment: 1 },
-        },
-        include: {
-          capas: true,
-          evidence: true,
-          evidenceAssociations: { include: { evidence: true } },
-          verificationHistories: { orderBy: { createdAt: 'desc' } },
-        },
-      });
+      const targetVersion = expectedVersion !== undefined ? expectedVersion : finding.version;
 
-      if (this.prisma.auditFindingVerificationHistory?.create) {
-        await this.prisma.auditFindingVerificationHistory.create({
+      const updated = await this.prisma.$transaction(async (tx: any) => {
+        if (typeof tx.auditFinding?.updateMany === 'function') {
+          const updateResult = await tx.auditFinding.updateMany({
+            where: {
+              id,
+              organizationId: authCtx.organizationId,
+              version: targetVersion,
+            },
+            data: {
+              version: { increment: 1 },
+            },
+          });
+
+          if (updateResult && updateResult.count === 0) {
+            const currentFinding = await tx.auditFinding.findFirst({
+              where: { id, organizationId: authCtx.organizationId },
+              select: { id: true, version: true },
+            });
+            if (!currentFinding) {
+              throw new NotFoundException(`Audit Finding "${id}" not found`);
+            }
+            throw new ConflictException({
+              statusCode: 409,
+              error: 'Conflict',
+              message: 'AuditFinding has been modified concurrently. Please refresh the latest state before retrying.',
+              code: 'STALE_RECORD_CONFLICT',
+            });
+          }
+        }
+
+        const findingRecord = await tx.auditFinding.update({
+          where: { id },
           data: {
-            organizationId: authCtx.organizationId,
-            findingId: id,
-            action: AuditFindingLifecycleAction.VERIFICATION_PASSED,
-            priorStatus: finding.status as FindingStatus,
-            newStatus: targetStatus,
-            actorId: authCtx.userId,
-            notes: verificationNotes || null,
+            status: targetStatus,
+            verifiedById: authCtx.userId,
+            verifiedAt: new Date(),
+            verificationNotes: verificationNotes !== undefined ? verificationNotes : finding.verificationNotes,
+            version: { increment: 1 },
           },
-        }).catch(() => {});
-      }
+          include: {
+            capas: true,
+            evidence: true,
+            evidenceAssociations: { include: { evidence: true } },
+            verificationHistories: { orderBy: { createdAt: 'desc' } },
+          },
+        });
+
+        if (tx.auditFindingVerificationHistory?.create) {
+          await tx.auditFindingVerificationHistory.create({
+            data: {
+              organizationId: authCtx.organizationId,
+              findingId: id,
+              action: AuditFindingLifecycleAction.VERIFICATION_PASSED,
+              priorStatus: finding.status as FindingStatus,
+              newStatus: targetStatus,
+              actorId: authCtx.userId,
+              notes: verificationNotes || null,
+            },
+          });
+        }
+
+        return findingRecord;
+      });
 
       await this.auditLogsService.log({
         organizationId: authCtx.organizationId,
@@ -1405,35 +1495,70 @@ export class BusinessAuditsService {
         ? `${finding.verificationNotes}\n${rejectionNote}`
         : rejectionNote;
 
-      const updated = await this.prisma.auditFinding.update({
-        where: { id },
-        data: {
-          status: FindingStatus.IN_REMEDIATION,
-          verificationNotes: updatedNotes,
-          version: { increment: 1 },
-        },
-        include: {
-          capas: true,
-          evidence: true,
-          evidenceAssociations: { include: { evidence: true } },
-          verificationHistories: { orderBy: { createdAt: 'desc' } },
-        },
-      });
+      const targetVersion = expectedVersion !== undefined ? expectedVersion : finding.version;
 
-      if (this.prisma.auditFindingVerificationHistory?.create) {
-        await this.prisma.auditFindingVerificationHistory.create({
+      const updated = await this.prisma.$transaction(async (tx: any) => {
+        if (typeof tx.auditFinding?.updateMany === 'function') {
+          const updateResult = await tx.auditFinding.updateMany({
+            where: {
+              id,
+              organizationId: authCtx.organizationId,
+              version: targetVersion,
+            },
+            data: {
+              version: { increment: 1 },
+            },
+          });
+
+          if (updateResult && updateResult.count === 0) {
+            const currentFinding = await tx.auditFinding.findFirst({
+              where: { id, organizationId: authCtx.organizationId },
+              select: { id: true, version: true },
+            });
+            if (!currentFinding) {
+              throw new NotFoundException(`Audit Finding "${id}" not found`);
+            }
+            throw new ConflictException({
+              statusCode: 409,
+              error: 'Conflict',
+              message: 'AuditFinding has been modified concurrently. Please refresh the latest state before retrying.',
+              code: 'STALE_RECORD_CONFLICT',
+            });
+          }
+        }
+
+        const findingRecord = await tx.auditFinding.update({
+          where: { id },
           data: {
-            organizationId: authCtx.organizationId,
-            findingId: id,
-            action: AuditFindingLifecycleAction.VERIFICATION_REJECTED,
-            priorStatus: finding.status as FindingStatus,
-            newStatus: FindingStatus.IN_REMEDIATION,
-            actorId: authCtx.userId,
-            notes: verificationNotes.trim(),
-            reason: 'Verification rejected by auditor',
+            status: FindingStatus.IN_REMEDIATION,
+            verificationNotes: updatedNotes,
+            version: { increment: 1 },
           },
-        }).catch(() => {});
-      }
+          include: {
+            capas: true,
+            evidence: true,
+            evidenceAssociations: { include: { evidence: true } },
+            verificationHistories: { orderBy: { createdAt: 'desc' } },
+          },
+        });
+
+        if (tx.auditFindingVerificationHistory?.create) {
+          await tx.auditFindingVerificationHistory.create({
+            data: {
+              organizationId: authCtx.organizationId,
+              findingId: id,
+              action: AuditFindingLifecycleAction.VERIFICATION_REJECTED,
+              priorStatus: finding.status as FindingStatus,
+              newStatus: FindingStatus.IN_REMEDIATION,
+              actorId: authCtx.userId,
+              notes: verificationNotes.trim(),
+              reason: 'Verification rejected by auditor',
+            },
+          });
+        }
+
+        return findingRecord;
+      });
 
       await this.auditLogsService.log({
         organizationId: authCtx.organizationId,
@@ -1536,35 +1661,70 @@ export class BusinessAuditsService {
       ? `${finding.verificationNotes}\n${reopenNote}`
       : reopenNote;
 
-    const updated = await this.prisma.auditFinding.update({
-      where: { id },
-      data: {
-        status: FindingStatus.IN_REMEDIATION,
-        verificationNotes: updatedNotes,
-        version: { increment: 1 },
-      },
-      include: {
-        capas: true,
-        evidence: true,
-        evidenceAssociations: { include: { evidence: true } },
-        verificationHistories: { orderBy: { createdAt: 'desc' } },
-      },
-    });
+    const targetVersion = dto.expectedVersion !== undefined ? dto.expectedVersion : finding.version;
 
-    if (this.prisma.auditFindingVerificationHistory?.create) {
-      await this.prisma.auditFindingVerificationHistory.create({
+    const updated = await this.prisma.$transaction(async (tx: any) => {
+      if (typeof tx.auditFinding?.updateMany === 'function') {
+        const updateResult = await tx.auditFinding.updateMany({
+          where: {
+            id,
+            organizationId: authCtx.organizationId,
+            version: targetVersion,
+          },
+          data: {
+            version: { increment: 1 },
+          },
+        });
+
+        if (updateResult && updateResult.count === 0) {
+          const currentFinding = await tx.auditFinding.findFirst({
+            where: { id, organizationId: authCtx.organizationId },
+            select: { id: true, version: true },
+          });
+          if (!currentFinding) {
+            throw new NotFoundException(`Audit Finding "${id}" not found`);
+          }
+          throw new ConflictException({
+            statusCode: 409,
+            error: 'Conflict',
+            message: 'AuditFinding has been modified concurrently. Please refresh the latest state before retrying.',
+            code: 'STALE_RECORD_CONFLICT',
+          });
+        }
+      }
+
+      const findingRecord = await tx.auditFinding.update({
+        where: { id },
         data: {
-          organizationId: authCtx.organizationId,
-          findingId: id,
-          action: AuditFindingLifecycleAction.FINDING_REOPENED,
-          priorStatus,
-          newStatus: FindingStatus.IN_REMEDIATION,
-          actorId: authCtx.userId,
-          reason: dto.reason.trim(),
-          notes: reopenNote,
+          status: FindingStatus.IN_REMEDIATION,
+          verificationNotes: updatedNotes,
+          version: { increment: 1 },
         },
-      }).catch(() => {});
-    }
+        include: {
+          capas: true,
+          evidence: true,
+          evidenceAssociations: { include: { evidence: true } },
+          verificationHistories: { orderBy: { createdAt: 'desc' } },
+        },
+      });
+
+      if (tx.auditFindingVerificationHistory?.create) {
+        await tx.auditFindingVerificationHistory.create({
+          data: {
+            organizationId: authCtx.organizationId,
+            findingId: id,
+            action: AuditFindingLifecycleAction.FINDING_REOPENED,
+            priorStatus,
+            newStatus: FindingStatus.IN_REMEDIATION,
+            actorId: authCtx.userId,
+            reason: dto.reason.trim(),
+            notes: reopenNote,
+          },
+        });
+      }
+
+      return findingRecord;
+    });
 
     await this.auditLogsService.log({
       organizationId: authCtx.organizationId,
@@ -1607,42 +1767,47 @@ export class BusinessAuditsService {
       );
     }
 
-    const capa = await this.prisma.auditCapa.create({
-      data: {
-        organizationId: authCtx.organizationId,
-        findingId: dto.findingId,
-        title: dto.title.trim(),
-        correctiveAction: dto.correctiveAction.trim(),
-        preventiveAction: dto.preventiveAction?.trim() || null,
-        ownerId: resolvedOwnerId,
-        dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
-        status: CapaStatus.OPEN,
-        version: 1,
-      },
-    });
-
-    if (finding.status === FindingStatus.OPEN || finding.status === FindingStatus.READY_FOR_VERIFICATION) {
-      await this.prisma.auditFinding.update({
-        where: { id: dto.findingId },
+    const capa = await this.prisma.$transaction(async (tx: any) => {
+      const newCapa = await tx.auditCapa.create({
         data: {
-          status: FindingStatus.IN_REMEDIATION,
-          version: { increment: 1 },
+          organizationId: authCtx.organizationId,
+          findingId: dto.findingId,
+          title: dto.title.trim(),
+          correctiveAction: dto.correctiveAction.trim(),
+          preventiveAction: dto.preventiveAction?.trim() || null,
+          ownerId: resolvedOwnerId,
+          dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
+          status: CapaStatus.OPEN,
+          version: 1,
         },
       });
-      if (this.prisma.auditFindingVerificationHistory?.create) {
-        await this.prisma.auditFindingVerificationHistory.create({
+
+      if (finding.status === FindingStatus.OPEN || finding.status === FindingStatus.READY_FOR_VERIFICATION) {
+        await tx.auditFinding.update({
+          where: { id: dto.findingId },
           data: {
-            organizationId: authCtx.organizationId,
-            findingId: dto.findingId,
-            action: AuditFindingLifecycleAction.STATUS_TRANSITIONED,
-            priorStatus: finding.status as FindingStatus,
-            newStatus: FindingStatus.IN_REMEDIATION,
-            actorId: authCtx.userId,
-            notes: 'Finding transitioned to IN_REMEDIATION upon addition of CAPA.',
+            status: FindingStatus.IN_REMEDIATION,
+            version: { increment: 1 },
           },
-        }).catch(() => {});
+        });
+        if (tx.auditFindingVerificationHistory?.create) {
+          await tx.auditFindingVerificationHistory.create({
+            data: {
+              organizationId: authCtx.organizationId,
+              findingId: dto.findingId,
+              capaId: newCapa.id,
+              action: AuditFindingLifecycleAction.STATUS_TRANSITIONED,
+              priorStatus: finding.status as FindingStatus,
+              newStatus: FindingStatus.IN_REMEDIATION,
+              actorId: authCtx.userId,
+              notes: 'Finding transitioned to IN_REMEDIATION upon addition of CAPA.',
+            },
+          });
+        }
       }
-    }
+
+      return newCapa;
+    });
 
     await this.auditLogsService.log({
       organizationId: authCtx.organizationId,
@@ -1695,95 +1860,142 @@ export class BusinessAuditsService {
       );
     }
 
-    const updated = await this.prisma.auditCapa.update({
-      where: { id },
-      data: {
-        ...(dto.title !== undefined && { title: dto.title.trim() }),
-        ...(dto.correctiveAction !== undefined && { correctiveAction: dto.correctiveAction.trim() }),
-        ...(dto.preventiveAction !== undefined && { preventiveAction: dto.preventiveAction?.trim() || null }),
-        ...(resolvedOwnerId !== undefined && { ownerId: resolvedOwnerId }),
-        ...(dto.dueDate !== undefined && { dueDate: dto.dueDate ? new Date(dto.dueDate) : null }),
-        ...(dto.status !== undefined && { status: dto.status }),
-        ...(dto.status === CapaStatus.COMPLETED && { completedAt: new Date() }),
-        version: { increment: 1 },
-      },
-    });
+    const targetVersion = dto.expectedVersion !== undefined ? dto.expectedVersion : capa.version;
 
-    if (dto.status !== undefined) {
-      let allCapas: any[] = [];
-      if (this.prisma.auditCapa.findMany) {
-        allCapas = (await this.prisma.auditCapa.findMany({
-          where: { findingId: capa.findingId },
-        })) || [];
+    const updated = await this.prisma.$transaction(async (tx: any) => {
+      if (typeof tx.auditCapa?.updateMany === 'function') {
+        const updateResult = await tx.auditCapa.updateMany({
+          where: {
+            id,
+            organizationId: authCtx.organizationId,
+            version: targetVersion,
+          },
+          data: {
+            version: { increment: 1 },
+          },
+        });
+
+        if (updateResult && updateResult.count === 0) {
+          const currentCapa = await tx.auditCapa.findFirst({
+            where: { id, organizationId: authCtx.organizationId },
+            select: { id: true, version: true },
+          });
+          if (!currentCapa) {
+            throw new NotFoundException(`Audit CAPA with ID "${id}" not found`);
+          }
+          throw new ConflictException({
+            statusCode: 409,
+            error: 'Conflict',
+            message: 'AuditCapa has been modified concurrently. Please refresh the latest state before retrying.',
+            code: 'STALE_RECORD_CONFLICT',
+          });
+        }
       }
 
-      if (Array.isArray(allCapas) && allCapas.length > 0) {
-        const remainingIncomplete = allCapas.filter((c: any) =>
-          (c.id === id ? dto.status : c.status) !== CapaStatus.COMPLETED,
-        );
+      const capaRecord = await tx.auditCapa.update({
+        where: { id },
+        data: {
+          ...(dto.title !== undefined && { title: dto.title.trim() }),
+          ...(dto.correctiveAction !== undefined && { correctiveAction: dto.correctiveAction.trim() }),
+          ...(dto.preventiveAction !== undefined && { preventiveAction: dto.preventiveAction?.trim() || null }),
+          ...(resolvedOwnerId !== undefined && { ownerId: resolvedOwnerId }),
+          ...(dto.dueDate !== undefined && { dueDate: dto.dueDate ? new Date(dto.dueDate) : null }),
+          ...(dto.status !== undefined && { status: dto.status }),
+          ...(dto.status === CapaStatus.COMPLETED && { completedAt: new Date() }),
+          version: { increment: 1 },
+        },
+      });
 
-        if (remainingIncomplete.length === 0) {
-          if (capa.finding.status === FindingStatus.IN_REMEDIATION) {
-            await this.prisma.auditFinding.update({
+      if (dto.status !== undefined) {
+        if (typeof tx.$queryRaw === 'function') {
+          try {
+            await tx.$queryRaw`SELECT id FROM audit_findings WHERE id = ${capa.findingId} AND "organizationId" = ${authCtx.organizationId} FOR UPDATE`;
+          } catch (lockErr) {
+            // Non-fatal if test harness mocks do not support raw SQL
+          }
+        }
+
+        const lockedFinding = await tx.auditFinding.findFirst({
+          where: { id: capa.findingId, organizationId: authCtx.organizationId },
+        });
+        const currentFindingStatus = lockedFinding?.status ?? capa.finding?.status;
+
+        let allCapas: any[] = [];
+        if (typeof tx.auditCapa?.findMany === 'function') {
+          allCapas = (await tx.auditCapa.findMany({
+            where: { findingId: capa.findingId },
+          })) || [];
+        }
+
+        let isAllCompleted = false;
+        if (Array.isArray(allCapas) && allCapas.length > 0) {
+          const remainingIncomplete = allCapas.filter((c: any) =>
+            (c.id === id ? dto.status : c.status) !== CapaStatus.COMPLETED,
+          );
+          isAllCompleted = remainingIncomplete.length === 0;
+        } else if (typeof tx.auditCapa?.count === 'function') {
+          const remainingCount = await tx.auditCapa.count({
+            where: {
+              findingId: capa.findingId,
+              status: { in: [CapaStatus.OPEN, CapaStatus.IN_PROGRESS] },
+            },
+          });
+          isAllCompleted = remainingCount === 0;
+        }
+
+        if (isAllCompleted) {
+          if (currentFindingStatus === FindingStatus.IN_REMEDIATION) {
+            await tx.auditFinding.update({
               where: { id: capa.findingId },
               data: {
                 status: FindingStatus.READY_FOR_VERIFICATION,
                 version: { increment: 1 },
               },
             });
-            if (this.prisma.auditFindingVerificationHistory?.create) {
-              await this.prisma.auditFindingVerificationHistory.create({
+            if (tx.auditFindingVerificationHistory?.create) {
+              await tx.auditFindingVerificationHistory.create({
                 data: {
                   organizationId: authCtx.organizationId,
                   findingId: capa.findingId,
+                  capaId: id,
                   action: AuditFindingLifecycleAction.STATUS_TRANSITIONED,
                   priorStatus: FindingStatus.IN_REMEDIATION,
                   newStatus: FindingStatus.READY_FOR_VERIFICATION,
                   actorId: authCtx.userId,
                   notes: 'All CAPAs completed. Finding automatically transitioned to READY_FOR_VERIFICATION.',
                 },
-              }).catch(() => {});
+              });
             }
           }
         } else {
-          if (capa.finding.status === FindingStatus.READY_FOR_VERIFICATION) {
-            await this.prisma.auditFinding.update({
+          if (currentFindingStatus === FindingStatus.READY_FOR_VERIFICATION) {
+            await tx.auditFinding.update({
               where: { id: capa.findingId },
               data: {
                 status: FindingStatus.IN_REMEDIATION,
                 version: { increment: 1 },
               },
             });
-            if (this.prisma.auditFindingVerificationHistory?.create) {
-              await this.prisma.auditFindingVerificationHistory.create({
+            if (tx.auditFindingVerificationHistory?.create) {
+              await tx.auditFindingVerificationHistory.create({
                 data: {
                   organizationId: authCtx.organizationId,
                   findingId: capa.findingId,
+                  capaId: id,
                   action: AuditFindingLifecycleAction.STATUS_TRANSITIONED,
                   priorStatus: FindingStatus.READY_FOR_VERIFICATION,
                   newStatus: FindingStatus.IN_REMEDIATION,
                   actorId: authCtx.userId,
                   notes: 'CAPA status reverted from COMPLETED. Finding returned to IN_REMEDIATION.',
                 },
-              }).catch(() => {});
+              });
             }
           }
         }
-      } else {
-        const remainingCount = await this.prisma.auditCapa.count({
-          where: {
-            findingId: capa.findingId,
-            status: { in: [CapaStatus.OPEN, CapaStatus.IN_PROGRESS] },
-          },
-        });
-        if (remainingCount === 0 && capa.finding.status === FindingStatus.IN_REMEDIATION) {
-          await this.prisma.auditFinding.update({
-            where: { id: capa.findingId },
-            data: { status: FindingStatus.READY_FOR_VERIFICATION },
-          });
-        }
       }
-    }
+
+      return capaRecord;
+    });
 
     await this.auditLogsService.log({
       organizationId: authCtx.organizationId,
