@@ -4,14 +4,13 @@ import React from 'react';
 import { AuditMetricsDto } from '@omnigrc/shared';
 import { FileCheck, ShieldCheck, ClipboardList, ChevronRight } from 'lucide-react';
 import { AnimatedCountUp } from '@/components/ui/animated-count-up';
-import { DonutChart, ChartSegment } from '../charts/donut-chart';
+import { StackedProgressBar, StackedSegment } from '../charts/stacked-progress-bar';
 import { HorizontalBarChart, BarItem } from '../charts/horizontal-bar-chart';
-
 import { ModuleNotLicensedCard } from '@/components/ui/module-not-licensed-card';
 
 interface AuditReadinessWidgetProps {
   metrics: AuditMetricsDto;
-  onNavigateToView?: (view: string) => void;
+  onNavigateToView?: (view: string, params?: Record<string, any>) => void;
 }
 
 export function AuditReadinessWidget({ metrics, onNavigateToView }: AuditReadinessWidgetProps) {
@@ -27,18 +26,42 @@ export function AuditReadinessWidget({ metrics, onNavigateToView }: AuditReadine
 
   const score = metrics.overallAuditScore || 0;
 
-  // Build Audit Plan Status Donut chart segments
+  // Build Audit Plan Status Stacked Bar segments
   const byPlanStatus = metrics.byPlanStatus || {};
   const draftPlans = byPlanStatus.DRAFT || 0;
   const plannedPlans = byPlanStatus.PLANNED || 0;
   const inProgressPlans = byPlanStatus.IN_PROGRESS || 0;
   const completedPlans = byPlanStatus.COMPLETED || 0;
 
-  const planSegments: ChartSegment[] = [
-    { key: 'in_progress', label: 'In Progress', value: inProgressPlans, color: '#6366f1' },
-    { key: 'planned', label: 'Planned', value: plannedPlans, color: '#3b82f6' },
-    { key: 'completed', label: 'Completed', value: completedPlans, color: '#10b981' },
-    { key: 'draft', label: 'Draft', value: draftPlans, color: '#94a3b8' },
+  const planSegments: StackedSegment[] = [
+    {
+      key: 'in_progress',
+      label: 'In Progress',
+      value: inProgressPlans,
+      color: '#0d9488',
+      onClick: () => onNavigateToView?.('audits', { status: 'IN_PROGRESS' }),
+    },
+    {
+      key: 'planned',
+      label: 'Planned',
+      value: plannedPlans,
+      color: '#0284c7',
+      onClick: () => onNavigateToView?.('audits', { status: 'PLANNED' }),
+    },
+    {
+      key: 'completed',
+      label: 'Completed',
+      value: completedPlans,
+      color: '#10b981',
+      onClick: () => onNavigateToView?.('audits', { status: 'COMPLETED' }),
+    },
+    {
+      key: 'draft',
+      label: 'Draft',
+      value: draftPlans,
+      color: '#94a3b8',
+      onClick: () => onNavigateToView?.('audits', { status: 'DRAFT' }),
+    },
   ];
 
   // Build CAPA / Remediation Status Bar items
@@ -56,17 +79,17 @@ export function AuditReadinessWidget({ metrics, onNavigateToView }: AuditReadine
       <div>
         <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-indigo-50 border border-indigo-100 rounded-lg text-indigo-600 shrink-0">
+            <div className="p-2 bg-teal-50 border border-teal-100 rounded-lg text-teal-700 shrink-0">
               <FileCheck size={18} />
             </div>
             <div>
               <h3 className="text-sm font-semibold text-slate-900">Audit & Remediation Readiness</h3>
-              <p className="text-xs text-slate-500">Audit scores & CAPA status</p>
+              <p className="text-xs text-slate-500">Execution tracking & finding remediation</p>
             </div>
           </div>
           <button
             onClick={() => onNavigateToView?.('audits')}
-            className="text-xs font-semibold text-indigo-700 hover:text-indigo-800 flex items-center gap-1 hover:underline shrink-0"
+            className="text-xs font-semibold text-teal-700 hover:text-teal-800 flex items-center gap-1 hover:underline shrink-0"
             title="Open Audits"
           >
             <span>Audits</span>
@@ -94,20 +117,21 @@ export function AuditReadinessWidget({ metrics, onNavigateToView }: AuditReadine
             <div className="flex items-center gap-1.5 text-xs text-slate-600">
               <ShieldCheck size={13} /> Audit Score
             </div>
-            <div className="text-base font-bold text-indigo-700 mt-1 omni-mono">
+            <div className="text-base font-bold text-teal-700 mt-1 omni-mono">
               <AnimatedCountUp value={score} suffix="%" />
             </div>
           </div>
         </div>
 
-        {/* Audit Plan Status Donut Visualization */}
-        <div className="pt-1 mb-4 flex justify-center">
-          <DonutChart
+        {/* Audit Plan Progress Visualization */}
+        <div className="mb-4">
+          <div className="text-xs font-semibold text-slate-700 mb-2">Audit Plan Execution Status</div>
+          <StackedProgressBar
             segments={planSegments}
-            centerLabel="Audit Plans"
-            centerValue={metrics.totalPlans}
-            size={120}
-            thickness={18}
+            total={metrics.totalPlans > 0 ? metrics.totalPlans : draftPlans + plannedPlans + inProgressPlans + completedPlans}
+            height={12}
+            showLegend={true}
+            showPercentages={true}
             emptyMessage="No audit plans registered"
           />
         </div>
@@ -129,6 +153,7 @@ export function AuditReadinessWidget({ metrics, onNavigateToView }: AuditReadine
         <div
           onClick={() => onNavigateToView?.('audits')}
           className="bg-amber-50/50 p-2 rounded-lg text-center border border-amber-100/60 hover:bg-amber-100/50 transition-colors cursor-pointer"
+          title="Open Audit Findings"
         >
           <p className="text-[11px] font-medium text-amber-700">Open Findings</p>
           <p className="text-sm font-bold text-amber-900 mt-0.5 omni-mono">
@@ -139,19 +164,21 @@ export function AuditReadinessWidget({ metrics, onNavigateToView }: AuditReadine
         <div
           onClick={() => onNavigateToView?.('audits')}
           className="bg-rose-50/50 p-2 rounded-lg text-center border border-rose-100/60 hover:bg-rose-100/50 transition-colors cursor-pointer"
+          title="Inspect Overdue Findings"
         >
-          <p className="text-[11px] font-medium text-rose-700 font-medium">Overdue Findings</p>
+          <p className="text-[11px] font-medium text-rose-700">Overdue Findings</p>
           <p className="text-sm font-bold text-rose-900 mt-0.5 omni-mono">
             <AnimatedCountUp value={metrics.findingsOverdueCount} />
           </p>
         </div>
 
         <div
-          onClick={() => onNavigateToView?.('audits')}
-          className="bg-indigo-50/50 p-2 rounded-lg text-center border border-indigo-100/60 hover:bg-indigo-100/50 transition-colors cursor-pointer"
+          onClick={() => onNavigateToView?.('remediation')}
+          className="bg-teal-50/50 p-2 rounded-lg text-center border border-teal-100/60 hover:bg-teal-100/50 transition-colors cursor-pointer"
+          title="Inspect Remediation CAPAs"
         >
-          <p className="text-[11px] font-medium text-indigo-700">Open CAPAs</p>
-          <p className="text-sm font-bold text-indigo-900 mt-0.5 omni-mono">
+          <p className="text-[11px] font-medium text-teal-700">Open CAPAs</p>
+          <p className="text-sm font-bold text-teal-900 mt-0.5 omni-mono">
             <AnimatedCountUp value={metrics.capaOpenCount} />
           </p>
         </div>

@@ -1,5 +1,20 @@
 import { PrismaClient } from '@prisma/client';
-import { Role, PodRegion, PodStatus, FrameworkCode, AssetType, AssetCriticality, RiskStatus, MappingStatus, ModelTier, TaskStatus } from '@omnigrc/shared';
+import {
+  Role,
+  PodRegion,
+  PodStatus,
+  FrameworkCode,
+  AssetType,
+  AssetCriticality,
+  AssetEnvironment,
+  RiskStatus,
+  MappingStatus,
+  ModelTier,
+  TaskStatus,
+  ObligationCadence,
+  EntitlementStatus,
+  ProductAccessStatus,
+} from '@omnigrc/shared';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
@@ -18,19 +33,89 @@ async function main() {
     },
   });
 
-  // Create ADMIN user
+  // Create demo users and organization memberships for Meridian Health
   const passwordHash = await bcrypt.hash('Admin@123456', 10);
-  const adminUser = await prisma.user.upsert({
-    where: { email: 'admin@meridian.com' },
-    update: {},
-    create: {
-      organizationId: org.id,
+  const demoUsers = [
+    {
+      id: '00000000-0000-0000-0000-000000000002',
       name: 'Priya Nair',
       email: 'admin@meridian.com',
-      passwordHash,
       role: Role.ADMIN,
+      status: ProductAccessStatus.ACTIVE,
     },
-  });
+    {
+      id: '00000000-0000-0000-0000-000000000003',
+      name: 'Rahul Sharma',
+      email: 'compliance@meridian.com',
+      role: Role.ANALYST,
+      status: ProductAccessStatus.ACTIVE,
+    },
+    {
+      id: '00000000-0000-0000-0000-000000000004',
+      name: 'Ananya Rao',
+      email: 'secops@meridian.com',
+      role: Role.ANALYST,
+      status: ProductAccessStatus.ACTIVE,
+    },
+    {
+      id: '00000000-0000-0000-0000-000000000005',
+      name: 'Vikram Patel',
+      email: 'devops@meridian.com',
+      role: Role.ANALYST,
+      status: ProductAccessStatus.ACTIVE,
+    },
+    {
+      id: '00000000-0000-0000-0000-000000000006',
+      name: 'Rajesh Gupta',
+      email: 'rajesh.gupta@meridian.com',
+      role: Role.ANALYST,
+      status: ProductAccessStatus.REVOKED,
+    },
+  ];
+
+  let adminUser: any = null;
+  for (const u of demoUsers) {
+    const createdUser = await prisma.user.upsert({
+      where: { email: u.email },
+      update: {
+        name: u.name,
+        role: u.role,
+      },
+      create: {
+        id: u.id,
+        organizationId: org.id,
+        name: u.name,
+        email: u.email,
+        passwordHash,
+        role: u.role,
+      },
+    });
+
+    if (u.role === Role.ADMIN && !adminUser) {
+      adminUser = createdUser;
+    }
+
+    await prisma.organizationMembership.upsert({
+      where: {
+        organizationId_userId: {
+          organizationId: org.id,
+          userId: createdUser.id,
+        },
+      },
+      update: {
+        role: u.role,
+        status: u.status,
+        revokedAt: u.status === ProductAccessStatus.REVOKED ? new Date() : null,
+      },
+      create: {
+        organizationId: org.id,
+        userId: createdUser.id,
+        role: u.role,
+        status: u.status,
+        revokedAt: u.status === ProductAccessStatus.REVOKED ? new Date() : null,
+      },
+    });
+  }
 
   // Seed 4 RegionalPods (India = ACTIVE, others = INACTIVE)
   const pods = [
@@ -208,6 +293,47 @@ async function main() {
     }
   }
 
+  // Seed Active Framework Entitlements for Meridian Health
+  // Meridian Health is licensed for ISO 27001, SOC 2, and HIPAA
+  const entitledFrameworkCodes = [
+    FrameworkCode.ISO27001,
+    FrameworkCode.SOC2,
+    FrameworkCode.HIPAA,
+  ];
+
+  for (const code of entitledFrameworkCodes) {
+    const fwId = frameworkMap.get(code);
+    if (!fwId) continue;
+
+    const existingEntitlement = await prisma.organizationFrameworkEntitlement.findFirst({
+      where: {
+        organizationId: org.id,
+        frameworkId: fwId,
+        versionId: null,
+      },
+    });
+
+    if (existingEntitlement) {
+      await prisma.organizationFrameworkEntitlement.update({
+        where: { id: existingEntitlement.id },
+        data: {
+          status: EntitlementStatus.ACTIVE,
+          source: 'ARAV_CONTROL_PLANE',
+        },
+      });
+    } else {
+      await prisma.organizationFrameworkEntitlement.create({
+        data: {
+          organizationId: org.id,
+          frameworkId: fwId,
+          versionId: null,
+          status: EntitlementStatus.ACTIVE,
+          source: 'ARAV_CONTROL_PLANE',
+        },
+      });
+    }
+  }
+
   // Seed 7 Realistic Demo Assets
   const demoAssets = [
     {
@@ -215,20 +341,24 @@ async function main() {
       name: 'AWS Production Cloud Infrastructure',
       type: AssetType.SOFTWARE,
       description: 'Primary cloud hosting environment for patient portal and API services.',
-      owner: 'DevOps Team',
+      owner: 'Vikram Patel',
       criticality: AssetCriticality.HIGH,
       vendorName: 'Amazon Web Services',
       dataResidencyRegion: 'India (ap-south-1)',
+      environment: AssetEnvironment.PRODUCTION,
+      isManaged: true,
     },
     {
       id: 'a0000000-0000-0000-0000-000000000002',
       name: 'Patient Health Records DB (PostgreSQL)',
       type: AssetType.DATA_STORE,
       description: 'Encrypted relational database containing electronic health records (EHR).',
-      owner: 'Data Engineering',
+      owner: 'Priya Nair',
       criticality: AssetCriticality.HIGH,
       vendorName: 'Amazon RDS',
       dataResidencyRegion: 'India (Mumbai)',
+      environment: AssetEnvironment.PRODUCTION,
+      isManaged: true,
     },
     {
       id: 'a0000000-0000-0000-0000-000000000003',
@@ -239,46 +369,56 @@ async function main() {
       criticality: AssetCriticality.HIGH,
       vendorName: 'Razorpay Software Pvt Ltd',
       dataResidencyRegion: 'India',
+      environment: AssetEnvironment.PRODUCTION,
+      isManaged: true,
     },
     {
       id: 'a0000000-0000-0000-0000-000000000004',
       name: 'Corporate Laptops & MacBooks',
       type: AssetType.HARDWARE,
       description: 'Employee workstations managed via MDM with disk encryption enabled.',
-      owner: 'IT Support',
+      owner: 'Rahul Sharma',
       criticality: AssetCriticality.MEDIUM,
       vendorName: 'Apple / Dell',
       dataResidencyRegion: 'On-Premise / Remote',
+      environment: AssetEnvironment.PRODUCTION,
+      isManaged: false,
     },
     {
       id: 'a0000000-0000-0000-0000-000000000005',
       name: 'HubSpot Sales & Marketing CRM',
       type: AssetType.VENDOR,
       description: 'Customer relationship management platform for patient outreach.',
-      owner: 'Marketing Team',
+      owner: 'Ananya Rao',
       criticality: AssetCriticality.MEDIUM,
       vendorName: 'HubSpot Inc.',
       dataResidencyRegion: 'United States',
+      environment: AssetEnvironment.STAGING,
+      isManaged: true,
     },
     {
       id: 'a0000000-0000-0000-0000-000000000006',
-      name: 'Slack & Team Communication Hub',
+      name: 'Staging Kubernetes Microservices Cluster',
       type: AssetType.SOFTWARE,
-      description: 'Internal messaging tool for healthcare providers and operations staff.',
+      description: 'Pre-production testing cluster for new microservices and integration verification.',
       owner: 'Internal IT',
       criticality: AssetCriticality.LOW,
-      vendorName: 'Slack Technologies',
-      dataResidencyRegion: 'United States',
+      vendorName: 'Amazon EKS',
+      dataResidencyRegion: 'India (ap-south-1)',
+      environment: AssetEnvironment.STAGING,
+      isManaged: true,
     },
     {
       id: 'a0000000-0000-0000-0000-000000000007',
-      name: 'Office CCTV & NVR Systems',
+      name: 'Local Developer Sandbox & Emulators',
       type: AssetType.HARDWARE,
-      description: 'Physical security cameras and network video recorder in Bangalore HQ.',
-      owner: 'Physical Security',
+      description: 'Development environment sandbox machines used for offline API mocking.',
+      owner: 'Physical Security Team',
       criticality: AssetCriticality.LOW,
-      vendorName: 'Hikvision',
+      vendorName: 'Custom Build',
       dataResidencyRegion: 'India (Bangalore)',
+      environment: AssetEnvironment.DEVELOPMENT,
+      isManaged: false,
     },
   ];
 
@@ -293,6 +433,8 @@ async function main() {
         criticality: asset.criticality,
         vendorName: asset.vendorName,
         dataResidencyRegion: asset.dataResidencyRegion,
+        environment: asset.environment,
+        isManaged: asset.isManaged,
       },
       create: {
         id: asset.id,
@@ -304,6 +446,8 @@ async function main() {
         criticality: asset.criticality,
         vendorName: asset.vendorName,
         dataResidencyRegion: asset.dataResidencyRegion,
+        environment: asset.environment,
+        isManaged: asset.isManaged,
         createdById: adminUser.id,
       },
     });
@@ -615,96 +759,118 @@ async function main() {
       title: 'Enforce TLS 1.3 Minimum Cryptographic Version on Cloud Gateway',
       description: 'Disable legacy TLS 1.0/1.1 protocols and mandate TLS 1.3 across all AWS ALB listeners.',
       status: TaskStatus.COMPLETE,
-      owner: 'DevOps Lead',
+      owner: 'Vikram Patel',
       dueDate: days(-10), // Completed in past
       controlId: 'c0000000-0000-0000-0000-000000000001',
+      cadence: ObligationCadence.QUARTERLY,
+      obligationReference: 'ISO-A.8.24',
     },
     {
       id: 't0000000-0000-0000-0000-000000000002',
       title: 'Conduct Q2 Quarterly RBAC User Access Permission Audit',
       description: 'Review active Okta directory permissions and revoke non-essential administrative access.',
       status: TaskStatus.IN_PROGRESS,
-      owner: 'SecOps Team',
+      owner: 'Ananya Rao',
       dueDate: days(-3), // OVERDUE (3 days ago)
       controlId: 'c0000000-0000-0000-0000-000000000002',
+      cadence: ObligationCadence.QUARTERLY,
+      obligationReference: 'SOC2-CC6.3',
     },
     {
       id: 't0000000-0000-0000-0000-000000000003',
       title: 'Verify Encrypted Database Snapshot Failover to Secondary Region',
       description: 'Execute periodic disaster recovery drill validating RDS snapshot restoration in ap-southeast-1.',
       status: TaskStatus.NOT_STARTED,
-      owner: 'DBA Team',
+      owner: 'Vikram Patel',
       dueDate: days(-1), // OVERDUE (1 day ago)
       controlId: 'c0000000-0000-0000-0000-000000000003',
+      cadence: ObligationCadence.MONTHLY,
+      obligationReference: 'HIPAA-164.308(a)(7)',
     },
     {
       id: 't0000000-0000-0000-0000-000000000004',
       title: 'Perform AI Model Data Protection Impact Assessment (DPIA)',
       description: 'Document diagnostic AI algorithm training data sources and privacy impact report.',
       status: TaskStatus.UNDER_REVIEW,
-      owner: 'Privacy Lead',
+      owner: 'Rahul Sharma',
       dueDate: days(4), // Due in 4 days (<= 30D)
       controlId: 'c0000000-0000-0000-0000-000000000004',
+      cadence: ObligationCadence.ANNUAL,
+      obligationReference: 'ISO-42001-A.5',
     },
     {
       id: 't0000000-0000-0000-0000-000000000005',
       title: 'Deploy SIEM Log Ingestion Forwarders to All Kubernetes Nodes',
       description: 'Install Fluentd log collection daemons across production EKS clusters.',
       status: TaskStatus.IN_PROGRESS,
-      owner: 'SecOps Lead',
+      owner: 'Ananya Rao',
       dueDate: days(14), // Due in 14 days (<= 30D)
       controlId: 'c0000000-0000-0000-0000-000000000005',
+      cadence: ObligationCadence.MONTHLY,
+      obligationReference: 'ISO-A.8.16',
     },
     {
       id: 't0000000-0000-0000-0000-000000000006',
       title: 'Execute Vendor SOC 2 Audit Report Review for Razorpay & HubSpot',
       description: 'Collect annual SOC 2 Type II compliance attestations from critical cloud vendors.',
       status: TaskStatus.NOT_STARTED,
-      owner: 'Compliance Officer',
+      owner: 'Rahul Sharma',
       dueDate: days(22), // Due in 22 days (<= 30D)
       controlId: 'c0000000-0000-0000-0000-000000000006',
+      cadence: ObligationCadence.ANNUAL,
+      obligationReference: 'SOC2-CC9.2',
     },
     {
       id: 't0000000-0000-0000-0000-000000000007',
       title: 'Review 72-Hour Data Breach Incident Notification Playbook',
       description: 'Validate reporting procedures with external legal counsel for DPDP and GDPR breach requirements.',
       status: TaskStatus.UNDER_REVIEW,
-      owner: 'Legal & Risk',
+      owner: 'Rahul Sharma',
       dueDate: days(45), // Due in 45 days (30D - 60D)
       controlId: 'c0000000-0000-0000-0000-000000000007',
+      cadence: ObligationCadence.ANNUAL,
+      obligationReference: 'GDPR-Art33',
     },
     {
       id: 't0000000-0000-0000-0000-000000000008',
       title: 'Mandate MDM BitLocker Encryption Enforcement on Corporate Workstations',
       description: 'Configure automated remote wipe and full-disk encryption policies for corporate laptops.',
       status: TaskStatus.IN_PROGRESS,
-      owner: 'IT Support',
+      owner: 'Vikram Patel',
       dueDate: days(58), // Due in 58 days (30D - 60D)
       controlId: 'c0000000-0000-0000-0000-000000000008',
+      cadence: ObligationCadence.MONTHLY,
+      obligationReference: 'HIPAA-164.312(a)(1)',
     },
     {
       id: 't0000000-0000-0000-0000-000000000009',
       title: 'Annual ISO 27001 Internal Audit Preparation & Evidence Gathering',
       description: 'Gather audit evidence files and control documentation for stage 2 recertification audit.',
       status: TaskStatus.NOT_STARTED,
-      owner: 'Compliance Officer',
+      owner: 'Priya Nair',
       dueDate: days(72), // Due in 72 days (60D - 90D)
+      cadence: ObligationCadence.ANNUAL,
+      obligationReference: 'ISO-27001-Stage2',
     },
     {
       id: 't0000000-0000-0000-0000-000000000010',
       title: 'Conduct Employee Phishing Awareness Simulation Training',
       description: 'Launch quarterly simulated spear-phishing campaigns to test employee reporting capabilities.',
       status: TaskStatus.COMPLETE,
-      owner: 'SecOps Team',
+      owner: 'Ananya Rao',
       dueDate: days(-15),
+      cadence: ObligationCadence.QUARTERLY,
+      obligationReference: 'SOC2-CC2.1',
     },
     {
       id: 't0000000-0000-0000-0000-000000000011',
       title: 'Establish DPDP Data Protection Officer (DPO) Public Notice',
       description: 'Publish DPO contact information on patient health portal per DPDP Section 10 obligations.',
       status: TaskStatus.NOT_STARTED,
-      owner: 'Privacy Lead',
+      owner: 'Rahul Sharma',
       dueDate: days(88), // Due in 88 days (60D - 90D)
+      cadence: ObligationCadence.ANNUAL,
+      obligationReference: 'DPDP-Sec10',
     },
   ];
 
@@ -718,6 +884,8 @@ async function main() {
         owner: t.owner,
         dueDate: t.dueDate,
         controlId: t.controlId || null,
+        cadence: t.cadence,
+        obligationReference: t.obligationReference,
       },
       create: {
         id: t.id,
@@ -728,6 +896,8 @@ async function main() {
         owner: t.owner,
         dueDate: t.dueDate,
         controlId: t.controlId || null,
+        cadence: t.cadence,
+        obligationReference: t.obligationReference,
         createdById: adminUser.id,
       },
     });

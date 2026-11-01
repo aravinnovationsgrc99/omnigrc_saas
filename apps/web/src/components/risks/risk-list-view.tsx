@@ -15,11 +15,19 @@ import { RagStatusBadge, getRiskRag } from '@/components/ui/rag-status-badge';
 
 interface RiskListViewProps {
   initialAssetId?: string;
+  initialScoreBand?: string;
+  initialStatus?: string;
   onClearAssetFilter?: () => void;
-  onNavigateToView?: (view: string) => void;
+  onNavigateToView?: (view: string, params?: Record<string, any>) => void;
 }
 
-export function RiskListView({ initialAssetId, onClearAssetFilter, onNavigateToView }: RiskListViewProps = {}) {
+export function RiskListView({
+  initialAssetId,
+  initialScoreBand,
+  initialStatus,
+  onClearAssetFilter,
+  onNavigateToView,
+}: RiskListViewProps = {}) {
   const { showToast } = useToast();
   const [risks, setRisks] = useState<RiskDto[]>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -32,8 +40,8 @@ export function RiskListView({ initialAssetId, onClearAssetFilter, onNavigateToV
   // Filters & Search
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('');
-  const [statusFilter, setStatusFilter] = useState<string>('');
-  const [scoreBandFilter, setScoreBandFilter] = useState<string>('');
+  const [statusFilter, setStatusFilter] = useState<string>(initialStatus || '');
+  const [scoreBandFilter, setScoreBandFilter] = useState<string>(initialScoreBand || '');
   const [frameworkFilter, setFrameworkFilter] = useState<string>('');
   const [cellLikelihood, setCellLikelihood] = useState<number | null>(null);
   const [cellImpact, setCellImpact] = useState<number | null>(null);
@@ -44,6 +52,18 @@ export function RiskListView({ initialAssetId, onClearAssetFilter, onNavigateToV
       setAssetIdFilter(initialAssetId || null);
     }
   }, [initialAssetId]);
+
+  useEffect(() => {
+    if (initialScoreBand !== undefined) {
+      setScoreBandFilter(initialScoreBand);
+    }
+  }, [initialScoreBand]);
+
+  useEffect(() => {
+    if (initialStatus !== undefined) {
+      setStatusFilter(initialStatus);
+    }
+  }, [initialStatus]);
 
   // Drawer state
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);

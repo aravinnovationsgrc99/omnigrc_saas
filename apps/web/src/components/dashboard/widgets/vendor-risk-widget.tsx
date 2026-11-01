@@ -2,15 +2,14 @@
 
 import React from 'react';
 import { VendorMetricsDto } from '@omnigrc/shared';
-import { Building2, ChevronRight } from 'lucide-react';
+import { Building2, ChevronRight, AlertTriangle } from 'lucide-react';
 import { AnimatedCountUp } from '@/components/ui/animated-count-up';
-import { DonutChart, ChartSegment } from '../charts/donut-chart';
-
+import { StackedProgressBar, StackedSegment } from '../charts/stacked-progress-bar';
 import { ModuleNotLicensedCard } from '@/components/ui/module-not-licensed-card';
 
 interface VendorRiskWidgetProps {
   metrics: VendorMetricsDto;
-  onNavigateToView?: (view: string) => void;
+  onNavigateToView?: (view: string, params?: Record<string, any>) => void;
 }
 
 export function VendorRiskWidget({ metrics, onNavigateToView }: VendorRiskWidgetProps) {
@@ -30,11 +29,35 @@ export function VendorRiskWidget({ metrics, onNavigateToView }: VendorRiskWidget
   const low = metrics.byCriticality?.LOW || 0;
   const total = metrics.total || critical + high + medium + low;
 
-  const segments: ChartSegment[] = [
-    { key: 'critical', label: 'Critical Vendor', value: critical, color: '#dc2626' },
-    { key: 'high', label: 'High Criticality', value: high, color: '#f97316' },
-    { key: 'medium', label: 'Medium Criticality', value: medium, color: '#f59e0b' },
-    { key: 'low', label: 'Low Criticality', value: low, color: '#64748b' },
+  const segments: StackedSegment[] = [
+    {
+      key: 'critical',
+      label: 'Critical',
+      value: critical,
+      color: '#dc2626',
+      onClick: () => onNavigateToView?.('vendors', { criticality: 'CRITICAL' }),
+    },
+    {
+      key: 'high',
+      label: 'High',
+      value: high,
+      color: '#f97316',
+      onClick: () => onNavigateToView?.('vendors', { criticality: 'HIGH' }),
+    },
+    {
+      key: 'medium',
+      label: 'Medium',
+      value: medium,
+      color: '#f59e0b',
+      onClick: () => onNavigateToView?.('vendors', { criticality: 'MEDIUM' }),
+    },
+    {
+      key: 'low',
+      label: 'Low',
+      value: low,
+      color: '#0d9488',
+      onClick: () => onNavigateToView?.('vendors', { criticality: 'LOW' }),
+    },
   ];
 
   return (
@@ -46,8 +69,8 @@ export function VendorRiskWidget({ metrics, onNavigateToView }: VendorRiskWidget
               <Building2 size={18} />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-slate-900">Vendor Risk</h3>
-              <p className="text-xs text-slate-500">Third-party ecosystem & reviews</p>
+              <h3 className="text-sm font-semibold text-slate-900">Third-Party Vendor Risk</h3>
+              <p className="text-xs text-slate-500">Criticality tiering & compliance reviews</p>
             </div>
           </div>
           <button
@@ -60,14 +83,30 @@ export function VendorRiskWidget({ metrics, onNavigateToView }: VendorRiskWidget
           </button>
         </div>
 
-        {/* Donut Chart Visualization */}
-        <div className="mb-4 flex justify-center">
-          <DonutChart
+        {/* Total Vendors Posture Header */}
+        <div className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-200/80 rounded-lg mb-4">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-slate-600">Total Ecosystem</span>
+            {critical > 0 && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                {critical} Tier-1 Critical
+              </span>
+            )}
+          </div>
+          <span className="text-sm font-bold text-slate-900 omni-mono">
+            {total} Active
+          </span>
+        </div>
+
+        {/* Stacked Criticality Tier Distribution */}
+        <div className="mb-4">
+          <div className="text-xs font-semibold text-slate-700 mb-2">Criticality Tier Distribution</div>
+          <StackedProgressBar
             segments={segments}
-            centerLabel="Vendors"
-            centerValue={total}
-            size={120}
-            thickness={18}
+            total={total > 0 ? total : critical + high + medium + low}
+            height={12}
+            showLegend={true}
+            showPercentages={true}
             emptyMessage="No vendors registered"
           />
         </div>
@@ -75,8 +114,9 @@ export function VendorRiskWidget({ metrics, onNavigateToView }: VendorRiskWidget
 
       <div className="grid grid-cols-2 gap-2 pt-3 border-t border-slate-100">
         <div
-          onClick={() => onNavigateToView?.('vendors')}
+          onClick={() => onNavigateToView?.('vendors', { status: 'UNDER_REVIEW' })}
           className="bg-amber-50/50 p-2.5 rounded-lg border border-amber-100/60 hover:bg-amber-100/50 transition-colors cursor-pointer"
+          title="Filter Vendors Requiring Review"
         >
           <span className="text-xs text-amber-700 font-medium">Review Required</span>
           <p className="text-base font-bold text-amber-900 mt-1 omni-mono">
@@ -85,8 +125,9 @@ export function VendorRiskWidget({ metrics, onNavigateToView }: VendorRiskWidget
         </div>
 
         <div
-          onClick={() => onNavigateToView?.('vendors')}
+          onClick={() => onNavigateToView?.('vendors', { status: 'OVERDUE' })}
           className="bg-rose-50/50 p-2.5 rounded-lg border border-rose-100/60 hover:bg-rose-100/50 transition-colors cursor-pointer"
+          title="Filter Overdue Vendor Reviews"
         >
           <span className="text-xs text-rose-700 font-medium">Overdue Reviews</span>
           <p className="text-base font-bold text-rose-900 mt-1 omni-mono">

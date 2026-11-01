@@ -8,14 +8,16 @@ import { SkeletonTable } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InlineErrorState } from '@/components/ui/inline-error-state';
 import { AssetDrawer } from './asset-drawer';
-import { Plus, Search, Filter, Boxes } from 'lucide-react';
+import { Plus, Search, Filter, Boxes, Pencil } from 'lucide-react';
 
 
 interface AssetListViewProps {
   onNavigateToRisk?: (assetId: string) => void;
+  initialCriticality?: string;
+  initialType?: string;
 }
 
-export function AssetListView({ onNavigateToRisk }: AssetListViewProps = {}) {
+export function AssetListView({ onNavigateToRisk, initialCriticality, initialType }: AssetListViewProps = {}) {
   const { showToast } = useToast();
   const [assets, setAssets] = useState<AssetDto[]>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -24,8 +26,8 @@ export function AssetListView({ onNavigateToRisk }: AssetListViewProps = {}) {
 
   // Filters & Search
   const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState<string>('');
-  const [criticalityFilter, setCriticalityFilter] = useState<string>('');
+  const [typeFilter, setTypeFilter] = useState<string>(initialType || '');
+  const [criticalityFilter, setCriticalityFilter] = useState<string>(initialCriticality || '');
 
   // Drawer state
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -52,6 +54,18 @@ export function AssetListView({ onNavigateToRisk }: AssetListViewProps = {}) {
       setLoading(false);
     }
   }, [search, typeFilter, criticalityFilter]);
+
+  useEffect(() => {
+    if (initialCriticality !== undefined) {
+      setCriticalityFilter(initialCriticality);
+    }
+  }, [initialCriticality]);
+
+  useEffect(() => {
+    if (initialType !== undefined) {
+      setTypeFilter(initialType);
+    }
+  }, [initialType]);
 
   useEffect(() => {
     fetchAssets();
@@ -179,17 +193,21 @@ export function AssetListView({ onNavigateToRisk }: AssetListViewProps = {}) {
             <thead>
               <tr style={{ background: '#F6F7F6', borderBottom: '1px solid #E2E6E4', color: '#5B6672' }}>
                 <th style={{ padding: '12px 16px', fontWeight: 600 }}>Asset Name</th>
-                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Type</th>
+                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Type & Env</th>
                 <th style={{ padding: '12px 16px', fontWeight: 600 }}>Criticality</th>
-                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Owner</th>
+                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Treatment Owner</th>
                 <th style={{ padding: '12px 16px', fontWeight: 600 }}>Vendor</th>
                 <th style={{ padding: '12px 16px', fontWeight: 600 }}>Updated</th>
+                <th style={{ padding: '12px 16px', fontWeight: 600, textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {assets.map((asset, index) => {
                 const badgeClass = getCriticalityBadgeClass(asset.criticality);
                 const isLast = index === assets.length - 1;
+                const env = (asset as any).environment;
+                const isManaged = (asset as any).isManaged;
+
                 return (
                   <tr
                     key={asset.id}
@@ -199,10 +217,17 @@ export function AssetListView({ onNavigateToRisk }: AssetListViewProps = {}) {
                     style={{
                       borderBottom: isLast ? 'none' : '1px solid #EDEFED',
                     }}
-                    className="omni-table-row focus:outline-none"
+                    className="omni-table-row focus:outline-none group cursor-pointer"
                   >
                     <td style={{ padding: '14px 16px', fontWeight: 600, color: '#1B2430' }}>
-                      {asset.name}
+                      <div className="flex items-center gap-2">
+                        <span>{asset.name}</span>
+                        {isManaged === false && (
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-50 text-amber-700 border border-amber-200 font-normal">
+                            Unmanaged
+                          </span>
+                        )}
+                      </div>
                       {asset.dataResidencyRegion && (
                         <div style={{ fontSize: 11, fontWeight: 400, color: '#8B95A1', marginTop: 2 }}>
                           📍 {asset.dataResidencyRegion}
@@ -210,19 +235,42 @@ export function AssetListView({ onNavigateToRisk }: AssetListViewProps = {}) {
                       )}
                     </td>
                     <td style={{ padding: '14px 16px', color: '#5B6672' }}>
-                      <span className="omni-mono" style={{ fontSize: 11.5, background: '#EDEFED', padding: '3px 8px', borderRadius: 4 }}>
-                        {asset.type}
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="omni-mono" style={{ fontSize: 11.5, background: '#EDEFED', padding: '3px 8px', borderRadius: 4 }}>
+                          {asset.type}
+                        </span>
+                        {env && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium border border-slate-200">
+                            {env}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td style={{ padding: '14px 16px' }}>
                       <span className={badgeClass}>
                         {asset.criticality}
                       </span>
                     </td>
-                    <td style={{ padding: '14px 16px', color: '#1B2430' }}>{asset.owner}</td>
+                    <td style={{ padding: '14px 16px', color: '#1B2430' }}>
+                      <span className="font-medium text-slate-800">{asset.owner}</span>
+                    </td>
                     <td style={{ padding: '14px 16px', color: '#5B6672' }}>{asset.vendorName || '—'}</td>
                     <td style={{ padding: '14px 16px', color: '#8B95A1', fontSize: 12 }}>
                       {new Date(asset.updatedAt).toLocaleDateString()}
+                    </td>
+                    <td style={{ padding: '14px 16px', textAlign: 'right' }}>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenEdit(asset);
+                        }}
+                        className="omni-btn-ghost text-xs px-2.5 py-1 inline-flex items-center gap-1 text-teal-700 hover:text-teal-800 border-teal-200 hover:border-teal-400"
+                        title="Edit Asset"
+                        aria-label={`Edit ${asset.name}`}
+                      >
+                        <Pencil size={12} /> Edit
+                      </button>
                     </td>
                   </tr>
                 );

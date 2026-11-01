@@ -26,13 +26,17 @@ import {
 import { useToast } from '@/context/toast-context';
 import { PolicyEditor } from './policy-editor';
 
-export function PolicyListView() {
+interface PolicyListViewProps {
+  initialStatus?: string;
+}
+
+export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
   const { addToast } = useToast();
   const [policies, setPolicies] = useState<PolicyDto[]>([]);
   const [categories, setCategories] = useState<PolicyCategoryDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingCategories, setLoadingCategories] = useState(false);
-  const [filterStatus, setFilterStatus] = useState<string>('ALL');
+  const [filterStatus, setFilterStatus] = useState<string>(initialStatus || 'ALL');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedPolicy, setSelectedPolicy] = useState<PolicyDto | null>(null);
 
@@ -61,6 +65,12 @@ export function PolicyListView() {
   const [editDescription, setEditDescription] = useState('');
   const [editContent, setEditContent] = useState('');
   const [savingDraft, setSavingDraft] = useState(false);
+
+  useEffect(() => {
+    if (initialStatus) {
+      setFilterStatus(initialStatus);
+    }
+  }, [initialStatus]);
 
   useEffect(() => {
     fetchPolicies();

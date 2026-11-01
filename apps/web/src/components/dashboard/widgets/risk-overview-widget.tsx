@@ -4,13 +4,12 @@ import React from 'react';
 import { RiskMetricsDto } from '@omnigrc/shared';
 import { ShieldAlert, AlertTriangle, ShieldCheck, Activity, ChevronRight } from 'lucide-react';
 import { AnimatedCountUp } from '@/components/ui/animated-count-up';
-import { DonutChart, ChartSegment } from '../charts/donut-chart';
-
+import { StackedProgressBar, StackedSegment } from '../charts/stacked-progress-bar';
 import { ModuleNotLicensedCard } from '@/components/ui/module-not-licensed-card';
 
 interface RiskOverviewWidgetProps {
   metrics: RiskMetricsDto;
-  onNavigateToView?: (view: string) => void;
+  onNavigateToView?: (view: string, params?: Record<string, any>) => void;
 }
 
 export function RiskOverviewWidget({ metrics, onNavigateToView }: RiskOverviewWidgetProps) {
@@ -35,11 +34,35 @@ export function RiskOverviewWidget({ metrics, onNavigateToView }: RiskOverviewWi
   const acceptedCount = byStatus.ACCEPTED || 0;
   const closedCount = byStatus.CLOSED || 0;
 
-  const segments: ChartSegment[] = [
-    { key: 'open', label: 'Open', value: openCount, color: '#f43f5e' },
-    { key: 'in_treatment', label: 'In Treatment', value: inTreatmentCount, color: '#f59e0b' },
-    { key: 'accepted', label: 'Accepted', value: acceptedCount, color: '#3b82f6' },
-    { key: 'closed', label: 'Closed', value: closedCount, color: '#10b981' },
+  const segments: StackedSegment[] = [
+    {
+      key: 'open',
+      label: 'Open',
+      value: openCount,
+      color: '#f43f5e',
+      onClick: () => onNavigateToView?.('risk', { status: 'OPEN' }),
+    },
+    {
+      key: 'in_treatment',
+      label: 'In Treatment',
+      value: inTreatmentCount,
+      color: '#f59e0b',
+      onClick: () => onNavigateToView?.('risk', { status: 'IN_TREATMENT' }),
+    },
+    {
+      key: 'accepted',
+      label: 'Accepted',
+      value: acceptedCount,
+      color: '#0284c7',
+      onClick: () => onNavigateToView?.('risk', { status: 'ACCEPTED' }),
+    },
+    {
+      key: 'closed',
+      label: 'Closed',
+      value: closedCount,
+      color: '#10b981',
+      onClick: () => onNavigateToView?.('risk', { status: 'CLOSED' }),
+    },
   ];
 
   return (
@@ -51,8 +74,8 @@ export function RiskOverviewWidget({ metrics, onNavigateToView }: RiskOverviewWi
               <ShieldAlert size={18} />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-slate-900">Risk Overview</h3>
-              <p className="text-xs text-slate-500">Open enterprise risk posture</p>
+              <h3 className="text-sm font-semibold text-slate-900">Risk Posture Overview</h3>
+              <p className="text-xs text-slate-500">Lifecycle distribution & critical exposure</p>
             </div>
           </div>
           <button
@@ -65,14 +88,28 @@ export function RiskOverviewWidget({ metrics, onNavigateToView }: RiskOverviewWi
           </button>
         </div>
 
-        {/* Donut Chart Visualization */}
-        <div className="mb-4 pt-1 flex justify-center">
-          <DonutChart
+        {/* Posture Header Strip */}
+        <div className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-200/80 rounded-lg mb-4">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-slate-600">Active Exposure</span>
+            <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-rose-100 text-rose-800">
+              {highCount > 0 ? `${highCount} High SLA` : 'Stable'}
+            </span>
+          </div>
+          <span className="text-sm font-bold text-slate-900 omni-mono">
+            {total} Open Risks
+          </span>
+        </div>
+
+        {/* Stacked Progress Bar Visualization */}
+        <div className="mb-4">
+          <div className="text-xs font-semibold text-slate-700 mb-2">Lifecycle Stage Progression</div>
+          <StackedProgressBar
             segments={segments}
-            centerLabel="Open Risks"
-            centerValue={total}
-            size={120}
-            thickness={18}
+            total={total > 0 ? total : openCount + inTreatmentCount + acceptedCount + closedCount}
+            height={12}
+            showLegend={true}
+            showPercentages={true}
             emptyMessage="No open risks registered"
           />
         </div>
@@ -81,8 +118,9 @@ export function RiskOverviewWidget({ metrics, onNavigateToView }: RiskOverviewWi
       {/* KPI Cards Strip */}
       <div className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-100">
         <div
-          onClick={() => onNavigateToView?.('risk')}
+          onClick={() => onNavigateToView?.('risk', { band: 'HIGH' })}
           className="bg-rose-50/50 p-2.5 rounded-lg border border-rose-100/60 hover:bg-rose-100/50 transition-colors cursor-pointer"
+          title="Filter High Severity Risks"
         >
           <div className="flex items-center gap-1 text-[11px] font-medium text-rose-700">
             <AlertTriangle size={12} /> High
@@ -93,8 +131,9 @@ export function RiskOverviewWidget({ metrics, onNavigateToView }: RiskOverviewWi
         </div>
 
         <div
-          onClick={() => onNavigateToView?.('risk')}
+          onClick={() => onNavigateToView?.('risk', { band: 'MEDIUM' })}
           className="bg-amber-50/50 p-2.5 rounded-lg border border-amber-100/60 hover:bg-amber-100/50 transition-colors cursor-pointer"
+          title="Filter Medium Severity Risks"
         >
           <div className="flex items-center gap-1 text-[11px] font-medium text-amber-700">
             <Activity size={12} /> Medium
@@ -105,8 +144,9 @@ export function RiskOverviewWidget({ metrics, onNavigateToView }: RiskOverviewWi
         </div>
 
         <div
-          onClick={() => onNavigateToView?.('risk')}
+          onClick={() => onNavigateToView?.('risk', { band: 'LOW' })}
           className="bg-emerald-50/50 p-2.5 rounded-lg border border-emerald-100/60 hover:bg-emerald-100/50 transition-colors cursor-pointer"
+          title="Filter Low Severity Risks"
         >
           <div className="flex items-center gap-1 text-[11px] font-medium text-emerald-700">
             <ShieldCheck size={12} /> Low

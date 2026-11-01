@@ -24,6 +24,9 @@ describe('AssetsService', () => {
         create: jest.fn(),
         update: jest.fn(),
       },
+      user: {
+        findFirst: jest.fn(),
+      },
       auditLogEntry: {
         findMany: jest.fn(),
       },
@@ -135,6 +138,150 @@ describe('AssetsService', () => {
         actorId: 'user-1',
       }),
     );
+  });
+
+  describe('owner validation & tenant isolation', () => {
+    it('should reject asset creation when owner is a user belonging to another organization', async () => {
+      const foreignUserId = '00000000-0000-0000-0000-000000000999';
+      prisma.user.findFirst.mockResolvedValue({
+        id: foreignUserId,
+        organizationId: 'org-other',
+        memberships: [{ organizationId: 'org-other', status: 'ACTIVE' }],
+      });
+
+      const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+      await expect(
+        service.create(authCtx, {
+          name: 'Server A',
+          type: AssetType.SOFTWARE,
+          owner: foreignUserId,
+          criticality: AssetCriticality.HIGH,
+        }),
+      ).rejects.toThrow('Assigned owner does not belong to this organization');
+    });
+
+    it('should reject asset creation when owner user ID does not exist', async () => {
+      const nonExistentUserId = '00000000-0000-0000-0000-000000000404';
+      prisma.user.findFirst.mockResolvedValue(null);
+
+      const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+      await expect(
+        service.create(authCtx, {
+          name: 'Server B',
+          type: AssetType.SOFTWARE,
+          owner: nonExistentUserId,
+          criticality: AssetCriticality.HIGH,
+        }),
+      ).rejects.toThrow(`Assigned owner user ID "${nonExistentUserId}" not found`);
+    });
+
+    it('should reject asset creation when owner has revoked membership', async () => {
+      const revokedUserId = '00000000-0000-0000-0000-000000000005';
+      prisma.user.findFirst.mockResolvedValue({
+        id: revokedUserId,
+        organizationId: 'org-1',
+        memberships: [{ organizationId: 'org-1', status: 'REVOKED' }],
+      });
+
+      const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+      await expect(
+        service.create(authCtx, {
+          name: 'Server C',
+          type: AssetType.SOFTWARE,
+          owner: revokedUserId,
+          criticality: AssetCriticality.HIGH,
+        }),
+      ).rejects.toThrow('Assigned owner does not have active membership in this organization');
+    });
+
+    it('should accept asset creation when owner is an active member in organization', async () => {
+      const validUserId = '00000000-0000-0000-0000-000000000002';
+      prisma.user.findFirst.mockResolvedValue({
+        id: validUserId,
+        organizationId: 'org-1',
+        memberships: [{ organizationId: 'org-1', status: 'ACTIVE' }],
+      });
+      prisma.asset.create.mockResolvedValue({
+        id: 'asset-created',
+        organizationId: 'org-1',
+        name: 'Server D',
+        type: AssetType.SOFTWARE,
+        owner: validUserId,
+        criticality: AssetCriticality.HIGH,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        createdById: 'user-1',
+      });
+
+      const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+      const res = await service.create(authCtx, {
+        name: 'Server D',
+        type: AssetType.SOFTWARE,
+        owner: validUserId,
+        criticality: AssetCriticality.HIGH,
+      });
+
+      expect(res.id).toBe('asset-created');
+    });
+
+    it('should accept asset creation when owner is an email belonging to active member', async () => {
+      const validEmail = 'compliance@meridian.com';
+      prisma.user.findFirst.mockResolvedValue({
+        id: '00000000-0000-0000-0000-000000000003',
+        email: validEmail,
+        organizationId: 'org-1',
+        memberships: [{ organizationId: 'org-1', status: 'ACTIVE' }],
+      });
+      prisma.asset.create.mockResolvedValue({
+        id: 'asset-email',
+        organizationId: 'org-1',
+        name: 'Server E',
+        type: AssetType.SOFTWARE,
+        owner: validEmail,
+        criticality: AssetCriticality.HIGH,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        createdById: 'user-1',
+      });
+
+      const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+      const res = await service.create(authCtx, {
+        name: 'Server E',
+        type: AssetType.SOFTWARE,
+        owner: validEmail,
+        criticality: AssetCriticality.HIGH,
+      });
+
+      expect(res.id).toBe('asset-email');
+    });
+
+    it('should reject asset update when updated owner belongs to another organization', async () => {
+      const existingAsset = {
+        id: 'asset-1',
+        organizationId: 'org-1',
+        name: 'Server 1',
+        type: AssetType.HARDWARE,
+        owner: 'SecOps',
+        criticality: AssetCriticality.HIGH,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        createdById: 'user-1',
+        deletedAt: null,
+      };
+      prisma.asset.findFirst.mockResolvedValue(existingAsset);
+
+      const foreignEmail = 'attacker@other-org.com';
+      prisma.user.findFirst.mockResolvedValue({
+        id: 'user-foreign',
+        email: foreignEmail,
+        organizationId: 'org-other',
+      });
+
+      const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
+      await expect(
+        service.update(authCtx, 'asset-1', { owner: foreignEmail }),
+      ).rejects.toThrow('Assigned owner does not belong to this organization');
+    });
   });
 
   describe('getRisksForAsset', () => {

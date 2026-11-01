@@ -7,7 +7,7 @@ import { AnimatedCountUp } from '@/components/ui/animated-count-up';
 
 interface AssetInventoryWidgetProps {
   metrics: AssetMetricsDto;
-  onNavigateToView?: (view: string) => void;
+  onNavigateToView?: (view: string, params?: Record<string, any>) => void;
 }
 
 export function AssetInventoryWidget({ metrics, onNavigateToView }: AssetInventoryWidgetProps) {
@@ -40,8 +40,9 @@ export function AssetInventoryWidget({ metrics, onNavigateToView }: AssetInvento
 
         <div className="grid grid-cols-3 gap-2 mb-4">
           <div
-            onClick={() => onNavigateToView?.('assets')}
+            onClick={() => onNavigateToView?.('assets', { criticality: 'HIGH' })}
             className="bg-rose-50/50 p-2.5 rounded-lg border border-rose-100/60 hover:bg-rose-100/50 transition-colors cursor-pointer"
+            title="Filter High Critical Assets"
           >
             <div className="flex items-center gap-1 text-[11px] font-medium text-rose-700">
               <AlertTriangle size={12} /> High Critical
@@ -54,6 +55,7 @@ export function AssetInventoryWidget({ metrics, onNavigateToView }: AssetInvento
           <div
             onClick={() => onNavigateToView?.('assets')}
             className="bg-emerald-50/50 p-2.5 rounded-lg border border-emerald-100/60 hover:bg-emerald-100/50 transition-colors cursor-pointer"
+            title="View Managed Assets"
           >
             <div className="flex items-center gap-1 text-[11px] font-medium text-emerald-700">
               <Shield size={12} /> Managed
@@ -66,6 +68,7 @@ export function AssetInventoryWidget({ metrics, onNavigateToView }: AssetInvento
           <div
             onClick={() => onNavigateToView?.('assets')}
             className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors cursor-pointer"
+            title="View Unmanaged Assets"
           >
             <div className="flex items-center gap-1 text-[11px] font-medium text-slate-600">
               <Layers size={12} /> Unmanaged

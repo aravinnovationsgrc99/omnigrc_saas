@@ -5,16 +5,19 @@ import {
   AssetDto,
   AssetType,
   AssetCriticality,
+  AssetEnvironment,
   AuditLogEntryDto,
   CreateAssetDto,
   UpdateAssetDto,
   RiskDto,
   PaginatedRisksDto,
+  OrganizationMemberDto,
 } from '@omnigrc/shared';
 
 import { apiRequest } from '@/lib/api-client';
 import { useToast } from '@/context/toast-context';
 import { useAuth } from '@/context/auth-context';
+import { SearchableSelect, SelectOption } from '@/components/ui/searchable-select';
 import { RiskDrawer } from '../risks/risk-drawer';
 import {
   X,
@@ -52,6 +55,13 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess, onNavigateToRis
   const [vendorName, setVendorName] = useState('');
   const [dataResidencyRegion, setDataResidencyRegion] = useState('');
   const [description, setDescription] = useState('');
+  const [environment, setEnvironment] = useState<AssetEnvironment>(AssetEnvironment.PRODUCTION);
+  const [isManaged, setIsManaged] = useState(true);
+
+  // Directory Members State
+  const [members, setMembers] = useState<OrganizationMemberDto[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+  const [customOwnerMode, setCustomOwnerMode] = useState(false);
 
   const [auditLogs, setAuditLogs] = useState<AuditLogEntryDto[]>([]);
   const [loadingAudit, setLoadingAudit] = useState(false);
@@ -90,6 +100,16 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess, onNavigateToRis
     }
   }, [asset, canReadRisks]);
 
+  // Load organization member directory on drawer open
+  useEffect(() => {
+    if (!isOpen) return;
+    setLoadingMembers(true);
+    apiRequest<OrganizationMemberDto[]>('/organization-members')
+      .then((data) => setMembers(data || []))
+      .catch(() => setMembers([]))
+      .finally(() => setLoadingMembers(false));
+  }, [isOpen]);
+
   useEffect(() => {
     if (asset) {
       setName(asset.name || '');
@@ -99,6 +119,9 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess, onNavigateToRis
       setVendorName(asset.vendorName || '');
       setDataResidencyRegion(asset.dataResidencyRegion || '');
       setDescription(asset.description || '');
+      setEnvironment((asset as any).environment || AssetEnvironment.PRODUCTION);
+      setIsManaged((asset as any).isManaged !== undefined ? (asset as any).isManaged : true);
+      setCustomOwnerMode(false);
 
       // Fetch audit logs for asset
       setLoadingAudit(true);
@@ -117,6 +140,9 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess, onNavigateToRis
       setVendorName('');
       setDataResidencyRegion('');
       setDescription('');
+      setEnvironment(AssetEnvironment.PRODUCTION);
+      setIsManaged(true);
+      setCustomOwnerMode(false);
       setAuditLogs([]);
       setAssociatedRisks([]);
     }
@@ -150,7 +176,9 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess, onNavigateToRis
           vendorName: vendorName.trim() || undefined,
           dataResidencyRegion: dataResidencyRegion.trim() || undefined,
           description: description.trim() || undefined,
-        };
+          environment,
+          isManaged,
+        } as any;
         await apiRequest(`/assets/${asset.id}`, {
           method: 'PATCH',
           body: JSON.stringify(payload),
@@ -165,7 +193,9 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess, onNavigateToRis
           vendorName: vendorName.trim() || undefined,
           dataResidencyRegion: dataResidencyRegion.trim() || undefined,
           description: description.trim() || undefined,
-        };
+          environment,
+          isManaged,
+        } as any;
         await apiRequest('/assets', {
           method: 'POST',
           body: JSON.stringify(payload),
@@ -199,6 +229,38 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess, onNavigateToRis
       setDeleting(false);
     }
   };
+
+  const activeMembers = members.filter(
+    (m) => m.status === 'ACTIVE' && m.productAccessStatus !== 'REVOKED',
+  );
+
+  const memberOptions: SelectOption[] = activeMembers.map((m) => {
+    const val = m.name || m.email || m.userId;
+    return {
+      value: val,
+      label: m.name ? `${m.name} (${m.email || 'No email'})` : (m.email || m.userId),
+      description: `${m.role} • ${m.email || 'No email'}`,
+      badge: m.role,
+    };
+  });
+
+  const hasMatchingMember = memberOptions.some(
+    (opt) => opt.value.toLowerCase() === owner.toLowerCase() || opt.label.toLowerCase().includes(owner.toLowerCase()),
+  );
+
+  const ownerOptions: SelectOption[] = [
+    ...memberOptions,
+    ...(owner && !hasMatchingMember
+      ? [
+          {
+            value: owner,
+            label: `${owner} (Legacy / Team)`,
+            description: 'Legacy text assignment',
+            badge: 'Legacy',
+          },
+        ]
+      : []),
+  ];
 
   return (
     <div style={{
@@ -299,21 +361,76 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess, onNavigateToRis
               </div>
             </div>
 
+            {/* Treatment Owner Selection with Member Directory Integration & Legacy Fallback */}
             <div style={{ marginBottom: 16 }}>
-              <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
-                Owner (Team / Individual) *
-              </label>
-              <input
-                className={`omni-input ${isOwnerInvalid ? 'border-rose-500' : ''}`}
-                placeholder="e.g. DevOps Team or Priya Nair"
-                value={owner}
-                onChange={(e) => setOwner(e.target.value)}
-                onBlur={() => setOwnerTouched(true)}
-                required
-              />
-              {isOwnerInvalid && (
-                <span className="text-xs text-rose-600 font-medium mt-1 block">Owner team or person is required.</span>
+              <div className="flex items-center justify-between mb-1.5">
+                <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672' }}>
+                  Treatment Owner *
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setCustomOwnerMode((prev) => !prev)}
+                  className="text-[11px] text-teal-700 hover:text-teal-800 hover:underline font-medium"
+                >
+                  {customOwnerMode ? 'Select from Directory' : 'Custom / Team Name'}
+                </button>
+              </div>
+
+              {customOwnerMode ? (
+                <input
+                  className={`omni-input ${isOwnerInvalid ? 'border-rose-500' : ''}`}
+                  placeholder="e.g. DevOps Team or Priya Nair"
+                  value={owner}
+                  onChange={(e) => setOwner(e.target.value)}
+                  onBlur={() => setOwnerTouched(true)}
+                  required
+                />
+              ) : (
+                <SearchableSelect
+                  options={ownerOptions}
+                  value={owner}
+                  onChange={(val) => {
+                    setOwner(val);
+                    setOwnerTouched(true);
+                  }}
+                  placeholder="Select authorized member or team..."
+                  loading={loadingMembers}
+                  error={isOwnerInvalid ? 'Treatment owner is required.' : null}
+                />
               )}
+            </div>
+
+            {/* Environment & Managed Infrastructure Status */}
+            <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
+                  Environment *
+                </label>
+                <select
+                  className="omni-input"
+                  value={environment}
+                  onChange={(e) => setEnvironment(e.target.value as AssetEnvironment)}
+                >
+                  <option value={AssetEnvironment.PRODUCTION}>PRODUCTION</option>
+                  <option value={AssetEnvironment.STAGING}>STAGING</option>
+                  <option value={AssetEnvironment.DEVELOPMENT}>DEVELOPMENT</option>
+                </select>
+              </div>
+
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
+                  Management Status
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-700 pt-2">
+                  <input
+                    type="checkbox"
+                    checked={isManaged}
+                    onChange={(e) => setIsManaged(e.target.checked)}
+                    className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500"
+                  />
+                  <span className="font-medium">Managed Asset</span>
+                </label>
+              </div>
             </div>
 
             <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
@@ -446,6 +563,7 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess, onNavigateToRis
                   {associatedRisks.map((r) => {
                     const scoreBand = r.scoreBand || (r.score >= 15 ? 'HIGH' : r.score >= 8 ? 'MEDIUM' : 'LOW');
                     const badgeClass = scoreBand === 'HIGH' ? 'omni-badge-rose' : scoreBand === 'MEDIUM' ? 'omni-badge-amber' : 'omni-badge-teal';
+
                     return (
                       <div
                         key={r.id}

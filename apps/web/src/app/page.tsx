@@ -164,17 +164,21 @@ export default function MainPage() {
               />
             ) : (
               <>
-                {view === 'dashboard' && <DashboardView onNavigateToView={(v) => navigateToView(v)} />}
+                {view === 'dashboard' && <DashboardView onNavigateToView={(v, params) => navigateToView(v, params)} />}
                 {view === 'reports' && <ReportsView />}
                 {view === 'risk' && (
                   <RiskListView
                     initialAssetId={viewParams?.assetId}
+                    initialScoreBand={viewParams?.band}
+                    initialStatus={viewParams?.status}
                     onClearAssetFilter={() => setViewParams((prev) => ({ ...prev, assetId: undefined }))}
-                    onNavigateToView={(v) => navigateToView(v)}
+                    onNavigateToView={(v, params) => navigateToView(v, params)}
                   />
                 )}
                 {view === 'assets' && (
                   <AssetListView
+                    initialCriticality={viewParams?.criticality}
+                    initialType={viewParams?.type}
                     onNavigateToRisk={(assetId) => navigateToView('risk', { assetId })}
                   />
                 )}
@@ -183,7 +187,7 @@ export default function MainPage() {
                 {view === 'remediation' && <RemediationView />}
                 {view === 'controls' && <ControlMappingView onNavigateToView={(v) => navigateToView(v)} />}
                 {view === 'frameworks' && <FrameworkLibraryView />}
-                {view === 'policies' && <PolicyListView />}
+                {view === 'policies' && <PolicyListView initialStatus={viewParams?.status} />}
                 {view === 'approvals' && <ApprovalCenterView />}
                 {view === 'audits' && <AuditListView />}
                 {view === 'vendors' && <VendorListView />}

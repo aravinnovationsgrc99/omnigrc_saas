@@ -26,7 +26,7 @@ import { AttentionRequiredWidget } from './widgets/attention-required-widget';
 import { EntitledFrameworkCoverageWidget } from './widgets/entitled-framework-coverage-widget';
 
 interface DashboardViewProps {
-  onNavigateToView?: (view: string) => void;
+  onNavigateToView?: (view: string, params?: Record<string, any>) => void;
 }
 
 export function DashboardView({ onNavigateToView }: DashboardViewProps) {

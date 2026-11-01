@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
@@ -145,6 +145,8 @@ export class AssetsService {
       dto.projectId,
     );
 
+    await this.validateOwner(authCtx, dto.owner);
+
     const asset = await this.prisma.asset.create({
       data: {
         organizationId: authCtx.organizationId,
@@ -212,6 +214,10 @@ export class AssetsService {
         targetDeptId,
         targetProjId,
       );
+    }
+
+    if (dto.owner !== undefined) {
+      await this.validateOwner(authCtx, dto.owner);
     }
 
     const changedFields: string[] = [];
@@ -294,6 +300,69 @@ export class AssetsService {
     });
 
     return { success: true };
+  }
+
+  private async validateOwner(authCtx: ResourceAuthContext, owner?: string): Promise<void> {
+    if (!owner || !owner.trim()) return;
+
+    const trimmed = owner.trim();
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
+    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
+
+    if (isUuid) {
+      const user = await this.prisma.user.findFirst({
+        where: { id: trimmed },
+        include: {
+          memberships: {
+            where: { organizationId: authCtx.organizationId },
+          },
+        },
+      });
+
+      if (!user) {
+        throw new BadRequestException(`Assigned owner user ID "${trimmed}" not found`);
+      }
+      if (user.organizationId !== authCtx.organizationId) {
+        throw new BadRequestException('Assigned owner does not belong to this organization');
+      }
+      const activeMembership = user.memberships?.find(
+        (m: any) => m.organizationId === authCtx.organizationId && m.status === 'ACTIVE',
+      );
+      if (user.memberships && user.memberships.length > 0 && !activeMembership) {
+        throw new BadRequestException('Assigned owner does not have active membership in this organization');
+      }
+      return;
+    }
+
+    if (isEmail) {
+      const user = await this.prisma.user.findFirst({
+        where: { email: trimmed.toLowerCase() },
+        include: {
+          memberships: {
+            where: { organizationId: authCtx.organizationId },
+          },
+        },
+      });
+
+      if (!user) {
+        throw new BadRequestException(`Assigned owner email "${trimmed}" not found`);
+      }
+      if (user.organizationId !== authCtx.organizationId) {
+        throw new BadRequestException('Assigned owner does not belong to this organization');
+      }
+      const activeMembership = user.memberships?.find(
+        (m: any) => m.organizationId === authCtx.organizationId && m.status === 'ACTIVE',
+      );
+      if (user.memberships && user.memberships.length > 0 && !activeMembership) {
+        throw new BadRequestException('Assigned owner does not have active membership in this organization');
+      }
+      return;
+    }
+
+    // Free-text legacy or team owner (e.g. "DevOps Team", "SecOps")
+    if (trimmed.length > 100) {
+      throw new BadRequestException('Owner name cannot exceed 100 characters');
+    }
   }
 
   private mapToDto(asset: any): AssetDto {
