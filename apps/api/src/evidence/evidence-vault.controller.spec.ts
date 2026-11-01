@@ -61,7 +61,7 @@ describe('EvidenceVaultController RBAC & Scoping Unit Suite', () => {
       ]);
     });
 
-    it('should have explicit @Roles decorator on GET /evidence/vault handler', () => {
+    it('should have explicit @Roles decorator on GET /evidence/vault/legacy handler', () => {
       const handlerRoles = reflector.get<Role[]>(ROLES_KEY, EvidenceVaultController.prototype.getVaultItems);
       expect(handlerRoles).toBeDefined();
       expect(handlerRoles).toEqual([
@@ -71,6 +71,11 @@ describe('EvidenceVaultController RBAC & Scoping Unit Suite', () => {
         Role.MSSP_ADMIN,
         Role.MSSP_ANALYST,
       ]);
+    });
+
+    it('should map to sub-path "vault/legacy"', () => {
+      const path = Reflect.getMetadata('path', EvidenceVaultController.prototype.getVaultItems);
+      expect(path).toBe('vault/legacy');
     });
   });
 

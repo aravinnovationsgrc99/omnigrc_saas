@@ -166,11 +166,129 @@ export class EvidenceService {
       ];
     }
 
-    const [evidences, total] = await Promise.all([
-      this.prisma.evidence.findMany({
+    const shouldIncludeLegacy =
+      (!query.domain || query.domain === 'AUDIT') &&
+      !query.frameworkId &&
+      !query.frameworkReferenceId &&
+      typeof (this.prisma as any).auditEvidence?.findMany === 'function';
+
+    if (!shouldIncludeLegacy) {
+      const globalSkip = (page - 1) * limit;
+      const [evidences, total] = await Promise.all([
+        this.prisma.evidence.findMany({
+          where,
+          skip: globalSkip,
+          take: limit,
+          include: {
+            controlAssociations: { include: { control: true } },
+            riskAssociations: { include: { risk: true } },
+            policyAssociations: { include: { policy: true } },
+            auditCheckAssociations: { include: { checkItem: true } },
+            auditFindingAssociations: { include: { finding: true } },
+            vendorAssociations: { include: { vendor: true } },
+            vulnerabilityAssociations: { include: { vulnerability: true } },
+            incidentAssociations: { include: { incident: true } },
+            frameworkReferences: {
+              include: {
+                frameworkReference: {
+                  include: {
+                    frameworkVersion: {
+                      include: { framework: true },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+        }),
+        this.prisma.evidence.count({ where }),
+      ]);
+
+      const uploaderIds = Array.from(new Set(evidences.map((e) => e.uploadedById)));
+      const users = (await TenantContext.runWithDisplayNameLookup(() =>
+        this.prisma.user.findMany({
+          where: { id: { in: uploaderIds } },
+          select: { id: true, name: true, email: true },
+        }),
+      )) || [];
+      const userMap = new Map((users || []).map((u) => [u.id, u.name || u.email]));
+
+      const items: EvidenceDto[] = evidences.map((e) => {
+        const associations: ResourceAssociationDto[] = [];
+        e.controlAssociations?.forEach((ca: any) => associations.push({ resourceType: 'CONTROL', resourceId: ca.controlId, resourceTitle: ca.control?.name }));
+        e.riskAssociations?.forEach((ra: any) => associations.push({ resourceType: 'RISK', resourceId: ra.riskId, resourceTitle: ra.risk?.title }));
+        e.policyAssociations?.forEach((pa: any) => associations.push({ resourceType: 'POLICY', resourceId: pa.policyId, resourceTitle: pa.policy?.title }));
+        e.auditCheckAssociations?.forEach((aca: any) => associations.push({ resourceType: 'AUDIT_CHECK', resourceId: aca.checkItemId, resourceTitle: aca.checkItem?.title }));
+        e.auditFindingAssociations?.forEach((afa: any) => associations.push({ resourceType: 'AUDIT_FINDING', resourceId: afa.findingId, resourceTitle: afa.finding?.title }));
+        e.vendorAssociations?.forEach((va: any) => associations.push({ resourceType: 'VENDOR', resourceId: va.vendorId, resourceTitle: va.vendor?.name }));
+        e.vulnerabilityAssociations?.forEach((vua: any) => associations.push({ resourceType: 'VULNERABILITY', resourceId: vua.vulnerabilityId, resourceTitle: vua.vulnerability?.title }));
+        e.incidentAssociations?.forEach((ia: any) => associations.push({ resourceType: 'INCIDENT', resourceId: ia.incidentId, resourceTitle: ia.incident?.title }));
+
+        return {
+          id: e.id,
+          organizationId: e.organizationId,
+          departmentId: e.departmentId || null,
+          projectId: e.projectId || null,
+          title: e.title,
+          description: e.description,
+          evidenceType: e.evidenceType as EvidenceType,
+          fileName: e.fileName,
+          fileSize: e.fileSize,
+          mimeType: e.mimeType,
+          storageKey: e.storageKey,
+          checksum: e.checksum,
+          status: e.status as EvidenceStatus,
+          scanStatus: e.scanStatus as EvidenceScanStatus,
+          uploadedById: e.uploadedById,
+          uploaderName: userMap.get(e.uploadedById) || 'Unknown User',
+          retentionUntil: e.retentionUntil ? e.retentionUntil.toISOString() : null,
+          createdAt: e.createdAt.toISOString(),
+          updatedAt: e.updatedAt.toISOString(),
+          associations,
+          frameworkReferences: (e.frameworkReferences || []).map((fr: any) => ({
+            id: fr.frameworkReference.id,
+            identifier: fr.frameworkReference.identifier,
+            title: fr.frameworkReference.title,
+            frameworkCode: fr.frameworkReference.frameworkVersion?.framework?.code || undefined,
+            frameworkName: fr.frameworkReference.frameworkVersion?.framework?.name || undefined,
+          })),
+        } as any;
+      });
+
+      return {
+        items,
+        total,
+        page,
+        limit,
+      };
+    }
+
+    // 1. Calculate canonical and legacy counts
+    const legacyWhere: any = { organizationId: authCtx.organizationId };
+    if (search) {
+      legacyWhere.OR = [
+        { fileName: { contains: search, mode: 'insensitive' } },
+        { fileUrl: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    const [canonicalCount, legacyCount] = await Promise.all([
+      this.prisma.evidence.count({ where }),
+      this.prisma.auditEvidence.count({ where: legacyWhere }),
+    ]);
+
+    const total = canonicalCount + legacyCount;
+    const globalSkip = (page - 1) * limit;
+
+    // 2. Partitioned Fetching: Canonical Slice
+    let evidences: any[] = [];
+    if (globalSkip < canonicalCount || (canonicalCount === 0 && globalSkip === 0)) {
+      const takeCanonical = canonicalCount === 0 ? limit : Math.min(limit, canonicalCount - globalSkip);
+      evidences = await this.prisma.evidence.findMany({
         where,
-        skip,
-        take: limit,
+        skip: globalSkip,
+        take: takeCanonical,
         include: {
           controlAssociations: { include: { control: true } },
           riskAssociations: { include: { risk: true } },
@@ -193,10 +311,10 @@ export class EvidenceService {
           },
         },
         orderBy: { createdAt: 'desc' },
-      }),
-      this.prisma.evidence.count({ where }),
-    ]);
+      });
+    }
 
+    // 4. Map Canonical DTOs
     const uploaderIds = Array.from(new Set(evidences.map((e) => e.uploadedById)));
     const users = (await TenantContext.runWithDisplayNameLookup(() =>
       this.prisma.user.findMany({
@@ -206,16 +324,16 @@ export class EvidenceService {
     )) || [];
     const userMap = new Map((users || []).map((u) => [u.id, u.name || u.email]));
 
-    const dtos: EvidenceDto[] = evidences.map((e) => {
+    const canonicalDtos: EvidenceDto[] = evidences.map((e) => {
       const associations: ResourceAssociationDto[] = [];
-      e.controlAssociations.forEach((ca) => associations.push({ resourceType: 'CONTROL', resourceId: ca.controlId, resourceTitle: ca.control.name }));
-      e.riskAssociations.forEach((ra) => associations.push({ resourceType: 'RISK', resourceId: ra.riskId, resourceTitle: ra.risk.title }));
-      e.policyAssociations.forEach((pa) => associations.push({ resourceType: 'POLICY', resourceId: pa.policyId, resourceTitle: pa.policy.title }));
-      e.auditCheckAssociations.forEach((aca) => associations.push({ resourceType: 'AUDIT_CHECK', resourceId: aca.checkItemId, resourceTitle: aca.checkItem.title }));
-      e.auditFindingAssociations.forEach((afa) => associations.push({ resourceType: 'AUDIT_FINDING', resourceId: afa.findingId, resourceTitle: afa.finding.title }));
-      e.vendorAssociations.forEach((va) => associations.push({ resourceType: 'VENDOR', resourceId: va.vendorId, resourceTitle: va.vendor.name }));
-      e.vulnerabilityAssociations.forEach((vua) => associations.push({ resourceType: 'VULNERABILITY', resourceId: vua.vulnerabilityId, resourceTitle: vua.vulnerability.title }));
-      e.incidentAssociations.forEach((ia) => associations.push({ resourceType: 'INCIDENT', resourceId: ia.incidentId, resourceTitle: ia.incident.title }));
+      e.controlAssociations?.forEach((ca: any) => associations.push({ resourceType: 'CONTROL', resourceId: ca.controlId, resourceTitle: ca.control?.name }));
+      e.riskAssociations?.forEach((ra: any) => associations.push({ resourceType: 'RISK', resourceId: ra.riskId, resourceTitle: ra.risk?.title }));
+      e.policyAssociations?.forEach((pa: any) => associations.push({ resourceType: 'POLICY', resourceId: pa.policyId, resourceTitle: pa.policy?.title }));
+      e.auditCheckAssociations?.forEach((aca: any) => associations.push({ resourceType: 'AUDIT_CHECK', resourceId: aca.checkItemId, resourceTitle: aca.checkItem?.title }));
+      e.auditFindingAssociations?.forEach((afa: any) => associations.push({ resourceType: 'AUDIT_FINDING', resourceId: afa.findingId, resourceTitle: afa.finding?.title }));
+      e.vendorAssociations?.forEach((va: any) => associations.push({ resourceType: 'VENDOR', resourceId: va.vendorId, resourceTitle: va.vendor?.name }));
+      e.vulnerabilityAssociations?.forEach((vua: any) => associations.push({ resourceType: 'VULNERABILITY', resourceId: vua.vulnerabilityId, resourceTitle: vua.vulnerability?.title }));
+      e.incidentAssociations?.forEach((ia: any) => associations.push({ resourceType: 'INCIDENT', resourceId: ia.incidentId, resourceTitle: ia.incident?.title }));
 
       return {
         id: e.id,
@@ -238,7 +356,7 @@ export class EvidenceService {
         createdAt: e.createdAt.toISOString(),
         updatedAt: e.updatedAt.toISOString(),
         associations,
-        frameworkReferences: e.frameworkReferences.map((fr) => ({
+        frameworkReferences: (e.frameworkReferences || []).map((fr: any) => ({
           id: fr.frameworkReference.id,
           identifier: fr.frameworkReference.identifier,
           title: fr.frameworkReference.title,
@@ -248,31 +366,39 @@ export class EvidenceService {
       } as any;
     });
 
-    // Seamless Legacy AuditEvidence Compatibility Aggregation
-    const shouldIncludeLegacy = !query.domain || query.domain === 'AUDIT';
-    let combinedItems = dtos;
-    let combinedTotal = total;
+    // 5. Partitioned Fetching: Legacy Slice
+    const numLegacyNeeded = limit - canonicalDtos.length;
+    let legacyDtos: EvidenceDto[] = [];
+    if (numLegacyNeeded > 0 && legacyCount > 0 && typeof (this.prisma as any).auditEvidence?.findMany === 'function') {
+      const legacySkip = Math.max(0, globalSkip - canonicalCount);
+      const legacyRecords = await this.prisma.auditEvidence.findMany({
+        where: legacyWhere,
+        include: { checkItem: true, finding: true },
+        orderBy: { createdAt: 'desc' },
+        skip: legacySkip,
+        take: numLegacyNeeded,
+      });
 
-    if (shouldIncludeLegacy && !query.frameworkId && !query.frameworkReferenceId && this.prisma.auditEvidence?.findMany) {
-      const legacyWhere: any = { organizationId: authCtx.organizationId };
-      if (search) {
-        legacyWhere.OR = [
-          { fileName: { contains: search, mode: 'insensitive' } },
-          { fileUrl: { contains: search, mode: 'insensitive' } },
-        ];
+      // Deduplicate: If legacy fileUrl references a canonical record ID, omit duplicate
+      const canonicalIds = new Set(canonicalDtos.map((c) => c.id));
+      const filteredLegacy = legacyRecords.filter(
+        (leg: any) => !canonicalIds.has(leg.id) && !Array.from(canonicalIds).some((canId) => leg.fileUrl?.includes(canId)),
+      );
+
+      // Resolve legacy uploaders if present
+      const legacyUploaderIds = Array.from(new Set(filteredLegacy.map((l: any) => l.uploadedById).filter(Boolean))) as string[];
+      const missingUploaderIds = legacyUploaderIds.filter((id) => !userMap.has(id));
+      if (missingUploaderIds.length > 0 && typeof (this.prisma as any).user?.findMany === 'function') {
+        const extraUsers = (await TenantContext.runWithDisplayNameLookup(() =>
+          this.prisma.user.findMany({
+            where: { id: { in: missingUploaderIds } },
+            select: { id: true, name: true, email: true },
+          })
+        )) || [];
+        extraUsers.forEach((u: any) => userMap.set(u.id, u.name || u.email));
       }
 
-      const [legacyList, legacyCount] = await Promise.all([
-        this.prisma.auditEvidence.findMany({
-          where: legacyWhere,
-          include: { checkItem: true, finding: true },
-          orderBy: { createdAt: 'desc' },
-          take: limit,
-        }),
-        this.prisma.auditEvidence.count({ where: legacyWhere }),
-      ]);
-
-      const legacyDtos: EvidenceDto[] = legacyList.map((leg: any) => ({
+      legacyDtos = filteredLegacy.map((leg: any) => ({
         id: leg.id,
         organizationId: leg.organizationId,
         departmentId: null,
@@ -288,7 +414,7 @@ export class EvidenceService {
         status: EvidenceStatus.ACTIVE,
         scanStatus: EvidenceScanStatus.CLEAN,
         uploadedById: leg.uploadedById,
-        uploaderName: 'Legacy Auditor',
+        uploaderName: (leg.uploadedById && userMap.get(leg.uploadedById)) || 'Legacy Auditor',
         retentionUntil: null,
         createdAt: leg.createdAt.toISOString(),
         updatedAt: leg.createdAt.toISOString(),
@@ -298,18 +424,11 @@ export class EvidenceService {
         ],
         frameworkReferences: [],
       }));
-
-      // Combine canonical and legacy items up to the requested limit
-      combinedTotal = total + legacyCount;
-      if (dtos.length < limit) {
-        const remainingCapacity = limit - dtos.length;
-        combinedItems = [...dtos, ...legacyDtos.slice(0, remainingCapacity)];
-      }
     }
 
     return {
-      items: combinedItems,
-      total: combinedTotal,
+      items: [...canonicalDtos, ...legacyDtos],
+      total,
       page,
       limit,
     };
@@ -539,7 +658,7 @@ export class EvidenceService {
 
     if (!evidence) {
       // Legacy AuditEvidence fallback
-      const legacy = this.prisma.auditEvidence?.findFirst
+      const legacy = typeof (this.prisma as any).auditEvidence?.findFirst === 'function'
         ? await this.prisma.auditEvidence.findFirst({
             where: { id: evidenceId, organizationId: authCtx.organizationId },
             include: {
@@ -569,6 +688,19 @@ export class EvidenceService {
         });
       }
 
+      let uploaderName = 'Legacy Auditor';
+      if (legacy.uploadedById) {
+        const u = await TenantContext.runWithDisplayNameLookup(() =>
+          typeof (this.prisma as any).user?.findUnique === 'function' ? this.prisma.user.findUnique({
+            where: { id: legacy.uploadedById },
+            select: { id: true, name: true, email: true },
+          }) : Promise.resolve(null),
+        );
+        if (u) {
+          uploaderName = u.name || u.email || 'Legacy Auditor';
+        }
+      }
+
       return {
         id: legacy.id,
         organizationId: legacy.organizationId,
@@ -585,7 +717,7 @@ export class EvidenceService {
         status: EvidenceStatus.ACTIVE,
         scanStatus: EvidenceScanStatus.CLEAN,
         uploadedById: legacy.uploadedById,
-        uploaderName: 'Legacy Auditor',
+        uploaderName,
         retentionUntil: null,
         createdAt: legacy.createdAt.toISOString(),
         updatedAt: legacy.createdAt.toISOString(),
@@ -608,12 +740,43 @@ export class EvidenceService {
     });
 
     if (!evidence) {
-      const legacy = this.prisma.auditEvidence?.findFirst
+      const legacy = typeof (this.prisma as any).auditEvidence?.findFirst === 'function'
         ? await this.prisma.auditEvidence.findFirst({
             where: { id: evidenceId, organizationId: authCtx.organizationId },
           })
         : null;
       if (!legacy) throw new NotFoundException(`Evidence record "${evidenceId}" not found.`);
+
+      const url = (legacy.fileUrl || '').trim();
+      const isRelative = url.startsWith('/') && !url.startsWith('//');
+      let isAllowedHttp = false;
+      try {
+        if (!isRelative) {
+          const parsed = new URL(url);
+          if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+            isAllowedHttp = true;
+          }
+        }
+      } catch {
+        // Invalid URL format
+      }
+
+      if (!isRelative && !isAllowedHttp) {
+        throw new BadRequestException(`Unsafe legacy evidence redirect URL format: "${legacy.fileUrl}".`);
+      }
+
+      await this.auditLogsService.log({
+        organizationId: authCtx.organizationId,
+        actorId: authCtx.userId,
+        action: 'EVIDENCE_DOWNLOADED',
+        entityType: 'AuditEvidence',
+        entityId: legacy.id,
+        metadata: {
+          fileName: legacy.fileName,
+          fileUrl: legacy.fileUrl,
+          isLegacy: true,
+        },
+      });
 
       res.redirect(legacy.fileUrl);
       return;

@@ -706,5 +706,120 @@ describe('EvidenceService - Control Evidence Association Suite', () => {
         service.attachEvidence(authCtx, 'ev-can-1', 'AUDIT_CHECK', 'foreign-ci'),
       ).rejects.toThrow(NotFoundException);
     });
+
+    it('findAll performs deterministic two-partition pagination across canonical and legacy records', async () => {
+      prisma.evidence.count.mockResolvedValue(3);
+      prisma.auditEvidence.count.mockResolvedValue(3);
+
+      // Page 1: limit 2 -> 2 canonical items
+      prisma.evidence.findMany.mockResolvedValue([
+        { id: 'can-1', organizationId: 'org-1', title: 'Can 1', fileName: 'can1.pdf', fileSize: 100, mimeType: 'application/pdf', storageKey: 'k1', status: 'ACTIVE', scanStatus: 'CLEAN', uploadedById: 'u-1', createdAt: new Date(), updatedAt: new Date(), controlAssociations: [], riskAssociations: [], policyAssociations: [], auditCheckAssociations: [], auditFindingAssociations: [], vendorAssociations: [], vulnerabilityAssociations: [], incidentAssociations: [], frameworkReferences: [] },
+        { id: 'can-2', organizationId: 'org-1', title: 'Can 2', fileName: 'can2.pdf', fileSize: 100, mimeType: 'application/pdf', storageKey: 'k2', status: 'ACTIVE', scanStatus: 'CLEAN', uploadedById: 'u-1', createdAt: new Date(), updatedAt: new Date(), controlAssociations: [], riskAssociations: [], policyAssociations: [], auditCheckAssociations: [], auditFindingAssociations: [], vendorAssociations: [], vulnerabilityAssociations: [], incidentAssociations: [], frameworkReferences: [] },
+      ]);
+
+      const page1 = await service.findAll(authCtx, { page: 1, limit: 2 });
+      expect(page1.total).toBe(6);
+      expect(page1.items).toHaveLength(2);
+      expect(page1.items.map((i) => i.id)).toEqual(['can-1', 'can-2']);
+
+      // Page 2: limit 2, skip 2 -> 1 canonical item (can-3) and 1 legacy item (leg-1)
+      prisma.evidence.findMany.mockResolvedValue([
+        { id: 'can-3', organizationId: 'org-1', title: 'Can 3', fileName: 'can3.pdf', fileSize: 100, mimeType: 'application/pdf', storageKey: 'k3', status: 'ACTIVE', scanStatus: 'CLEAN', uploadedById: 'u-1', createdAt: new Date(), updatedAt: new Date(), controlAssociations: [], riskAssociations: [], policyAssociations: [], auditCheckAssociations: [], auditFindingAssociations: [], vendorAssociations: [], vulnerabilityAssociations: [], incidentAssociations: [], frameworkReferences: [] },
+      ]);
+      prisma.auditEvidence.findMany.mockResolvedValue([
+        { id: 'leg-1', organizationId: 'org-1', fileName: 'leg1.pdf', fileUrl: 'https://vault.internal/leg1.pdf', fileSize: 50, mimeType: 'application/pdf', uploadedById: 'u-leg', createdAt: new Date(), checkItemId: null, findingId: null },
+      ]);
+
+      const page2 = await service.findAll(authCtx, { page: 2, limit: 2 });
+      expect(page2.total).toBe(6);
+      expect(page2.items).toHaveLength(2);
+      expect(page2.items.map((i) => i.id)).toEqual(['can-3', 'leg-1']);
+
+      // Page 3: limit 2, skip 4 -> 0 canonical items, 2 legacy items with skip 1
+      prisma.auditEvidence.findMany.mockResolvedValue([
+        { id: 'leg-2', organizationId: 'org-1', fileName: 'leg2.pdf', fileUrl: 'https://vault.internal/leg2.pdf', fileSize: 50, mimeType: 'application/pdf', uploadedById: 'u-leg', createdAt: new Date(), checkItemId: null, findingId: null },
+        { id: 'leg-3', organizationId: 'org-1', fileName: 'leg3.pdf', fileUrl: 'https://vault.internal/leg3.pdf', fileSize: 50, mimeType: 'application/pdf', uploadedById: 'u-leg', createdAt: new Date(), checkItemId: null, findingId: null },
+      ]);
+
+      const page3 = await service.findAll(authCtx, { page: 3, limit: 2 });
+      expect(page3.total).toBe(6);
+      expect(page3.items).toHaveLength(2);
+      expect(page3.items.map((i) => i.id)).toEqual(['leg-2', 'leg-3']);
+      expect(prisma.auditEvidence.findMany).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          skip: 1,
+          take: 2,
+        }),
+      );
+    });
+
+    it('downloadEvidence rejects unsafe protocol URLs with BadRequestException', async () => {
+      prisma.evidence.findFirst.mockResolvedValue(null);
+      prisma.auditEvidence.findFirst.mockResolvedValue({
+        id: 'leg-bad-url',
+        organizationId: 'org-1',
+        fileName: 'malicious.pdf',
+        fileUrl: 'javascript:alert(1)',
+      });
+
+      const mockRes: any = { redirect: jest.fn() };
+      await expect(service.downloadEvidence(authCtx, 'leg-bad-url', mockRes)).rejects.toThrow(BadRequestException);
+      expect(mockRes.redirect).not.toHaveBeenCalled();
+    });
+
+    it('downloadEvidence safely redirects valid legacy fileUrl and logs audit event', async () => {
+      prisma.evidence.findFirst.mockResolvedValue(null);
+      prisma.auditEvidence.findFirst.mockResolvedValue({
+        id: 'leg-safe-url',
+        organizationId: 'org-1',
+        fileName: 'safe_historical.pdf',
+        fileUrl: 'https://vault.omnigrc.internal/safe_historical.pdf',
+      });
+
+      const mockRes: any = { redirect: jest.fn() };
+      await service.downloadEvidence(authCtx, 'leg-safe-url', mockRes);
+
+      expect(mockRes.redirect).toHaveBeenCalledWith('https://vault.omnigrc.internal/safe_historical.pdf');
+      expect(auditLogsService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          organizationId: 'org-1',
+          action: 'EVIDENCE_DOWNLOADED',
+          entityType: 'AuditEvidence',
+          entityId: 'leg-safe-url',
+          metadata: expect.objectContaining({
+            isLegacy: true,
+            fileName: 'safe_historical.pdf',
+          }),
+        }),
+      );
+    });
+
+    it('findOne resolves uploader name for legacy evidence from User directory', async () => {
+      prisma.evidence.findFirst.mockResolvedValue(null);
+      prisma.auditEvidence.findFirst.mockResolvedValue({
+        id: 'leg-with-user',
+        organizationId: 'org-1',
+        fileName: 'legacy_doc.pdf',
+        fileUrl: '/evidence/legacy_doc.pdf',
+        fileSize: 1000,
+        mimeType: 'application/pdf',
+        uploadedById: 'user-legacy-uuid',
+        createdAt: new Date('2025-02-01T00:00:00Z'),
+        checkItemId: null,
+        findingId: null,
+      });
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'user-legacy-uuid',
+        name: 'Sarah Auditor',
+        email: 'sarah@omnigrc.internal',
+      });
+
+      const res = await service.findOne(authCtx, 'leg-with-user');
+      expect(res.uploaderName).toBe('Sarah Auditor');
+      expect(prisma.user.findUnique).toHaveBeenCalledWith({
+        where: { id: 'user-legacy-uuid' },
+        select: { id: true, name: true, email: true },
+      });
+    });
   });
 });

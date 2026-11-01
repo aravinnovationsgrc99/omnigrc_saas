@@ -1183,15 +1183,30 @@ export class BusinessAuditsService {
           if (err?.code !== 'P2002') throw err;
         });
       }
+
+      // Return canonical evidence projection without creating a duplicate shadow row in audit_evidences
+      return {
+        id: canonical.id,
+        organizationId: canonical.organizationId,
+        checkItemId: dto.checkItemId || null,
+        findingId: dto.findingId || null,
+        fileName: canonical.fileName,
+        fileUrl: `/evidence/${canonical.id}/download`,
+        fileSize: canonical.fileSize,
+        mimeType: canonical.mimeType,
+        uploadedById: canonical.uploadedById,
+        createdAt: this.toIso(canonical.createdAt),
+      };
     }
 
+    // Legacy AuditEvidence creation path for backward compatibility
     return this.prisma.auditEvidence.create({
       data: {
         organizationId: authCtx.organizationId,
         checkItemId: dto.checkItemId || null,
         findingId: dto.findingId || null,
         fileName: dto.fileName,
-        fileUrl: dto.fileUrl || (dto.evidenceId ? `/evidence/${dto.evidenceId}/download` : ''),
+        fileUrl: dto.fileUrl,
         fileSize: dto.fileSize || null,
         mimeType: dto.mimeType || null,
         uploadedById: authCtx.userId,
@@ -1288,17 +1303,24 @@ export class BusinessAuditsService {
       createdById: a.createdById,
       createdAt: this.toIso(a.createdAt),
       updatedAt: this.toIso(a.updatedAt),
-      checkItems: a.checkItems ? a.checkItems.map((c: any) => ({
-        id: c.id,
-        organizationId: c.organizationId,
-        assessmentId: c.assessmentId,
-        controlId: c.controlId,
-        title: c.title,
-        description: c.description,
-        result: c.result as AuditCheckResult,
-        notes: c.notes,
-        evidence: [
-          ...(c.evidence ? c.evidence.map((e: any) => ({
+      checkItems: a.checkItems ? a.checkItems.map((c: any) => {
+        const canonicalEv = (c.evidenceAssociations || []).filter((ea: any) => ea.evidence).map((ea: any) => ({
+          id: ea.evidence.id,
+          organizationId: ea.evidence.organizationId,
+          checkItemId: c.id,
+          findingId: null,
+          fileName: ea.evidence.fileName,
+          fileUrl: `/evidence/${ea.evidence.id}/download`,
+          fileSize: ea.evidence.fileSize,
+          mimeType: ea.evidence.mimeType,
+          uploadedById: ea.evidence.uploadedById,
+          createdAt: this.toIso(ea.evidence.createdAt),
+        }));
+        const canonicalIds = new Set(canonicalEv.map((item: any) => item.id));
+
+        const legacyEv = (c.evidence || [])
+          .filter((e: any) => !canonicalIds.has(e.id) && !Array.from(canonicalIds).some((canId) => e.fileUrl?.includes(canId)))
+          .map((e: any) => ({
             id: e.id,
             organizationId: e.organizationId,
             checkItemId: e.checkItemId,
@@ -1309,24 +1331,23 @@ export class BusinessAuditsService {
             mimeType: e.mimeType,
             uploadedById: e.uploadedById,
             createdAt: this.toIso(e.createdAt),
-          })) : []),
-          ...(c.evidenceAssociations ? c.evidenceAssociations.filter((ea: any) => ea.evidence).map((ea: any) => ({
-            id: ea.evidence.id,
-            organizationId: ea.evidence.organizationId,
-            checkItemId: c.id,
-            findingId: null,
-            fileName: ea.evidence.fileName,
-            fileUrl: `/evidence/${ea.evidence.id}/download`,
-            fileSize: ea.evidence.fileSize,
-            mimeType: ea.evidence.mimeType,
-            uploadedById: ea.evidence.uploadedById,
-            createdAt: this.toIso(ea.evidence.createdAt),
-          })) : []),
-        ],
-        createdById: c.createdById,
-        createdAt: this.toIso(c.createdAt),
-        updatedAt: this.toIso(c.updatedAt),
-      })) : [],
+          }));
+
+        return {
+          id: c.id,
+          organizationId: c.organizationId,
+          assessmentId: c.assessmentId,
+          controlId: c.controlId,
+          title: c.title,
+          description: c.description,
+          result: c.result as AuditCheckResult,
+          notes: c.notes,
+          evidence: [...legacyEv, ...canonicalEv],
+          createdById: c.createdById,
+          createdAt: this.toIso(c.createdAt),
+          updatedAt: this.toIso(c.updatedAt),
+        };
+      }) : [],
       findings: a.findings ? a.findings.map((f: any) => this.mapFindingToDto(f, userMap)) : [],
     };
   }
@@ -1334,6 +1355,35 @@ export class BusinessAuditsService {
   private mapFindingToDto(f: any, userMap?: Map<string, { name: string; email: string; role?: string }>): AuditFindingDto {
     const ownerInfo = userMap?.get(f.ownerId);
     const verifierInfo = f.verifiedById ? userMap?.get(f.verifiedById) : undefined;
+    const canonicalEv = (f.evidenceAssociations || []).filter((ea: any) => ea.evidence).map((ea: any) => ({
+      id: ea.evidence.id,
+      organizationId: ea.evidence.organizationId,
+      checkItemId: null,
+      findingId: f.id,
+      fileName: ea.evidence.fileName,
+      fileUrl: `/evidence/${ea.evidence.id}/download`,
+      fileSize: ea.evidence.fileSize,
+      mimeType: ea.evidence.mimeType,
+      uploadedById: ea.evidence.uploadedById,
+      createdAt: this.toIso(ea.evidence.createdAt),
+    }));
+    const canonicalIds = new Set(canonicalEv.map((item: any) => item.id));
+
+    const legacyEv = (f.evidence || [])
+      .filter((e: any) => !canonicalIds.has(e.id) && !Array.from(canonicalIds).some((canId) => e.fileUrl?.includes(canId)))
+      .map((e: any) => ({
+        id: e.id,
+        organizationId: e.organizationId,
+        checkItemId: e.checkItemId,
+        findingId: e.findingId,
+        fileName: e.fileName,
+        fileUrl: e.fileUrl,
+        fileSize: e.fileSize,
+        mimeType: e.mimeType,
+        uploadedById: e.uploadedById,
+        createdAt: this.toIso(e.createdAt),
+      }));
+
     return {
       id: f.id,
       organizationId: f.organizationId,
@@ -1357,32 +1407,7 @@ export class BusinessAuditsService {
       createdAt: this.toIso(f.createdAt),
       updatedAt: this.toIso(f.updatedAt),
       capas: f.capas ? f.capas.map((c: any) => this.mapCapaToDto(c, userMap)) : [],
-      evidence: [
-        ...(f.evidence ? f.evidence.map((e: any) => ({
-          id: e.id,
-          organizationId: e.organizationId,
-          checkItemId: e.checkItemId,
-          findingId: e.findingId,
-          fileName: e.fileName,
-          fileUrl: e.fileUrl,
-          fileSize: e.fileSize,
-          mimeType: e.mimeType,
-          uploadedById: e.uploadedById,
-          createdAt: this.toIso(e.createdAt),
-        })) : []),
-        ...(f.evidenceAssociations ? f.evidenceAssociations.filter((ea: any) => ea.evidence).map((ea: any) => ({
-          id: ea.evidence.id,
-          organizationId: ea.evidence.organizationId,
-          checkItemId: null,
-          findingId: f.id,
-          fileName: ea.evidence.fileName,
-          fileUrl: `/evidence/${ea.evidence.id}/download`,
-          fileSize: ea.evidence.fileSize,
-          mimeType: ea.evidence.mimeType,
-          uploadedById: ea.evidence.uploadedById,
-          createdAt: this.toIso(ea.evidence.createdAt),
-        })) : []),
-      ],
+      evidence: [...legacyEv, ...canonicalEv],
     };
   }
 

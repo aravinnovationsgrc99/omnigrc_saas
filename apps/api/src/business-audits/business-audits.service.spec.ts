@@ -1526,7 +1526,7 @@ describe('BusinessAuditsService', () => {
         fileUrl: '/evidence/can-ev-55/download',
       });
 
-      await service.addEvidence(authCtx, {
+      const res = await service.addEvidence(authCtx, {
         checkItemId: 'ci-100',
         evidenceId: 'can-ev-55',
         fileName: 'mfa_report.pdf',
@@ -1540,6 +1540,10 @@ describe('BusinessAuditsService', () => {
           evidenceId: 'can-ev-55',
         },
       });
+      // Issue A: Ensure NO duplicate shadow record is created in legacy auditEvidence
+      expect(prisma.auditEvidence.create).not.toHaveBeenCalled();
+      expect(res.id).toBe('can-ev-55');
+      expect(res.fileUrl).toBe('/evidence/can-ev-55/download');
     });
 
     it('addEvidence: rejects foreign tenant evidenceId with NotFoundException', async () => {
@@ -1652,6 +1656,81 @@ describe('BusinessAuditsService', () => {
           fileSize: 4096,
         }),
       );
+    });
+
+    it('findOnePlan: deduplicates when a legacy row references an attached canonical evidence record', async () => {
+      resourceAuthService.getScopeWhereClause.mockResolvedValue({ organizationId: 'org-1' });
+
+      prisma.auditPlan.findFirst.mockResolvedValue({
+        id: 'plan-dup-1',
+        organizationId: 'org-1',
+        title: 'Deduplication Plan',
+        ownerId: 'user-1',
+        createdById: 'user-1',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        assessments: [
+          {
+            id: 'ass-dup-1',
+            organizationId: 'org-1',
+            status: 'IN_PROGRESS',
+            score: 100,
+            startedAt: new Date(),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            createdById: 'user-1',
+            checkItems: [
+              {
+                id: 'ci-dup-1',
+                organizationId: 'org-1',
+                title: 'Check with Duplicate Legacy Pointer',
+                result: 'COMPLIANT',
+                createdById: 'user-1',
+                createdAt: new Date(),
+                updatedAt: new Date(),
+                // Legacy shadow row referencing the same canonical ID in fileUrl
+                evidence: [
+                  {
+                    id: 'leg-shadow-1',
+                    organizationId: 'org-1',
+                    checkItemId: 'ci-dup-1',
+                    fileName: 'audit_proof.pdf',
+                    fileUrl: '/evidence/can-ev-dup/download',
+                    fileSize: 2048,
+                    mimeType: 'application/pdf',
+                    uploadedById: 'user-1',
+                    createdAt: new Date(),
+                  },
+                ],
+                evidenceAssociations: [
+                  {
+                    evidence: {
+                      id: 'can-ev-dup',
+                      organizationId: 'org-1',
+                      fileName: 'audit_proof.pdf',
+                      fileSize: 2048,
+                      mimeType: 'application/pdf',
+                      uploadedById: 'user-1',
+                      createdAt: new Date(),
+                    },
+                  },
+                ],
+              },
+            ],
+            findings: [],
+          },
+        ],
+        frameworkRef: null,
+        versionRef: null,
+        departmentRef: null,
+        scopeReferences: [],
+      });
+
+      const plan = await service.findOnePlan(authCtx, 'plan-dup-1');
+      const checkItem = plan.assessments![0].checkItems![0];
+      // Canonical item takes precedence; legacy shadow row is suppressed
+      expect(checkItem.evidence).toHaveLength(1);
+      expect(checkItem.evidence![0].id).toBe('can-ev-dup');
     });
   });
 });
