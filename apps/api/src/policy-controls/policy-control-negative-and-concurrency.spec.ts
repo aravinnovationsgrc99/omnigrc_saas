@@ -47,32 +47,49 @@ describe('Phase 4: Policy & Control Mapping Workflows & Security Verification', 
         return Promise.all(cb);
       }),
       policy: {
+        _latestUpdated: null as any,
         findFirst: jest.fn(),
         findMany: jest.fn(),
-        findUniqueOrThrow: jest.fn().mockImplementation(({ where }: any) => ({
-          id: where.id,
-          code: 'POL-001',
-          title: 'Policy Title',
-          version: 2,
-          status: PolicyStatus.DRAFT,
-          publishedVersion: null,
-          versions: [],
-          _count: { controlAssociations: 0 },
-        })),
+        findUniqueOrThrow: jest.fn().mockImplementation(({ where }: any) => {
+          const latest = prisma.policy._latestUpdated || {};
+          return {
+            id: where.id,
+            code: latest.code || 'POL-001',
+            title: latest.title || 'Policy Title',
+            version: latest.version || 2,
+            status: latest.status || PolicyStatus.DRAFT,
+            publishedVersion: null,
+            versions: [],
+            _count: latest._count || { controlAssociations: 0 },
+            ...latest,
+          };
+        }),
         create: jest.fn(),
-        update: jest.fn().mockImplementation(({ where, data }: any) => ({
-          id: where.id,
-          code: 'POL-001',
-          title: data.title || 'Policy Title',
-          status: data.status || PolicyStatus.DRAFT,
-          version: typeof data.version === 'object' ? 2 : data.version || 1,
-          organizationId: 'org-alpha',
-          ownerId: 'user-alpha-ciso',
-          publishedVersion: null,
-          versions: [],
-          _count: { controlAssociations: 0 },
-        })),
-        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        update: jest.fn().mockImplementation(({ where, data }: any) => {
+          const res = {
+            id: where.id,
+            code: 'POL-001',
+            title: data.title || 'Policy Title',
+            status: data.status || PolicyStatus.DRAFT,
+            version: typeof data.version === 'object' ? 2 : data.version || 1,
+            organizationId: 'org-alpha',
+            ownerId: 'user-alpha-ciso',
+            publishedVersion: null,
+            versions: [],
+            _count: { controlAssociations: 0 },
+          };
+          prisma.policy._latestUpdated = res;
+          return res;
+        }),
+        updateMany: jest.fn().mockImplementation(({ where, data }: any) => {
+          prisma.policy._latestUpdated = {
+            id: where?.id || 'pol-1',
+            status: data?.status || PolicyStatus.DRAFT,
+            version: typeof data?.version === 'object' ? 2 : data?.version || 2,
+            _count: { controlAssociations: 0 },
+          };
+          return { count: 1 };
+        }),
         count: jest.fn(),
       },
       control: {
@@ -149,7 +166,7 @@ describe('Phase 4: Policy & Control Mapping Workflows & Security Verification', 
         updatedAt: new Date(),
       });
 
-      const underReview = await policiesService.submitForReview(analystContext, 'pol-lc-1');
+      const underReview = await policiesService.submitForReview(analystContext, 'pol-lc-1', 1);
       expect(underReview.status).toBe(PolicyStatus.UNDER_REVIEW);
 
       // Step 2: Admin rejects review with feedback -> returns to DRAFT
@@ -172,7 +189,7 @@ describe('Phase 4: Policy & Control Mapping Workflows & Security Verification', 
         updatedAt: new Date(),
       });
 
-      const rejectedToDraft = await policiesService.reject(tenantOrgAlpha, 'pol-lc-1', 'Need WAF section');
+      const rejectedToDraft = await policiesService.reject(tenantOrgAlpha, 'pol-lc-1', 'Need WAF section', 2);
       expect(rejectedToDraft.status).toBe(PolicyStatus.DRAFT);
 
       // Step 3: Resubmit for review
@@ -194,7 +211,7 @@ describe('Phase 4: Policy & Control Mapping Workflows & Security Verification', 
         createdAt: new Date(),
         updatedAt: new Date(),
       });
-      const resubmitted = await policiesService.submitForReview(analystContext, 'pol-lc-1');
+      const resubmitted = await policiesService.submitForReview(analystContext, 'pol-lc-1', 3);
       expect(resubmitted.status).toBe(PolicyStatus.UNDER_REVIEW);
 
       // Step 4: Admin approves
@@ -216,7 +233,7 @@ describe('Phase 4: Policy & Control Mapping Workflows & Security Verification', 
         createdAt: new Date(),
         updatedAt: new Date(),
       });
-      const approved = await policiesService.approve(tenantOrgAlpha, 'pol-lc-1');
+      const approved = await policiesService.approve(tenantOrgAlpha, 'pol-lc-1', 4);
       expect(approved.status).toBe(PolicyStatus.APPROVED);
 
       // Step 5: Publish approved policy
@@ -241,7 +258,7 @@ describe('Phase 4: Policy & Control Mapping Workflows & Security Verification', 
         createdAt: new Date(),
         updatedAt: new Date(),
       });
-      const published = await policiesService.publish(tenantOrgAlpha, 'pol-lc-1');
+      const published = await policiesService.publish(tenantOrgAlpha, 'pol-lc-1', undefined, 5);
       expect(published.status).toBe(PolicyStatus.PUBLISHED);
 
       // Step 6: Retire published policy
@@ -263,7 +280,7 @@ describe('Phase 4: Policy & Control Mapping Workflows & Security Verification', 
         createdAt: new Date(),
         updatedAt: new Date(),
       });
-      const retired = await policiesService.retire(tenantOrgAlpha, 'pol-lc-1');
+      const retired = await policiesService.retire(tenantOrgAlpha, 'pol-lc-1', 6);
       expect(retired.status).toBe(PolicyStatus.RETIRED);
     });
 
@@ -275,7 +292,7 @@ describe('Phase 4: Policy & Control Mapping Workflows & Security Verification', 
         versions: [{ id: 'v1', versionNumber: '1.0' }],
       });
 
-      await expect(policiesService.publish(tenantOrgAlpha, 'pol-invalid-1')).rejects.toThrow(
+      await expect(policiesService.publish(tenantOrgAlpha, 'pol-invalid-1', undefined, 1)).rejects.toThrow(
         BadRequestException,
       );
     });
@@ -480,6 +497,42 @@ describe('Phase 4: Policy & Control Mapping Workflows & Security Verification', 
         policiesService.updateMetadata(tenantOrgAlpha, 'pol-conc', {
           title: 'New Title',
           expectedUpdatedAt: clientStaleDate,
+          expectedVersion: 1,
+        }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('rejects policy update when expectedVersion is missing at service boundary', async () => {
+      await expect(
+        policiesService.updateMetadata(tenantOrgAlpha, 'pol-conc', {
+          title: 'No Version',
+        } as any),
+      ).rejects.toThrow('expectedVersion is mandatory and must be a positive integer');
+
+      await expect(
+        policiesService.submitForReview(analystContext, 'pol-conc', undefined as any),
+      ).rejects.toThrow('expectedVersion is mandatory and must be a positive integer');
+
+      await expect(
+        policiesService.approve(tenantOrgAlpha, 'pol-conc', undefined as any),
+      ).rejects.toThrow('expectedVersion is mandatory and must be a positive integer');
+    });
+
+    it('detects mapping concurrency conflict when expectedUpdatedAt is stale', async () => {
+      prisma.policyControl.findFirst.mockResolvedValueOnce({
+        id: 'map-concur-1',
+        policyId: 'pol-alpha-1',
+        controlId: 'ctrl-alpha-1',
+        organizationId: 'org-alpha',
+        status: MappingStatus.APPROVED,
+        rationale: 'Initial Rationale',
+        updatedAt: new Date('2026-11-02T12:00:00Z'),
+      });
+
+      await expect(
+        policyControlsService.updateMapping(tenantOrgAlpha, 'pol-alpha-1', 'ctrl-alpha-1', {
+          rationale: 'Concurrent Rationale Update',
+          expectedUpdatedAt: new Date('2026-11-02T10:00:00Z').toISOString(),
         }),
       ).rejects.toThrow(ConflictException);
     });

@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsEnum, IsInt, Min } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsInt, Min, IsDateString } from 'class-validator';
 import { Type } from 'class-transformer';
 import { MappingStatus } from '@omnigrc/shared';
 
@@ -20,6 +20,10 @@ export class UpdatePolicyControlDto {
   @IsString()
   @IsOptional()
   rationale?: string;
+
+  @IsDateString()
+  @IsOptional()
+  expectedUpdatedAt?: string;
 }
 
 export class PolicyControlQueryDto {

@@ -199,6 +199,7 @@ describe('Phase 4: Policy & Control Mapping Workflows', () => {
             method: 'POST',
             body: JSON.stringify({
               reason: 'Missing password complexity requirements in section 3.1.',
+              expectedVersion: 2,
             }),
           }),
         );

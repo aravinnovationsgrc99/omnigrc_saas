@@ -349,11 +349,15 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
   async function handleRejectPolicy(e: React.FormEvent) {
     e.preventDefault();
     if (!rejectingPolicyId) return;
+    const targetPolicy = policies.find((p) => p.id === rejectingPolicyId) || (selectedPolicy?.id === rejectingPolicyId ? selectedPolicy : null);
     setSubmittingRejection(true);
     try {
       await apiRequest(`/policies/${rejectingPolicyId}/reject`, {
         method: 'POST',
-        body: JSON.stringify({ reason: rejectionReason }),
+        body: JSON.stringify({
+          reason: rejectionReason,
+          expectedVersion: targetPolicy?.version || 1,
+        }),
       });
       addToast('Policy review rejected and returned to Draft.', 'success');
       setRejectingPolicyId(null);
@@ -371,8 +375,14 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
   }
 
   async function handleStatusTransition(policyId: string, action: string) {
+    const targetPolicy = policies.find((p) => p.id === policyId) || (selectedPolicy?.id === policyId ? selectedPolicy : null);
     try {
-      await apiRequest(`/policies/${policyId}/${action}`, { method: 'POST' });
+      await apiRequest(`/policies/${policyId}/${action}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          expectedVersion: targetPolicy?.version || 1,
+        }),
+      });
       addToast(`Policy status updated.`, 'success');
       fetchPolicies();
       if (selectedPolicy && selectedPolicy.id === policyId) {

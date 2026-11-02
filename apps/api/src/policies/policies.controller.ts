@@ -21,6 +21,9 @@ import {
   RenamePolicyCategoryDto,
   AttestPolicyDto,
   SubmitPolicyApprovalDto,
+  PolicyLifecycleActionDto,
+  RejectPolicyDto,
+  PublishPolicyDto,
 } from './dto/policies.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -186,13 +189,14 @@ export class PoliciesController {
   async submitForReview(
     @CurrentUser() user: any,
     @Param('id') id: string,
+    @Body() dto: PolicyLifecycleActionDto,
   ) {
     const authCtx: ResourceAuthContext = {
       userId: user.userId,
       organizationId: user.organizationId,
       role: user.role,
     };
-    return this.policiesService.submitForReview(authCtx, id);
+    return this.policiesService.submitForReview(authCtx, id, dto.expectedVersion);
   }
 
   @Post(':id/approve')
@@ -201,28 +205,30 @@ export class PoliciesController {
   async approve(
     @CurrentUser() user: any,
     @Param('id') id: string,
+    @Body() dto: PolicyLifecycleActionDto,
   ) {
     const authCtx: ResourceAuthContext = {
       userId: user.userId,
       organizationId: user.organizationId,
       role: user.role,
     };
-    return this.policiesService.approve(authCtx, id);
+    return this.policiesService.approve(authCtx, id, dto.expectedVersion);
   }
+
   @Post(':id/reject')
   @RequiresActiveLicense()
   @Roles(Role.ADMIN, Role.MSSP_ADMIN)
   async reject(
     @CurrentUser() user: any,
     @Param('id') id: string,
-    @Body('reason') reason?: string,
+    @Body() dto: RejectPolicyDto,
   ) {
     const authCtx: ResourceAuthContext = {
       userId: user.userId,
       organizationId: user.organizationId,
       role: user.role,
     };
-    return this.policiesService.reject(authCtx, id, reason);
+    return this.policiesService.reject(authCtx, id, dto.reason, dto.expectedVersion);
   }
 
   @Post(':id/publish')
@@ -231,14 +237,14 @@ export class PoliciesController {
   async publish(
     @CurrentUser() user: any,
     @Param('id') id: string,
-    @Body('versionId') versionId?: string,
+    @Body() dto: PublishPolicyDto,
   ) {
     const authCtx: ResourceAuthContext = {
       userId: user.userId,
       organizationId: user.organizationId,
       role: user.role,
     };
-    return this.policiesService.publish(authCtx, id, versionId);
+    return this.policiesService.publish(authCtx, id, dto.versionId, dto.expectedVersion);
   }
 
   @Post(':id/retire')
@@ -247,13 +253,14 @@ export class PoliciesController {
   async retire(
     @CurrentUser() user: any,
     @Param('id') id: string,
+    @Body() dto: PolicyLifecycleActionDto,
   ) {
     const authCtx: ResourceAuthContext = {
       userId: user.userId,
       organizationId: user.organizationId,
       role: user.role,
     };
-    return this.policiesService.retire(authCtx, id);
+    return this.policiesService.retire(authCtx, id, dto.expectedVersion);
   }
 
   @Post('versions/:versionId/attest')

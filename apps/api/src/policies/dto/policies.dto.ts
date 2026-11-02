@@ -95,8 +95,41 @@ export class UpdatePolicyDto {
 
   @Type(() => Number)
   @IsInt()
+  @Min(1)
+  @IsNotEmpty()
+  expectedVersion!: number;
+}
+
+export class PolicyLifecycleActionDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @IsNotEmpty()
+  expectedVersion!: number;
+}
+
+export class RejectPolicyDto {
+  @IsString()
+  @IsNotEmpty()
+  reason!: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @IsNotEmpty()
+  expectedVersion!: number;
+}
+
+export class PublishPolicyDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @IsNotEmpty()
+  expectedVersion!: number;
+
+  @IsString()
   @IsOptional()
-  expectedVersion?: number;
+  versionId?: string;
 }
 
 export class CreatePolicyCategoryDto {
@@ -123,6 +156,12 @@ export class CreatePolicyVersionDto {
   @IsString()
   @IsOptional()
   changeLog?: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @IsNotEmpty()
+  expectedVersion!: number;
 }
 
 export class CreatePolicyExceptionDto {

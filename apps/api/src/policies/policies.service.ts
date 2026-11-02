@@ -220,6 +220,15 @@ export class PoliciesService {
   }
 
   async updateMetadata(authCtx: ResourceAuthContext, id: string, dto: UpdatePolicyDto): Promise<PolicyDto> {
+    if (
+      dto.expectedVersion === undefined ||
+      dto.expectedVersion === null ||
+      typeof dto.expectedVersion !== 'number' ||
+      dto.expectedVersion < 1
+    ) {
+      throw new BadRequestException('expectedVersion is mandatory and must be a positive integer');
+    }
+
     const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const existing = await this.prisma.policy.findFirst({
       where: { id, ...scopeWhere, deletedAt: null },
@@ -229,7 +238,7 @@ export class PoliciesService {
       throw new NotFoundException(`Policy with ID "${id}" not found`);
     }
 
-    if (dto.expectedUpdatedAt && dto.expectedVersion === undefined) {
+    if (dto.expectedUpdatedAt) {
       const expected = new Date(dto.expectedUpdatedAt).getTime();
       const current = new Date(existing.updatedAt).getTime();
       if (Math.abs(current - expected) > 1000) {
@@ -646,6 +655,15 @@ export class PoliciesService {
     policyId: string,
     dto: CreatePolicyVersionDto,
   ): Promise<PolicyVersionDto> {
+    if (
+      dto.expectedVersion === undefined ||
+      dto.expectedVersion === null ||
+      typeof dto.expectedVersion !== 'number' ||
+      dto.expectedVersion < 1
+    ) {
+      throw new BadRequestException('expectedVersion is mandatory and must be a positive integer');
+    }
+
     const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const policy = await this.prisma.policy.findFirst({
       where: { id: policyId, ...scopeWhere, deletedAt: null },
@@ -681,10 +699,26 @@ export class PoliciesService {
         },
       });
 
-      await tx.policy.update({
-        where: { id: policyId },
+      const updateResult = await tx.policy.updateMany({
+        where: {
+          id: policyId,
+          organizationId: authCtx.organizationId,
+          deletedAt: null,
+          version: dto.expectedVersion,
+        },
         data: { version: { increment: 1 } },
       });
+
+      if (updateResult.count === 0) {
+        const current = await tx.policy.findFirst({
+          where: { id: policyId, organizationId: authCtx.organizationId, deletedAt: null },
+          select: { version: true },
+        });
+        if (!current) throw new NotFoundException(`Policy with ID "${policyId}" not found`);
+        throw new ConflictException(
+          `Policy revision conflict: expected version ${dto.expectedVersion}, but current version is ${current.version}. Please reload the latest changes.`,
+        );
+      }
 
       await this.auditLogsService.log(
         {
@@ -717,9 +751,18 @@ export class PoliciesService {
 
   // --- EXPLICIT AUTHORIZATION-CONTROLLED LIFECYCLE TRANSITIONS ---
 
-  async submitForReview(authCtx: ResourceAuthContext, id: string): Promise<PolicyDto> {
+  async submitForReview(authCtx: ResourceAuthContext, id: string, expectedVersion: number): Promise<PolicyDto> {
     if (authCtx.role === Role.EXTERNAL_AUDITOR) {
       throw new ForbiddenException('External auditors cannot submit policies for review');
+    }
+
+    if (
+      expectedVersion === undefined ||
+      expectedVersion === null ||
+      typeof expectedVersion !== 'number' ||
+      expectedVersion < 1
+    ) {
+      throw new BadRequestException('expectedVersion is mandatory and must be a positive integer');
     }
 
     const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
@@ -733,12 +776,36 @@ export class PoliciesService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.policy.update({
-        where: { id },
+      const updateResult = await tx.policy.updateMany({
+        where: {
+          id,
+          organizationId: authCtx.organizationId,
+          deletedAt: null,
+          status: PolicyStatus.DRAFT,
+          version: expectedVersion,
+        },
         data: {
           status: PolicyStatus.UNDER_REVIEW,
           version: { increment: 1 },
         },
+      });
+
+      if (updateResult.count === 0) {
+        const current = await tx.policy.findFirst({
+          where: { id, organizationId: authCtx.organizationId, deletedAt: null },
+          select: { id: true, status: true, version: true },
+        });
+        if (!current) throw new NotFoundException(`Policy with ID "${id}" not found`);
+        if (current.status !== PolicyStatus.DRAFT) {
+          throw new BadRequestException(`Cannot submit policy for review from state "${current.status}". Must be DRAFT.`);
+        }
+        throw new ConflictException(
+          `Policy revision conflict: expected version ${expectedVersion}, but current version is ${current.version}. Please reload the latest changes.`,
+        );
+      }
+
+      const updated = await tx.policy.findUniqueOrThrow({
+        where: { id },
         include: {
           publishedVersion: true,
           versions: true,
@@ -767,9 +834,18 @@ export class PoliciesService {
     });
   }
 
-  async approve(authCtx: ResourceAuthContext, id: string): Promise<PolicyDto> {
+  async approve(authCtx: ResourceAuthContext, id: string, expectedVersion: number): Promise<PolicyDto> {
     if (authCtx.role !== Role.ADMIN && authCtx.role !== Role.MSSP_ADMIN) {
       throw new ForbiddenException('Only ADMIN users can approve policy documents');
+    }
+
+    if (
+      expectedVersion === undefined ||
+      expectedVersion === null ||
+      typeof expectedVersion !== 'number' ||
+      expectedVersion < 1
+    ) {
+      throw new BadRequestException('expectedVersion is mandatory and must be a positive integer');
     }
 
     const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
@@ -783,12 +859,36 @@ export class PoliciesService {
     }
 
     const updatedDto = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.policy.update({
-        where: { id },
+      const updateResult = await tx.policy.updateMany({
+        where: {
+          id,
+          organizationId: authCtx.organizationId,
+          deletedAt: null,
+          status: PolicyStatus.UNDER_REVIEW,
+          version: expectedVersion,
+        },
         data: {
           status: PolicyStatus.APPROVED,
           version: { increment: 1 },
         },
+      });
+
+      if (updateResult.count === 0) {
+        const current = await tx.policy.findFirst({
+          where: { id, organizationId: authCtx.organizationId, deletedAt: null },
+          select: { id: true, status: true, version: true },
+        });
+        if (!current) throw new NotFoundException(`Policy with ID "${id}" not found`);
+        if (current.status !== PolicyStatus.UNDER_REVIEW) {
+          throw new BadRequestException(`Cannot approve policy from state "${current.status}". Must be UNDER_REVIEW.`);
+        }
+        throw new ConflictException(
+          `Policy revision conflict: expected version ${expectedVersion}, but current version is ${current.version}. Please reload the latest changes.`,
+        );
+      }
+
+      const updated = await tx.policy.findUniqueOrThrow({
+        where: { id },
         include: {
           publishedVersion: true,
           versions: true,
@@ -830,13 +930,27 @@ export class PoliciesService {
     return updatedDto;
   }
 
-  async reject(authCtx: ResourceAuthContext, id: string, reason?: string): Promise<PolicyDto> {
+  async reject(
+    authCtx: ResourceAuthContext,
+    id: string,
+    reason?: string,
+    expectedVersion?: number,
+  ): Promise<PolicyDto> {
     if (authCtx.role !== Role.ADMIN && authCtx.role !== Role.MSSP_ADMIN) {
       throw new ForbiddenException('Only ADMIN users can reject policy documents');
     }
 
     if (!reason || !reason.trim()) {
       throw new BadRequestException('A non-empty rejection reason is required to reject a policy under review');
+    }
+
+    if (
+      expectedVersion === undefined ||
+      expectedVersion === null ||
+      typeof expectedVersion !== 'number' ||
+      expectedVersion < 1
+    ) {
+      throw new BadRequestException('expectedVersion is mandatory and must be a positive integer');
     }
 
     const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
@@ -850,12 +964,36 @@ export class PoliciesService {
     }
 
     const updatedDto = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.policy.update({
-        where: { id },
+      const updateResult = await tx.policy.updateMany({
+        where: {
+          id,
+          organizationId: authCtx.organizationId,
+          deletedAt: null,
+          status: PolicyStatus.UNDER_REVIEW,
+          version: expectedVersion,
+        },
         data: {
           status: PolicyStatus.DRAFT,
           version: { increment: 1 },
         },
+      });
+
+      if (updateResult.count === 0) {
+        const current = await tx.policy.findFirst({
+          where: { id, organizationId: authCtx.organizationId, deletedAt: null },
+          select: { id: true, status: true, version: true },
+        });
+        if (!current) throw new NotFoundException(`Policy with ID "${id}" not found`);
+        if (current.status !== PolicyStatus.UNDER_REVIEW) {
+          throw new BadRequestException(`Cannot reject policy from state "${current.status}". Must be UNDER_REVIEW.`);
+        }
+        throw new ConflictException(
+          `Policy revision conflict: expected version ${expectedVersion}, but current version is ${current.version}. Please reload the latest changes.`,
+        );
+      }
+
+      const updated = await tx.policy.findUniqueOrThrow({
+        where: { id },
         include: {
           publishedVersion: true,
           versions: true,
@@ -902,9 +1040,23 @@ export class PoliciesService {
     return updatedDto;
   }
 
-  async publish(authCtx: ResourceAuthContext, id: string, versionId?: string): Promise<PolicyDto> {
+  async publish(
+    authCtx: ResourceAuthContext,
+    id: string,
+    versionId?: string,
+    expectedVersion?: number,
+  ): Promise<PolicyDto> {
     if (authCtx.role !== Role.ADMIN && authCtx.role !== Role.MSSP_ADMIN) {
       throw new ForbiddenException('Only ADMIN users can publish policy documents');
+    }
+
+    if (
+      expectedVersion === undefined ||
+      expectedVersion === null ||
+      typeof expectedVersion !== 'number' ||
+      expectedVersion < 1
+    ) {
+      throw new BadRequestException('expectedVersion is mandatory and must be a positive integer');
     }
 
     const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
@@ -931,8 +1083,14 @@ export class PoliciesService {
     reviewDate.setDate(reviewDate.getDate() + policy.reviewCadenceDays);
 
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.policy.update({
-        where: { id },
+      const updateResult = await tx.policy.updateMany({
+        where: {
+          id,
+          organizationId: authCtx.organizationId,
+          deletedAt: null,
+          status: PolicyStatus.APPROVED,
+          version: expectedVersion,
+        },
         data: {
           status: PolicyStatus.PUBLISHED,
           publishedVersionId: versionToPublish.id,
@@ -940,6 +1098,24 @@ export class PoliciesService {
           reviewDate,
           version: { increment: 1 },
         },
+      });
+
+      if (updateResult.count === 0) {
+        const current = await tx.policy.findFirst({
+          where: { id, organizationId: authCtx.organizationId, deletedAt: null },
+          select: { id: true, status: true, version: true },
+        });
+        if (!current) throw new NotFoundException(`Policy with ID "${id}" not found`);
+        if (current.status !== PolicyStatus.APPROVED) {
+          throw new BadRequestException(`Cannot publish policy from state "${current.status}". Must be APPROVED.`);
+        }
+        throw new ConflictException(
+          `Policy revision conflict: expected version ${expectedVersion}, but current version is ${current.version}. Please reload the latest changes.`,
+        );
+      }
+
+      const updated = await tx.policy.findUniqueOrThrow({
+        where: { id },
         include: {
           publishedVersion: true,
           versions: true,
@@ -970,9 +1146,18 @@ export class PoliciesService {
     });
   }
 
-  async retire(authCtx: ResourceAuthContext, id: string): Promise<PolicyDto> {
+  async retire(authCtx: ResourceAuthContext, id: string, expectedVersion: number): Promise<PolicyDto> {
     if (authCtx.role !== Role.ADMIN && authCtx.role !== Role.MSSP_ADMIN) {
       throw new ForbiddenException('Only ADMIN users can retire policy documents');
+    }
+
+    if (
+      expectedVersion === undefined ||
+      expectedVersion === null ||
+      typeof expectedVersion !== 'number' ||
+      expectedVersion < 1
+    ) {
+      throw new BadRequestException('expectedVersion is mandatory and must be a positive integer');
     }
 
     const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
@@ -986,12 +1171,36 @@ export class PoliciesService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.policy.update({
-        where: { id },
+      const updateResult = await tx.policy.updateMany({
+        where: {
+          id,
+          organizationId: authCtx.organizationId,
+          deletedAt: null,
+          status: PolicyStatus.PUBLISHED,
+          version: expectedVersion,
+        },
         data: {
           status: PolicyStatus.RETIRED,
           version: { increment: 1 },
         },
+      });
+
+      if (updateResult.count === 0) {
+        const current = await tx.policy.findFirst({
+          where: { id, organizationId: authCtx.organizationId, deletedAt: null },
+          select: { id: true, status: true, version: true },
+        });
+        if (!current) throw new NotFoundException(`Policy with ID "${id}" not found`);
+        if (current.status !== PolicyStatus.PUBLISHED) {
+          throw new BadRequestException(`Cannot retire policy from state "${current.status}". Must be PUBLISHED.`);
+        }
+        throw new ConflictException(
+          `Policy revision conflict: expected version ${expectedVersion}, but current version is ${current.version}. Please reload the latest changes.`,
+        );
+      }
+
+      const updated = await tx.policy.findUniqueOrThrow({
+        where: { id },
         include: {
           publishedVersion: true,
           versions: true,

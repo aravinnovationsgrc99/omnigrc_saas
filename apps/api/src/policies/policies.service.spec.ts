@@ -22,35 +22,52 @@ describe('PoliciesService', () => {
         return Promise.all(cb);
       }),
       policy: {
+        _latestUpdated: null as any,
         findMany: jest.fn(),
         count: jest.fn(),
         findFirst: jest.fn(),
         findUniqueOrThrow: jest.fn().mockImplementation(({ where }: any) => {
+          const latest = prisma.policy._latestUpdated || {};
           return {
             id: where?.id || 'pol-1',
+            code: latest.code || 'POL-001',
+            title: latest.title || 'Updated Policy Title',
+            version: latest.version || 2,
+            status: latest.status || PolicyStatus.DRAFT,
+            publishedVersion: null,
+            versions: [],
+            _count: latest._count || { controlAssociations: 0 },
+            ...latest,
+          };
+        }),
+        create: jest.fn(),
+        update: jest.fn().mockImplementation(({ where, data }: any) => {
+          const res = {
+            id: where.id,
             code: 'POL-001',
-            title: 'Updated Policy Title',
-            version: 2,
-            status: PolicyStatus.DRAFT,
+            title: data.title || 'Policy Title',
+            status: data.status || PolicyStatus.DRAFT,
+            version: typeof data.version === 'object' ? 2 : data.version || 1,
+            organizationId: 'org-1',
+            ownerId: 'user-1',
             publishedVersion: null,
             versions: [],
             _count: { controlAssociations: 0 },
           };
+          prisma.policy._latestUpdated = res;
+          return res;
         }),
-        create: jest.fn(),
-        update: jest.fn().mockImplementation(({ where, data }: any) => ({
-          id: where.id,
-          code: 'POL-001',
-          title: data.title || 'Policy Title',
-          status: data.status || PolicyStatus.DRAFT,
-          version: typeof data.version === 'object' ? 2 : data.version || 1,
-          organizationId: 'org-1',
-          ownerId: 'user-1',
-          publishedVersion: null,
-          versions: [],
-          _count: { controlAssociations: 0 },
-        })),
-        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        updateMany: jest.fn().mockImplementation(({ where, data }: any) => {
+          prisma.policy._latestUpdated = {
+            id: where?.id || 'pol-1',
+            code: 'POL-001',
+            title: data?.title || 'Policy Title',
+            status: data?.status || PolicyStatus.DRAFT,
+            version: typeof data?.version === 'object' ? 2 : data?.version || 2,
+            _count: { controlAssociations: 0 },
+          };
+          return { count: 1 };
+        }),
         groupBy: jest.fn(),
       },
       policyVersion: {
@@ -235,7 +252,7 @@ describe('PoliciesService', () => {
     });
 
     const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
-    const updated = await service.submitForReview(authCtx, 'pol-1');
+    const updated = await service.submitForReview(authCtx, 'pol-1', 1);
     expect(updated.status).toBe(PolicyStatus.UNDER_REVIEW);
   });
 
@@ -246,12 +263,13 @@ describe('PoliciesService', () => {
       status: PolicyStatus.DRAFT,
       code: 'POL-001',
       title: 'Test',
+      version: 1,
     };
 
     prisma.policy.findFirst.mockResolvedValue(draftPolicy);
 
     const authCtx = { userId: 'user-1', organizationId: 'org-1', role: Role.ADMIN };
-    await expect(service.publish(authCtx, 'pol-1')).rejects.toThrow(BadRequestException);
+    await expect(service.publish(authCtx, 'pol-1', undefined, 1)).rejects.toThrow(BadRequestException);
   });
 
   describe('Policy Category Management', () => {
@@ -537,6 +555,7 @@ describe('PoliciesService', () => {
       await service.updateMetadata(authCtx, 'pol-draft-1', {
         title: 'Draft Policy Updated',
         content: '# New Updated Content',
+        expectedVersion: 1,
       });
 
       expect(prisma.policyVersion.update).toHaveBeenCalledWith(
@@ -756,7 +775,20 @@ describe('PoliciesService', () => {
         _count: { controlAssociations: 3 },
       });
 
-      const res = await service.reject(adminCtx, 'pol-rev-1', 'Requires updated cipher suites');
+      prisma.policy.findUniqueOrThrow.mockResolvedValueOnce({
+        id: 'pol-rev-1',
+        code: 'POL-REV-01',
+        title: 'Draft Policy In Review',
+        status: PolicyStatus.DRAFT,
+        organizationId: 'org-1',
+        ownerId: 'analyst-1',
+        version: 2,
+        publishedVersion: null,
+        versions: [],
+        _count: { controlAssociations: 3 },
+      });
+
+      const res = await service.reject(adminCtx, 'pol-rev-1', 'Requires updated cipher suites', 1);
 
       expect(res.status).toBe(PolicyStatus.DRAFT);
       expect(res.version).toBe(2);
@@ -770,9 +802,25 @@ describe('PoliciesService', () => {
       );
     });
 
+    it('should reject policy mutation when expectedVersion is missing at service boundary', async () => {
+      await expect(
+        service.updateMetadata(adminCtx, 'pol-rev-1', {
+          title: 'Missing Version',
+        } as any),
+      ).rejects.toThrow('expectedVersion is mandatory and must be a positive integer');
+
+      await expect(
+        service.reject(adminCtx, 'pol-rev-1', 'Some reason', undefined as any),
+      ).rejects.toThrow('expectedVersion is mandatory and must be a positive integer');
+
+      await expect(
+        service.submitForReview(adminCtx, 'pol-rev-1', undefined as any),
+      ).rejects.toThrow('expectedVersion is mandatory and must be a positive integer');
+    });
+
     it('should prevent non-admin from rejecting policy review', async () => {
       await expect(
-        service.reject(analystCtx, 'pol-rev-1', 'Unauthorized rejection'),
+        service.reject(analystCtx, 'pol-rev-1', 'Unauthorized rejection', 1),
       ).rejects.toThrow(ForbiddenException);
     });
 
@@ -784,7 +832,7 @@ describe('PoliciesService', () => {
       });
 
       await expect(
-        service.reject(adminCtx, 'pol-draft-1', 'Cannot reject draft'),
+        service.reject(adminCtx, 'pol-draft-1', 'Cannot reject draft', 1),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -804,6 +852,7 @@ describe('PoliciesService', () => {
         service.updateMetadata(adminCtx, 'pol-conc-1', {
           title: 'Attempt Overwrite',
           expectedUpdatedAt: staleClientTimestamp,
+          expectedVersion: 1,
         }),
       ).rejects.toThrow(ConflictException);
     });

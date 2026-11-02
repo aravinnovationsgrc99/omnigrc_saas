@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -369,6 +369,16 @@ export class PolicyControlsService {
 
     if (!existing) {
       throw new NotFoundException(`Mapping between Policy "${policyId}" and Control "${controlId}" not found`);
+    }
+
+    if (dto.expectedUpdatedAt) {
+      const expected = new Date(dto.expectedUpdatedAt).getTime();
+      const current = new Date(existing.updatedAt).getTime();
+      if (Math.abs(current - expected) > 1000) {
+        throw new ConflictException(
+          'Mapping was updated concurrently by another user. Please reload the latest changes.',
+        );
+      }
     }
 
     const rationale = dto.rationale !== undefined ? dto.rationale.trim() || null : undefined;
