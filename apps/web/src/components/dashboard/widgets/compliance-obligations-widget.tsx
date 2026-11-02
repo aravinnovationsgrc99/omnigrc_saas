@@ -4,13 +4,12 @@ import React from 'react';
 import { ObligationMetricsDto } from '@omnigrc/shared';
 import { CheckSquare, Clock, AlertCircle, CheckCircle2, ChevronRight } from 'lucide-react';
 import { AnimatedCountUp } from '@/components/ui/animated-count-up';
-import { HorizontalBarChart, BarItem } from '../charts/horizontal-bar-chart';
-
+import { DonutChart, ChartSegment } from '../charts/donut-chart';
 import { ModuleNotLicensedCard } from '@/components/ui/module-not-licensed-card';
 
 interface ComplianceObligationsWidgetProps {
   metrics: ObligationMetricsDto;
-  onNavigateToView?: (view: string) => void;
+  onNavigateToView?: (view: string, params?: Record<string, any>) => void;
 }
 
 export function ComplianceObligationsWidget({ metrics, onNavigateToView }: ComplianceObligationsWidgetProps) {
@@ -24,16 +23,32 @@ export function ComplianceObligationsWidget({ metrics, onNavigateToView }: Compl
     );
   }
 
-  const completionRate = Math.round(metrics.completionRate || 0);
-  const completed = metrics.completedCount || 0;
-  const upcoming = metrics.upcomingCount || 0;
-  const overdue = metrics.overdueCount || 0;
-  const total = metrics.total || completed + upcoming + overdue;
+  const completionRate = Math.round(metrics?.completionRate || 0);
+  const completed = metrics?.completedCount || 0;
+  const upcoming = metrics?.upcomingCount || 0;
+  const overdue = metrics?.overdueCount || 0;
+  const calculatedTotal = completed + upcoming + overdue;
+  const total = metrics?.total ?? calculatedTotal;
 
-  const barItems: BarItem[] = [
-    { key: 'completed', label: 'Completed Tasks', value: completed, color: '#0d9488' },
-    { key: 'upcoming', label: 'Due in 30 Days', value: upcoming, color: '#f59e0b' },
-    { key: 'overdue', label: 'Overdue SLA', value: overdue, color: '#f43f5e' },
+  const donutSegments: ChartSegment[] = [
+    {
+      key: 'completed',
+      label: 'Completed Tasks',
+      value: completed,
+      color: '#10b981',
+    },
+    {
+      key: 'upcoming',
+      label: 'Due in 30 Days',
+      value: upcoming,
+      color: '#f59e0b',
+    },
+    {
+      key: 'overdue',
+      label: 'Overdue SLA',
+      value: overdue,
+      color: '#ef4444',
+    },
   ];
 
   return (
@@ -65,11 +80,13 @@ export function ComplianceObligationsWidget({ metrics, onNavigateToView }: Compl
           <span className="text-sm font-bold text-teal-700 omni-mono">{completionRate}%</span>
         </div>
 
-        {/* Horizontal Bar Chart Visualization */}
+        {/* Donut Chart Task Fulfillment Distribution */}
         <div className="mb-4">
-          <HorizontalBarChart
-            items={barItems}
-            maxValue={total || 1}
+          <DonutChart
+            title="Task Fulfillment Status"
+            segments={donutSegments}
+            centerValue={total}
+            centerLabel="Tasks"
             emptyMessage="No compliance tasks assigned"
           />
         </div>
@@ -77,38 +94,41 @@ export function ComplianceObligationsWidget({ metrics, onNavigateToView }: Compl
 
       <div className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-100">
         <div
-          onClick={() => onNavigateToView?.('board')}
+          onClick={() => onNavigateToView?.('board', { filter: 'upcoming' })}
           className="bg-amber-50/50 p-2.5 rounded-lg border border-amber-100/60 hover:bg-amber-100/50 transition-colors cursor-pointer"
+          title="Filter Tasks Due within 30 Days"
         >
           <div className="flex items-center gap-1 text-[11px] font-medium text-amber-700">
             <Clock size={12} /> Due 30d
           </div>
           <div className="text-base font-bold text-amber-900 mt-1 omni-mono">
-            <AnimatedCountUp value={metrics.upcomingCount} />
+            <AnimatedCountUp value={upcoming} />
           </div>
         </div>
 
         <div
-          onClick={() => onNavigateToView?.('board')}
+          onClick={() => onNavigateToView?.('board', { filter: 'overdue' })}
           className="bg-rose-50/50 p-2.5 rounded-lg border border-rose-100/60 hover:bg-rose-100/50 transition-colors cursor-pointer"
+          title="Filter Overdue Tasks"
         >
           <div className="flex items-center gap-1 text-[11px] font-medium text-rose-700">
             <AlertCircle size={12} /> Overdue
           </div>
           <div className="text-base font-bold text-rose-900 mt-1 omni-mono">
-            <AnimatedCountUp value={metrics.overdueCount} />
+            <AnimatedCountUp value={overdue} />
           </div>
         </div>
 
         <div
-          onClick={() => onNavigateToView?.('board')}
-          className="bg-teal-50/50 p-2.5 rounded-lg border border-teal-100/60 hover:bg-teal-100/50 transition-colors cursor-pointer"
+          onClick={() => onNavigateToView?.('board', { filter: 'completed' })}
+          className="bg-emerald-50/50 p-2.5 rounded-lg border border-emerald-100/60 hover:bg-emerald-100/50 transition-colors cursor-pointer"
+          title="Filter Completed Tasks"
         >
-          <div className="flex items-center gap-1 text-[11px] font-medium text-teal-700">
-            <CheckCircle2 size={12} /> Complete
+          <div className="flex items-center gap-1 text-[11px] font-medium text-emerald-700">
+            <CheckCircle2 size={12} /> Done
           </div>
-          <div className="text-base font-bold text-teal-900 mt-1 omni-mono">
-            <AnimatedCountUp value={metrics.completedCount} />
+          <div className="text-base font-bold text-emerald-900 mt-1 omni-mono">
+            <AnimatedCountUp value={completed} />
           </div>
         </div>
       </div>

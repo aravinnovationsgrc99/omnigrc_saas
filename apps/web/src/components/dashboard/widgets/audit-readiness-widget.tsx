@@ -2,10 +2,9 @@
 
 import React from 'react';
 import { AuditMetricsDto } from '@omnigrc/shared';
-import { FileCheck, ShieldCheck, ClipboardList, ChevronRight } from 'lucide-react';
+import { FileCheck, ShieldCheck, ClipboardList, ChevronRight, CheckCircle2 } from 'lucide-react';
 import { AnimatedCountUp } from '@/components/ui/animated-count-up';
-import { StackedProgressBar, StackedSegment } from '../charts/stacked-progress-bar';
-import { HorizontalBarChart, BarItem } from '../charts/horizontal-bar-chart';
+import { DonutChart, ChartSegment } from '../charts/donut-chart';
 import { ModuleNotLicensedCard } from '@/components/ui/module-not-licensed-card';
 
 interface AuditReadinessWidgetProps {
@@ -24,55 +23,46 @@ export function AuditReadinessWidget({ metrics, onNavigateToView }: AuditReadine
     );
   }
 
-  const score = metrics.overallAuditScore || 0;
+  const score = metrics?.overallAuditScore || 0;
 
-  // Build Audit Plan Status Stacked Bar segments
-  const byPlanStatus = metrics.byPlanStatus || {};
-  const draftPlans = byPlanStatus.DRAFT || 0;
-  const plannedPlans = byPlanStatus.PLANNED || 0;
+  // Build Audit Plan Status Donut segments
+  const byPlanStatus = metrics?.byPlanStatus || {};
   const inProgressPlans = byPlanStatus.IN_PROGRESS || 0;
+  const plannedPlans = byPlanStatus.PLANNED || 0;
   const completedPlans = byPlanStatus.COMPLETED || 0;
+  const draftPlans = byPlanStatus.DRAFT || 0;
+  const totalPlans = metrics?.totalPlans || (inProgressPlans + plannedPlans + completedPlans + draftPlans);
 
-  const planSegments: StackedSegment[] = [
+  const planSegments: ChartSegment[] = [
     {
       key: 'in_progress',
       label: 'In Progress',
       value: inProgressPlans,
-      color: '#0d9488',
-      onClick: () => onNavigateToView?.('audits', { status: 'IN_PROGRESS' }),
+      color: '#0284c7',
     },
     {
       key: 'planned',
       label: 'Planned',
       value: plannedPlans,
-      color: '#0284c7',
-      onClick: () => onNavigateToView?.('audits', { status: 'PLANNED' }),
+      color: '#f59e0b',
     },
     {
       key: 'completed',
       label: 'Completed',
       value: completedPlans,
       color: '#10b981',
-      onClick: () => onNavigateToView?.('audits', { status: 'COMPLETED' }),
     },
     {
       key: 'draft',
       label: 'Draft',
       value: draftPlans,
       color: '#94a3b8',
-      onClick: () => onNavigateToView?.('audits', { status: 'DRAFT' }),
     },
   ];
 
-  // Build CAPA / Remediation Status Bar items
-  const byCapaStatus = metrics.byCapaStatus || {};
-  const capaBarItems: BarItem[] = [
-    { key: 'open', label: 'CAPA Open', value: byCapaStatus.OPEN || 0, color: '#f43f5e' },
-    { key: 'in_progress', label: 'CAPA In Progress', value: byCapaStatus.IN_PROGRESS || 0, color: '#f59e0b' },
-    { key: 'completed', label: 'CAPA Completed', value: byCapaStatus.COMPLETED || 0, color: '#3b82f6' },
-    { key: 'verified', label: 'CAPA Verified', value: byCapaStatus.VERIFIED || 0, color: '#10b981' },
-  ];
-  const capaTotal = Object.values(byCapaStatus).reduce((a, b) => a + b, 0);
+  const byCapaStatus = metrics?.byCapaStatus || {};
+  const capaOpen = metrics?.capaOpenCount || 0;
+  const findingsOpen = metrics?.findingsOpenCount || 0;
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-2xs hover:shadow-md transition-shadow flex flex-col justify-between h-full">
@@ -84,7 +74,7 @@ export function AuditReadinessWidget({ metrics, onNavigateToView }: AuditReadine
             </div>
             <div>
               <h3 className="text-sm font-semibold text-slate-900">Audit & Remediation Readiness</h3>
-              <p className="text-xs text-slate-500">Execution tracking & finding remediation</p>
+              <p className="text-xs text-slate-500">Plan lifecycle & compliance execution</p>
             </div>
           </div>
           <button
@@ -97,91 +87,61 @@ export function AuditReadinessWidget({ metrics, onNavigateToView }: AuditReadine
           </button>
         </div>
 
+        {/* Readiness Score Strip */}
         <div className="grid grid-cols-2 gap-2 mb-4">
           <div
-            onClick={() => onNavigateToView?.('audits')}
-            className="bg-slate-50 p-2.5 rounded-lg border border-slate-200/80 hover:bg-slate-100/80 transition-colors cursor-pointer"
+            onClick={() => onNavigateToView?.('audits', { status: 'ACTIVE' })}
+            className="bg-teal-50/50 p-2.5 rounded-lg border border-teal-100/60 hover:bg-teal-100/50 transition-colors cursor-pointer"
+            title="Inspect Overall Audit Readiness Score"
           >
-            <div className="flex items-center gap-1.5 text-xs text-slate-600">
-              <ClipboardList size={13} /> Active Plans
+            <div className="flex items-center gap-1 text-xs text-teal-700 font-medium">
+              <ShieldCheck size={13} /> Audit Score
             </div>
-            <div className="text-base font-bold text-slate-900 mt-1 omni-mono">
-              <AnimatedCountUp value={metrics.totalPlans} />
-            </div>
+            <p className="text-xl font-bold text-teal-900 mt-1 omni-mono">
+              <AnimatedCountUp value={score} suffix="%" />
+            </p>
           </div>
 
           <div
-            onClick={() => onNavigateToView?.('audits')}
-            className="bg-slate-50 p-2.5 rounded-lg border border-slate-200/80 hover:bg-slate-100/80 transition-colors cursor-pointer"
+            onClick={() => onNavigateToView?.('audits', { tab: 'assessments' })}
+            className="bg-slate-50 p-2.5 rounded-lg border border-slate-200/80 hover:bg-slate-100/50 transition-colors cursor-pointer"
+            title="Inspect Active Assessments"
           >
-            <div className="flex items-center gap-1.5 text-xs text-slate-600">
-              <ShieldCheck size={13} /> Audit Score
+            <div className="flex items-center gap-1 text-xs text-slate-600 font-medium">
+              <ClipboardList size={13} /> Assessments
             </div>
-            <div className="text-base font-bold text-teal-700 mt-1 omni-mono">
-              <AnimatedCountUp value={score} suffix="%" />
-            </div>
+            <p className="text-xl font-bold text-slate-900 mt-1 omni-mono">
+              <AnimatedCountUp value={metrics?.assessmentCount || 0} />
+            </p>
           </div>
         </div>
 
-        {/* Audit Plan Progress Visualization */}
+        {/* Donut Chart Audit Plan Status */}
         <div className="mb-4">
-          <div className="text-xs font-semibold text-slate-700 mb-2">Audit Plan Execution Status</div>
-          <StackedProgressBar
+          <DonutChart
+            title="Audit Plan Lifecycle Status"
             segments={planSegments}
-            total={metrics.totalPlans > 0 ? metrics.totalPlans : draftPlans + plannedPlans + inProgressPlans + completedPlans}
-            height={12}
-            showLegend={true}
-            showPercentages={true}
+            centerValue={totalPlans}
+            centerLabel="Plans"
             emptyMessage="No audit plans registered"
           />
         </div>
-
-        {/* Remediation CAPA Status Distribution */}
-        {capaTotal > 0 && (
-          <div className="pt-3 border-t border-slate-100 mb-4">
-            <div className="text-xs font-semibold text-slate-700 mb-2">Remediation CAPA Status</div>
-            <HorizontalBarChart
-              items={capaBarItems}
-              maxValue={capaTotal}
-              emptyMessage="No remediation CAPAs recorded"
-            />
-          </div>
-        )}
       </div>
 
-      <div className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-100">
-        <div
-          onClick={() => onNavigateToView?.('audits')}
-          className="bg-amber-50/50 p-2 rounded-lg text-center border border-amber-100/60 hover:bg-amber-100/50 transition-colors cursor-pointer"
-          title="Open Audit Findings"
+      <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
+        <span
+          onClick={() => onNavigateToView?.('audits', { tab: 'findings', status: 'OPEN' })}
+          className="hover:text-amber-700 cursor-pointer"
         >
-          <p className="text-[11px] font-medium text-amber-700">Open Findings</p>
-          <p className="text-sm font-bold text-amber-900 mt-0.5 omni-mono">
-            <AnimatedCountUp value={metrics.findingsOpenCount} />
-          </p>
-        </div>
-
-        <div
-          onClick={() => onNavigateToView?.('audits')}
-          className="bg-rose-50/50 p-2 rounded-lg text-center border border-rose-100/60 hover:bg-rose-100/50 transition-colors cursor-pointer"
-          title="Inspect Overdue Findings"
+          Open Findings: <strong className="text-slate-900 omni-mono">{findingsOpen}</strong>
+        </span>
+        <span
+          onClick={() => onNavigateToView?.('audits', { tab: 'capa' })}
+          className="hover:text-teal-700 cursor-pointer flex items-center gap-1"
         >
-          <p className="text-[11px] font-medium text-rose-700">Overdue Findings</p>
-          <p className="text-sm font-bold text-rose-900 mt-0.5 omni-mono">
-            <AnimatedCountUp value={metrics.findingsOverdueCount} />
-          </p>
-        </div>
-
-        <div
-          onClick={() => onNavigateToView?.('remediation')}
-          className="bg-teal-50/50 p-2 rounded-lg text-center border border-teal-100/60 hover:bg-teal-100/50 transition-colors cursor-pointer"
-          title="Inspect Remediation CAPAs"
-        >
-          <p className="text-[11px] font-medium text-teal-700">Open CAPAs</p>
-          <p className="text-sm font-bold text-teal-900 mt-0.5 omni-mono">
-            <AnimatedCountUp value={metrics.capaOpenCount} />
-          </p>
-        </div>
+          <CheckCircle2 size={12} className="text-teal-600" />
+          Active CAPA: <strong className="text-slate-900 omni-mono">{capaOpen}</strong>
+        </span>
       </div>
     </div>
   );

@@ -2190,12 +2190,13 @@ export const DEFAULT_WIDGET_LAYOUT: WidgetLayoutItem[] = [
   { id: 'risk_overview', visible: true, position: 0 },
   { id: 'risk_heatmap', visible: true, position: 1 },
   { id: 'entitled_framework_coverage', visible: true, position: 2 },
-  { id: 'compliance_obligations', visible: true, position: 3 },
-  { id: 'audit_readiness', visible: true, position: 4 },
-  { id: 'vulnerability_posture', visible: true, position: 5 },
-  { id: 'policy_governance', visible: true, position: 6 },
-  { id: 'vendor_risk', visible: true, position: 7 },
-  { id: 'asset_inventory', visible: true, position: 8 },
+  { id: 'open_findings_by_severity', visible: true, position: 3 },
+  { id: 'compliance_obligations', visible: true, position: 4 },
+  { id: 'audit_readiness', visible: true, position: 5 },
+  { id: 'vulnerability_posture', visible: true, position: 6 },
+  { id: 'policy_governance', visible: true, position: 7 },
+  { id: 'vendor_risk', visible: true, position: 8 },
+  { id: 'asset_inventory', visible: true, position: 9 },
 ];
 
 // Phase 15: Reporting & Exports Enums & DTOs

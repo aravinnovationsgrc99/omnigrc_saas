@@ -544,10 +544,10 @@ async function main() {
       description: 'Sub-contractors accessing team communication channels without mandatory 2FA.',
       likelihood: 2,
       impact: 3,
-      status: RiskStatus.ACCEPTED,
+      status: RiskStatus.OPEN,
       owner: 'Internal IT',
       assetId: 'a0000000-0000-0000-0000-000000000006',
-      treatmentPlan: 'Temporary risk acceptance until enterprise SSO migration completes.',
+      treatmentPlan: 'Enforce mandatory 2FA on Slack Workspace via Okta SAML enterprise integration.',
     },
     {
       id: 'r0000000-0000-0000-0000-000000000008',
@@ -586,9 +586,19 @@ async function main() {
       description: 'Lack of IP throttling on authentication endpoints leading to brute-force risks.',
       likelihood: 2,
       impact: 2,
-      status: RiskStatus.CLOSED,
+      status: RiskStatus.IN_TREATMENT,
       owner: 'DevOps Team',
-      treatmentPlan: 'Deployed NestJS ThrottlerGuard on all public API routes. Closed.',
+      treatmentPlan: 'Deploying NestJS ThrottlerGuard on all public API routes.',
+    },
+    {
+      id: 'r0000000-0000-0000-0000-000000000012',
+      title: 'Staging Environment Transient Secret Variable Propagation Delay',
+      description: 'Minor latency in staging environment KMS secret synchronization cache.',
+      likelihood: 1,
+      impact: 2,
+      status: RiskStatus.OPEN,
+      owner: 'DevOps Lead',
+      treatmentPlan: 'Configured automated secret invalidation cache webhook in CI/CD pipeline.',
     },
   ];
 
@@ -1077,6 +1087,111 @@ async function main() {
       version: 2,
     },
   });
+
+  // Additional Realistic Demo Findings across all Severity bands for Dashboard Visual Reporting
+  const additionalDemoFindings = [
+    {
+      id: 'f0000000-0000-0000-0000-000000000002',
+      title: 'Unauthenticated Administrative Exposure on Production Monitoring Port',
+      description: 'Prometheus metrics exporter endpoint exposed without authentication on public subnet.',
+      severity: VulnerabilitySeverity.CRITICAL,
+      status: FindingStatus.OPEN,
+      ownerId: '00000000-0000-0000-0000-000000000005',
+      capaApplicability: CapaApplicability.REQUIRED,
+      capaRationale: 'Urgent firewall rule update required to restrict ingress to private VPC peering.',
+    },
+    {
+      id: 'f0000000-0000-0000-0000-000000000003',
+      title: 'Missing Automated Key Rotation for Primary KMS Customer Master Keys',
+      description: 'Customer managed encryption keys in AWS KMS lack automatic annual rotation flag.',
+      severity: VulnerabilitySeverity.HIGH,
+      status: FindingStatus.IN_REMEDIATION,
+      ownerId: '00000000-0000-0000-0000-000000000005',
+      capaApplicability: CapaApplicability.REQUIRED,
+      capaRationale: 'Enable kms:EnableKeyRotation on Terraform KMS module.',
+    },
+    {
+      id: 'f0000000-0000-0000-0000-000000000004',
+      title: 'Audit Log Ingestion Pipeline Buffer Overflows during Peak Batches',
+      description: 'Logstash buffer drops syslog frames during high-concurrency ingestion periods.',
+      severity: VulnerabilitySeverity.MEDIUM,
+      status: FindingStatus.OPEN,
+      ownerId: '00000000-0000-0000-0000-000000000004',
+      capaApplicability: CapaApplicability.REQUIRED,
+      capaRationale: 'Increase Kafka consumer buffer allocation.',
+    },
+    {
+      id: 'f0000000-0000-0000-0000-000000000005',
+      title: 'Contractor Access Lifecycle De-provisioning Exceeds 24-Hour SLA',
+      description: 'Audit sample revealed 3 contractor accounts active 48 hours post-contract expiry.',
+      severity: VulnerabilitySeverity.MEDIUM,
+      status: FindingStatus.IN_REMEDIATION,
+      ownerId: '00000000-0000-0000-0000-000000000003',
+      capaApplicability: CapaApplicability.REQUIRED,
+      capaRationale: 'Automate HR webhook triggers to HRMS offboarding queue.',
+    },
+    {
+      id: 'f0000000-0000-0000-0000-000000000006',
+      title: 'Weak Password Complexity Policy on Legacy Internal Service Accounts',
+      description: 'Service accounts in staging Active Directory lack 16-character entropy enforcement.',
+      severity: VulnerabilitySeverity.MEDIUM,
+      status: FindingStatus.OPEN,
+      ownerId: '00000000-0000-0000-0000-000000000005',
+      capaApplicability: CapaApplicability.REQUIRED,
+      capaRationale: 'Migrate legacy service accounts to Managed Service Identities (MSI).',
+    },
+    {
+      id: 'f0000000-0000-0000-0000-000000000007',
+      title: 'Development SSL Certificate Common Name / SAN Subject Inconsistency',
+      description: 'Dev wildcard cert subject name references legacy domain namespace.',
+      severity: VulnerabilitySeverity.LOW,
+      status: FindingStatus.OPEN,
+      ownerId: '00000000-0000-0000-0000-000000000005',
+      capaApplicability: CapaApplicability.NOT_REQUIRED,
+      capaRationale: 'Internal non-production naming hygiene only.',
+    },
+    {
+      id: 'f0000000-0000-0000-0000-000000000008',
+      title: 'Verbose Information Disclosure via X-Powered-By HTTP Response Headers',
+      description: 'Express framework banner emitted in response headers on public documentation subdomains.',
+      severity: VulnerabilitySeverity.LOW,
+      status: FindingStatus.OPEN,
+      ownerId: '00000000-0000-0000-0000-000000000004',
+      capaApplicability: CapaApplicability.NOT_REQUIRED,
+      capaRationale: 'Helmet disablePoweredBy configuration enabled.',
+    },
+  ];
+
+  for (const f of additionalDemoFindings) {
+    await prisma.auditFinding.upsert({
+      where: { id: f.id },
+      update: {
+        title: f.title,
+        description: f.description,
+        severity: f.severity,
+        status: f.status,
+        ownerId: f.ownerId,
+        capaApplicability: f.capaApplicability,
+        capaRationale: f.capaRationale,
+        version: 1,
+      },
+      create: {
+        id: f.id,
+        organizationId: org.id,
+        assessmentId: demoAssessmentId,
+        checkItemId: demoCheck2Id,
+        title: f.title,
+        description: f.description,
+        severity: f.severity,
+        status: f.status,
+        ownerId: f.ownerId,
+        createdById: '00000000-0000-0000-0000-000000000003',
+        capaApplicability: f.capaApplicability,
+        capaRationale: f.capaRationale,
+        version: 1,
+      },
+    });
+  }
 
   // 6. Audit CAPA (COMPLETED)
   await prisma.auditCapa.upsert({

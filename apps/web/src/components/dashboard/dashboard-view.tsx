@@ -24,6 +24,7 @@ import { ExecutivePostureBanner } from './widgets/executive-posture-banner';
 import { ExecutiveKpiStrip } from './widgets/executive-kpi-strip';
 import { AttentionRequiredWidget } from './widgets/attention-required-widget';
 import { EntitledFrameworkCoverageWidget } from './widgets/entitled-framework-coverage-widget';
+import { OpenFindingsBySeverityWidget } from './widgets/open-findings-by-severity-widget';
 
 interface DashboardViewProps {
   onNavigateToView?: (view: string, params?: Record<string, any>) => void;
@@ -96,6 +97,8 @@ export function DashboardView({ onNavigateToView }: DashboardViewProps) {
             onNavigateToView={onNavigateToView}
           />
         );
+      case 'open_findings_by_severity':
+        return <OpenFindingsBySeverityWidget key={id} metrics={metrics.audits} onNavigateToView={onNavigateToView} />;
       case 'compliance_obligations':
         return <ComplianceObligationsWidget key={id} metrics={metrics.obligations} onNavigateToView={onNavigateToView} />;
       case 'audit_readiness':

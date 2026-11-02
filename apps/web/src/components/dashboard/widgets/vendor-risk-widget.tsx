@@ -4,7 +4,7 @@ import React from 'react';
 import { VendorMetricsDto } from '@omnigrc/shared';
 import { Building2, ChevronRight, AlertTriangle } from 'lucide-react';
 import { AnimatedCountUp } from '@/components/ui/animated-count-up';
-import { StackedProgressBar, StackedSegment } from '../charts/stacked-progress-bar';
+import { DonutChart, ChartSegment } from '../charts/donut-chart';
 import { ModuleNotLicensedCard } from '@/components/ui/module-not-licensed-card';
 
 interface VendorRiskWidgetProps {
@@ -23,40 +23,37 @@ export function VendorRiskWidget({ metrics, onNavigateToView }: VendorRiskWidget
     );
   }
 
-  const critical = metrics.byCriticality?.CRITICAL || 0;
-  const high = metrics.byCriticality?.HIGH || 0;
-  const medium = metrics.byCriticality?.MEDIUM || 0;
-  const low = metrics.byCriticality?.LOW || 0;
-  const total = metrics.total || critical + high + medium + low;
+  const critical = metrics?.byCriticality?.CRITICAL || 0;
+  const high = metrics?.byCriticality?.HIGH || 0;
+  const medium = metrics?.byCriticality?.MEDIUM || 0;
+  const low = metrics?.byCriticality?.LOW || 0;
+  const calculatedTotal = critical + high + medium + low;
+  const total = metrics?.total ?? calculatedTotal;
 
-  const segments: StackedSegment[] = [
+  const donutSegments: ChartSegment[] = [
     {
       key: 'critical',
       label: 'Critical',
       value: critical,
-      color: '#dc2626',
-      onClick: () => onNavigateToView?.('vendors', { criticality: 'CRITICAL' }),
+      color: '#ef4444',
     },
     {
       key: 'high',
       label: 'High',
       value: high,
       color: '#f97316',
-      onClick: () => onNavigateToView?.('vendors', { criticality: 'HIGH' }),
     },
     {
       key: 'medium',
       label: 'Medium',
       value: medium,
       color: '#f59e0b',
-      onClick: () => onNavigateToView?.('vendors', { criticality: 'MEDIUM' }),
     },
     {
       key: 'low',
       label: 'Low',
       value: low,
-      color: '#0d9488',
-      onClick: () => onNavigateToView?.('vendors', { criticality: 'LOW' }),
+      color: '#10b981',
     },
   ];
 
@@ -98,15 +95,13 @@ export function VendorRiskWidget({ metrics, onNavigateToView }: VendorRiskWidget
           </span>
         </div>
 
-        {/* Stacked Criticality Tier Distribution */}
+        {/* Donut Criticality Tier Distribution */}
         <div className="mb-4">
-          <div className="text-xs font-semibold text-slate-700 mb-2">Criticality Tier Distribution</div>
-          <StackedProgressBar
-            segments={segments}
-            total={total > 0 ? total : critical + high + medium + low}
-            height={12}
-            showLegend={true}
-            showPercentages={true}
+          <DonutChart
+            title="Criticality Tier Distribution"
+            segments={donutSegments}
+            centerValue={total}
+            centerLabel="Vendors"
             emptyMessage="No vendors registered"
           />
         </div>
@@ -120,7 +115,7 @@ export function VendorRiskWidget({ metrics, onNavigateToView }: VendorRiskWidget
         >
           <span className="text-xs text-amber-700 font-medium">Review Required</span>
           <p className="text-base font-bold text-amber-900 mt-1 omni-mono">
-            <AnimatedCountUp value={metrics.requiringReviewCount} />
+            <AnimatedCountUp value={metrics?.requiringReviewCount || 0} />
           </p>
         </div>
 
@@ -131,7 +126,7 @@ export function VendorRiskWidget({ metrics, onNavigateToView }: VendorRiskWidget
         >
           <span className="text-xs text-rose-700 font-medium">Overdue Reviews</span>
           <p className="text-base font-bold text-rose-900 mt-1 omni-mono">
-            <AnimatedCountUp value={metrics.assessmentsOverdueCount} />
+            <AnimatedCountUp value={metrics?.assessmentsOverdueCount || 0} />
           </p>
         </div>
       </div>

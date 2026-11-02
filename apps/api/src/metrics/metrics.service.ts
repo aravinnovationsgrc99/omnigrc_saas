@@ -187,7 +187,7 @@ export class MetricsService {
       auditsState.isAvailable ? this.prisma.auditFinding.count({ where: { organizationId: authCtx.organizationId } }) : Promise.resolve(0),
       auditsState.isAvailable ? this.prisma.auditFinding.count({ where: { organizationId: authCtx.organizationId, status: { in: [FindingStatus.OPEN, FindingStatus.IN_REMEDIATION, FindingStatus.READY_FOR_VERIFICATION] } } }) : Promise.resolve(0),
       auditsState.isAvailable ? this.prisma.auditFinding.count({ where: { organizationId: authCtx.organizationId, status: { in: [FindingStatus.OPEN, FindingStatus.IN_REMEDIATION] }, dueDate: { lt: now } } }) : Promise.resolve(0),
-      auditsState.isAvailable ? this.prisma.auditFinding.groupBy({ by: ['severity'], where: { organizationId: authCtx.organizationId }, _count: true }) : Promise.resolve([]),
+      auditsState.isAvailable ? this.prisma.auditFinding.groupBy({ by: ['severity'], where: { organizationId: authCtx.organizationId, status: { in: [FindingStatus.OPEN, FindingStatus.IN_REMEDIATION, FindingStatus.READY_FOR_VERIFICATION] } }, _count: true }) : Promise.resolve([]),
       auditsState.isAvailable ? this.prisma.auditCapa.count({ where: { organizationId: authCtx.organizationId, status: { in: [CapaStatus.OPEN, CapaStatus.IN_PROGRESS] } } }) : Promise.resolve(0),
       auditsState.isAvailable ? this.prisma.auditCapa.groupBy({ by: ['status'], where: { organizationId: authCtx.organizationId }, _count: true }) : Promise.resolve([]),
 

@@ -51,7 +51,13 @@ export function RiskHeatmapWidget({ metrics, onNavigateToView }: RiskHeatmapWidg
       return 'ring-2 ring-teal-600 ring-offset-1 z-10 font-bold bg-slate-900 text-white shadow-md';
     }
     if (count === 0) {
-      return 'bg-slate-50 text-slate-400 hover:bg-slate-100 border-slate-200/80';
+      if (score >= 15) {
+        return 'bg-rose-50/60 text-slate-400 hover:bg-rose-100/60 border-rose-100/70';
+      }
+      if (score >= 8) {
+        return 'bg-amber-50/60 text-slate-400 hover:bg-amber-100/60 border-amber-100/70';
+      }
+      return 'bg-emerald-50/60 text-slate-400 hover:bg-emerald-100/60 border-emerald-100/70';
     }
     if (score >= 15) {
       return 'bg-rose-500 text-white font-bold hover:bg-rose-600 border-rose-600 shadow-2xs';
@@ -196,7 +202,13 @@ export function RiskHeatmapWidget({ metrics, onNavigateToView }: RiskHeatmapWidg
                       )}
                     </div>
                   </div>
-                  <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-sm bg-rose-50 text-rose-700 border border-rose-200 omni-mono">
+                  <span className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-sm omni-mono border ${
+                    r.score >= 15
+                      ? 'bg-rose-50 text-rose-700 border-rose-200'
+                      : r.score >= 8
+                      ? 'bg-amber-50 text-amber-700 border-amber-200'
+                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  }`}>
                     Score {r.score}
                   </span>
                 </div>

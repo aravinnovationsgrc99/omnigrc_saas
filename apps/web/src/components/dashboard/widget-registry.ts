@@ -8,6 +8,7 @@ import {
   Building2,
   Server,
   Layers,
+  AlertTriangle,
 } from 'lucide-react';
 
 export interface WidgetMeta {
@@ -39,6 +40,13 @@ export const WIDGET_METADATA: Record<string, WidgetMeta> = {
     category: 'Framework & Compliance',
     description: 'Authoritative audit reference coverage for all licensed frameworks',
     icon: Layers,
+  },
+  open_findings_by_severity: {
+    id: 'open_findings_by_severity',
+    title: 'Open Findings by Severity',
+    category: 'Audit & Remediation',
+    description: 'Breakdown of active audit findings by severity (Critical, High, Medium, Low)',
+    icon: AlertTriangle,
   },
   compliance_obligations: {
     id: 'compliance_obligations',
