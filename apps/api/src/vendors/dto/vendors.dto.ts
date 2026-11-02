@@ -51,6 +51,18 @@ export class CreateVendorDto {
 
   @IsString()
   @IsOptional()
+  contactEmail?: string;
+
+  @IsString()
+  @IsOptional()
+  contactPhone?: string;
+
+  @IsString()
+  @IsOptional()
+  taxId?: string;
+
+  @IsString()
+  @IsOptional()
   dueDiligenceStatus?: string;
 
   @IsString()
@@ -143,6 +155,18 @@ export class UpdateVendorDto {
   @IsString()
   @IsOptional()
   projectId?: string;
+
+  @IsString()
+  @IsOptional()
+  contactEmail?: string;
+
+  @IsString()
+  @IsOptional()
+  contactPhone?: string;
+
+  @IsString()
+  @IsOptional()
+  taxId?: string;
 
   @IsString()
   @IsOptional()
@@ -542,3 +566,39 @@ export class LifecycleTransitionDto {
   @IsOptional()
   rationale?: string;
 }
+
+export class ExecuteVendorImportDto {
+  @IsString()
+  @IsNotEmpty()
+  fileName!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  fileType!: 'XLSX' | 'CSV';
+
+  @IsNotEmpty()
+  rows!: Record<string, any>[];
+
+  @IsNotEmpty()
+  columnMapping!: Record<string, string>;
+
+  @IsString()
+  @IsOptional()
+  duplicateResolution?: 'SKIP' | 'UPDATE' | 'FLAG' = 'SKIP';
+}
+
+export class VendorImportBatchesQueryDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  page?: number = 1;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  @IsOptional()
+  limit?: number = 20;
+}
+

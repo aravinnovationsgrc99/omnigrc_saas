@@ -12,6 +12,11 @@ export class IntegrationsHubService {
     const isGeminiConfigured = !!process.env.GEMINI_API_KEY;
     const isClaudeConfigured = !!process.env.ANTHROPIC_API_KEY;
 
+    const dirConfig = await this.prisma.directoryIntegrationConfig.findUnique({
+      where: { organizationId },
+    });
+    const isEntraConfigured = !!dirConfig?.enabled;
+
     return [
       {
         id: 'resend-email',
@@ -52,6 +57,18 @@ export class IntegrationsHubService {
         status: 'NOT_CONFIGURED',
         description: 'Future Roadmap: Bi-directional issue sync for vulnerability remediation tasks and audit CAPA tracking.',
         details: { syncEnabled: false, capability: 'Future Architecture Item' },
+      },
+      {
+        id: 'microsoft-entra-id',
+        name: 'Microsoft Entra ID / Active Directory',
+        category: 'COLLABORATION',
+        status: isEntraConfigured ? 'CONFIGURED' : 'AVAILABLE',
+        description: 'Enterprise directory identity synchronization, group-to-role provisioning, and automated lifecycle deactivation.',
+        details: {
+          tenantId: dirConfig?.tenantId || 'Not configured',
+          syncSchedule: dirConfig?.syncSchedule || 'MANUAL',
+          lastSyncStatus: dirConfig?.lastSyncStatus || 'NEVER',
+        },
       },
       {
         id: 'google-workspace',

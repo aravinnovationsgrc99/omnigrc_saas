@@ -632,21 +632,15 @@ describe('Phase 4: Policy & Control Mapping Workflows & Security Verification', 
     });
 
     it('detects concurrent mapping deletion vs update conflict', async () => {
-      prisma.policyControl.findFirst
-        .mockResolvedValueOnce({
-          id: 'map-del-concur',
-          policyId: 'pol-alpha-1',
-          controlId: 'ctrl-alpha-1',
-          version: 2,
-          organizationId: 'org-alpha',
-          policy: { code: 'POL-1' },
-          control: { name: 'CTRL-1' },
-        })
-        .mockResolvedValueOnce({
-          id: 'map-del-concur',
-          version: 2,
-        });
-      prisma.policyControl.deleteMany.mockResolvedValueOnce({ count: 0 });
+      prisma.policyControl.findFirst.mockResolvedValueOnce({
+        id: 'map-del-concur',
+        policyId: 'pol-alpha-1',
+        controlId: 'ctrl-alpha-1',
+        version: 2,
+        organizationId: 'org-alpha',
+        policy: { code: 'POL-1' },
+        control: { name: 'CTRL-1' },
+      });
 
       await expect(
         policyControlsService.disassociate(tenantOrgAlpha, 'pol-alpha-1', 'ctrl-alpha-1', 1),

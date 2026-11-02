@@ -257,6 +257,10 @@ model Organization {
   regulatoryRemediationTasks                  RegulatoryRemediationTask[]
   regulatoryRemediationHistories              RegulatoryRemediationHistory[]
   PolicyControl                               PolicyControl[]
+  vendorImportBatches                         VendorImportBatch[]
+  directoryIntegrationConfig                  DirectoryIntegrationConfig?
+  directoryGroupMappings                      DirectoryGroupMapping[]
+  directorySyncLogs                           DirectorySyncLog[]
 
   @@index([parentOrganizationId])
   @@map("organizations")
@@ -428,9 +432,14 @@ model User {
   email                 String   @unique
   passwordHash          String
   role                  Role     @default(ANALYST)
-  emailNotifications    Boolean  @default(true)
-  passwordSetupRequired Boolean  @default(false)
-  createdAt             DateTime @default(now())
+  emailNotifications    Boolean             @default(true)
+  passwordSetupRequired Boolean             @default(false)
+  externalDirectoryId   String?
+  directorySyncedAt     DateTime?
+  status                ProductAccessStatus @default(ACTIVE)
+  jobTitle              String?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @default(now()) @updatedAt
 
   organization                      Organization                      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   memberships                       OrganizationMembership[]          @relation("UserMemberships")
@@ -441,6 +450,7 @@ model User {
   auditFindingVerificationHistories AuditFindingVerificationHistory[]
 
   @@index([organizationId])
+  @@index([externalDirectoryId])
   @@map("users")
 }
 
@@ -815,6 +825,10 @@ model Vendor {
   nextReviewDate     DateTime?
   websiteUrl         String?
   dueDiligenceStatus String?
+  contactEmail       String?
+  contactPhone       String?
+  taxId              String?
+  importBatchId      String?
   createdById        String
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
@@ -823,6 +837,7 @@ model Vendor {
   organization             Organization                    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   departmentRef            Department?                     @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   projectRef               Project?                        @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  importBatch              VendorImportBatch?              @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
   assets                   Asset[]
   assessments              VendorAssessment[]
   evidenceAssociations     VendorEvidence[]
@@ -833,6 +848,7 @@ model Vendor {
   @@index([projectId])
   @@index([deletedAt])
   @@index([status])
+  @@index([importBatchId])
   @@map("vendors")
 }
 
@@ -3059,3 +3075,131 @@ model RegulatoryRemediationHistory {
   @@index([organizationId])
   @@map("regulatory_remediation_histories")
 }
+
+// ============================================================================
+// PHASE 5 — VENDOR RISK AUTOMATION & ACTIVE DIRECTORY / ENTRA ID INTEGRATION
+// ============================================================================
+
+enum VendorImportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model VendorImportBatch {
+  id             String             @id @default(uuid())
+  organizationId String
+  fileName       String
+  fileType       String
+  totalRows      Int                @default(0)
+  importedRows   Int                @default(0)
+  updatedRows    Int                @default(0)
+  skippedRows    Int                @default(0)
+  errorRows      Int                @default(0)
+  status         VendorImportStatus @default(PENDING)
+  columnMapping  Json?
+  errorLog       Json?
+  createdById    String
+  createdAt      DateTime           @default(now())
+  completedAt    DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  vendors      Vendor[]
+
+  @@index([organizationId])
+  @@index([createdAt])
+  @@map("vendor_import_batches")
+}
+
+enum DirectoryProvider {
+  ENTRA_ID
+  AZURE_AD
+}
+
+enum DirectorySyncSchedule {
+  MANUAL
+  HOURLY
+  DAILY
+}
+
+enum DirectorySyncStatus {
+  SUCCESS
+  PARTIAL
+  FAILED
+}
+
+model DirectoryIntegrationConfig {
+  id                       String                 @id @default(uuid())
+  organizationId           String                 @unique
+  provider                 DirectoryProvider      @default(ENTRA_ID)
+  tenantId                 String
+  clientId                 String
+  clientSecretEncrypted    String
+  clientSecretMasked       String
+  domain                   String?
+  enabled                  Boolean                @default(false)
+  defaultRole              Role                   @default(ANALYST)
+  syncSchedule             DirectorySyncSchedule  @default(MANUAL)
+  lastSyncAt               DateTime?
+  lastSyncStatus           DirectorySyncStatus?
+  lastSyncMessage          String?
+  autoDeactivateUsers      Boolean                @default(true)
+  deactivationThresholdPct Int                    @default(20)
+  createdById              String
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
+
+  organization  Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  groupMappings DirectoryGroupMapping[]
+  syncLogs      DirectorySyncLog[]
+
+  @@index([organizationId])
+  @@map("directory_integration_configs")
+}
+
+model DirectoryGroupMapping {
+  id                 String   @id @default(uuid())
+  configId           String
+  organizationId     String
+  directoryGroupId   String
+  directoryGroupName String
+  targetRole         Role     @default(ANALYST)
+  priority           Int      @default(100)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  config       DirectoryIntegrationConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+  organization Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([configId, directoryGroupId])
+  @@index([organizationId])
+  @@map("directory_group_mappings")
+}
+
+model DirectorySyncLog {
+  id               String              @id @default(uuid())
+  configId         String
+  organizationId   String
+  syncType         String              @default("MANUAL")
+  status           DirectorySyncStatus @default(SUCCESS)
+  discoveredCount  Int                 @default(0)
+  createdCount     Int                 @default(0)
+  updatedCount     Int                 @default(0)
+  deactivatedCount Int                 @default(0)
+  skippedCount     Int                 @default(0)
+  errorCount       Int                 @default(0)
+  errorMessage     String?
+  errorDetails     Json?
+  startedAt        DateTime            @default(now())
+  completedAt      DateTime?
+
+  config       DirectoryIntegrationConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+  organization Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([configId])
+  @@index([startedAt])
+  @@map("directory_sync_logs")
+}
+

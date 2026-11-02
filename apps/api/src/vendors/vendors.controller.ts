@@ -16,6 +16,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { VendorsService } from './vendors.service';
+import { VendorImportService } from './vendor-import.service';
 import {
   CreateVendorDto,
   UpdateVendorDto,
@@ -37,6 +38,8 @@ import {
   VerifyVendorAssessmentActionDto,
   ApproveVendorRelationshipDto,
   LifecycleTransitionDto,
+  ExecuteVendorImportDto,
+  VendorImportBatchesQueryDto,
 } from './dto/vendors.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -51,7 +54,10 @@ import { RequireCapability } from '../common/decorators/require-capability.decor
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
 export class VendorsController {
-  constructor(private readonly vendorsService: VendorsService) {}
+  constructor(
+    private readonly vendorsService: VendorsService,
+    private readonly vendorImportService: VendorImportService,
+  ) {}
 
   @Get()
   async findAll(
@@ -122,6 +128,105 @@ export class VendorsController {
       role: user.role,
     };
     return this.vendorsService.updateQuestionnaire(authCtx, questionnaireId, dto);
+  }
+
+  // --- VENDOR ONBOARDING & BULK IMPORT ENDPOINTS (Placed before :id) ---
+
+  @Post('import/parse')
+  @RequiresActiveLicense()
+  @RequireCapability('VENDOR_RISK')
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  @UseInterceptors(FileInterceptor('file'))
+  async parseImportFile(
+    @CurrentUser() user: any,
+    @UploadedFile() file: any,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    const parsed = await this.vendorImportService.parseUploadedFile(file);
+    const { suggestedMapping, confidenceScores } = this.vendorImportService.suggestColumnMapping(
+      parsed.headers,
+      parsed.rows.slice(0, 3),
+    );
+    const preview = await this.vendorImportService.generatePreview(
+      authCtx,
+      parsed.rows,
+      suggestedMapping,
+    );
+
+    return {
+      fileName: file.originalname,
+      fileType: parsed.fileType,
+      headers: parsed.headers,
+      totalRows: parsed.rows.length,
+      suggestedMapping,
+      confidenceScores,
+      preview,
+      rows: parsed.rows,
+    };
+  }
+
+  @Post('import/preview')
+  @RequiresActiveLicense()
+  @RequireCapability('VENDOR_RISK')
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async previewImport(
+    @CurrentUser() user: any,
+    @Body() body: { rows: Record<string, any>[]; columnMapping: Record<string, string> },
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.vendorImportService.generatePreview(authCtx, body.rows, body.columnMapping);
+  }
+
+  @Post('import/execute')
+  @RequiresActiveLicense()
+  @RequireCapability('VENDOR_RISK')
+  @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async executeImport(
+    @CurrentUser() user: any,
+    @Body() dto: ExecuteVendorImportDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.vendorImportService.executeImport(authCtx, dto);
+  }
+
+  @Get('import/batches')
+  @Roles(Role.ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async getImportBatches(
+    @CurrentUser() user: any,
+    @Query() query: VendorImportBatchesQueryDto,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.vendorImportService.getImportBatches(authCtx, query);
+  }
+
+  @Get('import/batches/:batchId')
+  @Roles(Role.ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+  async getImportBatchById(
+    @CurrentUser() user: any,
+    @Param('batchId') batchId: string,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.vendorImportService.getImportBatchById(authCtx, batchId);
   }
 
   @Get(':id')

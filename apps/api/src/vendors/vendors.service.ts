@@ -350,6 +350,9 @@ export class VendorsService {
         nextReviewDate,
         websiteUrl: dto.websiteUrl || null,
         dueDiligenceStatus: initialDueDiligenceStatus,
+        contactEmail: dto.contactEmail || null,
+        contactPhone: dto.contactPhone || null,
+        taxId: dto.taxId || null,
         createdById: authCtx.userId,
       },
     });
@@ -425,6 +428,9 @@ export class VendorsService {
         ...(dto.departmentId !== undefined && { departmentId: dto.departmentId }),
         ...(dto.projectId !== undefined && { projectId: dto.projectId }),
         ...(dto.dueDiligenceStatus !== undefined && { dueDiligenceStatus: dto.dueDiligenceStatus }),
+        ...(dto.contactEmail !== undefined && { contactEmail: dto.contactEmail }),
+        ...(dto.contactPhone !== undefined && { contactPhone: dto.contactPhone }),
+        ...(dto.taxId !== undefined && { taxId: dto.taxId }),
       },
       include: {
         assessments: true,
@@ -648,6 +654,10 @@ export class VendorsService {
       })) : [],
       assetCount: vendor._count?.assets || 0,
       documentCount: vendor._count?.evidenceAssociations || 0,
+      contactEmail: vendor.contactEmail || null,
+      contactPhone: vendor.contactPhone || null,
+      taxId: vendor.taxId || null,
+      importBatchId: vendor.importBatchId || null,
     } as any;
   }
 

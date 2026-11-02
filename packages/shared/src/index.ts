@@ -1662,6 +1662,10 @@ export interface VendorDto {
   assessments?: VendorAssessmentDto[];
   assetCount?: number;
   documentCount?: number;
+  contactEmail?: string | null;
+  contactPhone?: string | null;
+  taxId?: string | null;
+  importBatchId?: string | null;
 }
 
 export interface VendorDocumentDto {
@@ -3921,3 +3925,207 @@ export interface PaginatedControlPolicyAssociationsDto {
   page: number;
   limit: number;
 }
+
+// ============================================================================
+// PHASE 5 — VENDOR RISK AUTOMATION & ACTIVE DIRECTORY / ENTRA ID INTEGRATION
+// ============================================================================
+
+export enum VendorImportStatus {
+  PENDING = "PENDING",
+  PROCESSING = "PROCESSING",
+  COMPLETED = "COMPLETED",
+  FAILED = "FAILED",
+}
+
+export interface VendorImportPreviewRowDto {
+  rowNumber: number;
+  rawData: Record<string, any>;
+  mappedData: {
+    name?: string;
+    category?: string | null;
+    criticality?: VendorCriticality;
+    owner?: string;
+    department?: string | null;
+    websiteUrl?: string | null;
+    description?: string | null;
+    reviewCadenceDays?: number;
+    dueDiligenceStatus?: string | null;
+    contactEmail?: string | null;
+    contactPhone?: string | null;
+    taxId?: string | null;
+  };
+  isValid: boolean;
+  errors: string[];
+  isDuplicate: boolean;
+  duplicateReason?: string;
+  existingVendorId?: string;
+}
+
+export interface VendorImportPreviewResponseDto {
+  totalRows: number;
+  validRows: number;
+  invalidRows: number;
+  duplicateRows: number;
+  detectedColumns: string[];
+  suggestedMapping: Record<string, string>;
+  confidenceScores: Record<string, number>;
+  previewRows: VendorImportPreviewRowDto[];
+  sampleMaskedData?: Record<string, any>[];
+}
+
+export type DuplicateResolutionStrategy = 'SKIP' | 'UPDATE' | 'FLAG';
+
+export interface VendorImportExecuteDto {
+  fileName: string;
+  fileType: 'XLSX' | 'CSV';
+  rows: Record<string, any>[];
+  columnMapping: Record<string, string>;
+  duplicateResolution: DuplicateResolutionStrategy;
+}
+
+export interface VendorImportResultDto {
+  batchId: string;
+  totalRows: number;
+  importedCount: number;
+  updatedCount: number;
+  skippedCount: number;
+  errorCount: number;
+  status: VendorImportStatus;
+  errors: Array<{ rowNumber: number; vendorName?: string; error: string }>;
+}
+
+export interface VendorImportBatchDto {
+  id: string;
+  organizationId: string;
+  fileName: string;
+  fileType: string;
+  totalRows: number;
+  importedRows: number;
+  updatedRows: number;
+  skippedRows: number;
+  errorRows: number;
+  status: VendorImportStatus;
+  columnMapping?: Record<string, string> | null;
+  errorLog?: any;
+  createdById: string;
+  createdAt: Date | string;
+  completedAt?: Date | string | null;
+}
+
+export interface PaginatedVendorImportBatchesDto {
+  items: VendorImportBatchDto[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+// Directory / Microsoft Entra ID Integration
+
+export enum DirectoryProvider {
+  ENTRA_ID = "ENTRA_ID",
+  AZURE_AD = "AZURE_AD",
+}
+
+export enum DirectorySyncSchedule {
+  MANUAL = "MANUAL",
+  HOURLY = "HOURLY",
+  DAILY = "DAILY",
+}
+
+export enum DirectorySyncStatus {
+  SUCCESS = "SUCCESS",
+  PARTIAL = "PARTIAL",
+  FAILED = "FAILED",
+}
+
+export interface DirectoryGroupMappingDto {
+  id: string;
+  configId: string;
+  organizationId: string;
+  directoryGroupId: string;
+  directoryGroupName: string;
+  targetRole: Role;
+  priority: number;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
+export interface CreateOrUpdateGroupMappingDto {
+  directoryGroupId: string;
+  directoryGroupName: string;
+  targetRole: Role;
+  priority?: number;
+}
+
+export interface DirectoryIntegrationConfigDto {
+  id: string;
+  organizationId: string;
+  provider: DirectoryProvider;
+  tenantId: string;
+  clientId: string;
+  clientSecretMasked: string;
+  domain?: string | null;
+  enabled: boolean;
+  defaultRole: Role;
+  syncSchedule: DirectorySyncSchedule;
+  lastSyncAt?: Date | string | null;
+  lastSyncStatus?: DirectorySyncStatus | null;
+  lastSyncMessage?: string | null;
+  autoDeactivateUsers: boolean;
+  deactivationThresholdPct: number;
+  groupMappings?: DirectoryGroupMappingDto[];
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
+export interface SaveDirectoryConfigDto {
+  provider?: DirectoryProvider;
+  tenantId: string;
+  clientId: string;
+  clientSecret?: string;
+  domain?: string;
+  enabled?: boolean;
+  defaultRole?: Role;
+  syncSchedule?: DirectorySyncSchedule;
+  autoDeactivateUsers?: boolean;
+  deactivationThresholdPct?: number;
+}
+
+export interface DirectoryTestConnectionResultDto {
+  success: boolean;
+  message: string;
+  tenantDetails?: {
+    tenantId: string;
+    displayName?: string;
+    defaultDomainName?: string;
+  };
+  discoveredUsersCount?: number;
+  discoveredGroupsCount?: number;
+  latencyMs: number;
+}
+
+export interface DirectorySyncLogDto {
+  id: string;
+  configId: string;
+  organizationId: string;
+  syncType: string;
+  status: DirectorySyncStatus;
+  discoveredCount: number;
+  createdCount: number;
+  updatedCount: number;
+  deactivatedCount: number;
+  skippedCount: number;
+  errorCount: number;
+  errorMessage?: string | null;
+  errorDetails?: any;
+  startedAt: Date | string;
+  completedAt?: Date | string | null;
+}
+
+export interface PaginatedDirectorySyncLogsDto {
+  items: DirectorySyncLogDto[];
+  total: number;
+  page: number;
+  limit: number;
+}
+

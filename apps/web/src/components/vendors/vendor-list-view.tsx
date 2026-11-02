@@ -40,6 +40,8 @@ import { RagStatusBadge, getVendorRag } from '@/components/ui/rag-status-badge';
 import { VendorMetricsHeader } from './vendor-metrics-header';
 import { VendorCreateModal } from './vendor-create-modal';
 import { VendorTprmWorkspaceModal } from './vendor-tprm-workspace-modal';
+import { VendorImportWizardModal } from './vendor-import-wizard-modal';
+import { VendorImportHistoryModal } from './vendor-import-history-modal';
 
 const API_BASE_URL = (
   process.env.NEXT_PUBLIC_API_URL ||
@@ -81,6 +83,8 @@ export function VendorListView() {
 
   // Modals state
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showImportWizard, setShowImportWizard] = useState(false);
+  const [showImportHistory, setShowImportHistory] = useState(false);
   const [showAssessmentModal, setShowAssessmentModal] = useState(false);
   const [selectedVendor, setSelectedVendor] = useState<VendorDto | null>(null);
 
@@ -479,12 +483,26 @@ export function VendorListView() {
             Enterprise end-to-end third-party lifecycle: intake, inherent risk tiering, due diligence, residual evaluation, and structured offboarding.
           </p>
         </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg transition-colors shadow-xs"
-        >
-          <Plus size={16} /> Register New Vendor
-        </button>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={() => setShowImportHistory(true)}
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg transition-colors shadow-xs"
+          >
+            <FileSpreadsheet size={15} className="text-slate-500" /> Import History
+          </button>
+          <button
+            onClick={() => setShowImportWizard(true)}
+            className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg transition-colors shadow-xs"
+          >
+            <Upload size={15} /> Import Vendors
+          </button>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 text-xs sm:text-sm font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg transition-colors shadow-xs"
+          >
+            <Plus size={16} /> Register New Vendor
+          </button>
+        </div>
       </div>
 
       {/* TPRM KPI Dashboard & Lifecycle Filter Tabs */}
@@ -715,6 +733,25 @@ export function VendorListView() {
           onCreated={() => {
             fetchVendors();
           }}
+        />
+      )}
+
+      {/* Vendor Bulk Import Wizard Modal */}
+      {showImportWizard && (
+        <VendorImportWizardModal
+          isOpen={showImportWizard}
+          onClose={() => setShowImportWizard(false)}
+          onSuccess={() => {
+            fetchVendors();
+          }}
+        />
+      )}
+
+      {/* Vendor Import Batch History Modal */}
+      {showImportHistory && (
+        <VendorImportHistoryModal
+          isOpen={showImportHistory}
+          onClose={() => setShowImportHistory(false)}
         />
       )}
 

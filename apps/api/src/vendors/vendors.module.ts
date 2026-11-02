@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { VendorsService } from './vendors.service';
+import { VendorImportService } from './vendor-import.service';
 import { VendorsController } from './vendors.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
@@ -11,7 +12,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 @Module({
   imports: [PrismaModule, AuditLogsModule, AuthModule, EvidenceVaultModule, ApprovalEngineModule, NotificationsModule],
   controllers: [VendorsController],
-  providers: [VendorsService],
-  exports: [VendorsService],
+  providers: [VendorsService, VendorImportService],
+  exports: [VendorsService, VendorImportService],
 })
 export class VendorsModule {}

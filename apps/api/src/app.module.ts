@@ -47,6 +47,7 @@ import { OrganizationControlStateGuard } from './common/guards/organization-cont
 import { ServiceControlModule } from './service-control/service-control.module';
 import { ServiceCapabilityGuard } from './common/guards/service-capability.guard';
 import { RegulatoryIntelligenceModule } from './regulatory-intelligence/regulatory-intelligence.module';
+import { DirectoryIntegrationModule } from './directory/directory-integration.module';
 
 @Module({
   imports: [
@@ -102,6 +103,7 @@ import { RegulatoryIntelligenceModule } from './regulatory-intelligence/regulato
     OrganizationControlModule,
     ServiceControlModule,
     RegulatoryIntelligenceModule,
+    DirectoryIntegrationModule,
   ],
   providers: [
     {
