@@ -24,6 +24,7 @@ import { apiRequest } from '@/lib/api-client';
 import {
   PolicyDto,
   PolicyStatus,
+  MappingStatus,
   PaginatedPoliciesDto,
   PolicyCategoryDto,
   PolicyControlAssociationDto,
@@ -176,7 +177,7 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
           method: 'POST',
           body: JSON.stringify({
             rationale: mappingRationale || undefined,
-            status: 'ACTIVE',
+            status: MappingStatus.APPROVED,
           }),
         },
       );
@@ -1085,7 +1086,7 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
                             <div className="flex items-center gap-2">
                               <span className="font-semibold text-slate-900">{mc.controlName}</span>
                               <span
-                                className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${mc.status === 'ACTIVE'
+                                className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${mc.status === MappingStatus.APPROVED
                                     ? 'bg-emerald-100 text-emerald-800'
                                     : 'bg-slate-100 text-slate-700'
                                   }`}
