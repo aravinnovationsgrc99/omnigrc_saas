@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { PolicyControlsController } from './policy-controls.controller';
 import { PolicyControlsService } from './policy-controls.service';
 import { MappingStatus, Role } from '@omnigrc/shared';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
 
 describe('PolicyControlsController', () => {
   let controller: PolicyControlsController;
@@ -172,18 +172,24 @@ describe('PolicyControlsController', () => {
   });
 
   describe('disassociate', () => {
-    it('should delete mapping for authorized user', async () => {
+    it('should delete mapping for authorized user with expectedVersion', async () => {
       service.disassociate.mockResolvedValue({ success: true, unmappedId: 'map-1' });
 
-      const res = await controller.disassociate(mockAdminUser, 'pol-1', 'ctrl-1');
+      const res = await controller.disassociate(mockAdminUser, 'pol-1', 'ctrl-1', { expectedVersion: 1 });
 
       expect(res.success).toBe(true);
       expect(service.disassociate).toHaveBeenCalledWith(
         expect.objectContaining({ organizationId: 'org-tenant-1' }),
         'pol-1',
         'ctrl-1',
-        undefined,
+        1,
       );
+    });
+
+    it('should reject disassociate if expectedVersion is missing', async () => {
+      await expect(
+        controller.disassociate(mockAdminUser, 'pol-1', 'ctrl-1', {} as any),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 });

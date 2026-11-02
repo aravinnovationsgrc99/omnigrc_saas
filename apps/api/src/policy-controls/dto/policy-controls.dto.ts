@@ -32,8 +32,8 @@ export class DisassociatePolicyControlDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @IsOptional()
-  expectedVersion?: number;
+  @IsNotEmpty()
+  expectedVersion!: number;
 }
 
 export class PolicyControlQueryDto {

@@ -443,7 +443,7 @@ describe('Phase 4: Policy & Control Mapping Workflows & Security Verification', 
 
     it('blocks external auditor from deleting policy-control mappings (403 Forbidden)', async () => {
       await expect(
-        policyControlsService.disassociate(auditorContext, 'pol-1', 'ctrl-1'),
+        policyControlsService.disassociate(auditorContext, 'pol-1', 'ctrl-1', 1),
       ).rejects.toThrow(ForbiddenException);
     });
   });
@@ -479,7 +479,7 @@ describe('Phase 4: Policy & Control Mapping Workflows & Security Verification', 
       prisma.policyControl.findFirst.mockResolvedValue(null);
 
       await expect(
-        policyControlsService.disassociate(tenantOrgBeta, 'pol-alpha-1', 'ctrl-alpha-1'),
+        policyControlsService.disassociate(tenantOrgBeta, 'pol-alpha-1', 'ctrl-alpha-1', 1),
       ).rejects.toThrow(NotFoundException);
     });
   });
@@ -593,16 +593,60 @@ describe('Phase 4: Policy & Control Mapping Workflows & Security Verification', 
       }
     });
 
-    it('detects concurrent mapping deletion vs update conflict', async () => {
-      prisma.policyControl.findFirst.mockResolvedValueOnce({
-        id: 'map-del-concur',
+    it('rejects mapping disassociation when expectedVersion is missing or invalid at service boundary', async () => {
+      await expect(
+        policyControlsService.disassociate(tenantOrgAlpha, 'pol-alpha-1', 'ctrl-alpha-1', undefined as any),
+      ).rejects.toThrow('expectedVersion is mandatory and must be a positive integer');
+
+      await expect(
+        policyControlsService.disassociate(tenantOrgAlpha, 'pol-alpha-1', 'ctrl-alpha-1', 0),
+      ).rejects.toThrow('expectedVersion is mandatory and must be a positive integer');
+    });
+
+    it('enforces atomic simultaneous disassociation: two concurrent deletes with same version result in exactly one success and one 409 Conflict', async () => {
+      prisma.policyControl.findFirst.mockResolvedValue({
+        id: 'map-dual-del',
         policyId: 'pol-alpha-1',
         controlId: 'ctrl-alpha-1',
-        version: 2,
+        version: 1,
         organizationId: 'org-alpha',
         policy: { code: 'POL-1' },
         control: { name: 'CTRL-1' },
       });
+
+      // Winner deletes 1 row, Loser gets 0 rows
+      prisma.policyControl.deleteMany.mockResolvedValueOnce({ count: 1 });
+      prisma.policyControl.deleteMany.mockResolvedValueOnce({ count: 0 });
+
+      const delReq1 = policyControlsService.disassociate(tenantOrgAlpha, 'pol-alpha-1', 'ctrl-alpha-1', 1);
+      const delReq2 = policyControlsService.disassociate(tenantOrgAlpha, 'pol-alpha-1', 'ctrl-alpha-1', 1);
+
+      const [res1, res2] = await Promise.allSettled([delReq1, delReq2]);
+
+      expect(res1.status).toBe('fulfilled');
+      expect(res2.status).toBe('rejected');
+      if (res2.status === 'rejected') {
+        expect(res2.reason).toBeInstanceOf(ConflictException);
+        expect(res2.reason.message).toContain('Policy-control mapping conflict');
+      }
+    });
+
+    it('detects concurrent mapping deletion vs update conflict', async () => {
+      prisma.policyControl.findFirst
+        .mockResolvedValueOnce({
+          id: 'map-del-concur',
+          policyId: 'pol-alpha-1',
+          controlId: 'ctrl-alpha-1',
+          version: 2,
+          organizationId: 'org-alpha',
+          policy: { code: 'POL-1' },
+          control: { name: 'CTRL-1' },
+        })
+        .mockResolvedValueOnce({
+          id: 'map-del-concur',
+          version: 2,
+        });
+      prisma.policyControl.deleteMany.mockResolvedValueOnce({ count: 0 });
 
       await expect(
         policyControlsService.disassociate(tenantOrgAlpha, 'pol-alpha-1', 'ctrl-alpha-1', 1),

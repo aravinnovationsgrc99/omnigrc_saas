@@ -462,8 +462,8 @@ export function ControlDetailView({ controlId, onBack, onNavigateToView }: Contr
     setUnmappingPolicyId(policyId);
     try {
       const mapping = associatedPolicies.find((p) => p.policyId === policyId);
-      const queryParam = mapping?.version ? `?expectedVersion=${mapping.version}` : '';
-      await apiRequest(`/policy-controls/policies/${policyId}/controls/${controlId}${queryParam}`, {
+      const expectedVersion = mapping?.version ?? 1;
+      await apiRequest(`/policy-controls/policies/${policyId}/controls/${controlId}?expectedVersion=${expectedVersion}`, {
         method: 'DELETE',
       });
       showToast('Policy unmapped from control');

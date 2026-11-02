@@ -8,12 +8,14 @@ import {
   Body,
   Query,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import { PolicyControlsService } from './policy-controls.service';
 import {
   AssociatePolicyControlDto,
   UpdatePolicyControlDto,
   PolicyControlQueryDto,
+  DisassociatePolicyControlDto,
 } from './dto/policy-controls.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -101,20 +103,35 @@ export class PolicyControlsController {
     @CurrentUser() user: any,
     @Param('policyId') policyId: string,
     @Param('controlId') controlId: string,
-    @Query('expectedVersion') expectedVersionQuery?: string,
-    @Body('expectedVersion') expectedVersionBody?: number,
+    @Query() query: DisassociatePolicyControlDto,
+    @Body() body?: DisassociatePolicyControlDto,
   ) {
     const authCtx: ResourceAuthContext = {
       userId: user.userId,
       organizationId: user.organizationId,
       role: user.role,
     };
-    const expectedVersion =
-      expectedVersionBody !== undefined && expectedVersionBody !== null
-        ? Number(expectedVersionBody)
-        : expectedVersionQuery !== undefined && expectedVersionQuery !== null && expectedVersionQuery !== ''
-          ? Number(expectedVersionQuery)
+    const rawVersion =
+      query?.expectedVersion !== undefined && query?.expectedVersion !== null
+        ? query.expectedVersion
+        : body?.expectedVersion !== undefined && body?.expectedVersion !== null
+          ? body.expectedVersion
           : undefined;
+
+    const expectedVersion =
+      rawVersion !== undefined && rawVersion !== null && rawVersion !== ('' as any)
+        ? Number(rawVersion)
+        : undefined;
+
+    if (
+      expectedVersion === undefined ||
+      expectedVersion === null ||
+      isNaN(expectedVersion) ||
+      expectedVersion < 1
+    ) {
+      throw new BadRequestException('expectedVersion is mandatory and must be a positive integer');
+    }
+
     return this.policyControlsService.disassociate(authCtx, policyId, controlId, expectedVersion);
   }
 }

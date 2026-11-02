@@ -483,17 +483,19 @@ export class PolicyControlsService {
     authCtx: ResourceAuthContext,
     policyId: string,
     controlId: string,
-    expectedVersion?: number,
+    expectedVersion: number,
   ): Promise<{ success: boolean; unmappedId: string }> {
     await this.resourceAuthService.authorize(authCtx, {
       action: 'WRITE',
     });
 
     if (
-      expectedVersion !== undefined &&
-      (typeof expectedVersion !== 'number' || expectedVersion < 1)
+      expectedVersion === undefined ||
+      expectedVersion === null ||
+      typeof expectedVersion !== 'number' ||
+      expectedVersion < 1
     ) {
-      throw new BadRequestException('expectedVersion must be a positive integer');
+      throw new BadRequestException('expectedVersion is mandatory and must be a positive integer');
     }
 
     const existing = await this.prisma.policyControl.findFirst({
@@ -512,22 +514,16 @@ export class PolicyControlsService {
       throw new NotFoundException(`Mapping between Policy "${policyId}" and Control "${controlId}" not found`);
     }
 
-    if (expectedVersion !== undefined && existing.version !== expectedVersion) {
-      throw new ConflictException(
-        `Policy-control mapping conflict: expected version ${expectedVersion}, but current version is ${existing.version}. Please reload the latest changes.`,
-      );
-    }
-
-    await this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
       const deleteResult = await tx.policyControl.deleteMany({
         where: {
           id: existing.id,
           organizationId: authCtx.organizationId,
-          ...(expectedVersion !== undefined ? { version: expectedVersion } : {}),
+          version: expectedVersion,
         },
       });
 
-      if (deleteResult && deleteResult.count === 0) {
+      if (!deleteResult || deleteResult.count === 0) {
         const current = await tx.policyControl.findFirst({
           where: { id: existing.id, organizationId: authCtx.organizationId },
           select: { id: true, version: true },
@@ -552,16 +548,16 @@ export class PolicyControlsService {
             policyCode: existing.policy.code,
             controlId,
             controlName: existing.control.name,
-            version: existing.version,
+            version: expectedVersion,
           },
         },
         tx,
       );
-    });
 
-    return {
-      success: true,
-      unmappedId: existing.id,
-    };
+      return {
+        success: true,
+        unmappedId: existing.id,
+      };
+    });
   }
 }

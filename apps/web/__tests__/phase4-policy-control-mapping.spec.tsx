@@ -97,6 +97,7 @@ describe('Phase 4: Policy & Control Mapping Workflows', () => {
       controlCategory: 'Access Control',
       status: MappingStatus.APPROVED,
       rationale: 'Mandatory access control governance',
+      version: 1,
       frameworkMappings: [
         {
           frameworkName: 'NIST SP 800-53',
@@ -234,7 +235,7 @@ describe('Phase 4: Policy & Control Mapping Workflows', () => {
 
       await waitFor(() => {
         expect(mockedApiRequest).toHaveBeenCalledWith(
-          '/policy-controls/policies/pol-101/controls/ctrl-201',
+          '/policy-controls/policies/pol-101/controls/ctrl-201?expectedVersion=1',
           expect.objectContaining({ method: 'DELETE' }),
         );
       });
@@ -267,6 +268,7 @@ describe('Phase 4: Policy & Control Mapping Workflows', () => {
         publishedVersionNumber: '1.0',
         status: MappingStatus.APPROVED,
         rationale: 'Governs account creation and review workflow',
+        version: 1,
         createdAt: new Date().toISOString(),
       },
     ];
@@ -321,7 +323,7 @@ describe('Phase 4: Policy & Control Mapping Workflows', () => {
 
       await waitFor(() => {
         expect(mockedApiRequest).toHaveBeenCalledWith(
-          '/policy-controls/policies/pol-101/controls/ctrl-201',
+          '/policy-controls/policies/pol-101/controls/ctrl-201?expectedVersion=1',
           expect.objectContaining({ method: 'DELETE' }),
         );
       });

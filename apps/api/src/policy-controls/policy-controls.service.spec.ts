@@ -238,18 +238,19 @@ describe('PolicyControlsService', () => {
         organizationId: 'tenant-org-alpha',
         policyId: 'pol-sec-01',
         controlId: 'ctrl-ac-01',
+        version: 1,
         policy: { code: 'POL-SEC-01' },
         control: { name: 'Access Control' },
       });
 
-      prisma.policyControl.delete.mockResolvedValue({ id: 'map-pol-ctrl-01' });
+      prisma.policyControl.deleteMany.mockResolvedValue({ count: 1 });
 
-      const result = await service.disassociate(mockTenantContext, 'pol-sec-01', 'ctrl-ac-01');
+      const result = await service.disassociate(mockTenantContext, 'pol-sec-01', 'ctrl-ac-01', 1);
 
       expect(result.success).toBe(true);
       expect(result.unmappedId).toBe('map-pol-ctrl-01');
       expect(prisma.policyControl.deleteMany).toHaveBeenCalledWith({
-        where: { id: 'map-pol-ctrl-01', organizationId: 'tenant-org-alpha' },
+        where: { id: 'map-pol-ctrl-01', organizationId: 'tenant-org-alpha', version: 1 },
       });
 
       expect(auditLogsService.log).toHaveBeenCalledWith(
@@ -261,12 +262,44 @@ describe('PolicyControlsService', () => {
       );
     });
 
+    it('should reject disassociation if expectedVersion is missing', async () => {
+      await expect(
+        service.disassociate(mockTenantContext, 'pol-sec-01', 'ctrl-ac-01', undefined as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should reject disassociation if expectedVersion is invalid (< 1)', async () => {
+      await expect(
+        service.disassociate(mockTenantContext, 'pol-sec-01', 'ctrl-ac-01', 0),
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it('should throw 404 NotFoundException if mapping does not exist in caller tenant', async () => {
       prisma.policyControl.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.disassociate(mockTenantContext, 'pol-sec-01', 'ctrl-ac-01'),
+        service.disassociate(mockTenantContext, 'pol-sec-01', 'ctrl-ac-01', 1),
       ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw 409 ConflictException if expectedVersion on disassociate is stale', async () => {
+      prisma.policyControl.findFirst
+        .mockResolvedValueOnce({
+          id: 'map-pol-ctrl-01',
+          version: 2,
+          policy: { code: 'POL-SEC-01' },
+          control: { name: 'Access Control' },
+        })
+        .mockResolvedValueOnce({
+          id: 'map-pol-ctrl-01',
+          version: 2,
+        });
+
+      prisma.policyControl.deleteMany.mockResolvedValueOnce({ count: 0 });
+
+      await expect(
+        service.disassociate(mockTenantContext, 'pol-sec-01', 'ctrl-ac-01', 1),
+      ).rejects.toThrow(ConflictException);
     });
   });
 

@@ -199,9 +199,9 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
     setUnmappingControlId(controlId);
     try {
       const mapping = mappedControls.find((c) => c.controlId === controlId);
-      const queryParam = mapping?.version ? `?expectedVersion=${mapping.version}` : '';
+      const expectedVersion = mapping?.version ?? 1;
       await apiRequest(
-        `/policy-controls/policies/${selectedPolicy.id}/controls/${controlId}${queryParam}`,
+        `/policy-controls/policies/${selectedPolicy.id}/controls/${controlId}?expectedVersion=${expectedVersion}`,
         {
           method: 'DELETE',
         },
