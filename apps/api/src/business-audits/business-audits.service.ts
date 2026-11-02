@@ -2165,6 +2165,9 @@ export class BusinessAuditsService {
         mimeType: canonical.mimeType,
         uploadedById: canonical.uploadedById,
         createdAt: this.toIso(canonical.createdAt),
+        scanStatus: canonical.scanStatus || null,
+        status: canonical.status || null,
+        checksum: canonical.checksum || null,
       };
     }
 
@@ -2285,6 +2288,9 @@ export class BusinessAuditsService {
           mimeType: ea.evidence.mimeType,
           uploadedById: ea.evidence.uploadedById,
           createdAt: this.toIso(ea.evidence.createdAt),
+          scanStatus: ea.evidence.scanStatus || null,
+          status: ea.evidence.status || null,
+          checksum: ea.evidence.checksum || null,
         }));
         const canonicalIds = new Set(canonicalEv.map((item: any) => item.id));
 
@@ -2301,6 +2307,9 @@ export class BusinessAuditsService {
             mimeType: e.mimeType,
             uploadedById: e.uploadedById,
             createdAt: this.toIso(e.createdAt),
+            scanStatus: null,
+            status: null,
+            checksum: null,
           }));
 
         return {
@@ -2336,6 +2345,9 @@ export class BusinessAuditsService {
       mimeType: ea.evidence.mimeType,
       uploadedById: ea.evidence.uploadedById,
       createdAt: this.toIso(ea.evidence.createdAt),
+      scanStatus: ea.evidence.scanStatus || null,
+      status: ea.evidence.status || null,
+      checksum: ea.evidence.checksum || null,
     }));
     const canonicalIds = new Set(canonicalEv.map((item: any) => item.id));
 
@@ -2352,6 +2364,9 @@ export class BusinessAuditsService {
         mimeType: e.mimeType,
         uploadedById: e.uploadedById,
         createdAt: this.toIso(e.createdAt),
+        scanStatus: null,
+        status: null,
+        checksum: null,
       }));
 
     let capaApplicability = (f.capaApplicability as CapaApplicability) || CapaApplicability.UNASSESSED;

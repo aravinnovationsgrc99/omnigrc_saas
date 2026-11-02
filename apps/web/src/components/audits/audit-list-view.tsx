@@ -7,7 +7,7 @@ import {
   AlertCircle, CheckSquare, Wrench, ArrowRight, ArrowLeft, Check, Eye, Tag, RotateCcw, AlertTriangle,
   History, Paperclip, UploadCloud, User, Users, Calendar, Building2, Download
 } from 'lucide-react';
-import { apiRequest } from '@/lib/api-client';
+import { apiRequest, API_BASE_URL, getStoredTokens } from '@/lib/api-client';
 import {
   AuditPlanDto,
   AuditAssessmentDto,
@@ -20,6 +20,7 @@ import {
   FindingStatus,
   CapaStatus,
   VulnerabilitySeverity,
+  EvidenceScanStatus,
   PaginatedAuditPlansDto,
   PaginatedAuditFindingsDto,
   calculateAuditScore,
@@ -149,11 +150,16 @@ export function AuditListView() {
 
   // Evidence Attachment Modal State
   const [evidenceTarget, setEvidenceTarget] = useState<{ checkItemId?: string; findingId?: string; title?: string } | null>(null);
+  const [evidenceSource, setEvidenceSource] = useState<'vault' | 'manual'>('vault');
+  const [vaultEvidenceList, setVaultEvidenceList] = useState<any[]>([]);
+  const [loadingVaultEvidence, setLoadingVaultEvidence] = useState(false);
+  const [verifyingEvidenceId, setVerifyingEvidenceId] = useState<string | null>(null);
   const [evidenceForm, setEvidenceForm] = useState({
     fileName: '',
     fileUrl: '',
     fileSize: '',
     mimeType: 'application/pdf',
+    evidenceId: '',
   });
   const [submittingEvidence, setSubmittingEvidence] = useState(false);
 
@@ -801,9 +807,97 @@ export function AuditListView() {
     }
   }
 
+  const fetchVaultEvidenceOptions = useCallback(async () => {
+    setLoadingVaultEvidence(true);
+    try {
+      const res = await apiRequest<any>('/evidence/vault?limit=50');
+      if (res && Array.isArray(res.items)) {
+        setVaultEvidenceList(res.items);
+      }
+    } catch {
+      // Fallback gracefully
+    } finally {
+      setLoadingVaultEvidence(false);
+    }
+  }, []);
+
+  async function handleDownloadEvidence(ev: any) {
+    if (ev.scanStatus === 'QUARANTINED') {
+      addToast('Download blocked: This evidence artifact has been QUARANTINED due to detected security threats.', 'error');
+      return;
+    }
+    if (ev.scanStatus === 'SCAN_FAILED') {
+      addToast('Download blocked: Malware scan failed for this artifact. Access denied until verified.', 'error');
+      return;
+    }
+    if (ev.scanStatus === 'PENDING_SCAN') {
+      addToast('Download blocked: Evidence is pending security scanning. Unverified artifacts cannot be downloaded.', 'error');
+      return;
+    }
+
+    if (ev.fileUrl && (ev.fileUrl.startsWith('http://') || ev.fileUrl.startsWith('https://'))) {
+      window.open(ev.fileUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    try {
+      const tokens = getStoredTokens();
+      const endpoint = ev.fileUrl || `/evidence/${ev.id}/download`;
+      const fullUrl = endpoint.startsWith('/') ? `${API_BASE_URL}${endpoint}` : `${API_BASE_URL}/${endpoint}`;
+      const res = await fetch(fullUrl, {
+        headers: tokens?.accessToken ? { Authorization: `Bearer ${tokens.accessToken}` } : {},
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        throw new Error(errJson?.message || `Download failed with status ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = ev.fileName || 'evidence-artifact';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      addToast(`Downloaded ${ev.fileName || 'artifact'}`, 'success');
+    } catch (err: any) {
+      addToast(`Download failed: ${err.message}`, 'error');
+    }
+  }
+
+  async function handleVerifyEvidenceIntegrity(ev: any) {
+    if (!ev.id) return;
+    setVerifyingEvidenceId(ev.id);
+    try {
+      const res = await apiRequest<{ isValid: boolean; expectedChecksum: string; actualChecksum: string }>(
+        `/evidence/${ev.id}/verify-integrity`,
+      );
+      if (res.isValid) {
+        addToast(
+          `Cryptographic Integrity Verified: SHA-256 matches baseline (${(res.actualChecksum || '').substring(0, 12)}...)`,
+          'success',
+        );
+      } else {
+        addToast(
+          `CRITICAL INTEGRITY FAILURE: Stored file does not match database checksum!`,
+          'error',
+        );
+      }
+    } catch (err: any) {
+      addToast(`Integrity check unavailable: ${err.message}`, 'error');
+    } finally {
+      setVerifyingEvidenceId(null);
+    }
+  }
+
   async function handleAttachEvidence(e: React.FormEvent) {
     e.preventDefault();
-    if (!evidenceForm.fileName.trim()) {
+    if (evidenceSource === 'vault' && !evidenceForm.evidenceId) {
+      addToast('Please select an evidence artifact from the vault', 'error');
+      return;
+    }
+    if (evidenceSource === 'manual' && !evidenceForm.fileName.trim()) {
       addToast('Filename is required', 'error');
       return;
     }
@@ -815,18 +909,26 @@ export function AuditListView() {
         body: JSON.stringify({
           checkItemId: evidenceTarget?.checkItemId || undefined,
           findingId: evidenceTarget?.findingId || undefined,
+          evidenceId: evidenceSource === 'vault' ? evidenceForm.evidenceId : undefined,
           fileName: evidenceForm.fileName.trim(),
           fileUrl:
             evidenceForm.fileUrl.trim() ||
-            `https://vault.omnigrc.internal/evidence/${Date.now()}_${encodeURIComponent(evidenceForm.fileName.trim())}`,
+            (evidenceForm.evidenceId
+              ? `/evidence/${evidenceForm.evidenceId}/download`
+              : `https://vault.omnigrc.internal/evidence/${Date.now()}_${encodeURIComponent(evidenceForm.fileName.trim())}`),
           fileSize: evidenceForm.fileSize ? Number(evidenceForm.fileSize) : 2048,
           mimeType: evidenceForm.mimeType || 'application/pdf',
         }),
       });
 
-      addToast('Evidence artifact successfully attached!', 'success');
+      addToast(
+        evidenceSource === 'vault'
+          ? 'Canonical Evidence Vault artifact successfully linked!'
+          : 'Evidence artifact successfully attached!',
+        'success',
+      );
       setShowAddEvidenceModal(false);
-      setEvidenceForm({ fileName: '', fileUrl: '', fileSize: '', mimeType: 'application/pdf' });
+      setEvidenceForm({ fileName: '', fileUrl: '', fileSize: '', mimeType: 'application/pdf', evidenceId: '' });
       setEvidenceTarget(null);
 
       if (selectedPlan) {
@@ -1523,6 +1625,7 @@ export function AuditListView() {
                       <th className="p-3">Linked Context</th>
                       <th className="p-3">Uploader</th>
                       <th className="p-3">Size / Type</th>
+                      <th className="p-3">Security Scan Status</th>
                       <th className="p-3">Attached Date</th>
                       <th className="p-3 text-right">Actions</th>
                     </tr>
@@ -1546,17 +1649,62 @@ export function AuditListView() {
                         <td className="p-3 text-slate-500">
                           {ev.fileSize ? `${Math.round(ev.fileSize / 1024)} KB` : 'Unknown'} • {ev.mimeType || 'Document'}
                         </td>
+                        <td className="p-3">
+                          {ev.scanStatus === EvidenceScanStatus.CLEAN || ev.scanStatus === 'CLEAN' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              <ShieldCheck size={12} /> CLEAN (Verified)
+                            </span>
+                          ) : ev.scanStatus === EvidenceScanStatus.PENDING_SCAN || ev.scanStatus === 'PENDING_SCAN' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                              <Clock size={12} /> PENDING SCAN
+                            </span>
+                          ) : ev.scanStatus === EvidenceScanStatus.QUARANTINED || ev.scanStatus === 'QUARANTINED' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-50 text-red-700 border border-red-200">
+                              <AlertOctagon size={12} /> QUARANTINED
+                            </span>
+                          ) : ev.scanStatus === EvidenceScanStatus.SCAN_FAILED || ev.scanStatus === 'SCAN_FAILED' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                              <XCircle size={12} /> SCAN FAILED
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                              <History size={12} /> LEGACY (Unscanned)
+                            </span>
+                          )}
+                        </td>
                         <td className="p-3 text-slate-500">{new Date(ev.createdAt).toLocaleDateString()}</td>
                         <td className="p-3 text-right">
-                          <a
-                            href={ev.fileUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-teal-700 hover:text-teal-900 font-semibold"
-                          >
-                            <Download size={13} />
-                            <span>Download</span>
-                          </a>
+                          <div className="inline-flex items-center gap-2 justify-end">
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadEvidence(ev)}
+                              title={
+                                ev.scanStatus === 'QUARANTINED' || ev.scanStatus === 'PENDING_SCAN' || ev.scanStatus === 'SCAN_FAILED'
+                                  ? 'Download blocked by malware scan policy'
+                                  : 'Download evidence artifact'
+                              }
+                              className={`inline-flex items-center gap-1 font-semibold ${
+                                ev.scanStatus === 'QUARANTINED' || ev.scanStatus === 'PENDING_SCAN' || ev.scanStatus === 'SCAN_FAILED'
+                                  ? 'text-slate-400 hover:text-slate-600 cursor-not-allowed'
+                                  : 'text-teal-700 hover:text-teal-900'
+                              }`}
+                            >
+                              <Download size={13} />
+                              <span>Download</span>
+                            </button>
+                            {ev.scanStatus && (
+                              <button
+                                type="button"
+                                onClick={() => handleVerifyEvidenceIntegrity(ev)}
+                                disabled={verifyingEvidenceId === ev.id}
+                                title="Verify Cryptographic SHA-256 Hash"
+                                className="inline-flex items-center gap-1 text-slate-500 hover:text-slate-800 disabled:opacity-50"
+                              >
+                                {verifyingEvidenceId === ev.id ? <Loader2 size={13} className="animate-spin" /> : <ShieldCheck size={13} />}
+                                <span>Verify</span>
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -2910,6 +3058,35 @@ export function AuditListView() {
             </div>
 
             <form onSubmit={handleAttachEvidence} className="space-y-4">
+              {/* Source Switcher */}
+              <div className="flex border-b border-slate-200 mb-3 text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEvidenceSource('vault');
+                    fetchVaultEvidenceOptions();
+                  }}
+                  className={`pb-2 px-3 border-b-2 transition-colors ${
+                    evidenceSource === 'vault'
+                      ? 'border-teal-700 text-teal-800 font-bold'
+                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  Link from Evidence Vault
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEvidenceSource('manual')}
+                  className={`pb-2 px-3 border-b-2 transition-colors ${
+                    evidenceSource === 'manual'
+                      ? 'border-teal-700 text-teal-800 font-bold'
+                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  Register / External Artifact
+                </button>
+              </div>
+
               {evidenceTarget?.title ? (
                 <div className="p-3 bg-teal-50 rounded-lg border border-teal-200 text-xs">
                   <span className="font-bold text-teal-950">Attaching to:</span>{' '}
@@ -2954,58 +3131,105 @@ export function AuditListView() {
                 </div>
               )}
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Evidence Artifact Filename *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. mfa_directory_policy_signed.pdf"
-                  value={evidenceForm.fileName}
-                  onChange={(e) => setEvidenceForm({ ...evidenceForm, fileName: e.target.value })}
-                  className="w-full text-xs border rounded-lg p-2.5 bg-white border-slate-300"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Evidence URL / Storage URI</label>
-                <input
-                  type="text"
-                  placeholder="e.g. https://vault.omnigrc.internal/evidence/mfa_policy.pdf"
-                  value={evidenceForm.fileUrl}
-                  onChange={(e) => setEvidenceForm({ ...evidenceForm, fileUrl: e.target.value })}
-                  className="w-full text-xs border rounded-lg p-2.5 bg-white border-slate-300"
-                />
-                <span className="text-[10px] text-slate-400 mt-1 block">
-                  Leave blank to auto-generate a secure vault reference.
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {evidenceSource === 'vault' ? (
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">MIME Type</label>
-                  <select
-                    value={evidenceForm.mimeType}
-                    onChange={(e) => setEvidenceForm({ ...evidenceForm, mimeType: e.target.value })}
-                    className="w-full text-xs border rounded-lg p-2.5 bg-white border-slate-300"
-                  >
-                    <option value="application/pdf">PDF Document (application/pdf)</option>
-                    <option value="image/png">PNG Screenshot (image/png)</option>
-                    <option value="application/json">JSON Telemetry (application/json)</option>
-                    <option value="text/csv">CSV Export (text/csv)</option>
-                  </select>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Select Canonical Evidence Vault Artifact *
+                  </label>
+                  {loadingVaultEvidence ? (
+                    <div className="p-3 text-xs text-slate-500 flex items-center gap-2">
+                      <Loader2 size={14} className="animate-spin text-teal-700" />
+                      <span>Loading vault artifacts...</span>
+                    </div>
+                  ) : (
+                    <select
+                      value={evidenceForm.evidenceId}
+                      onChange={(e) => {
+                        const selectedId = e.target.value;
+                        const vaultItem = vaultEvidenceList.find((v) => v.id === selectedId);
+                        if (vaultItem) {
+                          setEvidenceForm({
+                            ...evidenceForm,
+                            evidenceId: vaultItem.id,
+                            fileName: vaultItem.fileName,
+                            fileUrl: `/evidence/${vaultItem.id}/download`,
+                            fileSize: String(vaultItem.fileSize || 2048),
+                            mimeType: vaultItem.mimeType || 'application/pdf',
+                          });
+                        } else {
+                          setEvidenceForm({ ...evidenceForm, evidenceId: '' });
+                        }
+                      }}
+                      className="w-full text-xs border rounded-lg p-2.5 bg-white border-slate-300"
+                    >
+                      <option value="">Choose an artifact from Evidence Vault...</option>
+                      {vaultEvidenceList.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.title || v.fileName} ({v.fileName}) — [{v.scanStatus || 'UNVERIFIED'}]
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <span className="text-[10px] text-slate-400 mt-1 block">
+                    Canonical evidence records maintain cryptographic SHA-256 integrity and tenant isolation.
+                  </span>
                 </div>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Evidence Artifact Filename *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. mfa_directory_policy_signed.pdf"
+                      value={evidenceForm.fileName}
+                      onChange={(e) => setEvidenceForm({ ...evidenceForm, fileName: e.target.value })}
+                      className="w-full text-xs border rounded-lg p-2.5 bg-white border-slate-300"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">File Size (Bytes)</label>
-                  <input
-                    type="number"
-                    placeholder="2048"
-                    value={evidenceForm.fileSize}
-                    onChange={(e) => setEvidenceForm({ ...evidenceForm, fileSize: e.target.value })}
-                    className="w-full text-xs border rounded-lg p-2.5 bg-white border-slate-300"
-                  />
-                </div>
-              </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Evidence URL / Storage URI</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. https://vault.omnigrc.internal/evidence/mfa_policy.pdf"
+                      value={evidenceForm.fileUrl}
+                      onChange={(e) => setEvidenceForm({ ...evidenceForm, fileUrl: e.target.value })}
+                      className="w-full text-xs border rounded-lg p-2.5 bg-white border-slate-300"
+                    />
+                    <span className="text-[10px] text-slate-400 mt-1 block">
+                      Leave blank to auto-generate a secure vault reference.
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">MIME Type</label>
+                      <select
+                        value={evidenceForm.mimeType}
+                        onChange={(e) => setEvidenceForm({ ...evidenceForm, mimeType: e.target.value })}
+                        className="w-full text-xs border rounded-lg p-2.5 bg-white border-slate-300"
+                      >
+                        <option value="application/pdf">PDF Document (application/pdf)</option>
+                        <option value="image/png">PNG Screenshot (image/png)</option>
+                        <option value="application/json">JSON Telemetry (application/json)</option>
+                        <option value="text/csv">CSV Export (text/csv)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">File Size (Bytes)</label>
+                      <input
+                        type="number"
+                        placeholder="2048"
+                        value={evidenceForm.fileSize}
+                        onChange={(e) => setEvidenceForm({ ...evidenceForm, fileSize: e.target.value })}
+                        className="w-full text-xs border rounded-lg p-2.5 bg-white border-slate-300"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
 
               <div className="pt-2 flex items-center justify-end gap-2">
                 <button

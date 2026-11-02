@@ -817,7 +817,12 @@ describe('Phase 3 WP3: Evidence Storage, Integrity & Document Security Specifica
           { provide: ResourceAuthorizationService, useValue: resourceAuthService },
           { provide: AiRouterService, useValue: {} },
           { provide: DocumentExtractionService, useValue: { extract: jest.fn() } },
-          { provide: EffectiveServiceStateResolver, useValue: {} },
+          {
+            provide: EffectiveServiceStateResolver,
+            useValue: {
+              resolveEffectiveState: jest.fn().mockResolvedValue({ isAvailable: true }),
+            },
+          },
         ],
       }).compile();
 
@@ -884,11 +889,13 @@ describe('Phase 3 WP3: Evidence Storage, Integrity & Document Security Specifica
         updatedAt: new Date(),
       });
 
+      jest.spyOn(queueService, 'enqueueAnalysis').mockResolvedValue('analysis-1');
+
       const res = await docIntelService.createAnalysis(authCtx, 'ev-clean-ready', {});
       expect(res).toBeDefined();
     });
 
-    it('WORKER GATE: executeAnalysis aborts worker extraction and marks analysis FAILED when evidence is not CLEAN', async () => {
+    it('WORKER GATE: processJob aborts worker extraction and marks analysis FAILED when evidence is not CLEAN', async () => {
       prisma.documentAnalysis.findFirst.mockResolvedValue({
         id: 'analysis-worker-test',
         organizationId: 'org-wp3-1',
@@ -900,7 +907,13 @@ describe('Phase 3 WP3: Evidence Storage, Integrity & Document Security Specifica
         },
       });
 
-      await (queueService as any).executeAnalysis('analysis-worker-test', 'org-wp3-1', 'user-1', 'ev-infected');
+      await queueService.processJob({
+        analysisId: 'analysis-worker-test',
+        organizationId: 'org-wp3-1',
+        userId: 'user-1',
+        evidenceId: 'ev-infected',
+        isDurable: false,
+      });
 
       expect(prisma.documentAnalysis.update).toHaveBeenCalledWith(
         expect.objectContaining({

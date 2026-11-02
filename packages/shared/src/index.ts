@@ -1792,6 +1792,9 @@ export interface AuditEvidenceDto {
   mimeType?: string | null;
   uploadedById: string;
   createdAt: Date | string;
+  scanStatus?: EvidenceScanStatus | string | null;
+  status?: EvidenceStatus | string | null;
+  checksum?: string | null;
 }
 
 export interface AuditCheckItemDto {
