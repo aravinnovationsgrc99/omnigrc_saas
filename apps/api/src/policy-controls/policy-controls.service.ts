@@ -21,7 +21,7 @@ export class PolicyControlsService {
     private readonly prisma: PrismaService,
     private readonly resourceAuthService: ResourceAuthorizationService,
     private readonly auditLogsService: AuditLogsService,
-  ) {}
+  ) { }
 
   async getControlsForPolicy(
     authCtx: ResourceAuthContext,
@@ -118,6 +118,7 @@ export class PolicyControlsService {
         controlCategory: assoc.control.category,
         status: assoc.status as MappingStatus,
         rationale: assoc.rationale,
+        version: assoc.version,
         frameworkMappings,
         createdAt: assoc.createdAt,
       };
@@ -207,6 +208,7 @@ export class PolicyControlsService {
       publishedVersionNumber: assoc.policy.publishedVersion?.versionNumber || null,
       status: assoc.status as MappingStatus,
       rationale: assoc.rationale,
+      version: assoc.version,
       createdAt: assoc.createdAt,
     }));
 
@@ -279,11 +281,13 @@ export class PolicyControlsService {
           controlId,
           status: status as any,
           rationale,
+          version: 1,
           createdById: authCtx.userId,
         },
         update: {
           status: status as any,
           ...(dto.rationale !== undefined ? { rationale } : {}),
+          version: { increment: 1 },
         },
         include: {
           control: {
@@ -344,6 +348,7 @@ export class PolicyControlsService {
       controlCategory: association.control.category,
       status: association.status as MappingStatus,
       rationale: association.rationale,
+      version: association.version,
       frameworkMappings,
       createdAt: association.createdAt,
     };
@@ -359,38 +364,56 @@ export class PolicyControlsService {
       action: 'WRITE',
     });
 
-    const existing = await this.prisma.policyControl.findFirst({
-      where: {
-        policyId,
-        controlId,
-        organizationId: authCtx.organizationId,
-      },
-    });
-
-    if (!existing) {
-      throw new NotFoundException(`Mapping between Policy "${policyId}" and Control "${controlId}" not found`);
-    }
-
-    if (dto.expectedUpdatedAt) {
-      const expected = new Date(dto.expectedUpdatedAt).getTime();
-      const current = new Date(existing.updatedAt).getTime();
-      if (Math.abs(current - expected) > 1000) {
-        throw new ConflictException(
-          'Mapping was updated concurrently by another user. Please reload the latest changes.',
-        );
-      }
+    if (
+      dto.expectedVersion === undefined ||
+      dto.expectedVersion === null ||
+      typeof dto.expectedVersion !== 'number' ||
+      dto.expectedVersion < 1
+    ) {
+      throw new BadRequestException('expectedVersion is mandatory and must be a positive integer');
     }
 
     const rationale = dto.rationale !== undefined ? dto.rationale.trim() || null : undefined;
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      const res = await tx.policyControl.update({
+      const updateResult = await tx.policyControl.updateMany({
         where: {
-          id: existing.id,
+          policyId,
+          controlId,
+          organizationId: authCtx.organizationId,
+          version: dto.expectedVersion,
         },
         data: {
           ...(dto.status !== undefined ? { status: dto.status as any } : {}),
           ...(rationale !== undefined ? { rationale } : {}),
+          version: { increment: 1 },
+        },
+      });
+
+      if (updateResult.count === 0) {
+        const current = await tx.policyControl.findFirst({
+          where: {
+            policyId,
+            controlId,
+            organizationId: authCtx.organizationId,
+          },
+          select: { id: true, version: true, status: true },
+        });
+
+        if (!current) {
+          throw new NotFoundException(`Mapping between Policy "${policyId}" and Control "${controlId}" not found`);
+        }
+
+        throw new ConflictException(
+          `Policy-control mapping conflict: expected version ${dto.expectedVersion}, but current version is ${current.version}. Please reload the latest changes.`,
+        );
+      }
+
+      const res = await tx.policyControl.findFirstOrThrow({
+        where: {
+          policyId,
+          controlId,
+          organizationId: authCtx.organizationId,
         },
         include: {
           control: {
@@ -426,6 +449,7 @@ export class PolicyControlsService {
             controlId,
             status: res.status,
             rationale: res.rationale,
+            version: res.version,
           },
         },
         tx,
@@ -449,6 +473,7 @@ export class PolicyControlsService {
       controlCategory: updated.control.category,
       status: updated.status as MappingStatus,
       rationale: updated.rationale,
+      version: updated.version,
       frameworkMappings,
       createdAt: updated.createdAt,
     };
@@ -458,10 +483,18 @@ export class PolicyControlsService {
     authCtx: ResourceAuthContext,
     policyId: string,
     controlId: string,
+    expectedVersion?: number,
   ): Promise<{ success: boolean; unmappedId: string }> {
     await this.resourceAuthService.authorize(authCtx, {
       action: 'WRITE',
     });
+
+    if (
+      expectedVersion !== undefined &&
+      (typeof expectedVersion !== 'number' || expectedVersion < 1)
+    ) {
+      throw new BadRequestException('expectedVersion must be a positive integer');
+    }
 
     const existing = await this.prisma.policyControl.findFirst({
       where: {
@@ -479,12 +512,33 @@ export class PolicyControlsService {
       throw new NotFoundException(`Mapping between Policy "${policyId}" and Control "${controlId}" not found`);
     }
 
+    if (expectedVersion !== undefined && existing.version !== expectedVersion) {
+      throw new ConflictException(
+        `Policy-control mapping conflict: expected version ${expectedVersion}, but current version is ${existing.version}. Please reload the latest changes.`,
+      );
+    }
+
     await this.prisma.$transaction(async (tx) => {
-      await tx.policyControl.delete({
+      const deleteResult = await tx.policyControl.deleteMany({
         where: {
           id: existing.id,
+          organizationId: authCtx.organizationId,
+          ...(expectedVersion !== undefined ? { version: expectedVersion } : {}),
         },
       });
+
+      if (deleteResult && deleteResult.count === 0) {
+        const current = await tx.policyControl.findFirst({
+          where: { id: existing.id, organizationId: authCtx.organizationId },
+          select: { id: true, version: true },
+        });
+        if (!current) {
+          throw new NotFoundException(`Mapping between Policy "${policyId}" and Control "${controlId}" not found`);
+        }
+        throw new ConflictException(
+          `Policy-control mapping conflict: expected version ${expectedVersion}, but current version is ${current.version}. Please reload the latest changes.`,
+        );
+      }
 
       await this.auditLogsService.log(
         {
@@ -498,6 +552,7 @@ export class PolicyControlsService {
             policyCode: existing.policy.code,
             controlId,
             controlName: existing.control.name,
+            version: existing.version,
           },
         },
         tx,

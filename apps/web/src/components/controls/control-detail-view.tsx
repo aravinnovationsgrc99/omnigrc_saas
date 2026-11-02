@@ -461,13 +461,20 @@ export function ControlDetailView({ controlId, onBack, onNavigateToView }: Contr
     if (!controlId) return;
     setUnmappingPolicyId(policyId);
     try {
-      await apiRequest(`/policy-controls/policies/${policyId}/controls/${controlId}`, {
+      const mapping = associatedPolicies.find((p) => p.policyId === policyId);
+      const queryParam = mapping?.version ? `?expectedVersion=${mapping.version}` : '';
+      await apiRequest(`/policy-controls/policies/${policyId}/controls/${controlId}${queryParam}`, {
         method: 'DELETE',
       });
       showToast('Policy unmapped from control');
       await fetchAssociatedPolicies();
     } catch (err: any) {
-      showToast(err.message || 'Failed to unmap policy', 'error');
+      if (err.statusCode === 409 || err.message?.includes('conflict') || err.message?.includes('409')) {
+        showToast('Conflict: Mapping was modified concurrently. Refreshing...', 'error');
+        await fetchAssociatedPolicies();
+      } else {
+        showToast(err.message || 'Failed to unmap policy', 'error');
+      }
     } finally {
       setUnmappingPolicyId(null);
     }

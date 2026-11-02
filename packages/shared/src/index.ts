@@ -3883,6 +3883,7 @@ export interface PolicyControlAssociationDto {
   controlCategory?: string | null;
   status: MappingStatus;
   rationale?: string | null;
+  version: number;
   frameworkMappings?: {
     frameworkName: string;
     frameworkCode: string;
@@ -3903,6 +3904,7 @@ export interface ControlPolicyAssociationDto {
   publishedVersionNumber?: string | null;
   status: MappingStatus;
   rationale?: string | null;
+  version: number;
   createdAt: Date | string;
 }
 

@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS "policy_controls" (
     "controlId" TEXT NOT NULL,
     "status" "MappingStatus" NOT NULL DEFAULT 'APPROVED',
     "rationale" TEXT,
+    "version" INTEGER NOT NULL DEFAULT 1,
     "createdById" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -72,5 +73,6 @@ BEGIN
   END IF;
 END $block$;
 
--- Add version column to policies if not exists for optimistic concurrency control
+-- Add version column to policies and policy_controls if not exists for optimistic concurrency control
 ALTER TABLE "policies" ADD COLUMN IF NOT EXISTS "version" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "policy_controls" ADD COLUMN IF NOT EXISTS "version" INTEGER NOT NULL DEFAULT 1;

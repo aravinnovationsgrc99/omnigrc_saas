@@ -101,13 +101,21 @@ export class PolicyControlsController {
     @CurrentUser() user: any,
     @Param('policyId') policyId: string,
     @Param('controlId') controlId: string,
+    @Query('expectedVersion') expectedVersionQuery?: string,
+    @Body('expectedVersion') expectedVersionBody?: number,
   ) {
     const authCtx: ResourceAuthContext = {
       userId: user.userId,
       organizationId: user.organizationId,
       role: user.role,
     };
-    return this.policyControlsService.disassociate(authCtx, policyId, controlId);
+    const expectedVersion =
+      expectedVersionBody !== undefined && expectedVersionBody !== null
+        ? Number(expectedVersionBody)
+        : expectedVersionQuery !== undefined && expectedVersionQuery !== null && expectedVersionQuery !== ''
+          ? Number(expectedVersionQuery)
+          : undefined;
+    return this.policyControlsService.disassociate(authCtx, policyId, controlId, expectedVersion);
   }
 }
 

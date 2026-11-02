@@ -1748,6 +1748,7 @@ model PolicyControl {
   controlId      String
   status         MappingStatus @default(APPROVED)
   rationale      String?
+  version        Int           @default(1)
   createdById    String?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt

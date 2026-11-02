@@ -198,8 +198,10 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
     if (!selectedPolicy) return;
     setUnmappingControlId(controlId);
     try {
+      const mapping = mappedControls.find((c) => c.controlId === controlId);
+      const queryParam = mapping?.version ? `?expectedVersion=${mapping.version}` : '';
       await apiRequest(
-        `/policy-controls/policies/${selectedPolicy.id}/controls/${controlId}`,
+        `/policy-controls/policies/${selectedPolicy.id}/controls/${controlId}${queryParam}`,
         {
           method: 'DELETE',
         },
@@ -208,7 +210,12 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
       fetchPolicyMappedControls(selectedPolicy.id);
       fetchPolicies();
     } catch (err: any) {
-      addToast(`Failed to unmap control: ${err.message}`, 'error');
+      if (err.statusCode === 409 || err.message?.includes('conflict') || err.message?.includes('409')) {
+        addToast(`Conflict: Mapping was modified concurrently. Refreshing...`, 'error');
+        fetchPolicyMappedControls(selectedPolicy.id);
+      } else {
+        addToast(`Failed to unmap control: ${err.message}`, 'error');
+      }
     } finally {
       setUnmappingControlId(null);
     }

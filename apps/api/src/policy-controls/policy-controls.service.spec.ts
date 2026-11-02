@@ -3,7 +3,7 @@ import { PolicyControlsService } from './policy-controls.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
-import { NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { NotFoundException, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { MappingStatus, Role } from '@omnigrc/shared';
 
 describe('PolicyControlsService', () => {
@@ -42,9 +42,12 @@ describe('PolicyControlsService', () => {
         findMany: jest.fn(),
         count: jest.fn(),
         findFirst: jest.fn(),
+        findFirstOrThrow: jest.fn(),
         upsert: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         delete: jest.fn(),
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
     };
 
@@ -245,8 +248,8 @@ describe('PolicyControlsService', () => {
 
       expect(result.success).toBe(true);
       expect(result.unmappedId).toBe('map-pol-ctrl-01');
-      expect(prisma.policyControl.delete).toHaveBeenCalledWith({
-        where: { id: 'map-pol-ctrl-01' },
+      expect(prisma.policyControl.deleteMany).toHaveBeenCalledWith({
+        where: { id: 'map-pol-ctrl-01', organizationId: 'tenant-org-alpha' },
       });
 
       expect(auditLogsService.log).toHaveBeenCalledWith(
@@ -373,19 +376,14 @@ describe('PolicyControlsService', () => {
 
   describe('updateMapping', () => {
     it('should update rationale and status for an existing mapping', async () => {
-      prisma.policyControl.findFirst.mockResolvedValue({
-        id: 'map-1',
-        policyId: 'pol-1',
-        controlId: 'ctrl-1',
-        organizationId: 'tenant-org-alpha',
-      });
-
-      prisma.policyControl.update.mockResolvedValue({
+      prisma.policyControl.updateMany.mockResolvedValue({ count: 1 });
+      prisma.policyControl.findFirstOrThrow.mockResolvedValue({
         id: 'map-1',
         policyId: 'pol-1',
         controlId: 'ctrl-1',
         status: MappingStatus.APPROVED,
         rationale: 'Updated rationale after auditor review',
+        version: 2,
         createdAt: new Date(),
         control: {
           name: 'Access Control',
@@ -397,9 +395,11 @@ describe('PolicyControlsService', () => {
 
       const result = await service.updateMapping(mockTenantContext, 'pol-1', 'ctrl-1', {
         rationale: 'Updated rationale after auditor review',
+        expectedVersion: 1,
       });
 
       expect(result.rationale).toBe('Updated rationale after auditor review');
+      expect(result.version).toBe(2);
       expect(auditLogsService.log).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'POLICY_CONTROL_UPDATED',
@@ -408,12 +408,32 @@ describe('PolicyControlsService', () => {
       );
     });
 
+    it('should reject mapping update if expectedVersion is missing', async () => {
+      await expect(
+        service.updateMapping(mockTenantContext, 'pol-1', 'ctrl-1', { rationale: 'Test' } as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it('should throw 404 if mapping does not exist', async () => {
+      prisma.policyControl.updateMany.mockResolvedValue({ count: 0 });
       prisma.policyControl.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.updateMapping(mockTenantContext, 'pol-1', 'ctrl-1', { rationale: 'Test' }),
+        service.updateMapping(mockTenantContext, 'pol-1', 'ctrl-1', { rationale: 'Test', expectedVersion: 1 }),
       ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw 409 ConflictException on stale expectedVersion', async () => {
+      prisma.policyControl.updateMany.mockResolvedValue({ count: 0 });
+      prisma.policyControl.findFirst.mockResolvedValue({
+        id: 'map-1',
+        version: 3,
+        status: MappingStatus.APPROVED,
+      });
+
+      await expect(
+        service.updateMapping(mockTenantContext, 'pol-1', 'ctrl-1', { rationale: 'Test', expectedVersion: 1 }),
+      ).rejects.toThrow(ConflictException);
     });
   });
 });

@@ -98,10 +98,13 @@ describe('Phase 4: Policy & Control Mapping Workflows & Security Verification', 
       },
       policyControl: {
         findFirst: jest.fn(),
+        findFirstOrThrow: jest.fn(),
         findMany: jest.fn(),
         upsert: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         delete: jest.fn(),
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
         count: jest.fn(),
       },
       policyVersion: {
@@ -385,18 +388,14 @@ describe('Phase 4: Policy & Control Mapping Workflows & Security Verification', 
       expect(controlView.items[0].publishedVersionNumber).toBe('1.2');
 
       // 4. Update rationale
-      prisma.policyControl.findFirst.mockResolvedValueOnce({
-        id: 'assoc-10-20',
-        policyId: 'pol-10',
-        controlId: 'ctrl-20',
-        organizationId: 'org-alpha',
-      });
-      prisma.policyControl.update.mockResolvedValueOnce({
+      prisma.policyControl.updateMany.mockResolvedValueOnce({ count: 1 });
+      prisma.policyControl.findFirstOrThrow.mockResolvedValueOnce({
         id: 'assoc-10-20',
         policyId: 'pol-10',
         controlId: 'ctrl-20',
         status: MappingStatus.OVERRIDDEN,
         rationale: 'Updated with cloud HSM endorsement',
+        version: 2,
         createdAt: new Date(),
         control: {
           name: 'Encryption At Rest',
@@ -409,22 +408,25 @@ describe('Phase 4: Policy & Control Mapping Workflows & Security Verification', 
       const updated = await policyControlsService.updateMapping(tenantOrgAlpha, 'pol-10', 'ctrl-20', {
         status: MappingStatus.OVERRIDDEN,
         rationale: 'Updated with cloud HSM endorsement',
+        expectedVersion: 1,
       });
       expect(updated.status).toBe(MappingStatus.OVERRIDDEN);
       expect(updated.rationale).toBe('Updated with cloud HSM endorsement');
+      expect(updated.version).toBe(2);
 
       // 5. Delete mapping
       prisma.policyControl.findFirst.mockResolvedValueOnce({
         id: 'assoc-10-20',
         policyId: 'pol-10',
         controlId: 'ctrl-20',
+        version: 2,
         organizationId: 'org-alpha',
         policy: { code: 'POL-10' },
         control: { name: 'Encryption At Rest' },
       });
-      prisma.policyControl.delete.mockResolvedValueOnce({ id: 'assoc-10-20' });
+      prisma.policyControl.deleteMany.mockResolvedValueOnce({ count: 1 });
 
-      const del = await policyControlsService.disassociate(tenantOrgAlpha, 'pol-10', 'ctrl-20');
+      const del = await policyControlsService.disassociate(tenantOrgAlpha, 'pol-10', 'ctrl-20', 2);
       expect(del.success).toBe(true);
       expect(del.unmappedId).toBe('assoc-10-20');
     });
@@ -518,22 +520,92 @@ describe('Phase 4: Policy & Control Mapping Workflows & Security Verification', 
       ).rejects.toThrow('expectedVersion is mandatory and must be a positive integer');
     });
 
-    it('detects mapping concurrency conflict when expectedUpdatedAt is stale', async () => {
+    it('rejects mapping update when expectedVersion is missing at service boundary', async () => {
+      await expect(
+        policyControlsService.updateMapping(tenantOrgAlpha, 'pol-alpha-1', 'ctrl-alpha-1', {
+          rationale: 'Missing version',
+        } as any),
+      ).rejects.toThrow('expectedVersion is mandatory and must be a positive integer');
+    });
+
+    it('detects mapping concurrency conflict and throws 409 ConflictException when expectedVersion is stale', async () => {
+      prisma.policyControl.updateMany.mockResolvedValueOnce({ count: 0 });
       prisma.policyControl.findFirst.mockResolvedValueOnce({
         id: 'map-concur-1',
         policyId: 'pol-alpha-1',
         controlId: 'ctrl-alpha-1',
         organizationId: 'org-alpha',
         status: MappingStatus.APPROVED,
-        rationale: 'Initial Rationale',
-        updatedAt: new Date('2026-11-02T12:00:00Z'),
+        version: 3,
       });
 
       await expect(
         policyControlsService.updateMapping(tenantOrgAlpha, 'pol-alpha-1', 'ctrl-alpha-1', {
           rationale: 'Concurrent Rationale Update',
-          expectedUpdatedAt: new Date('2026-11-02T10:00:00Z').toISOString(),
+          expectedVersion: 1,
         }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('enforces atomic mapping concurrency: concurrent updates with identical expectedVersion result in one success and one 409 Conflict', async () => {
+      prisma.policyControl.updateMany.mockResolvedValueOnce({ count: 1 });
+      prisma.policyControl.findFirstOrThrow.mockResolvedValueOnce({
+        id: 'map-atomic-1',
+        policyId: 'pol-alpha-1',
+        controlId: 'ctrl-alpha-1',
+        version: 2,
+        status: MappingStatus.APPROVED,
+        control: {
+          name: 'Encryption',
+          description: 'Desc',
+          category: 'Crypto',
+          mappings: [],
+        },
+      });
+
+      prisma.policyControl.updateMany.mockResolvedValueOnce({ count: 0 });
+      prisma.policyControl.findFirst.mockResolvedValueOnce({
+        id: 'map-atomic-1',
+        policyId: 'pol-alpha-1',
+        controlId: 'ctrl-alpha-1',
+        organizationId: 'org-alpha',
+        status: MappingStatus.APPROVED,
+        version: 2,
+      });
+
+      const updateReq1 = policyControlsService.updateMapping(tenantOrgAlpha, 'pol-alpha-1', 'ctrl-alpha-1', {
+        rationale: 'Client A Rationale',
+        expectedVersion: 1,
+      });
+
+      const updateReq2 = policyControlsService.updateMapping(tenantOrgAlpha, 'pol-alpha-1', 'ctrl-alpha-1', {
+        rationale: 'Client B Rationale',
+        expectedVersion: 1,
+      });
+
+      const [res1, res2] = await Promise.allSettled([updateReq1, updateReq2]);
+
+      expect(res1.status).toBe('fulfilled');
+      expect(res2.status).toBe('rejected');
+      if (res2.status === 'rejected') {
+        expect(res2.reason).toBeInstanceOf(ConflictException);
+        expect(res2.reason.message).toContain('Policy-control mapping conflict');
+      }
+    });
+
+    it('detects concurrent mapping deletion vs update conflict', async () => {
+      prisma.policyControl.findFirst.mockResolvedValueOnce({
+        id: 'map-del-concur',
+        policyId: 'pol-alpha-1',
+        controlId: 'ctrl-alpha-1',
+        version: 2,
+        organizationId: 'org-alpha',
+        policy: { code: 'POL-1' },
+        control: { name: 'CTRL-1' },
+      });
+
+      await expect(
+        policyControlsService.disassociate(tenantOrgAlpha, 'pol-alpha-1', 'ctrl-alpha-1', 1),
       ).rejects.toThrow(ConflictException);
     });
 

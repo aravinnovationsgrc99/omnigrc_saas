@@ -56,6 +56,7 @@ describe('PolicyControlsController', () => {
             controlId: 'ctrl-1',
             controlName: 'Access Control',
             status: MappingStatus.APPROVED,
+            version: 1,
             createdAt: new Date(),
           },
         ],
@@ -88,6 +89,7 @@ describe('PolicyControlsController', () => {
             policyStatus: 'PUBLISHED' as any,
             policyOwnerId: 'ciso',
             status: MappingStatus.APPROVED,
+            version: 1,
             createdAt: new Date(),
           },
         ],
@@ -115,6 +117,7 @@ describe('PolicyControlsController', () => {
         controlName: 'MFA Enforcement',
         status: MappingStatus.APPROVED,
         rationale: 'Mandatory for all staff',
+        version: 1,
         createdAt: new Date(),
       });
 
@@ -144,12 +147,14 @@ describe('PolicyControlsController', () => {
         controlName: 'MFA Enforcement',
         status: MappingStatus.OVERRIDDEN,
         rationale: 'Compensating control in place',
+        version: 2,
         createdAt: new Date(),
       });
 
       const res = await controller.updateMapping(mockAdminUser, 'pol-1', 'ctrl-1', {
         status: MappingStatus.OVERRIDDEN,
         rationale: 'Compensating control in place',
+        expectedVersion: 1,
       });
 
       expect(res.status).toBe(MappingStatus.OVERRIDDEN);
@@ -160,6 +165,7 @@ describe('PolicyControlsController', () => {
         {
           status: MappingStatus.OVERRIDDEN,
           rationale: 'Compensating control in place',
+          expectedVersion: 1,
         },
       );
     });
@@ -176,6 +182,7 @@ describe('PolicyControlsController', () => {
         expect.objectContaining({ organizationId: 'org-tenant-1' }),
         'pol-1',
         'ctrl-1',
+        undefined,
       );
     });
   });
