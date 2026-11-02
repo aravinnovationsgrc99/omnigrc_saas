@@ -229,20 +229,12 @@ export class PoliciesService {
       throw new NotFoundException(`Policy with ID "${id}" not found`);
     }
 
-    if (dto.expectedUpdatedAt) {
+    if (dto.expectedUpdatedAt && dto.expectedVersion === undefined) {
       const expected = new Date(dto.expectedUpdatedAt).getTime();
       const current = new Date(existing.updatedAt).getTime();
       if (Math.abs(current - expected) > 1000) {
         throw new ConflictException(
           'Policy was updated by another user. Please reload the latest changes.',
-        );
-      }
-    }
-
-    if (dto.expectedVersion !== undefined && (existing as any).version !== undefined) {
-      if ((existing as any).version !== dto.expectedVersion) {
-        throw new ConflictException(
-          'Policy version conflict detected. Please reload the latest changes.',
         );
       }
     }
@@ -282,8 +274,19 @@ export class PoliciesService {
       }
     }
 
-    const updated = await this.prisma.policy.update({
-      where: { id },
+    // ATOMIC CONDITIONAL UPDATE at database level
+    const whereClause: any = {
+      id,
+      organizationId: authCtx.organizationId,
+      deletedAt: null,
+    };
+
+    if (dto.expectedVersion !== undefined) {
+      whereClause.version = dto.expectedVersion;
+    }
+
+    const updateResult = await this.prisma.policy.updateMany({
+      where: whereClause,
       data: {
         ...(dto.code !== undefined && { code: dto.code }),
         ...(dto.title !== undefined && { title: dto.title }),
@@ -294,10 +297,33 @@ export class PoliciesService {
         ...(dto.reviewCadenceDays !== undefined && { reviewCadenceDays: dto.reviewCadenceDays }),
         ...(dto.departmentId !== undefined && { departmentId: dto.departmentId }),
         ...(dto.projectId !== undefined && { projectId: dto.projectId }),
+        version: { increment: 1 },
       },
+    });
+
+    if (updateResult.count === 0) {
+      const current = await this.prisma.policy.findFirst({
+        where: { id, organizationId: authCtx.organizationId, deletedAt: null },
+        select: { id: true, version: true },
+      });
+      if (!current) {
+        throw new NotFoundException(`Policy with ID "${id}" not found`);
+      }
+      throw new ConflictException(
+        `Policy revision conflict: expected version ${dto.expectedVersion}, but current version is ${current.version}. Please reload the latest changes.`,
+      );
+    }
+
+    const updated = await this.prisma.policy.findUniqueOrThrow({
+      where: { id },
       include: {
         publishedVersion: true,
         versions: { orderBy: { createdAt: 'desc' } },
+        _count: {
+          select: {
+            controlAssociations: true,
+          },
+        },
       },
     });
 
@@ -307,7 +333,7 @@ export class PoliciesService {
       action: 'POLICY_UPDATED',
       entityType: 'Policy',
       entityId: updated.id,
-      metadata: { code: updated.code, title: updated.title },
+      metadata: { code: updated.code, title: updated.title, newVersion: updated.version },
     });
 
     if (this.notificationsService && dto.ownerId && dto.ownerId !== existing.ownerId) {
@@ -323,8 +349,6 @@ export class PoliciesService {
 
     return this.mapToDto(updated);
   }
-
-  // --- POLICY CATEGORY MANAGEMENT (DURABLE & BACKWARD COMPATIBLE) ---
 
   async listCategories(authCtx: ResourceAuthContext): Promise<PolicyCategoryDto[]> {
     const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
@@ -646,26 +670,38 @@ export class PoliciesService {
       );
     }
 
-    const version = await this.prisma.policyVersion.create({
-      data: {
-        policyId,
-        versionNumber: dto.versionNumber,
-        content: dto.content,
-        changeLog: dto.changeLog || null,
-        createdById: authCtx.userId,
-      },
-    });
+    const version = await this.prisma.$transaction(async (tx) => {
+      const v = await tx.policyVersion.create({
+        data: {
+          policyId,
+          versionNumber: dto.versionNumber,
+          content: dto.content,
+          changeLog: dto.changeLog || null,
+          createdById: authCtx.userId,
+        },
+      });
 
-    await this.auditLogsService.log({
-      organizationId: authCtx.organizationId,
-      actorId: authCtx.userId,
-      action: 'POLICY_VERSION_CREATED',
-      entityType: 'PolicyVersion',
-      entityId: version.id,
-      metadata: {
-        policyCode: policy.code,
-        versionNumber: version.versionNumber,
-      },
+      await tx.policy.update({
+        where: { id: policyId },
+        data: { version: { increment: 1 } },
+      });
+
+      await this.auditLogsService.log(
+        {
+          organizationId: authCtx.organizationId,
+          actorId: authCtx.userId,
+          action: 'POLICY_VERSION_CREATED',
+          entityType: 'PolicyVersion',
+          entityId: v.id,
+          metadata: {
+            policyCode: policy.code,
+            versionNumber: v.versionNumber,
+          },
+        },
+        tx,
+      );
+
+      return v;
     });
 
     return {
@@ -682,6 +718,10 @@ export class PoliciesService {
   // --- EXPLICIT AUTHORIZATION-CONTROLLED LIFECYCLE TRANSITIONS ---
 
   async submitForReview(authCtx: ResourceAuthContext, id: string): Promise<PolicyDto> {
+    if (authCtx.role === Role.EXTERNAL_AUDITOR) {
+      throw new ForbiddenException('External auditors cannot submit policies for review');
+    }
+
     const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const policy = await this.prisma.policy.findFirst({
       where: { id, ...scopeWhere, deletedAt: null },
@@ -692,22 +732,39 @@ export class PoliciesService {
       throw new BadRequestException(`Cannot submit policy for review from state "${policy.status}". Must be DRAFT.`);
     }
 
-    const updated = await this.prisma.policy.update({
-      where: { id },
-      data: { status: PolicyStatus.UNDER_REVIEW },
-      include: { publishedVersion: true, versions: true },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.policy.update({
+        where: { id },
+        data: {
+          status: PolicyStatus.UNDER_REVIEW,
+          version: { increment: 1 },
+        },
+        include: {
+          publishedVersion: true,
+          versions: true,
+          _count: { select: { controlAssociations: true } },
+        },
+      });
 
-    await this.auditLogsService.log({
-      organizationId: authCtx.organizationId,
-      actorId: authCtx.userId,
-      action: 'POLICY_SUBMITTED_FOR_REVIEW',
-      entityType: 'Policy',
-      entityId: id,
-      metadata: { code: updated.code, newStatus: updated.status },
-    });
+      await this.auditLogsService.log(
+        {
+          organizationId: authCtx.organizationId,
+          actorId: authCtx.userId,
+          action: 'POLICY_SUBMITTED_FOR_REVIEW',
+          entityType: 'Policy',
+          entityId: id,
+          metadata: {
+            code: updated.code,
+            previousStatus: policy.status,
+            newStatus: updated.status,
+            version: updated.version,
+          },
+        },
+        tx,
+      );
 
-    return this.mapToDto(updated);
+      return this.mapToDto(updated);
+    });
   }
 
   async approve(authCtx: ResourceAuthContext, id: string): Promise<PolicyDto> {
@@ -725,40 +782,61 @@ export class PoliciesService {
       throw new BadRequestException(`Cannot approve policy from state "${policy.status}". Must be UNDER_REVIEW.`);
     }
 
-    const updated = await this.prisma.policy.update({
-      where: { id },
-      data: { status: PolicyStatus.APPROVED },
-      include: { publishedVersion: true, versions: true },
+    const updatedDto = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.policy.update({
+        where: { id },
+        data: {
+          status: PolicyStatus.APPROVED,
+          version: { increment: 1 },
+        },
+        include: {
+          publishedVersion: true,
+          versions: true,
+          _count: { select: { controlAssociations: true } },
+        },
+      });
+
+      await this.auditLogsService.log(
+        {
+          organizationId: authCtx.organizationId,
+          actorId: authCtx.userId,
+          action: 'POLICY_APPROVED',
+          entityType: 'Policy',
+          entityId: id,
+          metadata: {
+            code: updated.code,
+            previousStatus: policy.status,
+            newStatus: updated.status,
+            version: updated.version,
+          },
+        },
+        tx,
+      );
+
+      return this.mapToDto(updated);
     });
 
-    await this.auditLogsService.log({
-      organizationId: authCtx.organizationId,
-      actorId: authCtx.userId,
-      action: 'POLICY_APPROVED',
-      entityType: 'Policy',
-      entityId: id,
-      metadata: { code: updated.code, newStatus: updated.status },
-    });
-
-    if (this.notificationsService && updated.ownerId) {
+    if (this.notificationsService && updatedDto.ownerId) {
       await this.notificationsService.notify({
         organizationId: authCtx.organizationId,
-        userId: updated.ownerId,
+        userId: updatedDto.ownerId,
         type: NotificationType.TASK_ASSIGNED,
-        message: `Policy "${updated.title}" (${updated.code}) has been approved.`,
+        message: `Policy "${updatedDto.title}" (${updatedDto.code}) has been approved.`,
         entityType: 'Policy',
         entityId: id,
       });
     }
 
-    return this.mapToDto(updated);
+    return updatedDto;
   }
-
-
 
   async reject(authCtx: ResourceAuthContext, id: string, reason?: string): Promise<PolicyDto> {
     if (authCtx.role !== Role.ADMIN && authCtx.role !== Role.MSSP_ADMIN) {
       throw new ForbiddenException('Only ADMIN users can reject policy documents');
+    }
+
+    if (!reason || !reason.trim()) {
+      throw new BadRequestException('A non-empty rejection reason is required to reject a policy under review');
     }
 
     const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
@@ -771,47 +849,64 @@ export class PoliciesService {
       throw new BadRequestException(`Cannot reject policy from state "${policy.status}". Must be UNDER_REVIEW.`);
     }
 
-    const updated = await this.prisma.policy.update({
-      where: { id },
-      data: {
-        status: PolicyStatus.DRAFT,
-        version: { increment: 1 },
-      },
-      include: {
-        publishedVersion: true,
-        versions: true,
-        _count: {
-          select: {
-            controlAssociations: true,
+    const updatedDto = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.policy.update({
+        where: { id },
+        data: {
+          status: PolicyStatus.DRAFT,
+          version: { increment: 1 },
+        },
+        include: {
+          publishedVersion: true,
+          versions: true,
+          _count: {
+            select: {
+              controlAssociations: true,
+            },
           },
         },
-      },
+      });
+
+      await this.auditLogsService.log(
+        {
+          organizationId: authCtx.organizationId,
+          actorId: authCtx.userId,
+          action: 'POLICY_REJECTED',
+          entityType: 'Policy',
+          entityId: id,
+          metadata: {
+            code: updated.code,
+            previousStatus: policy.status,
+            newStatus: updated.status,
+            version: updated.version,
+            reason: reason.trim(),
+          },
+        },
+        tx,
+      );
+
+      return this.mapToDto(updated);
     });
 
-    await this.auditLogsService.log({
-      organizationId: authCtx.organizationId,
-      actorId: authCtx.userId,
-      action: 'POLICY_REJECTED',
-      entityType: 'Policy',
-      entityId: id,
-      metadata: { code: updated.code, newStatus: updated.status, reason },
-    });
-
-    if (this.notificationsService && updated.ownerId) {
+    if (this.notificationsService && updatedDto.ownerId) {
       await this.notificationsService.notify({
         organizationId: authCtx.organizationId,
-        userId: updated.ownerId,
+        userId: updatedDto.ownerId,
         type: NotificationType.TASK_ASSIGNED,
-        message: `Policy "${updated.title}" (${updated.code}) review was rejected and returned to Draft.${reason ? ` Reason: ${reason}` : ''}`,
+        message: `Policy "${updatedDto.title}" (${updatedDto.code}) review was rejected and returned to Draft. Reason: ${reason.trim()}`,
         entityType: 'Policy',
         entityId: id,
       });
     }
 
-    return this.mapToDto(updated);
+    return updatedDto;
   }
 
   async publish(authCtx: ResourceAuthContext, id: string, versionId?: string): Promise<PolicyDto> {
+    if (authCtx.role !== Role.ADMIN && authCtx.role !== Role.MSSP_ADMIN) {
+      throw new ForbiddenException('Only ADMIN users can publish policy documents');
+    }
+
     const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const policy = await this.prisma.policy.findFirst({
       where: { id, ...scopeWhere, deletedAt: null },
@@ -835,34 +930,51 @@ export class PoliciesService {
     const reviewDate = new Date();
     reviewDate.setDate(reviewDate.getDate() + policy.reviewCadenceDays);
 
-    const updated = await this.prisma.policy.update({
-      where: { id },
-      data: {
-        status: PolicyStatus.PUBLISHED,
-        publishedVersionId: versionToPublish.id,
-        effectiveDate,
-        reviewDate,
-      },
-      include: { publishedVersion: true, versions: true },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.policy.update({
+        where: { id },
+        data: {
+          status: PolicyStatus.PUBLISHED,
+          publishedVersionId: versionToPublish.id,
+          effectiveDate,
+          reviewDate,
+          version: { increment: 1 },
+        },
+        include: {
+          publishedVersion: true,
+          versions: true,
+          _count: { select: { controlAssociations: true } },
+        },
+      });
 
-    await this.auditLogsService.log({
-      organizationId: authCtx.organizationId,
-      actorId: authCtx.userId,
-      action: 'POLICY_PUBLISHED',
-      entityType: 'Policy',
-      entityId: id,
-      metadata: {
-        code: updated.code,
-        versionNumber: versionToPublish.versionNumber,
-        effectiveDate: effectiveDate.toISOString(),
-      },
-    });
+      await this.auditLogsService.log(
+        {
+          organizationId: authCtx.organizationId,
+          actorId: authCtx.userId,
+          action: 'POLICY_PUBLISHED',
+          entityType: 'Policy',
+          entityId: id,
+          metadata: {
+            code: updated.code,
+            versionNumber: versionToPublish.versionNumber,
+            effectiveDate: effectiveDate.toISOString(),
+            previousStatus: policy.status,
+            newStatus: updated.status,
+            version: updated.version,
+          },
+        },
+        tx,
+      );
 
-    return this.mapToDto(updated);
+      return this.mapToDto(updated);
+    });
   }
 
   async retire(authCtx: ResourceAuthContext, id: string): Promise<PolicyDto> {
+    if (authCtx.role !== Role.ADMIN && authCtx.role !== Role.MSSP_ADMIN) {
+      throw new ForbiddenException('Only ADMIN users can retire policy documents');
+    }
+
     const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const policy = await this.prisma.policy.findFirst({
       where: { id, ...scopeWhere, deletedAt: null },
@@ -873,25 +985,40 @@ export class PoliciesService {
       throw new BadRequestException(`Cannot retire policy from state "${policy.status}". Must be PUBLISHED.`);
     }
 
-    const updated = await this.prisma.policy.update({
-      where: { id },
-      data: { status: PolicyStatus.RETIRED },
-      include: { publishedVersion: true, versions: true },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.policy.update({
+        where: { id },
+        data: {
+          status: PolicyStatus.RETIRED,
+          version: { increment: 1 },
+        },
+        include: {
+          publishedVersion: true,
+          versions: true,
+          _count: { select: { controlAssociations: true } },
+        },
+      });
 
-    await this.auditLogsService.log({
-      organizationId: authCtx.organizationId,
-      actorId: authCtx.userId,
-      action: 'POLICY_RETIRED',
-      entityType: 'Policy',
-      entityId: id,
-      metadata: { code: updated.code, newStatus: updated.status },
-    });
+      await this.auditLogsService.log(
+        {
+          organizationId: authCtx.organizationId,
+          actorId: authCtx.userId,
+          action: 'POLICY_RETIRED',
+          entityType: 'Policy',
+          entityId: id,
+          metadata: {
+            code: updated.code,
+            previousStatus: policy.status,
+            newStatus: updated.status,
+            version: updated.version,
+          },
+        },
+        tx,
+      );
 
-    return this.mapToDto(updated);
+      return this.mapToDto(updated);
+    });
   }
-
-  // --- ATTESTATION & EXCEPTION ---
 
   async attestVersion(
     authCtx: ResourceAuthContext,

@@ -40,11 +40,39 @@ describe('Phase 4: Policy & Control Mapping Workflows & Security Verification', 
 
   beforeEach(async () => {
     prisma = {
+      $transaction: jest.fn().mockImplementation((cb: any) => {
+        if (typeof cb === 'function') {
+          return cb(prisma);
+        }
+        return Promise.all(cb);
+      }),
       policy: {
         findFirst: jest.fn(),
         findMany: jest.fn(),
+        findUniqueOrThrow: jest.fn().mockImplementation(({ where }: any) => ({
+          id: where.id,
+          code: 'POL-001',
+          title: 'Policy Title',
+          version: 2,
+          status: PolicyStatus.DRAFT,
+          publishedVersion: null,
+          versions: [],
+          _count: { controlAssociations: 0 },
+        })),
         create: jest.fn(),
-        update: jest.fn(),
+        update: jest.fn().mockImplementation(({ where, data }: any) => ({
+          id: where.id,
+          code: 'POL-001',
+          title: data.title || 'Policy Title',
+          status: data.status || PolicyStatus.DRAFT,
+          version: typeof data.version === 'object' ? 2 : data.version || 1,
+          organizationId: 'org-alpha',
+          ownerId: 'user-alpha-ciso',
+          publishedVersion: null,
+          versions: [],
+          _count: { controlAssociations: 0 },
+        })),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         count: jest.fn(),
       },
       control: {
@@ -463,6 +491,7 @@ describe('Phase 4: Policy & Control Mapping Workflows & Security Verification', 
         version: 5,
         updatedAt: new Date(),
       });
+      prisma.policy.updateMany.mockResolvedValueOnce({ count: 0 });
 
       await expect(
         policiesService.updateMetadata(tenantOrgAlpha, 'pol-conc', {
@@ -470,6 +499,38 @@ describe('Phase 4: Policy & Control Mapping Workflows & Security Verification', 
           expectedVersion: 4,
         }),
       ).rejects.toThrow(ConflictException);
+    });
+
+    it('enforces atomic concurrency: concurrent updates with identical expectedVersion result in one success and one 409 Conflict', async () => {
+      prisma.policy.findFirst.mockResolvedValue({
+        id: 'pol-atomic-1',
+        organizationId: 'org-alpha',
+        version: 3,
+        updatedAt: new Date(),
+      });
+
+      // Simulating atomic updateMany: first caller matches version 3, second finds version 4
+      prisma.policy.updateMany.mockResolvedValueOnce({ count: 1 });
+      prisma.policy.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      const updateReq1 = policiesService.updateMetadata(tenantOrgAlpha, 'pol-atomic-1', {
+        title: 'Title A',
+        expectedVersion: 3,
+      });
+
+      const updateReq2 = policiesService.updateMetadata(tenantOrgAlpha, 'pol-atomic-1', {
+        title: 'Title B',
+        expectedVersion: 3,
+      });
+
+      const [res1, res2] = await Promise.allSettled([updateReq1, updateReq2]);
+
+      expect(res1.status).toBe('fulfilled');
+      expect(res2.status).toBe('rejected');
+      if (res2.status === 'rejected') {
+        expect(res2.reason).toBeInstanceOf(ConflictException);
+        expect(res2.reason.message).toContain('Policy revision conflict');
+      }
     });
   });
 });

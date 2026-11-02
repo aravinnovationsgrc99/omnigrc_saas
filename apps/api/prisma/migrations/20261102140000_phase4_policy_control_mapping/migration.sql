@@ -1,5 +1,5 @@
--- Phase 4: Policy & Control Mapping Additive Migration
--- Creates: policy_controls table linking policies and controls with tenant isolation and auditability
+-- Phase 4: Policy & Control Mapping Hardened Additive Migration
+-- Creates: policy_controls table linking policies and controls with database-level tenant isolation, OCC, and auditability
 
 CREATE TABLE IF NOT EXISTS "policy_controls" (
     "id" TEXT NOT NULL,
@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS "policy_controls" (
 );
 
 -- Unique constraint ensuring no duplicate mappings between the same policy and control
-DO $$
+DO $block$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint WHERE conname = 'policy_controls_policyId_controlId_key'
@@ -24,15 +24,18 @@ BEGIN
     ALTER TABLE "policy_controls"
       ADD CONSTRAINT "policy_controls_policyId_controlId_key" UNIQUE ("policyId", "controlId");
   END IF;
-END $$;
+END $block$;
+
+-- Ensure composite uniqueness on policies(id, organizationId) to enforce tenant integrity at DB level
+CREATE UNIQUE INDEX IF NOT EXISTS "policies_id_organizationId_key" ON "policies"("id", "organizationId");
 
 -- Indexes for performance and multi-tenant scoping
 CREATE INDEX IF NOT EXISTS "policy_controls_organizationId_idx" ON "policy_controls"("organizationId");
 CREATE INDEX IF NOT EXISTS "policy_controls_policyId_idx" ON "policy_controls"("policyId");
 CREATE INDEX IF NOT EXISTS "policy_controls_controlId_idx" ON "policy_controls"("controlId");
 
--- Foreign key constraints
-DO $$
+-- Foreign key constraints with database-enforced multi-tenant consistency
+DO $block$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint WHERE conname = 'policy_controls_organizationId_fkey'
@@ -43,12 +46,19 @@ BEGIN
       ON DELETE CASCADE ON UPDATE CASCADE;
   END IF;
 
-  IF NOT EXISTS (
+  -- Drop legacy single-column FK if present to upgrade to composite tenant FK
+  IF EXISTS (
     SELECT 1 FROM pg_constraint WHERE conname = 'policy_controls_policyId_fkey'
   ) THEN
+    ALTER TABLE "policy_controls" DROP CONSTRAINT "policy_controls_policyId_fkey";
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'policy_controls_policyId_organizationId_fkey'
+  ) THEN
     ALTER TABLE "policy_controls"
-      ADD CONSTRAINT "policy_controls_policyId_fkey"
-      FOREIGN KEY ("policyId") REFERENCES "policies"("id")
+      ADD CONSTRAINT "policy_controls_policyId_organizationId_fkey"
+      FOREIGN KEY ("policyId", "organizationId") REFERENCES "policies"("id", "organizationId")
       ON DELETE CASCADE ON UPDATE CASCADE;
   END IF;
 
@@ -60,8 +70,7 @@ BEGIN
       FOREIGN KEY ("controlId", "organizationId") REFERENCES "controls"("id", "organizationId")
       ON DELETE CASCADE ON UPDATE CASCADE;
   END IF;
-END $$;
+END $block$;
 
 -- Add version column to policies if not exists for optimistic concurrency control
 ALTER TABLE "policies" ADD COLUMN IF NOT EXISTS "version" INTEGER NOT NULL DEFAULT 1;
-

@@ -1018,6 +1018,7 @@ model Policy {
   approvalAssociations PolicyApproval[]
   controlAssociations  PolicyControl[]
 
+  @@unique([id, organizationId])
   @@index([organizationId])
   @@index([departmentId])
   @@index([projectId])
@@ -1752,7 +1753,7 @@ model PolicyControl {
   updatedAt      DateTime      @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  policy       Policy       @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  policy       Policy       @relation(fields: [policyId, organizationId], references: [id, organizationId], onDelete: Cascade)
   control      Control      @relation(fields: [controlId, organizationId], references: [id, organizationId], onDelete: Cascade)
 
   @@unique([policyId, controlId])

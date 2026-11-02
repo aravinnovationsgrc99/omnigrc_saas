@@ -26,6 +26,12 @@ describe('PolicyControlsService', () => {
 
   beforeEach(async () => {
     prisma = {
+      $transaction: jest.fn().mockImplementation((cb: any) => {
+        if (typeof cb === 'function') {
+          return cb(prisma);
+        }
+        return Promise.all(cb);
+      }),
       policy: {
         findFirst: jest.fn(),
       },
@@ -136,6 +142,7 @@ describe('PolicyControlsService', () => {
           actorId: 'user-compliance-lead',
           entityType: 'PolicyControl',
         }),
+        expect.anything(),
       );
     });
 
@@ -247,6 +254,7 @@ describe('PolicyControlsService', () => {
           action: 'POLICY_CONTROL_UNMAPPED',
           organizationId: 'tenant-org-alpha',
         }),
+        expect.anything(),
       );
     });
 
@@ -396,6 +404,7 @@ describe('PolicyControlsService', () => {
         expect.objectContaining({
           action: 'POLICY_CONTROL_UPDATED',
         }),
+        expect.anything(),
       );
     });
 

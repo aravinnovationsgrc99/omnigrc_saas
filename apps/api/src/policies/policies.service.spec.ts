@@ -15,13 +15,42 @@ describe('PoliciesService', () => {
 
   beforeEach(async () => {
     prisma = {
+      $transaction: jest.fn().mockImplementation((cb: any) => {
+        if (typeof cb === 'function') {
+          return cb(prisma);
+        }
+        return Promise.all(cb);
+      }),
       policy: {
         findMany: jest.fn(),
         count: jest.fn(),
         findFirst: jest.fn(),
+        findUniqueOrThrow: jest.fn().mockImplementation(({ where }: any) => {
+          return {
+            id: where?.id || 'pol-1',
+            code: 'POL-001',
+            title: 'Updated Policy Title',
+            version: 2,
+            status: PolicyStatus.DRAFT,
+            publishedVersion: null,
+            versions: [],
+            _count: { controlAssociations: 0 },
+          };
+        }),
         create: jest.fn(),
-        update: jest.fn(),
-        updateMany: jest.fn(),
+        update: jest.fn().mockImplementation(({ where, data }: any) => ({
+          id: where.id,
+          code: 'POL-001',
+          title: data.title || 'Policy Title',
+          status: data.status || PolicyStatus.DRAFT,
+          version: typeof data.version === 'object' ? 2 : data.version || 1,
+          organizationId: 'org-1',
+          ownerId: 'user-1',
+          publishedVersion: null,
+          versions: [],
+          _count: { controlAssociations: 0 },
+        })),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         groupBy: jest.fn(),
       },
       policyVersion: {
@@ -737,6 +766,7 @@ describe('PoliciesService', () => {
           action: 'POLICY_REJECTED',
           organizationId: 'org-1',
         }),
+        expect.anything(),
       );
     });
 
@@ -787,6 +817,7 @@ describe('PoliciesService', () => {
         version: 3,
         updatedAt: new Date(),
       });
+      prisma.policy.updateMany.mockResolvedValueOnce({ count: 0 });
 
       await expect(
         service.updateMetadata(adminCtx, 'pol-ver-1', {
@@ -794,6 +825,41 @@ describe('PoliciesService', () => {
           expectedVersion: 2,
         }),
       ).rejects.toThrow(ConflictException);
+    });
+
+    it('should guarantee atomic concurrency: concurrent updates with same expectedVersion allows exactly one to succeed and one to receive 409', async () => {
+      prisma.policy.findFirst.mockResolvedValue({
+        id: 'pol-race-1',
+        code: 'POL-RACE-01',
+        title: 'Race Condition Test',
+        organizationId: 'org-1',
+        version: 1,
+        updatedAt: new Date(),
+      });
+
+      // Update 1 wins the atomic conditional update
+      prisma.policy.updateMany.mockResolvedValueOnce({ count: 1 });
+      // Update 2 loses because version was already incremented to 2
+      prisma.policy.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      const promise1 = service.updateMetadata(adminCtx, 'pol-race-1', {
+        title: 'Concurrent Winner',
+        expectedVersion: 1,
+      });
+
+      const promise2 = service.updateMetadata(adminCtx, 'pol-race-1', {
+        title: 'Concurrent Loser',
+        expectedVersion: 1,
+      });
+
+      const results = await Promise.allSettled([promise1, promise2]);
+
+      expect(results[0].status).toBe('fulfilled');
+      expect(results[1].status).toBe('rejected');
+      if (results[1].status === 'rejected') {
+        expect(results[1].reason).toBeInstanceOf(ConflictException);
+        expect(results[1].reason.message).toContain('Policy revision conflict');
+      }
     });
   });
 });

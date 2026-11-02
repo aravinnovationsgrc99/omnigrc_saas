@@ -442,7 +442,7 @@ export function ControlDetailView({ controlId, onBack, onNavigateToView }: Contr
           method: 'POST',
           body: JSON.stringify({
             rationale: policyMappingRationale || undefined,
-            status: MappingStatus.APPROVED,
+            status: MappingStatus.ACTIVE,
           }),
         },
       );
@@ -1159,8 +1159,8 @@ export function ControlDetailView({ controlId, onBack, onNavigateToView }: Contr
                   const scoreBandClass = ar.riskScoreBand === RiskScoreBand.HIGH
                     ? 'omni-badge-rose'
                     : ar.riskScoreBand === RiskScoreBand.MEDIUM
-                    ? 'omni-badge-amber'
-                    : 'omni-badge-teal';
+                      ? 'omni-badge-amber'
+                      : 'omni-badge-teal';
 
                   return (
                     <div
@@ -1687,8 +1687,8 @@ export function ControlDetailView({ controlId, onBack, onNavigateToView }: Contr
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={{
                           fontSize: 11, fontWeight: 600, padding: '1px 8px', borderRadius: 6,
-                          background: ap.status === MappingStatus.APPROVED ? '#E6F4EA' : '#F1F3F4',
-                          color: ap.status === MappingStatus.APPROVED ? '#137333' : '#5F6368',
+                          background: ap.status === MappingStatus.ACTIVE ? '#E6F4EA' : '#F1F3F4',
+                          color: ap.status === MappingStatus.ACTIVE ? '#137333' : '#5F6368',
                         }}>
                           {ap.status}
                         </span>

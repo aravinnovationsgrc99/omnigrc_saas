@@ -14,15 +14,19 @@ import { PrismaService } from '../prisma/prisma.service';
 export class AuditLogsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async log(params: {
-    organizationId: string;
-    actorId: string;
-    action: string;
-    entityType: string;
-    entityId: string;
-    metadata: Record<string, any>;
-  }) {
-    return this.prisma.auditLogEntry.create({
+  async log(
+    params: {
+      organizationId: string;
+      actorId: string;
+      action: string;
+      entityType: string;
+      entityId: string;
+      metadata: Record<string, any>;
+    },
+    tx?: any,
+  ) {
+    const client = tx || this.prisma;
+    return client.auditLogEntry.create({
       data: {
         organizationId: params.organizationId,
         actorId: params.actorId,

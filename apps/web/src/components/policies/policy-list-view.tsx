@@ -24,7 +24,6 @@ import { apiRequest } from '@/lib/api-client';
 import {
   PolicyDto,
   PolicyStatus,
-  MappingStatus,
   PaginatedPoliciesDto,
   PolicyCategoryDto,
   PolicyControlAssociationDto,
@@ -177,7 +176,7 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
           method: 'POST',
           body: JSON.stringify({
             rationale: mappingRationale || undefined,
-            status: MappingStatus.APPROVED,
+            status: 'ACTIVE',
           }),
         },
       );
@@ -443,11 +442,10 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
             <button
               key={st}
               onClick={() => setFilterStatus(st)}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-t-md transition-colors whitespace-nowrap ${
-                filterStatus === st
+              className={`px-3 py-1.5 text-xs font-semibold rounded-t-md transition-colors whitespace-nowrap ${filterStatus === st
                   ? 'bg-white border border-slate-200 border-b-white text-teal-800 -mb-px'
                   : 'text-slate-600 hover:text-slate-900'
-              }`}
+                }`}
             >
               {st.replace('_', ' ')}
             </button>
@@ -494,15 +492,14 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <span className="omni-mono text-xs font-bold text-slate-500">{p.code}</span>
                   <span
-                    className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${
-                      p.status === 'PUBLISHED'
+                    className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${p.status === 'PUBLISHED'
                         ? 'bg-emerald-100 text-emerald-800'
                         : p.status === 'APPROVED'
-                        ? 'bg-blue-100 text-blue-800'
-                        : p.status === 'UNDER_REVIEW'
-                        ? 'bg-amber-100 text-amber-800'
-                        : 'bg-slate-100 text-slate-700'
-                    }`}
+                          ? 'bg-blue-100 text-blue-800'
+                          : p.status === 'UNDER_REVIEW'
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-slate-100 text-slate-700'
+                      }`}
                   >
                     {p.status}
                   </span>
@@ -863,15 +860,14 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
                   {selectedPolicy.code}
                 </span>
                 <span
-                  className={`text-xs font-semibold px-2 py-0.5 rounded ${
-                    selectedPolicy.status === 'PUBLISHED'
+                  className={`text-xs font-semibold px-2 py-0.5 rounded ${selectedPolicy.status === 'PUBLISHED'
                       ? 'bg-emerald-100 text-emerald-800'
                       : selectedPolicy.status === 'APPROVED'
-                      ? 'bg-blue-100 text-blue-800'
-                      : selectedPolicy.status === 'UNDER_REVIEW'
-                      ? 'bg-amber-100 text-amber-800'
-                      : 'bg-slate-100 text-slate-700'
-                  }`}
+                        ? 'bg-blue-100 text-blue-800'
+                        : selectedPolicy.status === 'UNDER_REVIEW'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-slate-100 text-slate-700'
+                    }`}
                 >
                   {selectedPolicy.status}
                 </span>
@@ -1089,11 +1085,10 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
                             <div className="flex items-center gap-2">
                               <span className="font-semibold text-slate-900">{mc.controlName}</span>
                               <span
-                                className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                                  mc.status === MappingStatus.APPROVED
+                                className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${mc.status === 'ACTIVE'
                                     ? 'bg-emerald-100 text-emerald-800'
                                     : 'bg-slate-100 text-slate-700'
-                                }`}
+                                  }`}
                               >
                                 {mc.status}
                               </span>
@@ -1164,7 +1159,7 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
                     </div>
                     <PolicyEditor
                       content={selectedPolicy.publishedVersion.content}
-                      onChange={() => {}}
+                      onChange={() => { }}
                       readOnly={true}
                     />
                   </div>
@@ -1188,7 +1183,7 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
                     </div>
                     <PolicyEditor
                       content={selectedPolicy.versions[0].content}
-                      onChange={() => {}}
+                      onChange={() => { }}
                       readOnly={true}
                     />
                   </div>

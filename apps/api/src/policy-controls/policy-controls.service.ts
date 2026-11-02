@@ -265,62 +265,68 @@ export class PolicyControlsService {
     const status = dto.status || MappingStatus.APPROVED;
     const rationale = dto.rationale !== undefined ? dto.rationale.trim() || null : null;
 
-    const association = await this.prisma.policyControl.upsert({
-      where: {
-        policyId_controlId: {
+    const association = await this.prisma.$transaction(async (tx) => {
+      const assoc = await tx.policyControl.upsert({
+        where: {
+          policyId_controlId: {
+            policyId,
+            controlId,
+          },
+        },
+        create: {
+          organizationId: authCtx.organizationId,
           policyId,
           controlId,
+          status: status as any,
+          rationale,
+          createdById: authCtx.userId,
         },
-      },
-      create: {
-        organizationId: authCtx.organizationId,
-        policyId,
-        controlId,
-        status: status as any,
-        rationale,
-        createdById: authCtx.userId,
-      },
-      update: {
-        status: status as any,
-        ...(dto.rationale !== undefined ? { rationale } : {}),
-      },
-      include: {
-        control: {
-          include: {
-            mappings: {
-              include: {
-                frameworkReference: {
-                  include: {
-                    frameworkVersion: {
+        update: {
+          status: status as any,
+          ...(dto.rationale !== undefined ? { rationale } : {}),
+        },
+        include: {
+          control: {
+            include: {
+              mappings: {
+                include: {
+                  frameworkReference: {
+                    include: {
+                      frameworkVersion: {
                         include: {
                           framework: true,
                         },
                       },
+                    },
                   },
+                  frameworkClause: true,
                 },
-                frameworkClause: true,
               },
             },
           },
         },
-      },
-    });
+      });
 
-    // 4. Audit logging
-    await this.auditLogsService.log({
-      action: 'POLICY_CONTROL_MAPPED',
-      actorId: authCtx.userId,
-      organizationId: authCtx.organizationId,
-      entityType: 'PolicyControl',
-      entityId: association.id,
-      metadata: {
-        policyId,
-        policyCode: policy.code,
-        controlId,
-        controlName: control.name,
-        status,
-        rationale,
-      },
+      await this.auditLogsService.log(
+        {
+          action: 'POLICY_CONTROL_MAPPED',
+          actorId: authCtx.userId,
+          organizationId: authCtx.organizationId,
+          entityType: 'PolicyControl',
+          entityId: assoc.id,
+          metadata: {
+            policyId,
+            policyCode: policy.code,
+            controlId,
+            controlName: control.name,
+            status,
+            rationale,
+          },
+        },
+        tx,
+      );
+
+      return assoc;
     });
 
     const frameworkMappings = association.control.mappings.map((m) => ({
@@ -367,48 +373,55 @@ export class PolicyControlsService {
 
     const rationale = dto.rationale !== undefined ? dto.rationale.trim() || null : undefined;
 
-    const updated = await this.prisma.policyControl.update({
-      where: {
-        id: existing.id,
-      },
-      data: {
-        ...(dto.status !== undefined ? { status: dto.status as any } : {}),
-        ...(rationale !== undefined ? { rationale } : {}),
-      },
-      include: {
-        control: {
-          include: {
-            mappings: {
-              include: {
-                frameworkReference: {
-                  include: {
-                    frameworkVersion: {
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const res = await tx.policyControl.update({
+        where: {
+          id: existing.id,
+        },
+        data: {
+          ...(dto.status !== undefined ? { status: dto.status as any } : {}),
+          ...(rationale !== undefined ? { rationale } : {}),
+        },
+        include: {
+          control: {
+            include: {
+              mappings: {
+                include: {
+                  frameworkReference: {
+                    include: {
+                      frameworkVersion: {
                         include: {
                           framework: true,
                         },
                       },
+                    },
                   },
+                  frameworkClause: true,
                 },
-                frameworkClause: true,
               },
             },
           },
         },
-      },
-    });
+      });
 
-    await this.auditLogsService.log({
-      action: 'POLICY_CONTROL_UPDATED',
-      actorId: authCtx.userId,
-      organizationId: authCtx.organizationId,
-      entityType: 'PolicyControl',
-      entityId: updated.id,
-      metadata: {
-        policyId,
-        controlId,
-        status: updated.status,
-        rationale: updated.rationale,
-      },
+      await this.auditLogsService.log(
+        {
+          action: 'POLICY_CONTROL_UPDATED',
+          actorId: authCtx.userId,
+          organizationId: authCtx.organizationId,
+          entityType: 'PolicyControl',
+          entityId: res.id,
+          metadata: {
+            policyId,
+            controlId,
+            status: res.status,
+            rationale: res.rationale,
+          },
+        },
+        tx,
+      );
+
+      return res;
     });
 
     const frameworkMappings = updated.control.mappings.map((m) => ({
@@ -456,24 +469,29 @@ export class PolicyControlsService {
       throw new NotFoundException(`Mapping between Policy "${policyId}" and Control "${controlId}" not found`);
     }
 
-    await this.prisma.policyControl.delete({
-      where: {
-        id: existing.id,
-      },
-    });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.policyControl.delete({
+        where: {
+          id: existing.id,
+        },
+      });
 
-    await this.auditLogsService.log({
-      action: 'POLICY_CONTROL_UNMAPPED',
-      actorId: authCtx.userId,
-      organizationId: authCtx.organizationId,
-      entityType: 'PolicyControl',
-      entityId: existing.id,
-      metadata: {
-        policyId,
-        policyCode: existing.policy.code,
-        controlId,
-        controlName: existing.control.name,
-      },
+      await this.auditLogsService.log(
+        {
+          action: 'POLICY_CONTROL_UNMAPPED',
+          actorId: authCtx.userId,
+          organizationId: authCtx.organizationId,
+          entityType: 'PolicyControl',
+          entityId: existing.id,
+          metadata: {
+            policyId,
+            policyCode: existing.policy.code,
+            controlId,
+            controlName: existing.control.name,
+          },
+        },
+        tx,
+      );
     });
 
     return {
