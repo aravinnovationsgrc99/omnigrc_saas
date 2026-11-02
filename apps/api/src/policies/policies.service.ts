@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  ConflictException,
   Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
@@ -226,6 +227,24 @@ export class PoliciesService {
 
     if (!existing) {
       throw new NotFoundException(`Policy with ID "${id}" not found`);
+    }
+
+    if (dto.expectedUpdatedAt) {
+      const expected = new Date(dto.expectedUpdatedAt).getTime();
+      const current = new Date(existing.updatedAt).getTime();
+      if (Math.abs(current - expected) > 1000) {
+        throw new ConflictException(
+          'Policy was updated by another user. Please reload the latest changes.',
+        );
+      }
+    }
+
+    if (dto.expectedVersion !== undefined && (existing as any).version !== undefined) {
+      if ((existing as any).version !== dto.expectedVersion) {
+        throw new ConflictException(
+          'Policy version conflict detected. Please reload the latest changes.',
+        );
+      }
     }
 
     if (dto.departmentId !== undefined || dto.projectId !== undefined) {
@@ -735,6 +754,63 @@ export class PoliciesService {
     return this.mapToDto(updated);
   }
 
+
+
+  async reject(authCtx: ResourceAuthContext, id: string, reason?: string): Promise<PolicyDto> {
+    if (authCtx.role !== Role.ADMIN && authCtx.role !== Role.MSSP_ADMIN) {
+      throw new ForbiddenException('Only ADMIN users can reject policy documents');
+    }
+
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+    const policy = await this.prisma.policy.findFirst({
+      where: { id, ...scopeWhere, deletedAt: null },
+    });
+
+    if (!policy) throw new NotFoundException(`Policy with ID "${id}" not found`);
+    if (policy.status !== PolicyStatus.UNDER_REVIEW) {
+      throw new BadRequestException(`Cannot reject policy from state "${policy.status}". Must be UNDER_REVIEW.`);
+    }
+
+    const updated = await this.prisma.policy.update({
+      where: { id },
+      data: {
+        status: PolicyStatus.DRAFT,
+        version: { increment: 1 },
+      },
+      include: {
+        publishedVersion: true,
+        versions: true,
+        _count: {
+          select: {
+            controlAssociations: true,
+          },
+        },
+      },
+    });
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'POLICY_REJECTED',
+      entityType: 'Policy',
+      entityId: id,
+      metadata: { code: updated.code, newStatus: updated.status, reason },
+    });
+
+    if (this.notificationsService && updated.ownerId) {
+      await this.notificationsService.notify({
+        organizationId: authCtx.organizationId,
+        userId: updated.ownerId,
+        type: NotificationType.TASK_ASSIGNED,
+        message: `Policy "${updated.title}" (${updated.code}) review was rejected and returned to Draft.${reason ? ` Reason: ${reason}` : ''}`,
+        entityType: 'Policy',
+        entityId: id,
+      });
+    }
+
+    return this.mapToDto(updated);
+  }
+
   async publish(authCtx: ResourceAuthContext, id: string, versionId?: string): Promise<PolicyDto> {
     const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
     const policy = await this.prisma.policy.findFirst({
@@ -1235,6 +1311,8 @@ export class PoliciesService {
       createdById: policy.createdById,
       createdAt: this.toIsoString(policy.createdAt),
       updatedAt: this.toIsoString(policy.updatedAt),
+      version: policy.version ?? 1,
+      mappedControlCount: policy._count?.controlAssociations ?? policy.controlAssociations?.length ?? 0,
     } as any;
   }
 }

@@ -88,6 +88,15 @@ export class UpdatePolicyDto {
   @IsString()
   @IsOptional()
   content?: string;
+
+  @IsString()
+  @IsOptional()
+  expectedUpdatedAt?: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @IsOptional()
+  expectedVersion?: number;
 }
 
 export class CreatePolicyCategoryDto {

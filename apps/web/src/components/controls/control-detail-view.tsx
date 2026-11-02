@@ -24,6 +24,10 @@ import {
   EvidenceType,
   EvidenceStatus,
   EvidenceScanStatus,
+  ControlPolicyAssociationDto,
+  PaginatedControlPolicyAssociationsDto,
+  PolicyDto,
+  PaginatedPoliciesDto,
 } from '@omnigrc/shared';
 
 import { apiRequest, getStoredTokens } from '@/lib/api-client';
@@ -153,6 +157,17 @@ export function ControlDetailView({ controlId, onBack, onNavigateToView }: Contr
   const [uploadEvidenceType, setUploadEvidenceType] = useState<EvidenceType>(EvidenceType.DOCUMENT);
   const [uploadingEvidence, setUploadingEvidence] = useState(false);
   const [uploadEvidenceError, setUploadEvidenceError] = useState<string | null>(null);
+
+  // Associated Policies State
+  const [associatedPolicies, setAssociatedPolicies] = useState<ControlPolicyAssociationDto[]>([]);
+  const [loadingPolicies, setLoadingPolicies] = useState(false);
+  const [policiesError, setPoliciesError] = useState<string | null>(null);
+  const [availablePolicies, setAvailablePolicies] = useState<PolicyDto[]>([]);
+  const [selectedPolicyIdToMap, setSelectedPolicyIdToMap] = useState<string>('');
+  const [policyMappingRationale, setPolicyMappingRationale] = useState<string>('');
+  const [mappingPolicy, setMappingPolicy] = useState(false);
+  const [unmappingPolicyId, setUnmappingPolicyId] = useState<string | null>(null);
+  const [mapPolicyError, setMapPolicyError] = useState<string | null>(null);
 
 
   // Fetch Associated Risks
@@ -373,6 +388,88 @@ export function ControlDetailView({ controlId, onBack, onNavigateToView }: Contr
       showToast('Evidence downloaded successfully');
     } catch (err: any) {
       showToast(err.message || 'Download failed', 'error');
+    }
+  };
+
+  // Fetch Associated Policies
+  const fetchAssociatedPolicies = useCallback(async () => {
+    if (!controlId) return;
+    setLoadingPolicies(true);
+    setPoliciesError(null);
+    try {
+      const res = await apiRequest<PaginatedControlPolicyAssociationsDto>(
+        `/policy-controls/controls/${controlId}/policies?limit=50`,
+      );
+      setAssociatedPolicies(res.items || []);
+    } catch (err: any) {
+      setPoliciesError(err.message || 'Failed to load mapped policies');
+    } finally {
+      setLoadingPolicies(false);
+    }
+  }, [controlId]);
+
+  const fetchAvailablePolicies = useCallback(async () => {
+    try {
+      const res = await apiRequest<PaginatedPoliciesDto>('/policies?limit=100');
+      setAvailablePolicies(res.items || []);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    if (controlId) {
+      fetchAssociatedPolicies();
+    } else {
+      setAssociatedPolicies([]);
+      setPoliciesError(null);
+    }
+  }, [controlId, fetchAssociatedPolicies]);
+
+  useEffect(() => {
+    fetchAvailablePolicies();
+  }, [fetchAvailablePolicies]);
+
+  const handleMapPolicy = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPolicyIdToMap || !controlId || mappingPolicy) return;
+    setMappingPolicy(true);
+    setMapPolicyError(null);
+    try {
+      await apiRequest(
+        `/policy-controls/policies/${selectedPolicyIdToMap}/controls/${controlId}`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            rationale: policyMappingRationale || undefined,
+            status: MappingStatus.APPROVED,
+          }),
+        },
+      );
+      showToast('Policy mapped to control successfully');
+      setSelectedPolicyIdToMap('');
+      setPolicyMappingRationale('');
+      await fetchAssociatedPolicies();
+    } catch (err: any) {
+      setMapPolicyError(err.message || 'Failed to map policy');
+    } finally {
+      setMappingPolicy(false);
+    }
+  };
+
+  const handleUnmapPolicy = async (policyId: string) => {
+    if (!controlId) return;
+    setUnmappingPolicyId(policyId);
+    try {
+      await apiRequest(`/policy-controls/policies/${policyId}/controls/${controlId}`, {
+        method: 'DELETE',
+      });
+      showToast('Policy unmapped from control');
+      await fetchAssociatedPolicies();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to unmap policy', 'error');
+    } finally {
+      setUnmappingPolicyId(null);
     }
   };
 
@@ -1489,6 +1586,211 @@ export function ControlDetailView({ controlId, onBack, onNavigateToView }: Contr
             ) : (
               <div style={{ fontSize: 12, color: '#8B95A1', fontStyle: 'italic', marginBottom: 12 }}>
                 Evidence attachments are view-only under your current role, organization state, or license entitlement.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ======================================================== */}
+      {/* SECTION 4.5: MAPPED POLICIES & PROCEDURES (GOVERNANCE)  */}
+      {/* ======================================================== */}
+      <div style={{ marginBottom: 16, marginTop: 36, borderTop: '1px solid #E2E6E4', paddingTop: 28 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{
+              width: 28, height: 28, borderRadius: 6, background: '#E6F4EA', color: '#137333',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <FileCheck size={15} />
+            </div>
+            <h2 style={{ fontSize: 16, fontWeight: 600, color: '#1B2430', margin: 0 }}>
+              Mapped Policies & Procedures
+            </h2>
+            <span style={{
+              fontSize: 11, background: '#EDEFED', color: '#5B6672',
+              padding: '1px 8px', borderRadius: 10, fontWeight: 600,
+            }}>
+              {associatedPolicies.length}
+            </span>
+          </div>
+          <button
+            onClick={fetchAssociatedPolicies}
+            className="omni-btn-ghost"
+            style={{ fontSize: 12, height: 32, padding: '0 10px', display: 'flex', alignItems: 'center', gap: 6 }}
+            title="Refresh mapped policies"
+          >
+            <RotateCw size={13} />
+          </button>
+        </div>
+        <p style={{ fontSize: 13, color: '#5B6672', marginBottom: 20 }}>
+          Organizational policies and procedures governing or implemented by this control. Establishes bi-directional governance traceability.
+        </p>
+
+        {loadingPolicies ? (
+          <div style={{ padding: '24px', textAlign: 'center', color: '#8B95A1', fontSize: 13 }}>
+            Loading mapped policies...
+          </div>
+        ) : policiesError ? (
+          <div style={{
+            padding: '12px 16px', background: '#F8E6E8', border: '1px solid #B23A48',
+            borderRadius: 8, color: '#801F2B', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          }}>
+            <span>{policiesError}</span>
+            <button
+              onClick={fetchAssociatedPolicies}
+              className="omni-btn-ghost"
+              style={{ fontSize: 12, color: '#801F2B', borderColor: '#B23A48' }}
+            >
+              Retry
+            </button>
+          </div>
+        ) : (
+          <div>
+            {associatedPolicies.length === 0 ? (
+              <div style={{
+                background: '#FFFFFF', border: '1px dashed #D2D7D5', borderRadius: 10,
+                padding: '32px 24px', textAlign: 'center', color: '#8B95A1', fontSize: 13, marginBottom: 20,
+              }}>
+                No organizational policies currently mapped to this control.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
+                {associatedPolicies.map((ap) => (
+                  <div
+                    key={ap.id}
+                    style={{
+                      background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10,
+                      padding: '16px 20px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+                      display: 'flex', flexDirection: 'column', gap: 10,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: '#1B2430' }}>
+                          {ap.policyTitle}
+                        </span>
+                        <span style={{
+                          fontSize: 11, fontFamily: 'monospace', fontWeight: 600,
+                          background: '#E8F0FE', color: '#1A73E8', padding: '1px 8px', borderRadius: 6,
+                        }}>
+                          {ap.policyCode}
+                        </span>
+                        <span style={{
+                          fontSize: 11, fontWeight: 600, padding: '1px 8px', borderRadius: 6,
+                          background: ap.policyStatus === 'PUBLISHED' ? '#E6F4EA' : '#FEF7E0',
+                          color: ap.policyStatus === 'PUBLISHED' ? '#137333' : '#B06000',
+                        }}>
+                          {ap.policyStatus}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{
+                          fontSize: 11, fontWeight: 600, padding: '1px 8px', borderRadius: 6,
+                          background: ap.status === MappingStatus.APPROVED ? '#E6F4EA' : '#F1F3F4',
+                          color: ap.status === MappingStatus.APPROVED ? '#137333' : '#5F6368',
+                        }}>
+                          {ap.status}
+                        </span>
+                        {canMutateControlEvidence && (
+                          <button
+                            onClick={() => handleUnmapPolicy(ap.policyId)}
+                            disabled={unmappingPolicyId === ap.policyId}
+                            className="omni-btn-ghost"
+                            style={{
+                              fontSize: 12, color: '#B23A48', borderColor: '#F2D6D8',
+                              padding: '2px 8px', height: 26, display: 'flex', alignItems: 'center', gap: 4,
+                            }}
+                            title="Unmap policy from control"
+                          >
+                            <Trash2 size={12} />
+                            {unmappingPolicyId === ap.policyId ? 'Unmapping...' : 'Unmap'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 16, fontSize: 12, color: '#5B6672' }}>
+                      <span><strong>Category:</strong> {ap.policyCategory}</span>
+                      <span><strong>Owner:</strong> {ap.policyOwnerId}</span>
+                      <span><strong>Version:</strong> {ap.publishedVersionNumber ? `v${ap.publishedVersionNumber}` : 'Draft'}</span>
+                    </div>
+                    {ap.rationale && (
+                      <div style={{ fontSize: 12, color: '#5B6672', fontStyle: 'italic', background: '#F8F9FA', padding: '6px 12px', borderRadius: 6 }}>
+                        <strong>Rationale:</strong> {ap.rationale}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Associate Existing Policy Selector */}
+            {canMutateControlEvidence ? (
+              <div style={{
+                background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10,
+                padding: '16px 20px',
+              }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#1B2430', display: 'block', marginBottom: 8 }}>
+                  Map an Existing Policy to this Control
+                </span>
+                {mapPolicyError && (
+                  <div style={{
+                    padding: '8px 12px', background: '#F8E6E8', border: '1px solid #B23A48',
+                    borderRadius: 6, color: '#801F2B', fontSize: 12, marginBottom: 12,
+                  }}>
+                    {mapPolicyError}
+                  </div>
+                )}
+                <form onSubmit={handleMapPolicy} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 12, alignItems: 'end' }}>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 4 }}>
+                        Select Policy
+                      </label>
+                      <select
+                        value={selectedPolicyIdToMap}
+                        onChange={(e) => setSelectedPolicyIdToMap(e.target.value)}
+                        className="omni-select"
+                        style={{ width: '100%', fontSize: 13 }}
+                      >
+                        <option value="">-- Select Active Policy --</option>
+                        {availablePolicies
+                          .filter((p) => !associatedPolicies.some((ap) => ap.policyId === p.id))
+                          .map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.code} - {p.title} ({p.status})
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 4 }}>
+                        Mapping Rationale / Enforcement Context
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Mandatory governance framework rule for this control"
+                        value={policyMappingRationale}
+                        onChange={(e) => setPolicyMappingRationale(e.target.value)}
+                        className="omni-input"
+                        style={{ width: '100%', fontSize: 13 }}
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={!selectedPolicyIdToMap || mappingPolicy}
+                      className="omni-btn-primary"
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', height: 38 }}
+                    >
+                      <Plus size={14} />
+                      {mappingPolicy ? 'Mapping...' : 'Map Policy'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: '#8B95A1', fontStyle: 'italic', marginBottom: 12 }}>
+                Policy mapping is view-only under your current role or license entitlement.
               </div>
             )}
           </div>

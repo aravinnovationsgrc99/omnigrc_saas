@@ -209,6 +209,21 @@ export class PoliciesController {
     };
     return this.policiesService.approve(authCtx, id);
   }
+  @Post(':id/reject')
+  @RequiresActiveLicense()
+  @Roles(Role.ADMIN, Role.MSSP_ADMIN)
+  async reject(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body('reason') reason?: string,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.policiesService.reject(authCtx, id, reason);
+  }
 
   @Post(':id/publish')
   @RequiresActiveLicense()

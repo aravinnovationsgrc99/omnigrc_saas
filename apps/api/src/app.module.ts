@@ -20,6 +20,7 @@ import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
 import { TenantTransactionInterceptor } from './tenant/tenant-transaction.interceptor';
 import { LicenseWriteGuard } from './common/guards/license-write.guard';
 import { RiskControlsModule } from './risk-controls/risk-controls.module';
+import { PolicyControlsModule } from './policy-controls/policy-controls.module';
 
 import { VendorsModule } from './vendors/vendors.module';
 import { VulnerabilitiesModule } from './vulnerabilities/vulnerabilities.module';
@@ -73,6 +74,7 @@ import { RegulatoryIntelligenceModule } from './regulatory-intelligence/regulato
     RisksModule,
     ControlsModule,
     RiskControlsModule,
+    PolicyControlsModule,
     ComplianceTasksModule,
     NotificationsModule,
     IntegrationsModule,

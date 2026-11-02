@@ -1490,6 +1490,8 @@ export interface PolicyExceptionDto {
   expiresAt?: Date | string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
+  version?: number;
+  mappedControlCount?: number;
 }
 
 export interface PolicyDto {
@@ -1511,6 +1513,8 @@ export interface PolicyDto {
   createdById: string;
   createdAt: Date | string;
   updatedAt: Date | string;
+  version?: number;
+  mappedControlCount?: number;
 }
 
 export interface PaginatedPoliciesDto {
@@ -1533,6 +1537,8 @@ export interface VendorAssessmentDto {
   completedAt?: Date | string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
+  version?: number;
+  mappedControlCount?: number;
 }
 
 export type VendorLifecycleStage =
@@ -1811,6 +1817,8 @@ export interface AuditCheckItemDto {
   createdById: string;
   createdAt: Date | string;
   updatedAt: Date | string;
+  version?: number;
+  mappedControlCount?: number;
 }
 
 export interface AuditCapaDto {
@@ -1901,6 +1909,8 @@ export interface AuditScheduleDto {
   nextAuditDate?: Date | string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
+  version?: number;
+  mappedControlCount?: number;
 }
 
 export interface AuditPlanScopeReferenceDto {
@@ -2164,6 +2174,8 @@ export interface UserDashboardPreferenceDto {
   };
   createdAt: Date | string;
   updatedAt: Date | string;
+  version?: number;
+  mappedControlCount?: number;
 }
 
 export interface UpdateDashboardPreferenceDto {
@@ -2321,6 +2333,8 @@ export interface IncidentDto {
   createdById: string;
   createdAt: Date | string;
   updatedAt: Date | string;
+  version?: number;
+  mappedControlCount?: number;
 }
 
 export interface IncidentActionDto {
@@ -3838,3 +3852,70 @@ export const EXACT_TEN_PREDEFINED_QUESTIONS: GrcSuggestedQuestion[] = [
     description: 'Synthesizes urgent risks, audit deadlines, evidence expirations, and critical tasks.',
   },
 ];
+
+// Phase 4: Policy & Control Mapping Types
+export interface PolicyControlDto {
+  id: string;
+  organizationId: string;
+  policyId: string;
+  controlId: string;
+  status: MappingStatus;
+  rationale?: string | null;
+  createdById?: string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+  version?: number;
+  mappedControlCount?: number;
+}
+
+export interface AssociatePolicyControlDto {
+  policyId?: string;
+  controlId?: string;
+  status?: MappingStatus;
+  rationale?: string;
+}
+
+export interface PolicyControlAssociationDto {
+  id: string;
+  controlId: string;
+  controlName: string;
+  controlDescription?: string;
+  controlCategory?: string | null;
+  status: MappingStatus;
+  rationale?: string | null;
+  frameworkMappings?: {
+    frameworkName: string;
+    frameworkCode: string;
+    clauseCode?: string;
+    clauseTitle?: string;
+  }[];
+  createdAt: Date | string;
+}
+
+export interface ControlPolicyAssociationDto {
+  id: string;
+  policyId: string;
+  policyCode: string;
+  policyTitle: string;
+  policyCategory: string;
+  policyStatus: PolicyStatus;
+  policyOwnerId: string;
+  publishedVersionNumber?: string | null;
+  status: MappingStatus;
+  rationale?: string | null;
+  createdAt: Date | string;
+}
+
+export interface PaginatedPolicyControlAssociationsDto {
+  items: PolicyControlAssociationDto[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface PaginatedControlPolicyAssociationsDto {
+  items: ControlPolicyAssociationDto[];
+  total: number;
+  page: number;
+  limit: number;
+}

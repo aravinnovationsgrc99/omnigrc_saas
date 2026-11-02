@@ -199,63 +199,64 @@ enum OrgType {
 }
 
 model Organization {
-  id                  String   @id @default(uuid())
-  name                String
-  type                OrgType  @default(STANDALONE)
+  id                   String   @id @default(uuid())
+  name                 String
+  type                 OrgType  @default(STANDALONE)
   parentOrganizationId String?
-  primaryRegion       String   @default("India")
-  slackWebhookUrl     String?
-  primaryFramework    String?
-  onboardingCompleted Boolean  @default(false)
-  createdAt           DateTime @default(now())
+  primaryRegion        String   @default("India")
+  slackWebhookUrl      String?
+  primaryFramework     String?
+  onboardingCompleted  Boolean  @default(false)
+  createdAt            DateTime @default(now())
 
-  parentOrganization  Organization?  @relation("OrgHierarchy", fields: [parentOrganizationId], references: [id], onDelete: SetNull)
-  subOrganizations    Organization[] @relation("OrgHierarchy")
+  parentOrganization Organization?  @relation("OrgHierarchy", fields: [parentOrganizationId], references: [id], onDelete: SetNull)
+  subOrganizations   Organization[] @relation("OrgHierarchy")
 
-  users           User[]
-  memberships     OrganizationMembership[]
-  departments     Department[]
-  projects        Project[]
-  regionalPods    RegionalPod[]
-  auditLogs       AuditLogEntry[]
-  assets          Asset[]
-  risks           Risk[]
-  controls        Control[]
-  riskControls    RiskControl[]
-  complianceTasks ComplianceTask[]
-  notifications   Notification[]
-  invitations     Invitation[]
-  vendors         Vendor[]
-  vulnerabilities Vulnerability[]
-  policies        Policy[]
-  policyCategories PolicyCategory[]
-  auditPlans      AuditPlan[]
-  auditFindingVerificationHistories AuditFindingVerificationHistory[]
-  incidents       Incident[]
-  dashboardPreferences UserDashboardPreference[]
-  frameworkEntitlements OrganizationFrameworkEntitlement[]
-  evidences           Evidence[]
-  approvalWorkflows   ApprovalWorkflow[]
-  approvalInstances   ApprovalInstance[]
-  vendorQuestionnaires VendorQuestionnaire[]
-  vendorQuestionnaireSubmissions VendorQuestionnaireSubmission[]
-  documentAnalyses    DocumentAnalysis[]
-  extractedFindings   ExtractedFinding[]
-  deployment          Deployment?
-  systemLicenseState  SystemLicenseState?
-  controlStateProjection OrganizationControlStateProjection?
-  serviceOverrideProjections OrganizationServiceOverrideProjection[]
-  manualSourceIntakes ManualSourceIntake[]
-  regulatoryObligations RegulatoryObligation[]
-  complianceProfile   OrganizationComplianceProfile?
-  applicabilityAssessments RegulatoryApplicabilityAssessment[]
-  applicabilityHistories   RegulatoryApplicabilityHistory[]
-  regulatoryObligationControlMappings RegulatoryObligationControlMapping[]
+  users                                       User[]
+  memberships                                 OrganizationMembership[]
+  departments                                 Department[]
+  projects                                    Project[]
+  regionalPods                                RegionalPod[]
+  auditLogs                                   AuditLogEntry[]
+  assets                                      Asset[]
+  risks                                       Risk[]
+  controls                                    Control[]
+  riskControls                                RiskControl[]
+  complianceTasks                             ComplianceTask[]
+  notifications                               Notification[]
+  invitations                                 Invitation[]
+  vendors                                     Vendor[]
+  vulnerabilities                             Vulnerability[]
+  policies                                    Policy[]
+  policyCategories                            PolicyCategory[]
+  auditPlans                                  AuditPlan[]
+  auditFindingVerificationHistories           AuditFindingVerificationHistory[]
+  incidents                                   Incident[]
+  dashboardPreferences                        UserDashboardPreference[]
+  frameworkEntitlements                       OrganizationFrameworkEntitlement[]
+  evidences                                   Evidence[]
+  approvalWorkflows                           ApprovalWorkflow[]
+  approvalInstances                           ApprovalInstance[]
+  vendorQuestionnaires                        VendorQuestionnaire[]
+  vendorQuestionnaireSubmissions              VendorQuestionnaireSubmission[]
+  documentAnalyses                            DocumentAnalysis[]
+  extractedFindings                           ExtractedFinding[]
+  deployment                                  Deployment?
+  systemLicenseState                          SystemLicenseState?
+  controlStateProjection                      OrganizationControlStateProjection?
+  serviceOverrideProjections                  OrganizationServiceOverrideProjection[]
+  manualSourceIntakes                         ManualSourceIntake[]
+  regulatoryObligations                       RegulatoryObligation[]
+  complianceProfile                           OrganizationComplianceProfile?
+  applicabilityAssessments                    RegulatoryApplicabilityAssessment[]
+  applicabilityHistories                      RegulatoryApplicabilityHistory[]
+  regulatoryObligationControlMappings         RegulatoryObligationControlMapping[]
   regulatoryObligationControlMappingHistories RegulatoryObligationControlMappingHistory[]
-  regulatoryControlGapAssessments RegulatoryControlGapAssessment[]
-  regulatoryControlGapAssessmentHistories RegulatoryControlGapAssessmentHistory[]
-  regulatoryRemediationTasks   RegulatoryRemediationTask[]
-  regulatoryRemediationHistories RegulatoryRemediationHistory[]
+  regulatoryControlGapAssessments             RegulatoryControlGapAssessment[]
+  regulatoryControlGapAssessmentHistories     RegulatoryControlGapAssessmentHistory[]
+  regulatoryRemediationTasks                  RegulatoryRemediationTask[]
+  regulatoryRemediationHistories              RegulatoryRemediationHistory[]
+  PolicyControl                               PolicyControl[]
 
   @@index([parentOrganizationId])
   @@map("organizations")
@@ -366,7 +367,7 @@ model Asset {
 }
 
 model Risk {
-  id                   String              @id @default(uuid())
+  id                   String     @id @default(uuid())
   organizationId       String
   departmentId         String?
   projectId            String?
@@ -375,7 +376,7 @@ model Risk {
   likelihood           Int
   impact               Int
   score                Int
-  status               RiskStatus          @default(OPEN)
+  status               RiskStatus @default(OPEN)
   owner                String
   assetId              String?
   frameworkId          String?
@@ -389,19 +390,19 @@ model Risk {
   treatmentOwner       String?
   treatmentDueDate     DateTime?
   treatmentStatus      String?
-  createdAt            DateTime            @default(now())
-  updatedAt            DateTime            @updatedAt
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
   createdById          String
   deletedAt            DateTime?
 
-  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  departmentRef      Department?         @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  projectRef         Project?            @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  asset              Asset?              @relation(fields: [assetId], references: [id], onDelete: SetNull)
-  framework          Framework?          @relation(fields: [frameworkId], references: [id], onDelete: SetNull)
-  frameworkReference FrameworkReference? @relation(fields: [frameworkReferenceId], references: [id], onDelete: SetNull)
-  vendorAssessments  VendorAssessment[]
-  auditFindings      AuditFinding[]
+  organization         Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  departmentRef        Department?         @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  projectRef           Project?            @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  asset                Asset?              @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  framework            Framework?          @relation(fields: [frameworkId], references: [id], onDelete: SetNull)
+  frameworkReference   FrameworkReference? @relation(fields: [frameworkReferenceId], references: [id], onDelete: SetNull)
+  vendorAssessments    VendorAssessment[]
+  auditFindings        AuditFinding[]
   evidenceAssociations RiskEvidence[]
   approvalAssociations RiskApproval[]
   controlAssociations  RiskControl[]
@@ -421,22 +422,22 @@ model Risk {
 }
 
 model User {
-  id                 String   @id @default(uuid())
-  organizationId     String
-  name               String
-  email              String   @unique
-  passwordHash       String
-  role                  Role         @default(ANALYST)
-  emailNotifications    Boolean      @default(true)
-  passwordSetupRequired Boolean      @default(false)
-  createdAt             DateTime     @default(now())
+  id                    String   @id @default(uuid())
+  organizationId        String
+  name                  String
+  email                 String   @unique
+  passwordHash          String
+  role                  Role     @default(ANALYST)
+  emailNotifications    Boolean  @default(true)
+  passwordSetupRequired Boolean  @default(false)
+  createdAt             DateTime @default(now())
 
-  organization        Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  memberships         OrganizationMembership[] @relation("UserMemberships")
-  revokedMemberships  OrganizationMembership[] @relation("RevokedMemberships")
-  notifications       Notification[]
-  invitationsSent     Invitation[]             @relation("InvitedUsers")
-  dashboardPreferences UserDashboardPreference[]
+  organization                      Organization                      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  memberships                       OrganizationMembership[]          @relation("UserMemberships")
+  revokedMemberships                OrganizationMembership[]          @relation("RevokedMemberships")
+  notifications                     Notification[]
+  invitationsSent                   Invitation[]                      @relation("InvitedUsers")
+  dashboardPreferences              UserDashboardPreference[]
   auditFindingVerificationHistories AuditFindingVerificationHistory[]
 
   @@index([organizationId])
@@ -530,9 +531,9 @@ model FrameworkVersion {
   createdAt     DateTime               @default(now())
   updatedAt     DateTime               @updatedAt
 
-  framework    Framework                          @relation(fields: [frameworkId], references: [id], onDelete: Cascade)
-  references   FrameworkReference[]
-  entitlements OrganizationFrameworkEntitlement[]
+  framework        Framework                          @relation(fields: [frameworkId], references: [id], onDelete: Cascade)
+  references       FrameworkReference[]
+  entitlements     OrganizationFrameworkEntitlement[]
   documentAnalyses DocumentAnalysis[]
   auditPlans       AuditPlan[]
 
@@ -585,13 +586,13 @@ model FrameworkReference {
   parentRef        FrameworkReference?  @relation("ReferenceHierarchy", fields: [parentRefId], references: [id], onDelete: SetNull)
   childRefs        FrameworkReference[] @relation("ReferenceHierarchy")
 
-  mappings ControlFrameworkMapping[]
+  mappings             ControlFrameworkMapping[]
   evidenceAssociations EvidenceFrameworkReference[]
-  approvalInstances ApprovalInstance[]
-  documentAnalyses DocumentAnalysis[]
-  risks            Risk[]
-  auditPlanReferences AuditPlanFrameworkReference[]
-  obligationMappings RegulatoryObligationControlMapping[]
+  approvalInstances    ApprovalInstance[]
+  documentAnalyses     DocumentAnalysis[]
+  risks                Risk[]
+  auditPlanReferences  AuditPlanFrameworkReference[]
+  obligationMappings   RegulatoryObligationControlMapping[]
 
   @@unique([frameworkVersionId, identifier])
   @@index([frameworkVersionId])
@@ -607,7 +608,7 @@ model FrameworkClause {
   title       String
   createdAt   DateTime @default(now())
 
-  framework Framework               @relation(fields: [frameworkId], references: [id], onDelete: Cascade)
+  framework Framework                 @relation(fields: [frameworkId], references: [id], onDelete: Cascade)
   mappings  ControlFrameworkMapping[]
 
   @@index([frameworkId])
@@ -627,17 +628,18 @@ model Control {
   updatedAt      DateTime  @updatedAt
   deletedAt      DateTime?
 
-  organization    Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  departmentRef   Department?               @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  projectRef      Project?                  @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  mappings        ControlFrameworkMapping[]
-  complianceTasks ComplianceTask[]
-  auditCheckItems AuditCheckItem[]
-  evidenceAssociations ControlEvidence[]
-  approvalAssociations ControlApproval[]
-  riskAssociations     RiskControl[]
-  regulatoryMappings   RegulatoryObligationControlMapping[]
-  gapAssessments       RegulatoryControlGapAssessment[]
+  organization           Organization                         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  departmentRef          Department?                          @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  projectRef             Project?                             @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  mappings               ControlFrameworkMapping[]
+  complianceTasks        ComplianceTask[]
+  auditCheckItems        AuditCheckItem[]
+  evidenceAssociations   ControlEvidence[]
+  approvalAssociations   ControlApproval[]
+  riskAssociations       RiskControl[]
+  policyAssociations     PolicyControl[]
+  regulatoryMappings     RegulatoryObligationControlMapping[]
+  gapAssessments         RegulatoryControlGapAssessment[]
   regulatoryRemediations RegulatoryRemediationTask[]
 
   @@unique([id, organizationId])
@@ -649,16 +651,16 @@ model Control {
 }
 
 model ControlFrameworkMapping {
-  id                   String              @id @default(uuid())
+  id                   String        @id @default(uuid())
   controlId            String
   frameworkClauseId    String?
   frameworkReferenceId String?
-  status               MappingStatus       @default(SUGGESTED)
+  status               MappingStatus @default(SUGGESTED)
   confidenceScore      Float?
-  modelTier            ModelTier           @default(TIER_1)
+  modelTier            ModelTier     @default(TIER_1)
   reviewedById         String?
   reviewedAt           DateTime?
-  createdAt            DateTime            @default(now())
+  createdAt            DateTime      @default(now())
 
   control            Control             @relation(fields: [controlId], references: [id], onDelete: Cascade)
   frameworkClause    FrameworkClause?    @relation(fields: [frameworkClauseId], references: [id], onDelete: SetNull)
@@ -721,11 +723,11 @@ model ComplianceTask {
   updatedAt           DateTime          @updatedAt
   deletedAt           DateTime?
 
-  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  departmentRef     Department?        @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  projectRef        Project?           @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  control           Control?           @relation(fields: [controlId], references: [id], onDelete: SetNull)
-  vendorAssessments VendorAssessment[]
+  organization          Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  departmentRef         Department?                @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  projectRef            Project?                   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  control               Control?                   @relation(fields: [controlId], references: [id], onDelete: SetNull)
+  vendorAssessments     VendorAssessment[]
   regulatoryRemediation RegulatoryRemediationTask?
 
   @@index([organizationId])
@@ -772,7 +774,7 @@ model Deployment {
   createdAt                DateTime        @default(now())
   updatedAt                DateTime        @updatedAt
 
-  organization             Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId])
   @@index([controlPlaneDeploymentId])
@@ -787,7 +789,7 @@ model SystemLicenseState {
   verifiedAt         DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId])
   @@index([deploymentId])
@@ -797,33 +799,33 @@ model SystemLicenseState {
 // Phase 11 Models: Vendor, VendorAssessment, Vulnerability, VulnerabilityAsset, Policy, PolicyVersion, PolicyAttestation, PolicyException
 
 model Vendor {
-  id                String           @id @default(uuid())
-  organizationId    String
-  departmentId      String?
-  projectId         String?
-  name              String
-  description       String?
-  category          String?
-  criticality       VendorCriticality @default(MEDIUM)
-  status            VendorStatus     @default(ACTIVE)
-  owner             String
-  department        String?
-  reviewCadenceDays Int              @default(365)
-  lastReviewedAt    DateTime?
-  nextReviewDate    DateTime?
-  websiteUrl        String?
+  id                 String            @id @default(uuid())
+  organizationId     String
+  departmentId       String?
+  projectId          String?
+  name               String
+  description        String?
+  category           String?
+  criticality        VendorCriticality @default(MEDIUM)
+  status             VendorStatus      @default(ACTIVE)
+  owner              String
+  department         String?
+  reviewCadenceDays  Int               @default(365)
+  lastReviewedAt     DateTime?
+  nextReviewDate     DateTime?
+  websiteUrl         String?
   dueDiligenceStatus String?
-  createdById       String
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
-  deletedAt         DateTime?
+  createdById        String
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  deletedAt          DateTime?
 
-  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  departmentRef Department?        @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  projectRef   Project?           @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  assets       Asset[]
-  assessments  VendorAssessment[]
-  evidenceAssociations VendorEvidence[]
+  organization             Organization                    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  departmentRef            Department?                     @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  projectRef               Project?                        @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  assets                   Asset[]
+  assessments              VendorAssessment[]
+  evidenceAssociations     VendorEvidence[]
   questionnaireSubmissions VendorQuestionnaireSubmission[]
 
   @@index([organizationId])
@@ -848,11 +850,11 @@ model VendorAssessment {
   createdAt        DateTime               @default(now())
   updatedAt        DateTime               @updatedAt
 
-  vendor         Vendor          @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  risk           Risk?           @relation(fields: [riskId], references: [id], onDelete: SetNull)
-  complianceTask ComplianceTask? @relation(fields: [complianceTaskId], references: [id], onDelete: SetNull)
-  approvalAssociations VendorAssessmentApproval[]
-  actions              VendorAssessmentAction[]
+  vendor                   Vendor                          @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  risk                     Risk?                           @relation(fields: [riskId], references: [id], onDelete: SetNull)
+  complianceTask           ComplianceTask?                 @relation(fields: [complianceTaskId], references: [id], onDelete: SetNull)
+  approvalAssociations     VendorAssessmentApproval[]
+  actions                  VendorAssessmentAction[]
   questionnaireSubmissions VendorQuestionnaireSubmission[]
 
   @@index([organizationId])
@@ -872,8 +874,8 @@ model VendorQuestionnaire {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  submissions    VendorQuestionnaireSubmission[]
+  organization Organization                    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  submissions  VendorQuestionnaireSubmission[]
 
   @@index([organizationId])
   @@index([status])
@@ -881,12 +883,12 @@ model VendorQuestionnaire {
 }
 
 model VendorQuestionnaireSubmission {
-  id              String   @id @default(uuid())
+  id              String    @id @default(uuid())
   organizationId  String
   vendorId        String
   questionnaireId String
   assessmentId    String?
-  status          String   @default("PENDING")
+  status          String    @default("PENDING")
   answers         Json
   submittedAt     DateTime?
   submittedBy     String?
@@ -894,13 +896,13 @@ model VendorQuestionnaireSubmission {
   reviewedById    String?
   score           Int?
   reviewNotes     String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  organization    Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  vendor          Vendor              @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  questionnaire   VendorQuestionnaire @relation(fields: [questionnaireId], references: [id], onDelete: Cascade)
-  assessment      VendorAssessment?   @relation(fields: [assessmentId], references: [id], onDelete: SetNull)
+  organization  Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  vendor        Vendor              @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  questionnaire VendorQuestionnaire @relation(fields: [questionnaireId], references: [id], onDelete: Cascade)
+  assessment    VendorAssessment?   @relation(fields: [assessmentId], references: [id], onDelete: SetNull)
 
   @@index([organizationId])
   @@index([vendorId])
@@ -923,7 +925,7 @@ model VendorAssessmentAction {
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 
-  assessment     VendorAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  assessment VendorAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
 
   @@index([organizationId])
   @@index([assessmentId])
@@ -951,10 +953,10 @@ model Vulnerability {
   updatedAt        DateTime              @updatedAt
   deletedAt        DateTime?
 
-  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  departmentRef  Department?          @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  projectRef     Project?             @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  affectedAssets VulnerabilityAsset[]
+  organization         Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  departmentRef        Department?             @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  projectRef           Project?                @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  affectedAssets       VulnerabilityAsset[]
   evidenceAssociations VulnerabilityEvidence[]
   approvalAssociations VulnerabilityApproval[]
 
@@ -1004,15 +1006,17 @@ model Policy {
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
   deletedAt          DateTime?
+  version            Int          @default(1)
 
-  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  departmentRef    Department?       @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  projectRef       Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  publishedVersion PolicyVersion?    @relation("PublishedPolicyVersion", fields: [publishedVersionId], references: [id], onDelete: SetNull)
-  versions         PolicyVersion[]   @relation("PolicyVersions")
-  exceptions       PolicyException[]
+  organization         Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  departmentRef        Department?       @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  projectRef           Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  publishedVersion     PolicyVersion?    @relation("PublishedPolicyVersion", fields: [publishedVersionId], references: [id], onDelete: SetNull)
+  versions             PolicyVersion[]   @relation("PolicyVersions")
+  exceptions           PolicyException[]
   evidenceAssociations PolicyEvidence[]
   approvalAssociations PolicyApproval[]
+  controlAssociations  PolicyControl[]
 
   @@index([organizationId])
   @@index([departmentId])
@@ -1068,7 +1072,7 @@ model PolicyException {
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
 
-  policy Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  policy               Policy                    @relation(fields: [policyId], references: [id], onDelete: Cascade)
   approvalAssociations PolicyExceptionApproval[]
 
   @@index([organizationId])
@@ -1077,14 +1081,14 @@ model PolicyException {
 }
 
 model PolicyCategory {
-  id             String       @id @default(uuid())
+  id             String   @id @default(uuid())
   organizationId String
   name           String
-  isDefault      Boolean      @default(false)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  isDefault      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -1152,33 +1156,33 @@ enum AuditFindingLifecycleAction {
 }
 
 model AuditPlan {
-  id               String          @id @default(uuid())
-  organizationId   String
-  departmentId     String?
-  projectId        String?
-  title            String
-  objective        String?
-  scope            String?
-  frameworkCode    String?
-  frameworkId      String?
+  id                 String          @id @default(uuid())
+  organizationId     String
+  departmentId       String?
+  projectId          String?
+  title              String
+  objective          String?
+  scope              String?
+  frameworkCode      String?
+  frameworkId        String?
   frameworkVersionId String?
-  ownerId          String
-  plannedStartDate DateTime?
-  plannedEndDate   DateTime?
-  status           AuditPlanStatus @default(DRAFT)
-  createdById      String
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
-  version          Int             @default(1)
+  ownerId            String
+  plannedStartDate   DateTime?
+  plannedEndDate     DateTime?
+  status             AuditPlanStatus @default(DRAFT)
+  createdById        String
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  version            Int             @default(1)
 
-  organization     Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  departmentRef    Department?        @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  projectRef       Project?           @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  frameworkRef     Framework?         @relation(fields: [frameworkId], references: [id], onDelete: SetNull)
-  versionRef       FrameworkVersion?  @relation(fields: [frameworkVersionId], references: [id], onDelete: SetNull)
-  schedules        AuditSchedule[]
-  assessments      AuditAssessment[]
-  scopeReferences  AuditPlanFrameworkReference[]
+  organization    Organization                  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  departmentRef   Department?                   @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  projectRef      Project?                      @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  frameworkRef    Framework?                    @relation(fields: [frameworkId], references: [id], onDelete: SetNull)
+  versionRef      FrameworkVersion?             @relation(fields: [frameworkVersionId], references: [id], onDelete: SetNull)
+  schedules       AuditSchedule[]
+  assessments     AuditAssessment[]
+  scopeReferences AuditPlanFrameworkReference[]
 
   @@index([organizationId])
   @@index([departmentId])
@@ -1190,10 +1194,10 @@ model AuditPlan {
 }
 
 model AuditPlanFrameworkReference {
-  id                   String             @id @default(uuid())
+  id                   String   @id @default(uuid())
   auditPlanId          String
   frameworkReferenceId String
-  createdAt            DateTime           @default(now())
+  createdAt            DateTime @default(now())
 
   auditPlan          AuditPlan          @relation(fields: [auditPlanId], references: [id], onDelete: Cascade)
   frameworkReference FrameworkReference @relation(fields: [frameworkReferenceId], references: [id], onDelete: Cascade)
@@ -1265,10 +1269,10 @@ model AuditCheckItem {
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 
-  assessment AuditAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
-  control    Control?         @relation(fields: [controlId], references: [id], onDelete: SetNull)
-  evidence   AuditEvidence[]
-  findings   AuditFinding[]
+  assessment           AuditAssessment          @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  control              Control?                 @relation(fields: [controlId], references: [id], onDelete: SetNull)
+  evidence             AuditEvidence[]
+  findings             AuditFinding[]
   evidenceAssociations AuditCheckItemEvidence[]
 
   @@index([organizationId])
@@ -1322,13 +1326,13 @@ model AuditFinding {
   version           Int                   @default(1)
   updatedAt         DateTime              @updatedAt
 
-  assessment AuditAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
-  checkItem  AuditCheckItem? @relation(fields: [checkItemId], references: [id], onDelete: SetNull)
-  risk       Risk?           @relation(fields: [riskId], references: [id], onDelete: SetNull)
-  capas      AuditCapa[]
-  evidence   AuditEvidence[]
-  evidenceAssociations AuditFindingEvidence[]
-  approvalAssociations AuditFindingApproval[]
+  assessment            AuditAssessment                   @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  checkItem             AuditCheckItem?                   @relation(fields: [checkItemId], references: [id], onDelete: SetNull)
+  risk                  Risk?                             @relation(fields: [riskId], references: [id], onDelete: SetNull)
+  capas                 AuditCapa[]
+  evidence              AuditEvidence[]
+  evidenceAssociations  AuditFindingEvidence[]
+  approvalAssociations  AuditFindingApproval[]
   verificationHistories AuditFindingVerificationHistory[]
 
   @@index([organizationId])
@@ -1357,7 +1361,7 @@ model AuditCapa {
   version          Int        @default(1)
   updatedAt        DateTime   @updatedAt
 
-  finding AuditFinding @relation(fields: [findingId], references: [id], onDelete: Cascade)
+  finding               AuditFinding                      @relation(fields: [findingId], references: [id], onDelete: Cascade)
   verificationHistories AuditFindingVerificationHistory[]
 
   @@index([organizationId])
@@ -1379,10 +1383,10 @@ model AuditFindingVerificationHistory {
   notes          String?
   createdAt      DateTime                    @default(now())
 
-  finding        AuditFinding                @relation(fields: [findingId], references: [id], onDelete: Restrict)
-  organization   Organization                @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  actor          User                        @relation(fields: [actorId], references: [id], onDelete: Restrict)
-  capa           AuditCapa?                  @relation(fields: [capaId], references: [id], onDelete: Restrict)
+  finding      AuditFinding @relation(fields: [findingId], references: [id], onDelete: Restrict)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  actor        User         @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  capa         AuditCapa?   @relation(fields: [capaId], references: [id], onDelete: Restrict)
 
   @@index([organizationId])
   @@index([findingId])
@@ -1453,11 +1457,11 @@ model Incident {
   updatedAt            DateTime         @updatedAt
   deletedAt            DateTime?
 
-  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  departmentRef Department?   @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  projectRef    Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  affectedAsset Asset?       @relation(fields: [affectedAssetId], references: [id], onDelete: SetNull)
-  actions       IncidentAction[]
+  organization         Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  departmentRef        Department?        @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  projectRef           Project?           @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  affectedAsset        Asset?             @relation(fields: [affectedAssetId], references: [id], onDelete: SetNull)
+  actions              IncidentAction[]
   evidenceAssociations IncidentEvidence[]
   approvalAssociations IncidentApproval[]
 
@@ -1485,7 +1489,7 @@ model IncidentAction {
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 
-  incident       Incident   @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  incident Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
 
   @@index([organizationId])
   @@index([incidentId])
@@ -1661,20 +1665,20 @@ model Evidence {
   deletedAt      DateTime?
 
   organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  departmentRef Department?   @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  projectRef    Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  departmentRef Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  projectRef    Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
-  controlAssociations        ControlEvidence[]
-  riskAssociations           RiskEvidence[]
-  policyAssociations         PolicyEvidence[]
-  auditCheckAssociations     AuditCheckItemEvidence[]
+  controlAssociations       ControlEvidence[]
+  riskAssociations          RiskEvidence[]
+  policyAssociations        PolicyEvidence[]
+  auditCheckAssociations    AuditCheckItemEvidence[]
   auditFindingAssociations  AuditFindingEvidence[]
-  vendorAssociations         VendorEvidence[]
-  vulnerabilityAssociations  VulnerabilityEvidence[]
-  incidentAssociations       IncidentEvidence[]
-  frameworkReferences        EvidenceFrameworkReference[]
-  approvalAssociations       EvidenceApproval[]
-  documentAnalyses           DocumentAnalysis[]
+  vendorAssociations        VendorEvidence[]
+  vulnerabilityAssociations VulnerabilityEvidence[]
+  incidentAssociations      IncidentEvidence[]
+  frameworkReferences       EvidenceFrameworkReference[]
+  approvalAssociations      EvidenceApproval[]
+  documentAnalyses          DocumentAnalysis[]
 
   @@index([organizationId])
   @@index([departmentId])
@@ -1734,6 +1738,28 @@ model PolicyEvidence {
   @@index([policyId])
   @@index([evidenceId])
   @@map("policy_evidences")
+}
+
+model PolicyControl {
+  id             String        @id @default(uuid())
+  organizationId String
+  policyId       String
+  controlId      String
+  status         MappingStatus @default(APPROVED)
+  rationale      String?
+  createdById    String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  policy       Policy       @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  control      Control      @relation(fields: [controlId, organizationId], references: [id, organizationId], onDelete: Cascade)
+
+  @@unique([policyId, controlId])
+  @@index([organizationId])
+  @@index([policyId])
+  @@index([controlId])
+  @@map("policy_controls")
 }
 
 model AuditCheckItemEvidence {
@@ -1956,17 +1982,17 @@ model ApprovalInstance {
   workflow           ApprovalWorkflow?   @relation(fields: [workflowId], references: [id], onDelete: SetNull)
   frameworkReference FrameworkReference? @relation(fields: [frameworkReferenceId], references: [id], onDelete: SetNull)
 
-  steps                      ApprovalInstanceStep[]
-  decisions                  ApprovalDecision[]
-  controlAssociations        ControlApproval[]
-  riskAssociations           RiskApproval[]
-  policyAssociations         PolicyApproval[]
-  findingAssociations        AuditFindingApproval[]
+  steps                        ApprovalInstanceStep[]
+  decisions                    ApprovalDecision[]
+  controlAssociations          ControlApproval[]
+  riskAssociations             RiskApproval[]
+  policyAssociations           PolicyApproval[]
+  findingAssociations          AuditFindingApproval[]
   vendorAssessmentAssociations VendorAssessmentApproval[]
-  vulnerabilityAssociations  VulnerabilityApproval[]
-  incidentAssociations       IncidentApproval[]
-  policyExceptionAssociations PolicyExceptionApproval[]
-  evidenceAssociations       EvidenceApproval[]
+  vulnerabilityAssociations    VulnerabilityApproval[]
+  incidentAssociations         IncidentApproval[]
+  policyExceptionAssociations  PolicyExceptionApproval[]
+  evidenceAssociations         EvidenceApproval[]
 
   @@index([organizationId])
   @@index([resourceType, resourceId])
@@ -2253,11 +2279,11 @@ model DocumentAnalysis {
   organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   evidence           Evidence?           @relation(fields: [evidenceId], references: [id], onDelete: SetNull)
   framework          Framework?          @relation(fields: [frameworkId], references: [id], onDelete: SetNull)
-  frameworkVersion    FrameworkVersion?   @relation(fields: [frameworkVersionId], references: [id], onDelete: SetNull)
+  frameworkVersion   FrameworkVersion?   @relation(fields: [frameworkVersionId], references: [id], onDelete: SetNull)
   frameworkReference FrameworkReference? @relation(fields: [frameworkReferenceId], references: [id], onDelete: SetNull)
 
-  runs               AnalysisRun[]
-  findings           ExtractedFinding[]
+  runs     AnalysisRun[]
+  findings ExtractedFinding[]
 
   @@index([organizationId])
   @@index([evidenceId])
@@ -2288,29 +2314,29 @@ model AnalysisRun {
 }
 
 model ExtractedFinding {
-  id                   String              @id @default(uuid())
-  documentAnalysisId   String
-  organizationId       String
-  findingType          FindingType
-  dateCategory         DateCategory?
+  id                 String        @id @default(uuid())
+  documentAnalysisId String
+  organizationId     String
+  findingType        FindingType
+  dateCategory       DateCategory?
 
   // Immutable Original AI Output
-  aiTitle              String
-  aiDescription        String
-  aiConfidence         FindingConfidence   @default(MEDIUM)
-  aiRawScore           Float?
-  aiSourceSnippet      String?
-  aiSourcePage         Int?
-  aiSourceSection      String?
-  aiSourceSheet        String?
-  aiSourceCell         String?
-  aiSourceRow          Int?
-  aiSourceCol          Int?
-  aiCharOffsetStart    Int?
-  aiCharOffsetEnd      Int?
-  aiDueDate            DateTime?
-  aiRelativeExpression String?
-  aiResponsibleParty   String?
+  aiTitle                  String
+  aiDescription            String
+  aiConfidence             FindingConfidence @default(MEDIUM)
+  aiRawScore               Float?
+  aiSourceSnippet          String?
+  aiSourcePage             Int?
+  aiSourceSection          String?
+  aiSourceSheet            String?
+  aiSourceCell             String?
+  aiSourceRow              Int?
+  aiSourceCol              Int?
+  aiCharOffsetStart        Int?
+  aiCharOffsetEnd          Int?
+  aiDueDate                DateTime?
+  aiRelativeExpression     String?
+  aiResponsibleParty       String?
   aiSuggestedFrameworkCode String?
   aiSuggestedReferenceId   String?
   aiSuggestedControlId     String?
@@ -2318,21 +2344,21 @@ model ExtractedFinding {
   aiRationale              String?
 
   // Server-Validated Suggestions
-  isValidatedControl   Boolean             @default(false)
-  isValidatedRisk      Boolean             @default(false)
-  isValidatedReference Boolean             @default(false)
+  isValidatedControl   Boolean @default(false)
+  isValidatedRisk      Boolean @default(false)
+  isValidatedReference Boolean @default(false)
 
   // Mutable Human Review Layer
-  reviewStatus         FindingReviewStatus @default(UNREVIEWED)
-  reviewedById         String?
-  reviewedAt           DateTime?
-  editedTitle          String?
-  editedDescription    String?
-  editedCategory       FindingType?
-  humanComment         String?
+  reviewStatus      FindingReviewStatus @default(UNREVIEWED)
+  reviewedById      String?
+  reviewedAt        DateTime?
+  editedTitle       String?
+  editedDescription String?
+  editedCategory    FindingType?
+  humanComment      String?
 
-  createdAt            DateTime            @default(now())
-  updatedAt            DateTime            @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   documentAnalysis DocumentAnalysis @relation(fields: [documentAnalysisId], references: [id], onDelete: Cascade)
   organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -2425,10 +2451,10 @@ model RegulatoryCatalogueEntry {
   createdAt           DateTime                     @default(now())
   updatedAt           DateTime                     @updatedAt
 
-  sources             RegulatorySource[]
-  publications        RegulatoryPublication[]
-  manualIntakes       ManualSourceIntake[]
-  obligations         RegulatoryObligation[]
+  sources                  RegulatorySource[]
+  publications             RegulatoryPublication[]
+  manualIntakes            ManualSourceIntake[]
+  obligations              RegulatoryObligation[]
   applicabilityAssessments RegulatoryApplicabilityAssessment[]
 
   @@index([jurisdiction])
@@ -2458,8 +2484,8 @@ model RegulatorySource {
   createdAt              DateTime               @default(now())
   updatedAt              DateTime               @updatedAt
 
-  catalogueEntry         RegulatoryCatalogueEntry? @relation(fields: [catalogueEntryId], references: [id], onDelete: SetNull)
-  publications           RegulatoryPublication[]
+  catalogueEntry RegulatoryCatalogueEntry? @relation(fields: [catalogueEntryId], references: [id], onDelete: SetNull)
+  publications   RegulatoryPublication[]
 
   @@unique([regulatorCode, configuredEndpoint])
   @@index([regulatorCode])
@@ -2470,35 +2496,35 @@ model RegulatorySource {
 }
 
 model RegulatoryPublication {
-  id                     String                     @id @default(uuid())
-  sourceId               String
-  catalogueEntryId       String?
-  externalId             String?
-  canonicalUrl           String
-  title                  String
-  publicationNumber      String?
-  publicationDate        DateTime?
-  firstDiscoveredAt      DateTime                   @default(now())
-  lastObservedAt         DateTime                   @default(now())
-  contentHash            String
-  feedContentHash        String?
-  documentBytesSha256    String?
-  isDocumentBytesVerified Boolean                   @default(false)
-  currentVersionNumber   Int                        @default(1)
+  id                      String                     @id @default(uuid())
+  sourceId                String
+  catalogueEntryId        String?
+  externalId              String?
+  canonicalUrl            String
+  title                   String
+  publicationNumber       String?
+  publicationDate         DateTime?
+  firstDiscoveredAt       DateTime                   @default(now())
+  lastObservedAt          DateTime                   @default(now())
+  contentHash             String
+  feedContentHash         String?
+  documentBytesSha256     String?
+  isDocumentBytesVerified Boolean                    @default(false)
+  currentVersionNumber    Int                        @default(1)
   currentDocumentMetadata Json?
-  processingState        RegulatoryPublicationState @default(DISCOVERED)
-  createdAt              DateTime                   @default(now())
-  updatedAt              DateTime                   @updatedAt
+  processingState         RegulatoryPublicationState @default(DISCOVERED)
+  createdAt               DateTime                   @default(now())
+  updatedAt               DateTime                   @updatedAt
 
-  source                 RegulatorySource            @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  catalogueEntry         RegulatoryCatalogueEntry?   @relation(fields: [catalogueEntryId], references: [id], onDelete: SetNull)
-  versions               RegulatoryPublicationVersion[]
-  manualIntakes          ManualSourceIntake[]
-  obligations            RegulatoryObligation[]
-  applicabilityAssessments RegulatoryApplicabilityAssessment[]
+  source                    RegulatorySource                     @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  catalogueEntry            RegulatoryCatalogueEntry?            @relation(fields: [catalogueEntryId], references: [id], onDelete: SetNull)
+  versions                  RegulatoryPublicationVersion[]
+  manualIntakes             ManualSourceIntake[]
+  obligations               RegulatoryObligation[]
+  applicabilityAssessments  RegulatoryApplicabilityAssessment[]
   obligationControlMappings RegulatoryObligationControlMapping[]
-  gapAssessments         RegulatoryControlGapAssessment[]
-  remediationTasks       RegulatoryRemediationTask[]
+  gapAssessments            RegulatoryControlGapAssessment[]
+  remediationTasks          RegulatoryRemediationTask[]
 
   @@unique([sourceId, canonicalUrl])
   @@unique([sourceId, externalId])
@@ -2512,28 +2538,28 @@ model RegulatoryPublication {
 }
 
 model RegulatoryPublicationVersion {
-  id                     String    @id @default(uuid())
-  publicationId          String
-  versionNumber          Int
-  contentSha256          String
-  feedContentHash        String?
-  documentBytesSha256    String?
-  isDocumentBytesVerified Boolean  @default(false)
-  retrievedAt            DateTime  @default(now())
-  contentType            String
-  byteSize               Int
-  documentUrl            String
-  storageKey             String?
-  reasonForVersion       String?
-  rawMetadata            Json?
-  supersededAt           DateTime?
-  createdAt              DateTime  @default(now())
+  id                      String    @id @default(uuid())
+  publicationId           String
+  versionNumber           Int
+  contentSha256           String
+  feedContentHash         String?
+  documentBytesSha256     String?
+  isDocumentBytesVerified Boolean   @default(false)
+  retrievedAt             DateTime  @default(now())
+  contentType             String
+  byteSize                Int
+  documentUrl             String
+  storageKey              String?
+  reasonForVersion        String?
+  rawMetadata             Json?
+  supersededAt            DateTime?
+  createdAt               DateTime  @default(now())
 
-  publication            RegulatoryPublication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
-  obligations            RegulatoryObligation[]
+  publication               RegulatoryPublication                @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  obligations               RegulatoryObligation[]
   obligationControlMappings RegulatoryObligationControlMapping[]
-  gapAssessments         RegulatoryControlGapAssessment[]
-  remediationTasks       RegulatoryRemediationTask[]
+  gapAssessments            RegulatoryControlGapAssessment[]
+  remediationTasks          RegulatoryRemediationTask[]
 
   @@unique([publicationId, versionNumber])
   @@index([publicationId])
@@ -2564,10 +2590,10 @@ model ManualSourceIntake {
   createdAt            DateTime                 @default(now())
   updatedAt            DateTime                 @updatedAt
 
-  organization         Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  catalogueEntry       RegulatoryCatalogueEntry @relation(fields: [catalogueEntryId], references: [id], onDelete: Cascade)
-  publication          RegulatoryPublication?   @relation(fields: [publicationId], references: [id], onDelete: SetNull)
-  obligations          RegulatoryObligation[]
+  organization   Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  catalogueEntry RegulatoryCatalogueEntry @relation(fields: [catalogueEntryId], references: [id], onDelete: Cascade)
+  publication    RegulatoryPublication?   @relation(fields: [publicationId], references: [id], onDelete: SetNull)
+  obligations    RegulatoryObligation[]
 
   @@index([organizationId])
   @@index([catalogueEntryId])
@@ -2625,15 +2651,15 @@ model RegulatoryObligation {
   createdAt              DateTime                   @default(now())
   updatedAt              DateTime                   @updatedAt
 
-  organization           Organization?              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  publication            RegulatoryPublication      @relation(fields: [publicationId], references: [id], onDelete: Cascade)
-  publicationVersion     RegulatoryPublicationVersion? @relation(fields: [publicationVersionId], references: [id], onDelete: SetNull)
-  catalogueEntry         RegulatoryCatalogueEntry?  @relation(fields: [catalogueEntryId], references: [id], onDelete: SetNull)
-  manualIntake           ManualSourceIntake?        @relation(fields: [manualIntakeId], references: [id], onDelete: SetNull)
+  organization             Organization?                        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  publication              RegulatoryPublication                @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  publicationVersion       RegulatoryPublicationVersion?        @relation(fields: [publicationVersionId], references: [id], onDelete: SetNull)
+  catalogueEntry           RegulatoryCatalogueEntry?            @relation(fields: [catalogueEntryId], references: [id], onDelete: SetNull)
+  manualIntake             ManualSourceIntake?                  @relation(fields: [manualIntakeId], references: [id], onDelete: SetNull)
   applicabilityAssessments RegulatoryApplicabilityAssessment[]
-  controlMappings        RegulatoryObligationControlMapping[]
-  gapAssessments         RegulatoryControlGapAssessment[]
-  remediationTasks       RegulatoryRemediationTask[]
+  controlMappings          RegulatoryObligationControlMapping[]
+  gapAssessments           RegulatoryControlGapAssessment[]
+  remediationTasks         RegulatoryRemediationTask[]
 
   @@unique([publicationId, fingerprint])
   @@index([organizationId])
@@ -2667,21 +2693,21 @@ enum ApplicabilityConfidence {
 }
 
 model OrganizationComplianceProfile {
-  id                     String    @id @default(uuid())
-  organizationId         String    @unique
-  operatingJurisdictions String[]  @default(["INDIA"])
-  industrySector         String?
-  regulatedEntityTypes   String[]  @default([])
-  handlesPersonalData    Boolean   @default(true)
-  handlesPaymentData     Boolean   @default(false)
-  isSignificantDataFiduciary Boolean @default(false)
-  annualTurnoverBand     String?
-  employeeCountBand      String?
-  customAttributes       Json?
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
+  id                         String   @id @default(uuid())
+  organizationId             String   @unique
+  operatingJurisdictions     String[] @default(["INDIA"])
+  industrySector             String?
+  regulatedEntityTypes       String[] @default([])
+  handlesPersonalData        Boolean  @default(true)
+  handlesPaymentData         Boolean  @default(false)
+  isSignificantDataFiduciary Boolean  @default(false)
+  annualTurnoverBand         String?
+  employeeCountBand          String?
+  customAttributes           Json?
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
 
-  organization           Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId])
   @@map("organization_compliance_profiles")
@@ -2712,13 +2738,13 @@ model RegulatoryApplicabilityAssessment {
   createdAt                  DateTime                @default(now())
   updatedAt                  DateTime                @updatedAt
 
-  organization               Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  obligation                 RegulatoryObligation    @relation(fields: [obligationId], references: [id], onDelete: Cascade)
-  publication                RegulatoryPublication?  @relation(fields: [publicationId], references: [id], onDelete: SetNull)
-  catalogueEntry             RegulatoryCatalogueEntry? @relation(fields: [catalogueEntryId], references: [id], onDelete: SetNull)
-  history                    RegulatoryApplicabilityHistory[]
-  gapAssessments             RegulatoryControlGapAssessment[]
-  remediationTasks           RegulatoryRemediationTask[]
+  organization     Organization                     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  obligation       RegulatoryObligation             @relation(fields: [obligationId], references: [id], onDelete: Cascade)
+  publication      RegulatoryPublication?           @relation(fields: [publicationId], references: [id], onDelete: SetNull)
+  catalogueEntry   RegulatoryCatalogueEntry?        @relation(fields: [catalogueEntryId], references: [id], onDelete: SetNull)
+  history          RegulatoryApplicabilityHistory[]
+  gapAssessments   RegulatoryControlGapAssessment[]
+  remediationTasks RegulatoryRemediationTask[]
 
   @@unique([organizationId, obligationId])
   @@index([organizationId])
@@ -2742,8 +2768,8 @@ model RegulatoryApplicabilityHistory {
   changedAt           DateTime             @default(now())
   evaluatedAttributes Json?
 
-  assessment          RegulatoryApplicabilityAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
-  organization        Organization                      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assessment   RegulatoryApplicabilityAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  organization Organization                      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([assessmentId])
   @@index([organizationId])
@@ -2757,16 +2783,16 @@ enum ObligationMappingMethod {
 }
 
 model RegulatoryObligationControlMapping {
-  id                   String                   @id @default(uuid())
+  id                   String                  @id @default(uuid())
   organizationId       String
   obligationId         String
   controlId            String
   publicationId        String?
   publicationVersionId String?
   frameworkReferenceId String?
-  mappingMethod        ObligationMappingMethod  @default(RULE_SUGGESTED)
-  status               MappingStatus            @default(SUGGESTED)
-  confidence           ObligationConfidence     @default(HIGH)
+  mappingMethod        ObligationMappingMethod @default(RULE_SUGGESTED)
+  status               MappingStatus           @default(SUGGESTED)
+  confidence           ObligationConfidence    @default(HIGH)
   rationale            String
   sourceExcerpt        String?
   ruleMatched          String?
@@ -2774,19 +2800,19 @@ model RegulatoryObligationControlMapping {
   reviewedById         String?
   reviewedAt           DateTime?
   reviewNotes          String?
-  reassessmentCount    Int                      @default(0)
-  createdAt            DateTime                 @default(now())
-  updatedAt            DateTime                 @updatedAt
+  reassessmentCount    Int                     @default(0)
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
 
-  organization         Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  obligation           RegulatoryObligation     @relation(fields: [obligationId], references: [id], onDelete: Cascade)
-  control              Control                  @relation(fields: [controlId], references: [id], onDelete: Cascade)
-  publication          RegulatoryPublication?   @relation(fields: [publicationId], references: [id], onDelete: SetNull)
-  publicationVersion   RegulatoryPublicationVersion? @relation(fields: [publicationVersionId], references: [id], onDelete: SetNull)
-  frameworkReference   FrameworkReference?      @relation(fields: [frameworkReferenceId], references: [id], onDelete: SetNull)
-  history              RegulatoryObligationControlMappingHistory[]
-  gapAssessments       RegulatoryControlGapAssessment[]
-  remediationTasks     RegulatoryRemediationTask[]
+  organization       Organization                                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  obligation         RegulatoryObligation                        @relation(fields: [obligationId], references: [id], onDelete: Cascade)
+  control            Control                                     @relation(fields: [controlId], references: [id], onDelete: Cascade)
+  publication        RegulatoryPublication?                      @relation(fields: [publicationId], references: [id], onDelete: SetNull)
+  publicationVersion RegulatoryPublicationVersion?               @relation(fields: [publicationVersionId], references: [id], onDelete: SetNull)
+  frameworkReference FrameworkReference?                         @relation(fields: [frameworkReferenceId], references: [id], onDelete: SetNull)
+  history            RegulatoryObligationControlMappingHistory[]
+  gapAssessments     RegulatoryControlGapAssessment[]
+  remediationTasks   RegulatoryRemediationTask[]
 
   @@unique([organizationId, obligationId, controlId])
   @@index([organizationId])
@@ -2798,7 +2824,7 @@ model RegulatoryObligationControlMapping {
 }
 
 model RegulatoryObligationControlMappingHistory {
-  id                String                  @id @default(uuid())
+  id                String        @id @default(uuid())
   mappingId         String
   organizationId    String
   previousStatus    MappingStatus
@@ -2807,10 +2833,10 @@ model RegulatoryObligationControlMappingHistory {
   newRationale      String
   actorId           String
   reviewNotes       String?
-  changedAt         DateTime                @default(now())
+  changedAt         DateTime      @default(now())
 
-  mapping           RegulatoryObligationControlMapping @relation(fields: [mappingId], references: [id], onDelete: Cascade)
-  organization      Organization                       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  mapping      RegulatoryObligationControlMapping @relation(fields: [mappingId], references: [id], onDelete: Cascade)
+  organization Organization                       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([mappingId])
   @@index([organizationId])
@@ -2861,15 +2887,15 @@ model RegulatoryControlGapAssessment {
   createdAt            DateTime                   @default(now())
   updatedAt            DateTime                   @updatedAt
 
-  organization         Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  obligation           RegulatoryObligation       @relation(fields: [obligationId], references: [id], onDelete: Cascade)
-  mapping              RegulatoryObligationControlMapping? @relation(fields: [mappingId], references: [id], onDelete: SetNull)
-  control              Control?                   @relation(fields: [controlId], references: [id], onDelete: SetNull)
-  publication          RegulatoryPublication?     @relation(fields: [publicationId], references: [id], onDelete: SetNull)
-  publicationVersion   RegulatoryPublicationVersion? @relation(fields: [publicationVersionId], references: [id], onDelete: SetNull)
-  applicabilityAssessment RegulatoryApplicabilityAssessment? @relation(fields: [applicabilityId], references: [id], onDelete: SetNull)
-  history              RegulatoryControlGapAssessmentHistory[]
-  remediationTasks     RegulatoryRemediationTask[]
+  organization            Organization                            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  obligation              RegulatoryObligation                    @relation(fields: [obligationId], references: [id], onDelete: Cascade)
+  mapping                 RegulatoryObligationControlMapping?     @relation(fields: [mappingId], references: [id], onDelete: SetNull)
+  control                 Control?                                @relation(fields: [controlId], references: [id], onDelete: SetNull)
+  publication             RegulatoryPublication?                  @relation(fields: [publicationId], references: [id], onDelete: SetNull)
+  publicationVersion      RegulatoryPublicationVersion?           @relation(fields: [publicationVersionId], references: [id], onDelete: SetNull)
+  applicabilityAssessment RegulatoryApplicabilityAssessment?      @relation(fields: [applicabilityId], references: [id], onDelete: SetNull)
+  history                 RegulatoryControlGapAssessmentHistory[]
+  remediationTasks        RegulatoryRemediationTask[]
 
   @@unique([organizationId, obligationId])
   @@index([organizationId])
@@ -2898,8 +2924,8 @@ model RegulatoryControlGapAssessmentHistory {
   evaluatedRecords        Json?
   changedAt               DateTime                   @default(now())
 
-  assessment              RegulatoryControlGapAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
-  organization            Organization                   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assessment   RegulatoryControlGapAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  organization Organization                   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([assessmentId])
   @@index([organizationId])
@@ -2930,76 +2956,76 @@ enum RemediationPriority {
 }
 
 model RegulatoryRemediationTask {
-  id                      String                      @id @default(uuid())
-  organizationId          String
-  complianceTaskId        String                      @unique
-  assessmentId            String
-  obligationId            String
-  controlId               String?
-  mappingId               String?
-  publicationId           String?
-  publicationVersionId    String?
-  applicabilityId         String?
+  id                   String  @id @default(uuid())
+  organizationId       String
+  complianceTaskId     String  @unique
+  assessmentId         String
+  obligationId         String
+  controlId            String?
+  mappingId            String?
+  publicationId        String?
+  publicationVersionId String?
+  applicabilityId      String?
 
-  status                  RegulatoryRemediationStatus @default(PROPOSED)
-  priority                RemediationPriority         @default(MEDIUM)
-  initialGapOutcome       ControlGapOutcome
-  initialEvidenceOutcome  EvidenceSufficiencyOutcome
+  status                 RegulatoryRemediationStatus @default(PROPOSED)
+  priority               RemediationPriority         @default(MEDIUM)
+  initialGapOutcome      ControlGapOutcome
+  initialEvidenceOutcome EvidenceSufficiencyOutcome
 
-  title                   String
-  description             String
-  acceptanceCriteria      String
+  title              String
+  description        String
+  acceptanceCriteria String
 
   // Deadlines: Legal vs Internal
-  internalDueDate         DateTime?
-  regulatoryDeadline      DateTime?
+  internalDueDate    DateTime?
+  regulatoryDeadline DateTime?
 
   // Assignments
-  assignedToId            String
-  assignedById            String
+  assignedToId String
+  assignedById String
 
   // Blocker tracking
-  blockedReason           String?
-  unblockedReason         String?
+  blockedReason   String?
+  unblockedReason String?
 
   // Progress notes & Completion
-  progressNotes           String?
-  completionNotes         String?
-  evidenceReferences      Json?
+  progressNotes      String?
+  completionNotes    String?
+  evidenceReferences Json?
 
   // Verification
-  verifiedById            String?
-  verifiedAt              DateTime?
-  verificationNotes       String?
-  reassessmentRequested   Boolean                     @default(false)
+  verifiedById          String?
+  verifiedAt            DateTime?
+  verificationNotes     String?
+  reassessmentRequested Boolean   @default(false)
 
   // Governance Approval
-  requiresApproval        Boolean                     @default(false)
-  approvedById            String?
-  approvedAt              DateTime?
-  approvalNotes           String?
-  rejectedById            String?
-  rejectedAt              DateTime?
-  rejectionReason         String?
+  requiresApproval Boolean   @default(false)
+  approvedById     String?
+  approvedAt       DateTime?
+  approvalNotes    String?
+  rejectedById     String?
+  rejectedAt       DateTime?
+  rejectionReason  String?
 
   // Risk Acceptance / Exception Workflow
   riskAcceptedById        String?
   riskAcceptedAt          DateTime?
   riskAcceptanceRationale String?
 
-  createdAt               DateTime                    @default(now())
-  updatedAt               DateTime                    @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  organization            Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  complianceTask          ComplianceTask              @relation(fields: [complianceTaskId], references: [id], onDelete: Cascade)
-  assessment              RegulatoryControlGapAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
-  obligation              RegulatoryObligation        @relation(fields: [obligationId], references: [id], onDelete: Cascade)
-  control                 Control?                    @relation(fields: [controlId], references: [id], onDelete: SetNull)
-  mapping                 RegulatoryObligationControlMapping? @relation(fields: [mappingId], references: [id], onDelete: SetNull)
-  publication             RegulatoryPublication?      @relation(fields: [publicationId], references: [id], onDelete: SetNull)
-  publicationVersion      RegulatoryPublicationVersion? @relation(fields: [publicationVersionId], references: [id], onDelete: SetNull)
-  applicability           RegulatoryApplicabilityAssessment? @relation(fields: [applicabilityId], references: [id], onDelete: SetNull)
-  history                 RegulatoryRemediationHistory[]
+  organization       Organization                        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  complianceTask     ComplianceTask                      @relation(fields: [complianceTaskId], references: [id], onDelete: Cascade)
+  assessment         RegulatoryControlGapAssessment      @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  obligation         RegulatoryObligation                @relation(fields: [obligationId], references: [id], onDelete: Cascade)
+  control            Control?                            @relation(fields: [controlId], references: [id], onDelete: SetNull)
+  mapping            RegulatoryObligationControlMapping? @relation(fields: [mappingId], references: [id], onDelete: SetNull)
+  publication        RegulatoryPublication?              @relation(fields: [publicationId], references: [id], onDelete: SetNull)
+  publicationVersion RegulatoryPublicationVersion?       @relation(fields: [publicationVersionId], references: [id], onDelete: SetNull)
+  applicability      RegulatoryApplicabilityAssessment?  @relation(fields: [applicabilityId], references: [id], onDelete: SetNull)
+  history            RegulatoryRemediationHistory[]
 
   @@index([organizationId])
   @@index([assessmentId])
@@ -3013,23 +3039,21 @@ model RegulatoryRemediationTask {
 }
 
 model RegulatoryRemediationHistory {
-  id                   String                      @id @default(uuid())
-  remediationTaskId    String
-  organizationId       String
-  previousStatus       RegulatoryRemediationStatus?
-  newStatus            RegulatoryRemediationStatus
-  action               String
-  actorId              String
-  rationale            String?
-  snapshotPayload      Json?
-  recordedAt           DateTime                    @default(now())
+  id                String                       @id @default(uuid())
+  remediationTaskId String
+  organizationId    String
+  previousStatus    RegulatoryRemediationStatus?
+  newStatus         RegulatoryRemediationStatus
+  action            String
+  actorId           String
+  rationale         String?
+  snapshotPayload   Json?
+  recordedAt        DateTime                     @default(now())
 
-  remediationTask      RegulatoryRemediationTask   @relation(fields: [remediationTaskId], references: [id], onDelete: Cascade)
-  organization         Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  remediationTask RegulatoryRemediationTask @relation(fields: [remediationTaskId], references: [id], onDelete: Cascade)
+  organization    Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([remediationTaskId])
   @@index([organizationId])
   @@map("regulatory_remediation_histories")
 }
-
-

@@ -3,7 +3,7 @@ import { PoliciesService } from './policies.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { ApprovalEngineService } from '../approval/approval-engine.service';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { NotFoundException, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { PolicyStatus, Role } from '@omnigrc/shared';
 import { ResourceAuthorizationService } from '../auth/resource-authorization.service';
 
@@ -691,6 +691,109 @@ describe('PoliciesService', () => {
           dueDays: 14,
         }),
       );
+    });
+  });
+
+  describe('Phase 4: Policy Lifecycle & Concurrency', () => {
+    const adminCtx = {
+      userId: 'admin-1',
+      organizationId: 'org-1',
+      role: Role.ADMIN,
+    };
+    const analystCtx = {
+      userId: 'analyst-1',
+      organizationId: 'org-1',
+      role: Role.ANALYST,
+    };
+
+    it('should reject policy review and transition from UNDER_REVIEW back to DRAFT', async () => {
+      prisma.policy.findFirst.mockResolvedValue({
+        id: 'pol-rev-1',
+        code: 'POL-REV-01',
+        title: 'Draft Policy In Review',
+        status: PolicyStatus.UNDER_REVIEW,
+        organizationId: 'org-1',
+        ownerId: 'analyst-1',
+      });
+
+      prisma.policy.update.mockResolvedValue({
+        id: 'pol-rev-1',
+        code: 'POL-REV-01',
+        title: 'Draft Policy In Review',
+        status: PolicyStatus.DRAFT,
+        organizationId: 'org-1',
+        ownerId: 'analyst-1',
+        version: 2,
+        _count: { controlAssociations: 3 },
+      });
+
+      const res = await service.reject(adminCtx, 'pol-rev-1', 'Requires updated cipher suites');
+
+      expect(res.status).toBe(PolicyStatus.DRAFT);
+      expect(res.version).toBe(2);
+      expect(res.mappedControlCount).toBe(3);
+      expect(auditLogsService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'POLICY_REJECTED',
+          organizationId: 'org-1',
+        }),
+      );
+    });
+
+    it('should prevent non-admin from rejecting policy review', async () => {
+      await expect(
+        service.reject(analystCtx, 'pol-rev-1', 'Unauthorized rejection'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should reject review rejection if policy is not in UNDER_REVIEW status', async () => {
+      prisma.policy.findFirst.mockResolvedValue({
+        id: 'pol-draft-1',
+        status: PolicyStatus.DRAFT,
+        organizationId: 'org-1',
+      });
+
+      await expect(
+        service.reject(adminCtx, 'pol-draft-1', 'Cannot reject draft'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should detect concurrent modifications and throw ConflictException (409) when expectedUpdatedAt is stale', async () => {
+      const serverUpdatedAt = new Date('2026-11-02T10:00:00.000Z');
+      const staleClientTimestamp = new Date('2026-11-02T09:00:00.000Z').toISOString();
+
+      prisma.policy.findFirst.mockResolvedValue({
+        id: 'pol-conc-1',
+        code: 'POL-CONC-01',
+        title: 'Concurrency Test',
+        organizationId: 'org-1',
+        updatedAt: serverUpdatedAt,
+      });
+
+      await expect(
+        service.updateMetadata(adminCtx, 'pol-conc-1', {
+          title: 'Attempt Overwrite',
+          expectedUpdatedAt: staleClientTimestamp,
+        }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('should detect version conflict and throw ConflictException (409) when expectedVersion does not match', async () => {
+      prisma.policy.findFirst.mockResolvedValue({
+        id: 'pol-ver-1',
+        code: 'POL-VER-01',
+        title: 'Version Conflict Test',
+        organizationId: 'org-1',
+        version: 3,
+        updatedAt: new Date(),
+      });
+
+      await expect(
+        service.updateMetadata(adminCtx, 'pol-ver-1', {
+          title: 'Attempt Overwrite with Stale Version',
+          expectedVersion: 2,
+        }),
+      ).rejects.toThrow(ConflictException);
     });
   });
 });
