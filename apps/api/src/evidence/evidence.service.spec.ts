@@ -106,6 +106,10 @@ describe('EvidenceService - Control Evidence Association Suite', () => {
     storageService = {
       saveFile: jest.fn(),
       getFileStream: jest.fn(),
+      deleteFile: jest.fn().mockResolvedValue(true),
+      verifyIntegrity: jest.fn().mockResolvedValue({ matched: true, actualChecksum: 'valid-hash', expectedChecksum: 'valid-hash' }),
+      exists: jest.fn().mockResolvedValue(true),
+      calculateChecksum: jest.fn().mockReturnValue('valid-hash'),
     };
 
     scannerService = {

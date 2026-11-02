@@ -4,7 +4,7 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { FrameworkEntitlementsService } from '../frameworks/framework-entitlements.service';
 import { DocumentExtractionService } from './document-extraction.service';
 import { AiRouterService } from '../controls/ai/ai-router.service';
-import { AnalysisStatus, ExtractionStatus, FindingConfidence, FindingType, DateCategory } from '@omnigrc/shared';
+import { AnalysisStatus, ExtractionStatus, FindingConfidence, FindingType, DateCategory, EvidenceScanStatus, EvidenceStatus } from '@omnigrc/shared';
 import { EffectiveServiceStateResolver } from '../service-control/effective-service-state-resolver.service';
 import { Queue, Worker } from 'bullmq';
 import Redis from 'ioredis';
@@ -247,6 +247,27 @@ export class AnalysisQueueService implements OnModuleInit, OnModuleDestroy {
 
     if (!analysis) {
       this.logger.error(`DocumentAnalysis "${analysisId}" not found in database.`);
+      return;
+    }
+
+    // 1b. Fail-closed scan integrity check: Verify evidence is present, CLEAN, and ACTIVE before extraction
+    if (
+      !analysis.evidence ||
+      analysis.evidence.scanStatus !== EvidenceScanStatus.CLEAN ||
+      analysis.evidence.status !== EvidenceStatus.ACTIVE
+    ) {
+      const scanStatus = analysis.evidence?.scanStatus || 'MISSING';
+      const status = analysis.evidence?.status || 'MISSING';
+      this.logger.warn(
+        `Document analysis "${analysisId}" rejected: Evidence has scanStatus="${scanStatus}", status="${status}". Unscanned, infected, or missing documents cannot be processed.`,
+      );
+      await this.prisma.documentAnalysis.update({
+        where: { id: analysisId },
+        data: {
+          status: AnalysisStatus.FAILED,
+          errorMessage: `MALWARE_SCAN_UNVERIFIED: Evidence is scanStatus=${scanStatus}, status=${status}. Only verified CLEAN evidence can be processed.`,
+        },
+      });
       return;
     }
 

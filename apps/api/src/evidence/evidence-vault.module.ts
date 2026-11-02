@@ -28,6 +28,6 @@ import { MulterModule } from '@nestjs/platform-express';
     EvidenceScannerService,
   ],
   controllers: [EvidenceController, EvidenceVaultController],
-  exports: [EvidenceVaultService, EvidenceService, EvidenceStorageService],
+  exports: [EvidenceVaultService, EvidenceService, EvidenceStorageService, EvidenceScannerService],
 })
 export class EvidenceVaultModule {}

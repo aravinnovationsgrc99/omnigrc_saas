@@ -19,6 +19,8 @@ import {
   FindingReviewStatus,
   Role,
   MappingStatus,
+  EvidenceScanStatus,
+  EvidenceStatus,
 } from '@omnigrc/shared';
 import * as crypto from 'crypto';
 
@@ -95,6 +97,13 @@ export class DocumentIntelligenceService {
 
     if (!evidence) {
       throw new NotFoundException(`Evidence with ID "${evidenceId}" not found or outside authorized scope.`);
+    }
+
+    // 1b. WP3 Security Gate: Ensure Evidence is CLEAN and ACTIVE before queuing for AI extraction
+    if (evidence.scanStatus !== EvidenceScanStatus.CLEAN || evidence.status !== EvidenceStatus.ACTIVE) {
+      throw new ForbiddenException(
+        `Document cannot be submitted for AI analysis: scanStatus is "${evidence.scanStatus}" and status is "${evidence.status}". Only CLEAN and ACTIVE evidence may be processed.`,
+      );
     }
 
     // 2. Handle Multi-Framework Selection

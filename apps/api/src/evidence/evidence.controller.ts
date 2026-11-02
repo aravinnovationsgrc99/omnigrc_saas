@@ -111,6 +111,20 @@ export class EvidenceController {
     await this.evidenceService.downloadEvidence(authCtx, id, res);
   }
 
+  @Get(':id/verify-integrity')
+  @RequireCapability('EVIDENCE_VAULT')
+  async verifyEvidenceIntegrity(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+  ): Promise<{ id: string; fileName: string; matched: boolean; expectedChecksum: string; actualChecksum: string }> {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.evidenceService.verifyEvidenceIntegrity(authCtx, id);
+  }
+
   @Post(':id/attach')
   @RequiresActiveLicense()
   @RequireCapability('EVIDENCE_VAULT')

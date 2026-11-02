@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -57,75 +58,124 @@ export class EvidenceService {
     }
 
     const saved = await this.storageService.saveFile(file, authCtx.organizationId);
-    const scanStatus = await this.scannerService.scanFile(saved.storageKey, file.buffer);
 
-    let retentionUntil: Date | null = null;
-    if (dto.retentionDays && dto.retentionDays > 0) {
-      retentionUntil = new Date(Date.now() + dto.retentionDays * 24 * 60 * 60 * 1000);
-    }
+    try {
+      const scanStatus = await this.scannerService.scanFile(saved.storageKey, file.buffer);
 
-    let evidenceType = dto.evidenceType || EvidenceType.DOCUMENT;
-    if (!dto.evidenceType) {
-      if (saved.mimeType.startsWith('image/')) evidenceType = EvidenceType.IMAGE;
-      else if (saved.mimeType.includes('excel') || saved.mimeType.includes('spreadsheet') || saved.mimeType.includes('csv'))
-        evidenceType = EvidenceType.SPREADSHEET;
-    }
+      let status: EvidenceStatus;
+      if (scanStatus === EvidenceScanStatus.CLEAN) {
+        status = EvidenceStatus.ACTIVE;
+      } else if (scanStatus === EvidenceScanStatus.QUARANTINED || scanStatus === EvidenceScanStatus.SCAN_FAILED) {
+        status = EvidenceStatus.QUARANTINED;
+      } else {
+        // PENDING_SCAN
+        status = EvidenceStatus.PENDING;
+      }
 
-    const evidence = await this.prisma.evidence.create({
-      data: {
-        organizationId: authCtx.organizationId,
-        departmentId: dto.departmentId || null,
-        projectId: dto.projectId || null,
-        title: dto.title.trim(),
-        description: dto.description?.trim() || null,
-        evidenceType,
-        fileName: saved.originalFileName,
-        fileSize: saved.fileSize,
-        mimeType: saved.mimeType,
-        storageKey: saved.storageKey,
-        checksum: saved.checksum,
-        status: scanStatus === EvidenceScanStatus.QUARANTINED ? EvidenceStatus.QUARANTINED : EvidenceStatus.ACTIVE,
-        scanStatus,
-        uploadedById: authCtx.userId,
-        retentionUntil,
-      },
-    });
+      let retentionUntil: Date | null = null;
+      if (dto.retentionDays && dto.retentionDays > 0) {
+        retentionUntil = new Date(Date.now() + dto.retentionDays * 24 * 60 * 60 * 1000);
+      }
 
-    if (dto.targetResourceType && dto.targetResourceId) {
-      await this.createAssociationRecord(authCtx.organizationId, evidence.id, dto.targetResourceType, dto.targetResourceId);
-    }
+      let evidenceType = dto.evidenceType || EvidenceType.DOCUMENT;
+      if (!dto.evidenceType) {
+        if (saved.mimeType.startsWith('image/')) evidenceType = EvidenceType.IMAGE;
+        else if (saved.mimeType.includes('excel') || saved.mimeType.includes('spreadsheet') || saved.mimeType.includes('csv'))
+          evidenceType = EvidenceType.SPREADSHEET;
+      }
 
-    if (dto.frameworkReferenceId) {
-      const ref = await this.prisma.frameworkReference.findUnique({
-        where: { id: dto.frameworkReferenceId },
-      });
-      if (ref) {
-        await this.prisma.evidenceFrameworkReference.create({
+      const executeTx = async (tx: any) => {
+        const ev = await tx.evidence.create({
           data: {
-            evidenceId: evidence.id,
-            frameworkReferenceId: dto.frameworkReferenceId,
+            organizationId: authCtx.organizationId,
+            departmentId: dto.departmentId || null,
+            projectId: dto.projectId || null,
+            title: dto.title.trim(),
+            description: dto.description?.trim() || null,
+            evidenceType,
+            fileName: saved.originalFileName,
+            fileSize: saved.fileSize,
+            mimeType: saved.mimeType,
+            storageKey: saved.storageKey,
+            checksum: saved.checksum,
+            status,
+            scanStatus,
+            uploadedById: authCtx.userId,
+            retentionUntil,
           },
         });
+
+        if (dto.targetResourceType && dto.targetResourceId) {
+          await this.createAssociationRecord(authCtx.organizationId, ev.id, dto.targetResourceType, dto.targetResourceId, tx);
+        }
+
+        if (dto.frameworkReferenceId) {
+          const ref = await tx.frameworkReference.findUnique({
+            where: { id: dto.frameworkReferenceId },
+          });
+          if (ref) {
+            await tx.evidenceFrameworkReference.create({
+              data: {
+                evidenceId: ev.id,
+                frameworkReferenceId: dto.frameworkReferenceId,
+              },
+            });
+          }
+        }
+
+        return ev;
+      };
+
+      const evidence = typeof (this.prisma as any).$transaction === 'function'
+        ? await (this.prisma as any).$transaction(executeTx)
+        : await executeTx(this.prisma);
+
+      try {
+        await this.auditLogsService.log({
+          organizationId: authCtx.organizationId,
+          actorId: authCtx.userId,
+          action: 'EVIDENCE_UPLOADED',
+          entityType: 'Evidence',
+          entityId: evidence.id,
+          metadata: {
+            title: evidence.title,
+            fileName: evidence.fileName,
+            fileSize: evidence.fileSize,
+            checksum: evidence.checksum,
+            targetResourceType: dto.targetResourceType || null,
+            targetResourceId: dto.targetResourceId || null,
+          },
+        });
+      } catch {
+        // Non-fatal logging failure: does not invalidate committed evidence
       }
+
+      return this.mapToDto(evidence.id);
+    } catch (err: any) {
+      // Storage compensation: remove orphaned file on disk if DB persistence or association fails
+      const deleteSuccess = await this.storageService.deleteFile(saved.storageKey);
+      if (!deleteSuccess) {
+        // Cleanup failed: record an observable orphan alert
+        try {
+          await this.auditLogsService.log({
+            organizationId: authCtx.organizationId,
+            actorId: authCtx.userId,
+            action: 'STORAGE_ORPHAN_CLEANUP_FAILED',
+            entityType: 'Evidence',
+            entityId: 'uncommitted',
+            metadata: {
+              storageKey: saved.storageKey,
+              fileName: saved.originalFileName,
+              dbError: err?.message || 'DB Error',
+              reason: 'Database write failed and automatic storage cleanup failed to delete file',
+            },
+          });
+        } catch {
+          // ignore non-fatal audit log error during compensation
+        }
+      }
+      throw err;
     }
-
-    await this.auditLogsService.log({
-      organizationId: authCtx.organizationId,
-      actorId: authCtx.userId,
-      action: 'EVIDENCE_UPLOADED',
-      entityType: 'Evidence',
-      entityId: evidence.id,
-      metadata: {
-        title: evidence.title,
-        fileName: evidence.fileName,
-        fileSize: evidence.fileSize,
-        checksum: evidence.checksum,
-        targetResourceType: dto.targetResourceType || null,
-        targetResourceId: dto.targetResourceId || null,
-      },
-    });
-
-    return this.mapToDto(evidence.id);
   }
 
   async findAll(authCtx: ResourceAuthContext, query: EvidenceVaultQueryDto): Promise<PaginatedEvidenceDto> {
@@ -831,6 +881,37 @@ export class EvidenceService {
       throw new ForbiddenException(`Evidence file "${evidence.title}" is QUARANTINED due to malware scan policy.`);
     }
 
+    if (evidence.scanStatus === EvidenceScanStatus.SCAN_FAILED) {
+      throw new ForbiddenException(`Evidence file "${evidence.title}" cannot be downloaded: malware scan failed.`);
+    }
+
+    if (evidence.status === EvidenceStatus.PENDING || evidence.scanStatus === EvidenceScanStatus.PENDING_SCAN) {
+      throw new ForbiddenException(`Evidence file "${evidence.title}" is PENDING_SCAN and cannot be downloaded until verified clean.`);
+    }
+
+    // Integrity verification: ensure file on disk matches stored cryptographic baseline
+    if (evidence.checksum) {
+      const integrity = await this.storageService.verifyIntegrity(evidence.storageKey, evidence.checksum);
+      if (!integrity.matched) {
+        await this.auditLogsService.log({
+          organizationId: authCtx.organizationId,
+          actorId: authCtx.userId,
+          action: 'EVIDENCE_TAMPER_DETECTED',
+          entityType: 'Evidence',
+          entityId: evidence.id,
+          metadata: {
+            fileName: evidence.fileName,
+            expectedChecksum: evidence.checksum,
+            actualChecksum: integrity.actualChecksum,
+            alert: 'CRITICAL: Cryptographic integrity violation detected during download attempt.',
+          },
+        });
+        throw new InternalServerErrorException(
+          `Evidence integrity check failed: file checksum does not match cryptographic baseline for "${evidence.fileName}". Possible tampering or corruption detected.`,
+        );
+      }
+    }
+
     const { stream } = this.storageService.getFileStream(evidence.storageKey);
 
     await this.auditLogsService.log({
@@ -842,9 +923,58 @@ export class EvidenceService {
       metadata: { fileName: evidence.fileName, title: evidence.title },
     });
 
+    const safeFileName = encodeURIComponent(evidence.fileName).replace(/['()]/g, escape);
     res.setHeader('Content-Type', evidence.mimeType || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(evidence.fileName)}"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFileName}"; filename*=UTF-8''${safeFileName}`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'");
+    res.setHeader('X-Download-Options', 'noopen');
+    res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     stream.pipe(res);
+  }
+
+  async verifyEvidenceIntegrity(
+    authCtx: ResourceAuthContext,
+    evidenceId: string,
+  ): Promise<{ id: string; fileName: string; matched: boolean; expectedChecksum: string; actualChecksum: string }> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+    const evidence = await this.prisma.evidence.findFirst({
+      where: { id: evidenceId, ...scopeWhere, deletedAt: null },
+    });
+
+    if (!evidence) {
+      throw new NotFoundException(`Evidence record "${evidenceId}" not found or out of authorized scope.`);
+    }
+
+    if (!evidence.checksum) {
+      throw new BadRequestException(`Evidence record "${evidenceId}" has no recorded checksum.`);
+    }
+
+    const integrity = await this.storageService.verifyIntegrity(evidence.storageKey, evidence.checksum);
+    if (!integrity.matched) {
+      await this.auditLogsService.log({
+        organizationId: authCtx.organizationId,
+        actorId: authCtx.userId,
+        action: 'EVIDENCE_TAMPER_DETECTED',
+        entityType: 'Evidence',
+        entityId: evidence.id,
+        metadata: {
+          fileName: evidence.fileName,
+          expectedChecksum: evidence.checksum,
+          actualChecksum: integrity.actualChecksum,
+        },
+      });
+    }
+
+    return {
+      id: evidence.id,
+      fileName: evidence.fileName,
+      matched: integrity.matched,
+      expectedChecksum: evidence.checksum,
+      actualChecksum: integrity.actualChecksum,
+    };
   }
 
   async attachEvidence(
@@ -1073,32 +1203,33 @@ export class EvidenceService {
     evidenceId: string,
     resourceType: string,
     resourceId: string,
+    client: any = this.prisma,
   ): Promise<void> {
     try {
       switch (resourceType) {
         case 'CONTROL':
-          await this.prisma.controlEvidence.create({ data: { organizationId, evidenceId, controlId: resourceId } });
+          await client.controlEvidence.create({ data: { organizationId, evidenceId, controlId: resourceId } });
           break;
         case 'RISK':
-          await this.prisma.riskEvidence.create({ data: { organizationId, evidenceId, riskId: resourceId } });
+          await client.riskEvidence.create({ data: { organizationId, evidenceId, riskId: resourceId } });
           break;
         case 'POLICY':
-          await this.prisma.policyEvidence.create({ data: { organizationId, evidenceId, policyId: resourceId } });
+          await client.policyEvidence.create({ data: { organizationId, evidenceId, policyId: resourceId } });
           break;
         case 'AUDIT_CHECK':
-          await this.prisma.auditCheckItemEvidence.create({ data: { organizationId, evidenceId, checkItemId: resourceId } });
+          await client.auditCheckItemEvidence.create({ data: { organizationId, evidenceId, checkItemId: resourceId } });
           break;
         case 'AUDIT_FINDING':
-          await this.prisma.auditFindingEvidence.create({ data: { organizationId, evidenceId, findingId: resourceId } });
+          await client.auditFindingEvidence.create({ data: { organizationId, evidenceId, findingId: resourceId } });
           break;
         case 'VENDOR':
-          await this.prisma.vendorEvidence.create({ data: { organizationId, evidenceId, vendorId: resourceId } });
+          await client.vendorEvidence.create({ data: { organizationId, evidenceId, vendorId: resourceId } });
           break;
         case 'VULNERABILITY':
-          await this.prisma.vulnerabilityEvidence.create({ data: { organizationId, evidenceId, vulnerabilityId: resourceId } });
+          await client.vulnerabilityEvidence.create({ data: { organizationId, evidenceId, vulnerabilityId: resourceId } });
           break;
         case 'INCIDENT':
-          await this.prisma.incidentEvidence.create({ data: { organizationId, evidenceId, incidentId: resourceId } });
+          await client.incidentEvidence.create({ data: { organizationId, evidenceId, incidentId: resourceId } });
           break;
       }
     } catch (err: any) {
