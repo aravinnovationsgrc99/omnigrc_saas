@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { EvidenceScanStatus } from '@omnigrc/shared';
+import { ClamAvScannerEngine } from './clamav-scanner.engine';
 
 export interface ScannerScanResult {
   status: EvidenceScanStatus;
@@ -24,6 +25,13 @@ export const EICAR_STANDARD_TEST_STRING = 'X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-ST
 export class EvidenceScannerService implements IMalwareScanner {
   private readonly logger = new Logger(EvidenceScannerService.name);
   private registeredEngine: IMalwareScannerEngine | null = null;
+
+  constructor(@Optional() private readonly clamAvEngine?: ClamAvScannerEngine) {
+    if (this.clamAvEngine && this.clamAvEngine.isConfigured()) {
+      this.registerEngine(this.clamAvEngine);
+      this.logger.log(`Automatically registered ClamAV scanner engine: ${this.clamAvEngine.engineName}`);
+    }
+  }
 
   /**
    * Allows registration of an external antivirus engine driver (e.g. ClamAV daemon, ICAP, VirusTotal)

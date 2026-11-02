@@ -751,6 +751,19 @@ export class EvidenceService {
         }
       }
 
+      let calculatedChecksum: string | null = null;
+      if (legacy.fileUrl && !legacy.fileUrl.startsWith('http://') && !legacy.fileUrl.startsWith('https://')) {
+        try {
+          const exists = await this.storageService.exists(legacy.fileUrl);
+          if (exists) {
+            const integrity = await this.storageService.verifyIntegrity(legacy.fileUrl, '');
+            calculatedChecksum = integrity.actualChecksum;
+          }
+        } catch {
+          // Keep null if unavailable
+        }
+      }
+
       return {
         id: legacy.id,
         organizationId: legacy.organizationId,
@@ -763,7 +776,7 @@ export class EvidenceService {
         fileSize: legacy.fileSize || 0,
         mimeType: legacy.mimeType || 'application/octet-stream',
         storageKey: legacy.fileUrl,
-        checksum: null,
+        checksum: calculatedChecksum,
         status: EvidenceStatus.ACTIVE,
         scanStatus: EvidenceScanStatus.CLEAN,
         uploadedById: legacy.uploadedById,
