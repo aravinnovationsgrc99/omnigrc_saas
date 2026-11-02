@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { EvidenceDto, PaginatedEvidenceDto, EvidenceType, EvidenceStatus, TargetResourceItemDto } from '@omnigrc/shared';
-import { Search, FileText, Download, Info, RefreshCw, FileArchive, Upload, ShieldCheck, Tag, Trash2, Link, ChevronDown, X, Check } from 'lucide-react';
+import { EvidenceDto, PaginatedEvidenceDto, EvidenceType, EvidenceStatus, EvidenceScanStatus, TargetResourceItemDto } from '@omnigrc/shared';
+import { Search, FileText, Download, Info, RefreshCw, FileArchive, Upload, ShieldCheck, ShieldAlert, AlertTriangle, Clock, Tag, Trash2, Link, ChevronDown, X, Check, Shield } from 'lucide-react';
 import { apiRequest, getStoredTokens } from '@/lib/api-client';
 import { useToast } from '@/context/toast-context';
 import { ComplianceScopeFilter } from '@/components/ui/compliance-scope-filter';
@@ -163,7 +163,74 @@ export function EvidenceVaultView() {
     }
   };
 
+  const renderScanBadge = (scanStatus?: EvidenceScanStatus) => {
+    switch (scanStatus) {
+      case EvidenceScanStatus.CLEAN:
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+            <ShieldCheck size={11} className="text-emerald-600" /> Verified Clean
+          </span>
+        );
+      case EvidenceScanStatus.QUARANTINED:
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+            <ShieldAlert size={11} className="text-rose-600" /> Quarantined (Threat)
+          </span>
+        );
+      case EvidenceScanStatus.SCAN_FAILED:
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-50 text-red-600 border border-red-200">
+            <AlertTriangle size={11} className="text-red-500" /> Scan Failed
+          </span>
+        );
+      case EvidenceScanStatus.PENDING_SCAN:
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+            <Clock size={11} className="text-amber-600" /> Pending Scan
+          </span>
+        );
+      default:
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+            Legacy Unscanned
+          </span>
+        );
+    }
+  };
+
+  const handleVerifyIntegrity = async (evidence: EvidenceDto) => {
+    try {
+      const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/+$/, '');
+      const { accessToken } = getStoredTokens();
+      const res = await fetch(`${API_BASE_URL}/evidence/${evidence.id}/verify-integrity`, {
+        headers: { Authorization: accessToken ? `Bearer ${accessToken}` : '' },
+      });
+
+      if (!res.ok) throw new Error('Integrity verification request failed.');
+
+      const result = await res.json();
+      if (result.matched) {
+        addToast(`Cryptographic Integrity Verified: SHA-256 match confirmed (${result.actualChecksum.slice(0, 12)}...)`, 'success');
+      } else {
+        addToast(`INTEGRITY MISMATCH: File binary hash does not match expected record hash!`, 'error');
+      }
+    } catch (err: any) {
+      addToast(err.message || 'Integrity check failed', 'error');
+    }
+  };
+
   const handleDownload = async (evidence: EvidenceDto) => {
+    // 1. Quarantined gate
+    if (evidence.scanStatus === EvidenceScanStatus.QUARANTINED || evidence.status === EvidenceStatus.QUARANTINED) {
+      addToast(`Security Policy Violation: Cannot download quarantined evidence "${evidence.fileName}". An active malware threat was detected.`, 'error');
+      return;
+    }
+
+    if (evidence.scanStatus === EvidenceScanStatus.PENDING_SCAN || evidence.scanStatus === EvidenceScanStatus.SCAN_FAILED) {
+      const confirmDownload = window.confirm(`Security Notice: "${evidence.fileName}" has not completed clean antivirus verification (Status: ${evidence.scanStatus}). Download anyway?`);
+      if (!confirmDownload) return;
+    }
+
     try {
       const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/+$/, '');
       const { accessToken } = getStoredTokens();
@@ -171,7 +238,12 @@ export function EvidenceVaultView() {
         headers: { Authorization: accessToken ? `Bearer ${accessToken}` : '' },
       });
 
-      if (!res.ok) throw new Error('Download unauthorized or evidence unavailable.');
+      if (!res.ok) {
+        if (res.status === 403) {
+          throw new Error('Download blocked by server security policy (unverified or quarantined evidence).');
+        }
+        throw new Error('Download unauthorized or evidence unavailable.');
+      }
 
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
@@ -312,7 +384,8 @@ export function EvidenceVaultView() {
               <thead className="bg-slate-50 text-slate-700 font-bold text-[11px] border-b border-slate-200 uppercase tracking-wider">
                 <tr>
                   <th className="py-3 px-3 sm:px-4">Proof Title & File</th>
-                  <th className="py-3 px-2 sm:px-4 hidden sm:table-cell">Evidence Type</th>
+                  <th className="py-3 px-2 sm:px-4 hidden sm:table-cell">Type</th>
+                  <th className="py-3 px-3 sm:px-4">Security Scan</th>
                   <th className="py-3 px-4 hidden md:table-cell">Associated Resources & Scopes</th>
                   <th className="py-3 px-4 hidden lg:table-cell">Size & Hash</th>
                   <th className="py-3 px-4 hidden sm:table-cell">Uploader</th>
@@ -344,6 +417,9 @@ export function EvidenceVaultView() {
                         {item.evidenceType}
                       </span>
                     </td>
+                    <td className="py-3.5 px-3 sm:px-4">
+                      {renderScanBadge(item.scanStatus)}
+                    </td>
                     <td className="py-3.5 px-4 hidden md:table-cell">
                       {item.associations.length === 0 && (!item.frameworkReferences || item.frameworkReferences.length === 0) ? (
                         <span className="italic text-slate-400">Unattached</span>
@@ -368,10 +444,22 @@ export function EvidenceVaultView() {
                     </td>
                     <td className="py-3.5 px-4 text-xs hidden lg:table-cell">
                       <div className="font-mono text-slate-700">{formatFileSize(item.fileSize)}</div>
-                      {item.checksum && (
-                        <div className="text-[10px] text-slate-400 font-mono truncate max-w-[120px]" title={item.checksum}>
-                          SHA: {item.checksum.slice(0, 10)}...
+                      {item.checksum ? (
+                        <div className="mt-1 flex items-center gap-1.5">
+                          <span className="text-[10px] text-slate-400 font-mono truncate max-w-[90px]" title={item.checksum}>
+                            SHA: {item.checksum.slice(0, 8)}...
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleVerifyIntegrity(item)}
+                            className="px-1.5 py-0.5 text-[9px] font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded transition"
+                            title="Verify SHA-256 cryptographic integrity on server"
+                          >
+                            Verify
+                          </button>
                         </div>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 italic">No hash</span>
                       )}
                     </td>
                     <td className="py-3.5 px-4 text-xs font-medium text-slate-600 hidden sm:table-cell">
@@ -381,9 +469,14 @@ export function EvidenceVaultView() {
                     <td className="py-3.5 px-3 sm:px-4 text-right">
                       <button
                         onClick={() => handleDownload(item)}
-                        className="inline-flex items-center gap-1 text-xs text-teal-700 hover:text-teal-800 font-bold transition px-2 py-1 bg-teal-50 hover:bg-teal-100 rounded min-h-[32px]"
+                        className={`inline-flex items-center gap-1 text-xs font-bold transition px-2.5 py-1.5 rounded min-h-[32px] ${
+                          item.scanStatus === EvidenceScanStatus.QUARANTINED
+                            ? 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200'
+                            : 'bg-teal-50 text-teal-700 hover:bg-teal-100 border border-teal-200'
+                        }`}
+                        title={item.scanStatus === EvidenceScanStatus.QUARANTINED ? 'Threat Detected — Download Restricted' : 'Download authenticated stream'}
                       >
-                        <Download className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Download</span> Stream
+                        <Download className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Download</span>
                       </button>
                     </td>
                   </tr>

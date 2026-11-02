@@ -14,8 +14,23 @@ import {
   ObligationCadence,
   EntitlementStatus,
   ProductAccessStatus,
+  AuditPlanStatus,
+  AuditScheduleStatus,
+  AuditAssessmentStatus,
+  AuditCheckResult,
+  FindingStatus,
+  CapaStatus,
+  CapaApplicability,
+  AuditFindingLifecycleAction,
+  VulnerabilitySeverity,
+  EvidenceType,
+  EvidenceStatus,
+  EvidenceScanStatus,
 } from '@omnigrc/shared';
 import * as bcrypt from 'bcrypt';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as crypto from 'crypto';
 
 const prisma = new PrismaClient();
 
@@ -311,6 +326,7 @@ async function main() {
         frameworkId: fwId,
         versionId: null,
       },
+      select: { id: true, status: true },
     });
 
     if (existingEntitlement) {
@@ -320,6 +336,7 @@ async function main() {
           status: EntitlementStatus.ACTIVE,
           source: 'ARAV_CONTROL_PLANE',
         },
+        select: { id: true },
       });
     } else {
       await prisma.organizationFrameworkEntitlement.create({
@@ -330,6 +347,7 @@ async function main() {
           status: EntitlementStatus.ACTIVE,
           source: 'ARAV_CONTROL_PLANE',
         },
+        select: { id: true },
       });
     }
   }
@@ -745,6 +763,7 @@ async function main() {
           reviewedById: m.status !== MappingStatus.SUGGESTED ? adminUser.id : null,
           reviewedAt: m.status !== MappingStatus.SUGGESTED ? new Date() : null,
         },
+        select: { id: true },
       });
     }
   }
@@ -902,6 +921,285 @@ async function main() {
       },
     });
   }
+
+  // --- Seed Phase 3 Demo Audit Scenario (ISO 27001 / SOC 2 Security Audit) ---
+  console.log('Seeding Phase 3 Demo Audit Lifecycle Scenario...');
+  const demoPlanId = 'p0000000-0000-0000-0000-000000000001';
+  const demoScheduleId = 's0000000-0000-0000-0000-000000000001';
+  const demoAssessmentId = 'a0000000-0000-0000-0000-000000000001';
+  const demoCheck1Id = 'k0000000-0000-0000-0000-000000000001';
+  const demoCheck2Id = 'k0000000-0000-0000-0000-000000000002';
+  const demoFindingId = 'f0000000-0000-0000-0000-000000000001';
+  const demoCapaId = 'c0000000-0000-0000-0000-000000000001';
+  const demoEvidence1Id = 'e0000000-0000-0000-0000-000000000001';
+  const demoEvidence2Id = 'e0000000-0000-0000-0000-000000000002';
+
+  const isoFrameworkId = frameworkMap.get(FrameworkCode.ISO27001);
+
+  // 1. Audit Plan
+  await prisma.auditPlan.upsert({
+    where: { id: demoPlanId },
+    update: {
+      title: 'FY2026 ISO 27001:2022 Stage 2 Information Security Management Audit',
+      objective: 'Comprehensive evaluation of technical security controls, data encryption, access governance, and cloud infrastructure compliance.',
+      scope: 'Production EKS clusters, Supabase PostgreSQL data stores, Vault KMS, and developer CI/CD pipelines.',
+      frameworkCode: 'ISO27001',
+      frameworkId: isoFrameworkId || null,
+      status: AuditPlanStatus.IN_PROGRESS,
+      ownerId: adminUser.id,
+      version: 1,
+      plannedStartDate: days(-30),
+      plannedEndDate: days(30),
+    },
+    create: {
+      id: demoPlanId,
+      organizationId: org.id,
+      title: 'FY2026 ISO 27001:2022 Stage 2 Information Security Management Audit',
+      objective: 'Comprehensive evaluation of technical security controls, data encryption, access governance, and cloud infrastructure compliance.',
+      scope: 'Production EKS clusters, Supabase PostgreSQL data stores, Vault KMS, and developer CI/CD pipelines.',
+      frameworkCode: 'ISO27001',
+      frameworkId: isoFrameworkId || null,
+      status: AuditPlanStatus.IN_PROGRESS,
+      ownerId: adminUser.id,
+      createdById: adminUser.id,
+      version: 1,
+      plannedStartDate: days(-30),
+      plannedEndDate: days(30),
+    },
+  });
+
+  // 2. Audit Schedule
+  await prisma.auditSchedule.upsert({
+    where: { id: demoScheduleId },
+    update: {
+      scheduledStartDate: days(-14),
+      scheduledEndDate: days(14),
+      leadAuditorId: '00000000-0000-0000-0000-000000000003',
+      status: AuditScheduleStatus.IN_PROGRESS,
+    },
+    create: {
+      id: demoScheduleId,
+      organizationId: org.id,
+      auditPlanId: demoPlanId,
+      scheduledStartDate: days(-14),
+      scheduledEndDate: days(14),
+      leadAuditorId: '00000000-0000-0000-0000-000000000003',
+      status: AuditScheduleStatus.IN_PROGRESS,
+    },
+  });
+
+  // 3. Audit Assessment
+  await prisma.auditAssessment.upsert({
+    where: { id: demoAssessmentId },
+    update: {
+      status: AuditAssessmentStatus.IN_PROGRESS,
+      score: 87.5,
+      summary: 'Evaluation of ISO 27001 Annex A cryptographic and network controls. 1 finding identified and in verification.',
+      auditorId: '00000000-0000-0000-0000-000000000003',
+    },
+    create: {
+      id: demoAssessmentId,
+      organizationId: org.id,
+      auditPlanId: demoPlanId,
+      scheduleId: demoScheduleId,
+      auditorId: '00000000-0000-0000-0000-000000000003',
+      status: AuditAssessmentStatus.IN_PROGRESS,
+      score: 87.5,
+      summary: 'Evaluation of ISO 27001 Annex A cryptographic and network controls. 1 finding identified and in verification.',
+      startedAt: days(-10),
+      createdById: '00000000-0000-0000-0000-000000000003',
+    },
+  });
+
+  // 4. Checklist Items
+  await prisma.auditCheckItem.upsert({
+    where: { id: demoCheck1Id },
+    update: {
+      result: AuditCheckResult.COMPLIANT,
+      notes: 'Okta Adaptive MFA and role-based least privilege strictly enforced across all production environments.',
+    },
+    create: {
+      id: demoCheck1Id,
+      organizationId: org.id,
+      assessmentId: demoAssessmentId,
+      title: 'A.5.15 - User Access Control & Mandatory Multi-Factor Authentication',
+      description: 'Verify that privileged administrative accounts require hardware-backed or push MFA with biometric verification.',
+      result: AuditCheckResult.COMPLIANT,
+      notes: 'Okta Adaptive MFA and role-based least privilege strictly enforced across all production environments.',
+      createdById: '00000000-0000-0000-0000-000000000003',
+    },
+  });
+
+  await prisma.auditCheckItem.upsert({
+    where: { id: demoCheck2Id },
+    update: {
+      result: AuditCheckResult.NON_COMPLIANT,
+      notes: 'Staging and legacy replica pools accepted TLS 1.1 handshake negotiations.',
+    },
+    create: {
+      id: demoCheck2Id,
+      organizationId: org.id,
+      assessmentId: demoAssessmentId,
+      title: 'A.8.24 - Use of Cryptography & Strict Transport Layer Security (TLS 1.3)',
+      description: 'Ensure all data in transit across internal service meshes and external database gateways mandates TLS 1.3 cipher suites.',
+      result: AuditCheckResult.NON_COMPLIANT,
+      notes: 'Staging and legacy replica pools accepted TLS 1.1 handshake negotiations.',
+      createdById: '00000000-0000-0000-0000-000000000003',
+    },
+  });
+
+  // 5. Audit Finding (READY_FOR_VERIFICATION)
+  await prisma.auditFinding.upsert({
+    where: { id: demoFindingId },
+    update: {
+      title: 'Database Cluster Ingress Lacks Mandatory TLS 1.3 Cipher Negotiation',
+      description: 'During penetration inspection, database connection pooler endpoints permitted legacy TLS 1.1 handshakes on port 5432, violating ISO 27001 A.8.24 and SOC 2 CC6.6 requirements.',
+      severity: VulnerabilitySeverity.HIGH,
+      status: FindingStatus.READY_FOR_VERIFICATION,
+      ownerId: '00000000-0000-0000-0000-000000000005',
+      capaApplicability: CapaApplicability.REQUIRED,
+      capaRationale: 'Mandatory corrective action required to harden all database connection gateways.',
+      version: 2,
+    },
+    create: {
+      id: demoFindingId,
+      organizationId: org.id,
+      assessmentId: demoAssessmentId,
+      checkItemId: demoCheck2Id,
+      title: 'Database Cluster Ingress Lacks Mandatory TLS 1.3 Cipher Negotiation',
+      description: 'During penetration inspection, database connection pooler endpoints permitted legacy TLS 1.1 handshakes on port 5432, violating ISO 27001 A.8.24 and SOC 2 CC6.6 requirements.',
+      severity: VulnerabilitySeverity.HIGH,
+      status: FindingStatus.READY_FOR_VERIFICATION,
+      ownerId: '00000000-0000-0000-0000-000000000005',
+      createdById: '00000000-0000-0000-0000-000000000003',
+      capaApplicability: CapaApplicability.REQUIRED,
+      capaRationale: 'Mandatory corrective action required to harden all database connection gateways.',
+      version: 2,
+    },
+  });
+
+  // 6. Audit CAPA (COMPLETED)
+  await prisma.auditCapa.upsert({
+    where: { id: demoCapaId },
+    update: {
+      title: 'Enforce ssl_min_protocol_version = TLSv1.3 and deploy hardened cipher suite in Terraform',
+      correctiveAction: 'Updated RDS parameter group to enforce TLSv1.3 exclusively across all environments. Validated with automated testssl.sh pipeline.',
+      preventiveAction: 'Configured tfsec and checkov automated static analysis rules in GitHub Actions to block PRs defining SSL protocol versions lower than TLS 1.3.',
+      ownerId: '00000000-0000-0000-0000-000000000005',
+      status: CapaStatus.COMPLETED,
+      completedAt: days(-1),
+      version: 2,
+    },
+    create: {
+      id: demoCapaId,
+      organizationId: org.id,
+      findingId: demoFindingId,
+      title: 'Enforce ssl_min_protocol_version = TLSv1.3 and deploy hardened cipher suite in Terraform',
+      correctiveAction: 'Updated RDS parameter group to enforce TLSv1.3 exclusively across all environments. Validated with automated testssl.sh pipeline.',
+      preventiveAction: 'Configured tfsec and checkov automated static analysis rules in GitHub Actions to block PRs defining SSL protocol versions lower than TLS 1.3.',
+      ownerId: '00000000-0000-0000-0000-000000000005',
+      status: CapaStatus.COMPLETED,
+      completedAt: days(-1),
+      version: 2,
+    },
+  });
+
+  // 7. Relational Verification History
+  await prisma.auditFindingVerificationHistory.upsert({
+    where: { id: 'h0000000-0000-0000-0000-000000000001' },
+    update: {},
+    create: {
+      id: 'h0000000-0000-0000-0000-000000000001',
+      organizationId: org.id,
+      findingId: demoFindingId,
+      capaId: demoCapaId,
+      action: AuditFindingLifecycleAction.STATUS_TRANSITIONED,
+      priorStatus: FindingStatus.IN_REMEDIATION,
+      newStatus: FindingStatus.READY_FOR_VERIFICATION,
+      actorId: '00000000-0000-0000-0000-000000000005',
+      reason: 'All corrective actions completed and verified in CI',
+      notes: 'CAPA c0000000-0000-0000-0000-000000000001 completed. Automated synchronization advanced parent finding to READY_FOR_VERIFICATION.',
+    },
+  });
+
+  // 8. Physical Proof File & Canonical Evidence
+  const samplePdfBytes = Buffer.from('%PDF-1.4\n1 0 obj\n<< /Title (TLS 1.3 Verification Report) >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n');
+  const samplePdfSha256 = crypto.createHash('sha256').update(samplePdfBytes).digest('hex');
+  const storageDir = path.resolve(process.cwd(), 'uploads', 'evidence', org.id);
+  if (!fs.existsSync(storageDir)) {
+    fs.mkdirSync(storageDir, { recursive: true });
+  }
+  const cleanStorageKey = `${org.id}/${demoEvidence1Id}-TLS_1_3_Verification_Report.pdf`;
+  const cleanPhysicalPath = path.resolve(process.cwd(), 'uploads', 'evidence', cleanStorageKey);
+  fs.writeFileSync(cleanPhysicalPath, samplePdfBytes);
+
+  await prisma.evidence.upsert({
+    where: { id: demoEvidence1Id },
+    update: {
+      title: 'TLS 1.3 Gateway Configuration Verification & Penetration Attestation Report',
+      fileName: 'TLS_1_3_Verification_Report.pdf',
+      fileSize: samplePdfBytes.length,
+      checksum: samplePdfSha256,
+      status: EvidenceStatus.ACTIVE,
+      scanStatus: EvidenceScanStatus.CLEAN,
+    },
+    create: {
+      id: demoEvidence1Id,
+      organizationId: org.id,
+      title: 'TLS 1.3 Gateway Configuration Verification & Penetration Attestation Report',
+      description: 'Formal cryptographic scan results and automated testssl.sh test execution attestation confirming TLS 1.3 enforcement on port 5432.',
+      evidenceType: EvidenceType.DOCUMENT,
+      fileName: 'TLS_1_3_Verification_Report.pdf',
+      fileSize: samplePdfBytes.length,
+      mimeType: 'application/pdf',
+      storageKey: cleanStorageKey,
+      checksum: samplePdfSha256,
+      status: EvidenceStatus.ACTIVE,
+      scanStatus: EvidenceScanStatus.CLEAN,
+      uploadedById: '00000000-0000-0000-0000-000000000005',
+    },
+  });
+
+  // Associate Evidence with Finding
+  await prisma.auditFindingEvidence.upsert({
+    where: {
+      findingId_evidenceId: {
+        findingId: demoFindingId,
+        evidenceId: demoEvidence1Id,
+      },
+    },
+    update: {},
+    create: {
+      organizationId: org.id,
+      findingId: demoFindingId,
+      evidenceId: demoEvidence1Id,
+    },
+  });
+
+  // 9. Quarantined Evidence Record (for Security Demonstration)
+  const quarantinedStorageKey = `${org.id}/${demoEvidence2Id}-untrusted_vendor_macro.docm`;
+  await prisma.evidence.upsert({
+    where: { id: demoEvidence2Id },
+    update: {
+      status: EvidenceStatus.QUARANTINED,
+      scanStatus: EvidenceScanStatus.QUARANTINED,
+    },
+    create: {
+      id: demoEvidence2Id,
+      organizationId: org.id,
+      title: 'Vendor Compliance Questionnaire Attachment with Suspicious VBA Macro',
+      description: 'Uploaded file automatically quarantined by malware scanner upon detection of suspicious embedded macro script signature.',
+      evidenceType: EvidenceType.DOCUMENT,
+      fileName: 'untrusted_vendor_macro.docm',
+      fileSize: 18450,
+      mimeType: 'application/vnd.ms-word.document.macroEnabled.12',
+      storageKey: quarantinedStorageKey,
+      checksum: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      status: EvidenceStatus.QUARANTINED,
+      scanStatus: EvidenceScanStatus.QUARANTINED,
+      uploadedById: '00000000-0000-0000-0000-000000000005',
+    },
+  });
 
   console.log('Seeding completed successfully with 7 assets, 11 demo risks, 8 demo controls, and 11 compliance tasks.');
 }
