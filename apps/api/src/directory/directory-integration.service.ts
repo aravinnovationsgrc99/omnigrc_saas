@@ -96,6 +96,14 @@ export class DirectoryIntegrationService {
   ): Promise<DirectoryIntegrationConfigDto> {
     this.assertAdminRole(authCtx, 'Configure Directory Integration');
 
+    // PRIVILEGE ESCALATION DEFENSE:
+    // Default fallback role for directory accounts cannot be an administrative role
+    if (dto.defaultRole === Role.ADMIN || dto.defaultRole === Role.MSSP_ADMIN) {
+      throw new BadRequestException(
+        'Security Policy Violation: Default directory role cannot be an administrative role (ADMIN or MSSP_ADMIN).',
+      );
+    }
+
     const existing = await this.prisma.directoryIntegrationConfig.findUnique({
       where: { organizationId: authCtx.organizationId },
     });
@@ -492,6 +500,18 @@ export class DirectoryIntegrationService {
           }
         }
 
+        // PRIVILEGE ESCALATION DEFENSE:
+        // Independent validation ensuring administrative roles can only be granted
+        // if the executing sync actor is an authorized administrator.
+        if (mappedRole === Role.ADMIN || mappedRole === Role.MSSP_ADMIN) {
+          if (authCtx.role !== Role.ADMIN && authCtx.role !== Role.MSSP_ADMIN) {
+            this.logger.warn(
+              `Privilege escalation prevented: non-admin actor "${authCtx.userId}" cannot sync user "${email}" into administrative role "${mappedRole}". Downgrading to "${config.defaultRole}".`,
+            );
+            mappedRole = config.defaultRole as Role;
+          }
+        }
+
         // Check matching existing user: stable externalDirectoryId first, fallback to email
         let existingUser = userByExternalId.get(externalId) || userByEmail.get(email);
 
@@ -500,22 +520,38 @@ export class DirectoryIntegrationService {
           : ProductAccessStatus.SUSPENDED;
 
         if (existingUser) {
-          // If role changed to ADMIN, log security alert
-          if (
-            (mappedRole === Role.ADMIN || mappedRole === Role.MSSP_ADMIN) &&
-            existingUser.role !== mappedRole
-          ) {
-            await this.auditLogsService.log({
-              organizationId: authCtx.organizationId,
-              actorId: authCtx.userId,
-              action: 'DIRECTORY_ADMIN_ROLE_PROVISIONED',
-              entityType: 'User',
-              entityId: existingUser.id,
-              metadata: {
-                userEmail: existingUser.email,
-                grantedRole: mappedRole,
-              },
-            });
+          const roleChanged = existingUser.role !== mappedRole;
+          const oldRole = existingUser.role;
+
+          // Audit role transitions
+          if (roleChanged) {
+            if (mappedRole === Role.ADMIN || mappedRole === Role.MSSP_ADMIN) {
+              await this.auditLogsService.log({
+                organizationId: authCtx.organizationId,
+                actorId: authCtx.userId,
+                action: 'DIRECTORY_ADMIN_ROLE_PROVISIONED',
+                entityType: 'User',
+                entityId: existingUser.id,
+                metadata: {
+                  userEmail: existingUser.email,
+                  grantedRole: mappedRole,
+                  previousRole: oldRole,
+                },
+              });
+            } else {
+              await this.auditLogsService.log({
+                organizationId: authCtx.organizationId,
+                actorId: authCtx.userId,
+                action: 'DIRECTORY_USER_ROLE_CHANGED',
+                entityType: 'User',
+                entityId: existingUser.id,
+                metadata: {
+                  userEmail: existingUser.email,
+                  oldRole,
+                  newRole: mappedRole,
+                },
+              });
+            }
           }
 
           // Update existing user
@@ -554,6 +590,7 @@ export class DirectoryIntegrationService {
           // Create new provisioned user
           const dummyPassword = await bcrypt.hash(`dir-sync-${Date.now()}-${Math.random()}`, 10);
 
+          let newUserId = '';
           await this.prisma.$transaction(async (tx) => {
             const newUser = await tx.user.create({
               data: {
@@ -569,6 +606,7 @@ export class DirectoryIntegrationService {
                 passwordSetupRequired: false,
               },
             });
+            newUserId = newUser.id;
 
             await tx.organizationMembership.create({
               data: {
@@ -579,6 +617,22 @@ export class DirectoryIntegrationService {
               },
             });
           });
+
+          // Audit administrative role assignment for newly provisioned user
+          if (mappedRole === Role.ADMIN || mappedRole === Role.MSSP_ADMIN) {
+            await this.auditLogsService.log({
+              organizationId: authCtx.organizationId,
+              actorId: authCtx.userId,
+              action: 'DIRECTORY_ADMIN_ROLE_PROVISIONED',
+              entityType: 'User',
+              entityId: newUserId,
+              metadata: {
+                userEmail: email,
+                grantedRole: mappedRole,
+                isNewUser: true,
+              },
+            });
+          }
 
           createdCount++;
         }

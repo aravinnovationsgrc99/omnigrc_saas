@@ -18,9 +18,17 @@ export interface EntraGroup {
   description?: string | null;
 }
 
+interface CachedToken {
+  accessToken: string;
+  expiresAt: number; // Unix epoch ms
+}
+
 @Injectable()
 export class DirectoryGraphClient {
   private readonly logger = new Logger(DirectoryGraphClient.name);
+
+  // In-memory token cache: "tenantId:clientId" -> CachedToken
+  private readonly tokenCache = new Map<string, CachedToken>();
 
   // In-memory mock data store for hermetic testing and isolated environments
   private mockUsers: EntraUser[] = [
@@ -127,6 +135,109 @@ export class DirectoryGraphClient {
         groupMemberIds: ['entra-grp-all-staff'],
       },
     ]);
+    this.tokenCache.clear();
+  }
+
+  /**
+   * Resilient HTTP fetch wrapper with timeout, rate limit (HTTP 429) backoff, and bounded retries.
+   */
+  private async fetchWithRetry(
+    url: string,
+    options: RequestInit = {},
+    maxRetries = 3,
+    timeoutMs = 30000,
+  ): Promise<Response> {
+    let attempt = 0;
+
+    while (attempt < maxRetries) {
+      attempt++;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+      try {
+        const response = await fetch(url, {
+          ...options,
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        // HTTP 429 Too Many Requests -> respect Retry-After header
+        if (response.status === 429) {
+          const retryAfterSec = parseInt(response.headers.get('Retry-After') || '2', 10);
+          const waitMs = Math.min(10000, Math.max(1000, (isNaN(retryAfterSec) ? 2 : retryAfterSec) * 1000));
+          this.logger.warn(`Microsoft Graph rate limit (HTTP 429) hit. Backing off for ${waitMs}ms (attempt ${attempt}/${maxRetries})...`);
+          if (attempt < maxRetries) {
+            await new Promise((res) => setTimeout(res, waitMs));
+            continue;
+          }
+        }
+
+        // HTTP 5xx Server Transient Errors -> exponential backoff
+        if (response.status >= 500 && response.status <= 504 && attempt < maxRetries) {
+          const backoffMs = attempt * 500;
+          this.logger.warn(`Microsoft Graph transient server error (HTTP ${response.status}). Retrying in ${backoffMs}ms...`);
+          await new Promise((res) => setTimeout(res, backoffMs));
+          continue;
+        }
+
+        return response;
+      } catch (err: any) {
+        clearTimeout(timeoutId);
+        if (err.name === 'AbortError') {
+          this.logger.warn(`Microsoft Graph request timed out after ${timeoutMs}ms (attempt ${attempt}/${maxRetries})`);
+        } else {
+          this.logger.warn(`Microsoft Graph network error: ${err.message} (attempt ${attempt}/${maxRetries})`);
+        }
+        if (attempt >= maxRetries) throw err;
+        await new Promise((res) => setTimeout(res, attempt * 500));
+      }
+    }
+
+    throw new Error(`Request to Microsoft Graph failed after ${maxRetries} attempts.`);
+  }
+
+  /**
+   * Acquires OAuth2 client credentials token with caching and expiry renewal
+   */
+  public async getAccessToken(tenantId: string, clientId: string, clientSecret: string): Promise<string> {
+    const cacheKey = `${tenantId}:${clientId}`;
+    const cached = this.tokenCache.get(cacheKey);
+
+    // If token exists and has >60 seconds of validity remaining, reuse
+    if (cached && cached.expiresAt > Date.now() + 60000) {
+      return cached.accessToken;
+    }
+
+    const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
+    const tokenParams = new URLSearchParams();
+    tokenParams.append('client_id', clientId);
+    tokenParams.append('client_secret', clientSecret);
+    tokenParams.append('scope', 'https://graph.microsoft.com/.default');
+    tokenParams.append('grant_type', 'client_credentials');
+
+    const tokenRes = await this.fetchWithRetry(tokenUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: tokenParams.toString(),
+    });
+
+    if (!tokenRes.ok) {
+      const errorData = await tokenRes.json().catch(() => ({}));
+      const description = errorData.error_description || errorData.error || `HTTP ${tokenRes.status}`;
+      throw new Error(`Failed to acquire Microsoft Graph OAuth2 token: ${description}`);
+    }
+
+    const tokenData = await tokenRes.json();
+    const accessToken = tokenData.access_token;
+    const expiresInSec = typeof tokenData.expires_in === 'number' ? tokenData.expires_in : 3600;
+
+    this.tokenCache.set(cacheKey, {
+      accessToken,
+      expiresAt: Date.now() + expiresInSec * 1000,
+    });
+
+    return accessToken;
   }
 
   /**
@@ -139,7 +250,6 @@ export class DirectoryGraphClient {
   ): Promise<DirectoryTestConnectionResultDto> {
     const startTime = Date.now();
 
-    // If configured to use real Graph or if tenantId is a real GUID
     const isMock =
       process.env.MOCK_DIRECTORY_GRAPH === 'true' ||
       tenantId.startsWith('mock-') ||
@@ -166,34 +276,10 @@ export class DirectoryGraphClient {
 
     // Real Microsoft Graph OAuth2 Client Credentials Flow
     try {
-      const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
-      const tokenParams = new URLSearchParams();
-      tokenParams.append('client_id', clientId);
-      tokenParams.append('client_secret', clientSecret);
-      tokenParams.append('scope', 'https://graph.microsoft.com/.default');
-      tokenParams.append('grant_type', 'client_credentials');
-
-      const tokenRes = await fetch(tokenUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: tokenParams.toString(),
-      });
-
-      if (!tokenRes.ok) {
-        const errorData = await tokenRes.json().catch(() => ({}));
-        const description = errorData.error_description || errorData.error || `HTTP ${tokenRes.status}`;
-        return {
-          success: false,
-          message: `Microsoft Entra authentication failed: ${description}`,
-          latencyMs: Date.now() - startTime,
-        };
-      }
-
-      const tokenData = await tokenRes.json();
-      const accessToken = tokenData.access_token;
+      const accessToken = await this.getAccessToken(tenantId, clientId, clientSecret);
 
       // Query organization details
-      const orgRes = await fetch('https://graph.microsoft.com/v1.0/organization', {
+      const orgRes = await this.fetchWithRetry('https://graph.microsoft.com/v1.0/organization', {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
 
@@ -208,14 +294,21 @@ export class DirectoryGraphClient {
           defaultDomain =
             primaryOrg.verifiedDomains?.find((d: any) => d.isDefault)?.name || defaultDomain;
         }
+      } else if (orgRes.status === 403) {
+        return {
+          success: false,
+          message:
+            'Microsoft Graph Error (HTTP 403): Missing required application permissions. Ensure Directory.Read.All or Organization.Read.All is granted.',
+          latencyMs: Date.now() - startTime,
+        };
       }
 
       // Query user and group counts
       const [usersRes, groupsRes] = await Promise.all([
-        fetch('https://graph.microsoft.com/v1.0/users?$top=1&$count=true', {
+        this.fetchWithRetry('https://graph.microsoft.com/v1.0/users?$top=1&$count=true', {
           headers: { Authorization: `Bearer ${accessToken}`, ConsistencyLevel: 'eventual' },
         }).catch(() => null),
-        fetch('https://graph.microsoft.com/v1.0/groups?$top=1&$count=true', {
+        this.fetchWithRetry('https://graph.microsoft.com/v1.0/groups?$top=1&$count=true', {
           headers: { Authorization: `Bearer ${accessToken}`, ConsistencyLevel: 'eventual' },
         }).catch(() => null),
       ]);
@@ -246,7 +339,7 @@ export class DirectoryGraphClient {
   }
 
   /**
-   * Fetches users and groups from Entra ID / Microsoft Graph
+   * Fetches users and groups from Entra ID / Microsoft Graph with pagination and error resilience
    */
   async fetchUsersAndGroups(
     tenantId: string,
@@ -268,45 +361,57 @@ export class DirectoryGraphClient {
       };
     }
 
-    // Real Microsoft Graph Implementation
-    const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
-    const tokenParams = new URLSearchParams();
-    tokenParams.append('client_id', clientId);
-    tokenParams.append('client_secret', clientSecret);
-    tokenParams.append('scope', 'https://graph.microsoft.com/.default');
-    tokenParams.append('grant_type', 'client_credentials');
+    // Real Microsoft Graph Implementation with OAuth2 Token & Pagination
+    const accessToken = await this.getAccessToken(tenantId, clientId, clientSecret);
+    const headers = { Authorization: `Bearer ${accessToken}` };
 
-    const tokenRes = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: tokenParams.toString(),
-    });
+    // 1. Fetch Users with @odata.nextLink Pagination
+    const rawUsers: any[] = [];
+    let nextUsersUrl: string | null =
+      'https://graph.microsoft.com/v1.0/users?$select=id,displayName,mail,userPrincipalName,jobTitle,department,accountEnabled&$top=999';
+    let userPages = 0;
+    const MAX_PAGES = 50;
 
-    if (!tokenRes.ok) {
-      throw new Error(`Failed to obtain Microsoft Graph access token: HTTP ${tokenRes.status}`);
+    while (nextUsersUrl && userPages < MAX_PAGES) {
+      userPages++;
+      const usersRes = await this.fetchWithRetry(nextUsersUrl, { headers });
+      if (!usersRes.ok) {
+        if (usersRes.status === 403) {
+          throw new Error(
+            'Microsoft Graph Error (HTTP 403): Missing required application permission "User.Read.All".',
+          );
+        }
+        throw new Error(`Failed to query users from Microsoft Graph: HTTP ${usersRes.status}`);
+      }
+      const usersJson = await usersRes.json();
+      if (Array.isArray(usersJson.value)) {
+        rawUsers.push(...usersJson.value);
+      }
+      nextUsersUrl = usersJson['@odata.nextLink'] || null;
     }
 
-    const { access_token } = await tokenRes.json();
-    const headers = { Authorization: `Bearer ${access_token}` };
+    // 2. Fetch Groups with @odata.nextLink Pagination
+    const rawGroups: any[] = [];
+    let nextGroupsUrl: string | null =
+      'https://graph.microsoft.com/v1.0/groups?$select=id,displayName,description&$top=999';
+    let groupPages = 0;
 
-    // Fetch users
-    const usersRes = await fetch(
-      'https://graph.microsoft.com/v1.0/users?$select=id,displayName,mail,userPrincipalName,jobTitle,department,accountEnabled&$top=999',
-      { headers },
-    );
-    if (!usersRes.ok) {
-      throw new Error(`Failed to query users from Microsoft Graph: HTTP ${usersRes.status}`);
+    while (nextGroupsUrl && groupPages < MAX_PAGES) {
+      groupPages++;
+      const groupsRes = await this.fetchWithRetry(nextGroupsUrl, { headers });
+      if (groupsRes.ok) {
+        const groupsJson = await groupsRes.json();
+        if (Array.isArray(groupsJson.value)) {
+          rawGroups.push(...groupsJson.value);
+        }
+        nextGroupsUrl = groupsJson['@odata.nextLink'] || null;
+      } else {
+        if (groupsRes.status === 403) {
+          this.logger.warn('Microsoft Graph HTTP 403 querying groups: Check "GroupMember.Read.All" or "Group.Read.All" permission.');
+        }
+        break;
+      }
     }
-    const usersJson = await usersRes.json();
-    const rawUsers = usersJson.value || [];
-
-    // Fetch groups
-    const groupsRes = await fetch(
-      'https://graph.microsoft.com/v1.0/groups?$select=id,displayName,description&$top=999',
-      { headers },
-    );
-    const groupsJson = groupsRes.ok ? await groupsRes.json() : { value: [] };
-    const rawGroups = groupsJson.value || [];
 
     const groups: EntraGroup[] = rawGroups.map((g: any) => ({
       id: g.id,
@@ -314,14 +419,19 @@ export class DirectoryGraphClient {
       description: g.description || null,
     }));
 
-    // For each user, fetch group memberships
+    // 3. For each user, fetch group memberships with graceful partial error handling
     const users: EntraUser[] = [];
     for (const u of rawUsers) {
+      if (!u.id) continue;
+
       let memberIds: string[] = [];
       try {
-        const memRes = await fetch(`https://graph.microsoft.com/v1.0/users/${u.id}/memberOf?$select=id`, {
-          headers,
-        });
+        const memRes = await this.fetchWithRetry(
+          `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(u.id)}/memberOf?$select=id&$top=100`,
+          { headers },
+          2, // Bounded retries
+          15000,
+        );
         if (memRes.ok) {
           const memJson = await memRes.json();
           memberIds = (memJson.value || []).map((m: any) => m.id);
@@ -330,9 +440,12 @@ export class DirectoryGraphClient {
         this.logger.warn(`Could not resolve group memberships for user ${u.id}: ${err.message}`);
       }
 
+      const email = u.mail || u.userPrincipalName || '';
+      const fallbackName = email.includes('@') ? email.split('@')[0] : u.id;
+
       users.push({
         id: u.id,
-        displayName: u.displayName || u.userPrincipalName,
+        displayName: u.displayName?.trim() || fallbackName,
         mail: u.mail || null,
         userPrincipalName: u.userPrincipalName,
         jobTitle: u.jobTitle || null,
@@ -345,4 +458,3 @@ export class DirectoryGraphClient {
     return { users, groups };
   }
 }
-
