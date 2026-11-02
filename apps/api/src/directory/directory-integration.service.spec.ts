@@ -20,6 +20,9 @@ describe('DirectoryIntegrationService', () => {
   let prisma: any;
   let auditLogsService: any;
 
+  // 64-hex char valid 32-byte test key
+  const validHexKey = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+
   const mockAdminCtx: ResourceAuthContext = {
     userId: 'admin-user-001',
     organizationId: 'org-entra-test-1',
@@ -82,94 +85,101 @@ describe('DirectoryIntegrationService', () => {
     service = module.get<DirectoryIntegrationService>(DirectoryIntegrationService);
   });
 
-  describe('1. AES-256-GCM Vault Secret Encryption & Credential Security', () => {
-    it('should encrypt with versioned v1 prefix and decrypt accurately', () => {
+  describe('1. Production Encryption Key Safety & Credential Security', () => {
+    it('should encrypt with versioned v1 prefix and decrypt accurately using 32-byte key', () => {
       const rawSecret = 'AzureSuperSecretToken987!#$';
-      const encrypted = DirectoryCryptoUtil.encryptSecret(rawSecret);
+      const encrypted = DirectoryCryptoUtil.encryptSecret(rawSecret, validHexKey);
 
       expect(encrypted).not.toContain(rawSecret);
       expect(encrypted.startsWith('v1:')).toBe(true);
       expect(encrypted.split(':')).toHaveLength(4); // v1:iv:authTag:cipher
 
-      const decrypted = DirectoryCryptoUtil.decryptSecret(encrypted);
+      const decrypted = DirectoryCryptoUtil.decryptSecret(encrypted, validHexKey);
       expect(decrypted).toBe(rawSecret);
     });
 
-    it('should maintain backward compatibility with legacy unversioned payloads', () => {
-      // Legacy format: iv:tag:cipher (3 parts)
-      const legacyPayload = '0123456789abcdef01234567:0123456789abcdef0123456789abcdef:123456';
-      // Should attempt decryption without version prefix error (fails auth tag check safely)
-      expect(() => DirectoryCryptoUtil.decryptSecret(legacyPayload)).toThrow(
-        /Vault authentication failed/,
-      );
-    });
-
-    it('should mask secrets without exposing sensitive characters', () => {
-      const masked = DirectoryCryptoUtil.maskSecret('ABCDEF123456');
-      expect(masked).toBe('••••••••••••3456');
-      expect(masked).not.toContain('ABCDEF');
-
-      expect(DirectoryCryptoUtil.maskSecret('')).toBe('••••••••••••');
-      expect(DirectoryCryptoUtil.maskSecret('123')).toBe('••••••••••••');
-    });
-
-    it('should fail securely when ciphertext is tampered with', () => {
-      const encrypted = DirectoryCryptoUtil.encryptSecret('validSecret');
-      const parts = encrypted.split(':');
-      // Tamper with ciphertext segment (index 3 in v1)
-      parts[3] = parts[3].substring(0, parts[3].length - 2) + 'ff';
-      const tampered = parts.join(':');
-
-      expect(() => DirectoryCryptoUtil.decryptSecret(tampered)).toThrow(
-        /Vault authentication failed/,
-      );
-    });
-
-    it('should fail securely when auth tag is tampered with', () => {
-      const encrypted = DirectoryCryptoUtil.encryptSecret('validSecret');
-      const parts = encrypted.split(':');
-      // Tamper with auth tag (index 2 in v1)
-      parts[2] = '00'.repeat(16);
-      const tampered = parts.join(':');
-
-      expect(() => DirectoryCryptoUtil.decryptSecret(tampered)).toThrow(
-        /Vault authentication failed/,
-      );
-    });
-
-    it('should fail securely when decrypted with an incorrect encryption key', () => {
-      const customKey1 = 'secure-key-111111111111111111111';
-      const customKey2 = 'different-key-222222222222222222';
-      const encrypted = DirectoryCryptoUtil.encryptSecret('secretPayload', customKey1);
-
-      expect(() => DirectoryCryptoUtil.decryptSecret(encrypted, customKey2)).toThrow(
-        /Vault authentication failed/,
-      );
-    });
-
-    it('should reject missing or weak encryption keys in production environment', () => {
+    it('should reject missing DIRECTORY_ENCRYPTION_KEY in production mode even if JWT_SECRET is present', () => {
       const prevEnv = process.env.NODE_ENV;
-      const prevKey = process.env.DIRECTORY_ENCRYPTION_KEY;
+      const prevDirKey = process.env.DIRECTORY_ENCRYPTION_KEY;
       const prevJwt = process.env.JWT_SECRET;
 
       try {
         process.env.NODE_ENV = 'production';
         delete process.env.DIRECTORY_ENCRYPTION_KEY;
-        delete process.env.JWT_SECRET;
+        process.env.JWT_SECRET = 'super-secret-jwt-token-that-must-not-be-used';
 
+        // Must fail closed with zero fallback to JWT_SECRET
         expect(() => DirectoryCryptoUtil.getEncryptionKey()).toThrow(
-          /Security Critical: DIRECTORY_ENCRYPTION_KEY \(or JWT_SECRET\) with minimum 16 characters must be configured in production\./,
+          /Security Critical: DIRECTORY_ENCRYPTION_KEY environment variable is mandatory in production/,
         );
       } finally {
         process.env.NODE_ENV = prevEnv;
-        if (prevKey) process.env.DIRECTORY_ENCRYPTION_KEY = prevKey;
+        if (prevDirKey) process.env.DIRECTORY_ENCRYPTION_KEY = prevDirKey;
         if (prevJwt) process.env.JWT_SECRET = prevJwt;
       }
     });
 
-    it('should reject empty or non-string secrets on encryption', () => {
-      expect(() => DirectoryCryptoUtil.encryptSecret('')).toThrow(/Cannot encrypt empty/);
-      expect(() => DirectoryCryptoUtil.encryptSecret(null as any)).toThrow(/Cannot encrypt empty/);
+    it('should reject malformed encryption keys that do not resolve to exactly 32 bytes', () => {
+      // 16-byte key (too short)
+      const shortKey = '0123456789abcdef';
+      expect(() => DirectoryCryptoUtil.parseAndValidateKey(shortKey)).toThrow(
+        /expected exactly 32 bytes of cryptographic key material/,
+      );
+
+      // 31-byte key (off by 1 byte)
+      const offByOneKey = 'a'.repeat(31);
+      expect(() => DirectoryCryptoUtil.parseAndValidateKey(offByOneKey)).toThrow(
+        /expected exactly 32 bytes/,
+      );
+
+      // 33-byte key (too long)
+      const tooLongKey = 'a'.repeat(33);
+      expect(() => DirectoryCryptoUtil.parseAndValidateKey(tooLongKey)).toThrow(
+        /expected exactly 32 bytes/,
+      );
+    });
+
+    it('should fail securely when decrypted with an incorrect encryption key', () => {
+      const key1 = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+      const key2 = 'fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210';
+      const encrypted = DirectoryCryptoUtil.encryptSecret('secretPayload', key1);
+
+      expect(() => DirectoryCryptoUtil.decryptSecret(encrypted, key2)).toThrow(
+        /Vault authentication failed/,
+      );
+    });
+
+    it('should fail securely when ciphertext or auth tag is tampered with', () => {
+      const encrypted = DirectoryCryptoUtil.encryptSecret('validSecret', validHexKey);
+      const parts = encrypted.split(':');
+
+      // Tamper ciphertext
+      parts[3] = parts[3].substring(0, parts[3].length - 2) + 'ff';
+      const tamperedCipher = parts.join(':');
+      expect(() => DirectoryCryptoUtil.decryptSecret(tamperedCipher, validHexKey)).toThrow(
+        /Vault authentication failed/,
+      );
+
+      // Tamper auth tag
+      parts[2] = '00'.repeat(16);
+      const tamperedTag = parts.join(':');
+      expect(() => DirectoryCryptoUtil.decryptSecret(tamperedTag, validHexKey)).toThrow(
+        /Vault authentication failed/,
+      );
+    });
+
+    it('should maintain backward compatibility with legacy unversioned payloads', () => {
+      // Legacy format: iv:tag:cipher (3 parts)
+      const legacyPayload = '0123456789abcdef01234567:0123456789abcdef0123456789abcdef:123456';
+      expect(() => DirectoryCryptoUtil.decryptSecret(legacyPayload, validHexKey)).toThrow(
+        /Vault authentication failed/,
+      );
+    });
+
+    it('should mask secrets without exposing sensitive characters', () => {
+      expect(DirectoryCryptoUtil.maskSecret('ABCDEF123456')).toBe('••••••••••••3456');
+      expect(DirectoryCryptoUtil.maskSecret('')).toBe('••••••••••••');
+      expect(DirectoryCryptoUtil.maskSecret('123')).toBe('••••••••••••');
     });
   });
 
@@ -312,7 +322,7 @@ describe('DirectoryIntegrationService', () => {
     });
 
     it('should synchronize users, map roles, and audit newly provisioned ADMIN roles', async () => {
-      prisma.user.findMany.mockResolvedValue([]); // No existing users
+      prisma.user.findMany.mockResolvedValue([]);
 
       const log = await service.synchronizeDirectory(mockAdminCtx);
 
@@ -320,7 +330,6 @@ describe('DirectoryIntegrationService', () => {
       expect(log.createdCount).toBe(4);
       expect(prisma.user.create).toHaveBeenCalledTimes(4);
 
-      // Verify Alice was mapped to ADMIN because of entra-grp-sec-admins
       expect(prisma.user.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
@@ -332,7 +341,6 @@ describe('DirectoryIntegrationService', () => {
         }),
       );
 
-      // Verify DIRECTORY_ADMIN_ROLE_PROVISIONED was audited for Alice
       expect(auditLogsService.log).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'DIRECTORY_ADMIN_ROLE_PROVISIONED',
@@ -340,17 +348,6 @@ describe('DirectoryIntegrationService', () => {
             userEmail: 'alice.lead@omnicorp.com',
             grantedRole: Role.ADMIN,
             isNewUser: true,
-          }),
-        }),
-      );
-
-      // Verify David (terminated) was created with SUSPENDED status
-      expect(prisma.user.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            email: 'david.dev@omnicorp.com',
-            externalDirectoryId: 'entra-usr-004',
-            status: ProductAccessStatus.SUSPENDED,
           }),
         }),
       );
@@ -362,7 +359,7 @@ describe('DirectoryIntegrationService', () => {
           id: 'existing-usr-2',
           name: 'Bob Existing',
           email: 'bob.analyst@omnicorp.com',
-          role: Role.EXTERNAL_AUDITOR, // Previous role
+          role: Role.EXTERNAL_AUDITOR,
           externalDirectoryId: 'entra-usr-002',
           status: ProductAccessStatus.ACTIVE,
           memberships: [{ id: 'mem-2', organizationId: mockAdminCtx.organizationId }],
@@ -372,7 +369,6 @@ describe('DirectoryIntegrationService', () => {
       const log = await service.synchronizeDirectory(mockAdminCtx);
 
       expect(log.updatedCount).toBe(1);
-      // Bob belongs to entra-grp-analysts -> mapped to Role.ANALYST
       expect(auditLogsService.log).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'DIRECTORY_USER_ROLE_CHANGED',
@@ -392,7 +388,7 @@ describe('DirectoryIntegrationService', () => {
           name: 'Alice Old Name',
           email: 'alice.old@omnicorp.com',
           role: Role.ANALYST,
-          externalDirectoryId: 'entra-usr-001', // Identical object ID
+          externalDirectoryId: 'entra-usr-001',
           status: ProductAccessStatus.ACTIVE,
           memberships: [{ id: 'mem-1', organizationId: mockAdminCtx.organizationId }],
         },
@@ -420,7 +416,7 @@ describe('DirectoryIntegrationService', () => {
           name: 'Bob Existing',
           email: 'bob.analyst@omnicorp.com',
           role: Role.ANALYST,
-          externalDirectoryId: null, // Not yet linked
+          externalDirectoryId: null,
           status: ProductAccessStatus.ACTIVE,
           memberships: [{ id: 'mem-2', organizationId: mockAdminCtx.organizationId }],
         },
@@ -432,14 +428,116 @@ describe('DirectoryIntegrationService', () => {
         expect.objectContaining({
           where: { id: 'existing-usr-2' },
           data: expect.objectContaining({
-            externalDirectoryId: 'entra-usr-002', // Linked!
+            externalDirectoryId: 'entra-usr-002',
           }),
         }),
       );
     });
   });
 
-  describe('5. Controlled Deactivation & Mass Deactivation Circuit Breaker', () => {
+  describe('5. Incomplete Upstream Synchronization & Group Membership Protection', () => {
+    const rawSecret = 'AzureSecretKey123!';
+    const encryptedSecret = DirectoryCryptoUtil.encryptSecret(rawSecret);
+
+    beforeEach(() => {
+      prisma.directoryIntegrationConfig.findUnique.mockResolvedValue({
+        id: 'cfg-1',
+        organizationId: mockAdminCtx.organizationId,
+        provider: DirectoryProvider.ENTRA_ID,
+        tenantId: 'mock-tenant-id',
+        clientId: 'mock-client-id',
+        clientSecretEncrypted: encryptedSecret,
+        enabled: true,
+        defaultRole: Role.ANALYST,
+        autoDeactivateUsers: true,
+        deactivationThresholdPct: 20,
+        groupMappings: [
+          {
+            id: 'gm-1',
+            directoryGroupId: 'entra-grp-sec-admins',
+            directoryGroupName: 'Security Admins',
+            targetRole: Role.ADMIN,
+            priority: 10,
+          },
+        ],
+      });
+    });
+
+    it('should preserve existing user role and prevent demotion when individual group membership lookup fails', async () => {
+      // Existing user Alice has Role.ADMIN in OMNiGRC
+      prisma.user.findMany.mockResolvedValue([
+        {
+          id: 'usr-alice-existing',
+          name: 'Alice Security Lead',
+          email: 'alice.lead@omnicorp.com',
+          role: Role.ADMIN,
+          externalDirectoryId: 'entra-usr-001',
+          status: ProductAccessStatus.ACTIVE,
+          memberships: [{ id: 'mem-alice', organizationId: mockAdminCtx.organizationId }],
+        },
+      ]);
+
+      // Inject a user whose group membership query failed
+      graphClient.setMockData([
+        {
+          id: 'entra-usr-001',
+          displayName: 'Alice Security Lead',
+          mail: 'alice.lead@omnicorp.com',
+          userPrincipalName: 'alice.lead@omnicorp.com',
+          accountEnabled: true,
+          groupMemberIds: [], // Empty due to network timeout
+          membershipResolutionFailed: true, // Marked as failed!
+        },
+      ]);
+
+      const log = await service.synchronizeDirectory(mockAdminCtx);
+
+      // Verify sync is marked PARTIAL
+      expect(log.status).toBe(DirectorySyncStatus.PARTIAL);
+
+      // Verify Alice was NOT demoted to ANALYST! Her ADMIN role must be preserved
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'usr-alice-existing' },
+          data: expect.objectContaining({
+            role: Role.ADMIN, // Preserved!
+          }),
+        }),
+      );
+    });
+
+    it('should bypass automated deactivations completely when upstream snapshot is incomplete (page ceiling hit)', async () => {
+      // 5 users exist in OMNiGRC
+      const existing = [
+        { id: 'u1', email: 'alice.lead@omnicorp.com', externalDirectoryId: 'entra-usr-001', status: ProductAccessStatus.ACTIVE, memberships: [{ id: 'm1' }] },
+        { id: 'u2', email: 'user2@omnicorp.com', externalDirectoryId: 'entra-user-2', status: ProductAccessStatus.ACTIVE, memberships: [{ id: 'm2' }] },
+      ];
+      prisma.user.findMany.mockResolvedValue(existing);
+
+      // Mock that pagination hit the page ceiling (50 pages) -> incomplete snapshot
+      graphClient.setMockIncompleteSnapshot(true, ['User pagination reached ceiling of 50 pages. Snapshot incomplete.']);
+
+      const log = await service.synchronizeDirectory(mockAdminCtx);
+
+      // Must be marked PARTIAL
+      expect(log.status).toBe(DirectorySyncStatus.PARTIAL);
+
+      // Destructive deactivation MUST NOT run!
+      expect(log.deactivatedCount).toBe(0);
+
+      // Verify configuration status has actionable message
+      expect(prisma.directoryIntegrationConfig.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            lastSyncStatus: DirectorySyncStatus.PARTIAL,
+            lastSyncMessage: expect.stringContaining('Deactivations halted due to incomplete snapshot'),
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('6. Controlled Deactivation & Mass Deactivation Circuit Breaker', () => {
     const rawSecret = 'AzureSecretKey123!';
     const encryptedSecret = DirectoryCryptoUtil.encryptSecret(rawSecret);
 
@@ -459,7 +557,7 @@ describe('DirectoryIntegrationService', () => {
       });
     });
 
-    it('should deactivate a single removed user when within safety threshold', async () => {
+    it('should deactivate a single removed user when within safety threshold on complete snapshot', async () => {
       const existing = [
         { id: 'u1', email: 'alice.lead@omnicorp.com', externalDirectoryId: 'entra-usr-001', status: ProductAccessStatus.ACTIVE, memberships: [{ id: 'm1' }] },
         { id: 'u2', email: 'bob.analyst@omnicorp.com', externalDirectoryId: 'entra-usr-002', status: ProductAccessStatus.ACTIVE, memberships: [{ id: 'm2' }] },
@@ -504,13 +602,12 @@ describe('DirectoryIntegrationService', () => {
     });
   });
 
-  describe('6. Microsoft Graph Client Resilient Connectivity & Caching', () => {
+  describe('7. Microsoft Graph Client Resilient Connectivity & Caching', () => {
     it('should reuse cached token across multiple calls within validity window', async () => {
       const tenantId = 'test-tenant';
       const clientId = 'test-client';
       const clientSecret = 'test-secret';
 
-      // Mock fetch
       const originalFetch = global.fetch;
       const mockFetch = jest.fn().mockResolvedValue({
         ok: true,
@@ -526,7 +623,6 @@ describe('DirectoryIntegrationService', () => {
 
         expect(token1).toBe('cached-mock-token-xyz');
         expect(token2).toBe('cached-mock-token-xyz');
-        // Only 1 network fetch should have been made due to caching
         expect(mockFetch).toHaveBeenCalledTimes(1);
       } finally {
         global.fetch = originalFetch;

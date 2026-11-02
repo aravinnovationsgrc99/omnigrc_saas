@@ -399,6 +399,9 @@ export class DirectoryIntegrationService {
     // 1. Fetch Users and Groups via Microsoft Graph
     let discoveredUsers: any[] = [];
     let discoveredGroups: any[] = [];
+    let isCompleteSnapshot = true;
+    let upstreamWarnings: string[] = [];
+
     try {
       const result = await this.graphClient.fetchUsersAndGroups(
         config.tenantId,
@@ -407,6 +410,8 @@ export class DirectoryIntegrationService {
       );
       discoveredUsers = result.users;
       discoveredGroups = result.groups;
+      isCompleteSnapshot = result.isCompleteSnapshot;
+      upstreamWarnings = result.warnings || [];
     } catch (err: any) {
       this.logger.error(`Failed to fetch from Microsoft Graph: ${err.message}`, err.stack);
       const failedLog = await this.recordSyncLog({
@@ -514,6 +519,18 @@ export class DirectoryIntegrationService {
 
         // Check matching existing user: stable externalDirectoryId first, fallback to email
         let existingUser = userByExternalId.get(externalId) || userByEmail.get(email);
+
+        // INCOMPLETE SYNC PROTECTION:
+        // A failed individual membership lookup cannot silently be interpreted as authoritative absence of group membership.
+        // If group membership resolution failed for an existing user, preserve their current role to prevent unintended demotion.
+        if (entraUser.membershipResolutionFailed) {
+          if (existingUser) {
+            mappedRole = existingUser.role as Role;
+            this.logger.warn(
+              `Group membership resolution failed for user "${email}". Preserving existing role "${existingUser.role}" to prevent unintended demotion.`,
+            );
+          }
+        }
 
         const targetStatus: ProductAccessStatus = entraUser.accountEnabled
           ? ProductAccessStatus.ACTIVE
@@ -649,77 +666,89 @@ export class DirectoryIntegrationService {
     // 5. Controlled Deactivation & Mass Deactivation Circuit Breaker
     let circuitBreakerTriggered = false;
     let circuitBreakerMessage: string | null = null;
+    let deactivationsSkippedDueToIncompleteSnapshot = false;
 
     if (config.autoDeactivateUsers) {
-      // Find all existing users in organization who were previously synced (have externalDirectoryId)
-      // and are currently ACTIVE, but are not present in active discovered IDs
-      const deactivationCandidates = existingUsers.filter((u) => {
-        return (
-          u.externalDirectoryId &&
-          u.status === ProductAccessStatus.ACTIVE &&
-          !activeDiscoveredExternalIds.has(u.externalDirectoryId)
-        );
-      });
+      // INCOMPLETE SYNC PROTECTION:
+      // Destructive reconciliation (user deactivations) ONLY runs after a complete, validated directory snapshot.
+      // If the snapshot hit the page ceiling or is incomplete, deactivations MUST be bypassed completely.
+      if (!isCompleteSnapshot) {
+        deactivationsSkippedDueToIncompleteSnapshot = true;
+        const incompleteMsg =
+          'Automatic user deactivation skipped: Upstream directory snapshot is incomplete (page ceiling reached or pagination halted). Destructive reconciliation requires a complete, validated snapshot to prevent accidental account lockouts.';
+        this.logger.warn(incompleteMsg);
+        errors.push({ error: incompleteMsg });
+      } else {
+        // Find all existing users in organization who were previously synced (have externalDirectoryId)
+        // and are currently ACTIVE, but are not present in active discovered IDs
+        const deactivationCandidates = existingUsers.filter((u) => {
+          return (
+            u.externalDirectoryId &&
+            u.status === ProductAccessStatus.ACTIVE &&
+            !activeDiscoveredExternalIds.has(u.externalDirectoryId)
+          );
+        });
 
-      const totalExistingSyncedUsers = existingUsers.filter((u) => u.externalDirectoryId).length;
+        const totalExistingSyncedUsers = existingUsers.filter((u) => u.externalDirectoryId).length;
 
-      if (deactivationCandidates.length > 0) {
-        const deactPct = (deactivationCandidates.length / Math.max(1, totalExistingSyncedUsers)) * 100;
-        const threshold = config.deactivationThresholdPct || 20;
+        if (deactivationCandidates.length > 0) {
+          const deactPct = (deactivationCandidates.length / Math.max(1, totalExistingSyncedUsers)) * 100;
+          const threshold = config.deactivationThresholdPct || 20;
 
-        // Mass Deactivation Circuit Breaker:
-        // If more than 2 users and exceeding percentage threshold, HALT deactivation
-        if (deactivationCandidates.length > 2 && deactPct > threshold) {
-          circuitBreakerTriggered = true;
-          circuitBreakerMessage = `Mass deactivation prevented: ${deactivationCandidates.length} users (${deactPct.toFixed(1)}%) flagged for deactivation, exceeding safety threshold (${threshold}%). Manual administrator verification is required.`;
+          // Mass Deactivation Circuit Breaker:
+          // If more than 2 users and exceeding percentage threshold, HALT deactivation
+          if (deactivationCandidates.length > 2 && deactPct > threshold) {
+            circuitBreakerTriggered = true;
+            circuitBreakerMessage = `Mass deactivation prevented: ${deactivationCandidates.length} users (${deactPct.toFixed(1)}%) flagged for deactivation, exceeding safety threshold (${threshold}%). Manual administrator verification is required.`;
 
-          await this.auditLogsService.log({
-            organizationId: authCtx.organizationId,
-            actorId: authCtx.userId,
-            action: 'DIRECTORY_MASS_DEACTIVATION_PREVENTED',
-            entityType: 'DirectoryIntegrationConfig',
-            entityId: config.id,
-            metadata: {
-              candidateCount: deactivationCandidates.length,
-              totalSynced: totalExistingSyncedUsers,
-              thresholdPct: threshold,
-              computedPct: deactPct,
-            },
-          });
-          this.logger.warn(circuitBreakerMessage);
-        } else {
-          // Execute controlled soft-deactivation
-          for (const cand of deactivationCandidates) {
-            try {
-              await this.prisma.$transaction(async (tx) => {
-                await tx.user.update({
-                  where: { id: cand.id },
-                  data: {
-                    status: ProductAccessStatus.SUSPENDED,
-                    directorySyncedAt: new Date(),
-                  },
+            await this.auditLogsService.log({
+              organizationId: authCtx.organizationId,
+              actorId: authCtx.userId,
+              action: 'DIRECTORY_MASS_DEACTIVATION_PREVENTED',
+              entityType: 'DirectoryIntegrationConfig',
+              entityId: config.id,
+              metadata: {
+                candidateCount: deactivationCandidates.length,
+                totalSynced: totalExistingSyncedUsers,
+                thresholdPct: threshold,
+                computedPct: deactPct,
+              },
+            });
+            this.logger.warn(circuitBreakerMessage);
+          } else {
+            // Execute controlled soft-deactivation
+            for (const cand of deactivationCandidates) {
+              try {
+                await this.prisma.$transaction(async (tx) => {
+                  await tx.user.update({
+                    where: { id: cand.id },
+                    data: {
+                      status: ProductAccessStatus.SUSPENDED,
+                      directorySyncedAt: new Date(),
+                    },
+                  });
+
+                  await tx.organizationMembership.updateMany({
+                    where: {
+                      userId: cand.id,
+                      organizationId: authCtx.organizationId,
+                    },
+                    data: {
+                      status: ProductAccessStatus.SUSPENDED,
+                      revokedAt: new Date(),
+                      revokedById: authCtx.userId,
+                    },
+                  });
                 });
-
-                await tx.organizationMembership.updateMany({
-                  where: {
-                    userId: cand.id,
-                    organizationId: authCtx.organizationId,
-                  },
-                  data: {
-                    status: ProductAccessStatus.SUSPENDED,
-                    revokedAt: new Date(),
-                    revokedById: authCtx.userId,
-                  },
+                deactivatedCount++;
+              } catch (err: any) {
+                errorCount++;
+                errors.push({
+                  userId: cand.id,
+                  email: cand.email,
+                  error: `Deactivation failed: ${err.message}`,
                 });
-              });
-              deactivatedCount++;
-            } catch (err: any) {
-              errorCount++;
-              errors.push({
-                userId: cand.id,
-                email: cand.email,
-                error: `Deactivation failed: ${err.message}`,
-              });
+              }
             }
           }
         }
@@ -728,16 +757,40 @@ export class DirectoryIntegrationService {
 
     // 6. Record Final Sync Status
     const completedAt = new Date();
+    const hasMembershipFailures = discoveredUsers.some((u) => u.membershipResolutionFailed);
+    const hasIncompleteConditions =
+      !isCompleteSnapshot ||
+      deactivationsSkippedDueToIncompleteSnapshot ||
+      hasMembershipFailures ||
+      upstreamWarnings.length > 0;
+
     const finalStatus =
       errorCount > 0 && createdCount === 0 && updatedCount === 0
         ? DirectorySyncStatus.FAILED
-        : circuitBreakerTriggered || errorCount > 0
+        : circuitBreakerTriggered || errorCount > 0 || hasIncompleteConditions
         ? DirectorySyncStatus.PARTIAL
         : DirectorySyncStatus.SUCCESS;
 
-    const summaryMessage = circuitBreakerTriggered
-      ? circuitBreakerMessage!
-      : `Sync completed: ${createdCount} created, ${updatedCount} updated, ${deactivatedCount} deactivated, ${errorCount} errors.`;
+    let summaryMessage = '';
+    if (circuitBreakerTriggered) {
+      summaryMessage = circuitBreakerMessage!;
+    } else if (deactivationsSkippedDueToIncompleteSnapshot) {
+      summaryMessage = `Sync PARTIAL: Deactivations halted due to incomplete snapshot (page ceiling reached). ${createdCount} created, ${updatedCount} updated.`;
+    } else if (hasIncompleteConditions) {
+      summaryMessage = `Sync PARTIAL: Incomplete upstream snapshot or membership resolution warnings. ${createdCount} created, ${updatedCount} updated, ${deactivatedCount} deactivated.`;
+    } else {
+      summaryMessage = `Sync completed: ${createdCount} created, ${updatedCount} updated, ${deactivatedCount} deactivated, ${errorCount} errors.`;
+    }
+
+    const logErrorMessage = circuitBreakerTriggered
+      ? circuitBreakerMessage
+      : deactivationsSkippedDueToIncompleteSnapshot
+      ? 'Snapshot incomplete (page limit reached); deactivations skipped.'
+      : upstreamWarnings.length > 0
+      ? upstreamWarnings.join('; ')
+      : errorCount > 0
+      ? `${errorCount} errors encountered during sync.`
+      : null;
 
     const log = await this.recordSyncLog({
       configId: config.id,
@@ -749,7 +802,7 @@ export class DirectoryIntegrationService {
       deactivatedCount,
       skippedCount,
       errorCount,
-      errorMessage: circuitBreakerTriggered ? circuitBreakerMessage : errorCount > 0 ? `${errorCount} errors encountered during sync.` : null,
+      errorMessage: logErrorMessage,
       errorDetails: errors.length > 0 ? errors : undefined,
       startedAt: startTime,
       completedAt,

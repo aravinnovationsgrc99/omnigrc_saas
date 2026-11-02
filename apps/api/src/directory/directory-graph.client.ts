@@ -10,12 +10,20 @@ export interface EntraUser {
   department?: string | null;
   accountEnabled: boolean;
   groupMemberIds?: string[]; // IDs of groups this user belongs to
+  membershipResolutionFailed?: boolean; // Set to true if group membership lookup failed/timed out
 }
 
 export interface EntraGroup {
   id: string; // Group Object ID (GUID)
   displayName: string;
   description?: string | null;
+}
+
+export interface DirectoryFetchResult {
+  users: EntraUser[];
+  groups: EntraGroup[];
+  isCompleteSnapshot: boolean;
+  warnings: string[];
 }
 
 interface CachedToken {
@@ -29,6 +37,10 @@ export class DirectoryGraphClient {
 
   // In-memory token cache: "tenantId:clientId" -> CachedToken
   private readonly tokenCache = new Map<string, CachedToken>();
+
+  // In-memory mock controls for hermetic testing
+  private mockIsCompleteSnapshot = true;
+  private mockWarnings: string[] = [];
 
   // In-memory mock data store for hermetic testing and isolated environments
   private mockUsers: EntraUser[] = [
@@ -90,9 +102,19 @@ export class DirectoryGraphClient {
   }
 
   /**
+   * Configures mock snapshot completeness for negative and fault-injection testing
+   */
+  public setMockIncompleteSnapshot(isIncomplete: boolean, warnings: string[] = []): void {
+    this.mockIsCompleteSnapshot = !isIncomplete;
+    this.mockWarnings = warnings;
+  }
+
+  /**
    * Resets mock data to default seed state
    */
   public resetMockData(): void {
+    this.mockIsCompleteSnapshot = true;
+    this.mockWarnings = [];
     this.setMockData([
       {
         id: 'entra-usr-001',
@@ -339,13 +361,14 @@ export class DirectoryGraphClient {
   }
 
   /**
-   * Fetches users and groups from Entra ID / Microsoft Graph with pagination and error resilience
+   * Fetches users and groups from Entra ID / Microsoft Graph with pagination and error resilience.
+   * Tracks whether the fetched snapshot is complete and flags partial membership resolutions.
    */
   async fetchUsersAndGroups(
     tenantId: string,
     clientId: string,
     clientSecret: string,
-  ): Promise<{ users: EntraUser[]; groups: EntraGroup[] }> {
+  ): Promise<DirectoryFetchResult> {
     const isMock =
       process.env.MOCK_DIRECTORY_GRAPH === 'true' ||
       tenantId.startsWith('mock-') ||
@@ -358,12 +381,16 @@ export class DirectoryGraphClient {
       return {
         users: [...this.mockUsers],
         groups: [...this.mockGroups],
+        isCompleteSnapshot: this.mockIsCompleteSnapshot,
+        warnings: [...this.mockWarnings],
       };
     }
 
     // Real Microsoft Graph Implementation with OAuth2 Token & Pagination
     const accessToken = await this.getAccessToken(tenantId, clientId, clientSecret);
     const headers = { Authorization: `Bearer ${accessToken}` };
+    let isCompleteSnapshot = true;
+    const warnings: string[] = [];
 
     // 1. Fetch Users with @odata.nextLink Pagination
     const rawUsers: any[] = [];
@@ -390,6 +417,14 @@ export class DirectoryGraphClient {
       nextUsersUrl = usersJson['@odata.nextLink'] || null;
     }
 
+    // If nextUsersUrl is still present after exhausting MAX_PAGES, snapshot is INCOMPLETE
+    if (nextUsersUrl) {
+      isCompleteSnapshot = false;
+      const warnMsg = `User query reached page ceiling (${MAX_PAGES} pages). Incomplete user snapshot returned.`;
+      this.logger.warn(warnMsg);
+      warnings.push(warnMsg);
+    }
+
     // 2. Fetch Groups with @odata.nextLink Pagination
     const rawGroups: any[] = [];
     let nextGroupsUrl: string | null =
@@ -413,6 +448,13 @@ export class DirectoryGraphClient {
       }
     }
 
+    if (nextGroupsUrl) {
+      isCompleteSnapshot = false;
+      const warnMsg = `Group query reached page ceiling (${MAX_PAGES} pages). Incomplete group snapshot returned.`;
+      this.logger.warn(warnMsg);
+      warnings.push(warnMsg);
+    }
+
     const groups: EntraGroup[] = rawGroups.map((g: any) => ({
       id: g.id,
       displayName: g.displayName || '',
@@ -421,10 +463,14 @@ export class DirectoryGraphClient {
 
     // 3. For each user, fetch group memberships with graceful partial error handling
     const users: EntraUser[] = [];
+    let failedMembershipCount = 0;
+
     for (const u of rawUsers) {
       if (!u.id) continue;
 
       let memberIds: string[] = [];
+      let membershipResolutionFailed = false;
+
       try {
         const memRes = await this.fetchWithRetry(
           `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(u.id)}/memberOf?$select=id&$top=100`,
@@ -435,8 +481,14 @@ export class DirectoryGraphClient {
         if (memRes.ok) {
           const memJson = await memRes.json();
           memberIds = (memJson.value || []).map((m: any) => m.id);
+        } else {
+          membershipResolutionFailed = true;
+          failedMembershipCount++;
+          this.logger.warn(`Could not resolve group memberships for user ${u.id}: HTTP ${memRes.status}`);
         }
       } catch (err: any) {
+        membershipResolutionFailed = true;
+        failedMembershipCount++;
         this.logger.warn(`Could not resolve group memberships for user ${u.id}: ${err.message}`);
       }
 
@@ -452,9 +504,16 @@ export class DirectoryGraphClient {
         department: u.department || null,
         accountEnabled: u.accountEnabled !== false,
         groupMemberIds: memberIds,
+        membershipResolutionFailed,
       });
     }
 
-    return { users, groups };
+    if (failedMembershipCount > 0) {
+      warnings.push(
+        `Failed to resolve group memberships for ${failedMembershipCount} user(s). Membership data is non-authoritative.`,
+      );
+    }
+
+    return { users, groups, isCompleteSnapshot, warnings };
   }
 }
