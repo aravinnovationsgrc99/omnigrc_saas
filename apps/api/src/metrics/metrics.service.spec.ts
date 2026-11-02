@@ -379,4 +379,66 @@ describe('MetricsService', () => {
       expect(tv).not.toMatch(/^\//);
     });
   });
+
+  it('should accurately aggregate policy governance metrics and respect tenant isolation', async () => {
+    // Mock policy counts for tenant-alpha
+    prisma.policy.count
+      .mockResolvedValueOnce(8) // policyTotal
+      .mockResolvedValueOnce(4) // policyPublished
+      .mockResolvedValueOnce(1); // policyOverdueReview
+
+    prisma.policy.groupBy.mockResolvedValueOnce([
+      { status: 'PUBLISHED', _count: 4 },
+      { status: 'APPROVED', _count: 1 },
+      { status: 'UNDER_REVIEW', _count: 1 },
+      { status: 'DRAFT', _count: 1 },
+      { status: 'RETIRED', _count: 1 },
+    ]);
+
+    prisma.policyException.count.mockResolvedValueOnce(1); // pendingExceptionsCount
+
+    prisma.policy.findMany.mockResolvedValueOnce([
+      { id: 'p-overdue-1', title: 'Overdue Access Policy', reviewDate: new Date('2026-01-01') },
+    ]);
+
+    const authCtx = { userId: 'user-admin', organizationId: 'org-tenant-alpha', role: Role.ADMIN };
+    const result = await service.getOverviewMetrics(authCtx);
+
+    expect(result.policies.isAvailable).toBe(true);
+    expect(result.policies.total).toBe(8);
+    expect(result.policies.publishedCount).toBe(4);
+    expect(result.policies.overdueReviewCount).toBe(1);
+    expect(result.policies.pendingExceptionsCount).toBe(1);
+    expect(result.policies.byStatus).toEqual({
+      PUBLISHED: 4,
+      APPROVED: 1,
+      UNDER_REVIEW: 1,
+      DRAFT: 1,
+      RETIRED: 1,
+    });
+
+    // Check tenant isolation in query calls
+    expect(prisma.policy.count).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          organizationId: 'org-tenant-alpha',
+          deletedAt: null,
+        }),
+      }),
+    );
+    expect(prisma.policyException.count).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          organizationId: 'org-tenant-alpha',
+          status: 'PENDING',
+        }),
+      }),
+    );
+
+    // Overdue policy should appear in attentionRequired with canonical targetView 'policies'
+    const policyAttention = (result.attentionRequired || []).find((item) => item.domain === 'POLICY');
+    expect(policyAttention).toBeDefined();
+    expect(policyAttention?.title).toBe('Overdue Access Policy');
+    expect(policyAttention?.targetView).toBe('policies');
+  });
 });

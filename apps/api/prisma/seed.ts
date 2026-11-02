@@ -26,6 +26,8 @@ import {
   EvidenceType,
   EvidenceStatus,
   EvidenceScanStatus,
+  PolicyStatus,
+  PolicyExceptionStatus,
 } from '@omnigrc/shared';
 import * as bcrypt from 'bcrypt';
 import * as fs from 'fs';
@@ -1316,7 +1318,453 @@ async function main() {
     },
   });
 
-  console.log('Seeding completed successfully with 7 assets, 11 demo risks, 8 demo controls, and 11 compliance tasks.');
+  // 10. Corporate Policies, Versions, Exceptions, Attestations, and Control Mappings
+  const nowTime = new Date();
+  const policyDaysAgo = (d: number) => new Date(nowTime.getTime() - d * 24 * 60 * 60 * 1000);
+  const policyDaysAhead = (d: number) => new Date(nowTime.getTime() + d * 24 * 60 * 60 * 1000);
+
+  const demoSeedPolicies = [
+    {
+      id: 'p0000000-0000-0000-0000-000000000001',
+      code: 'POL-SEC-001',
+      title: 'Enterprise Information Security Policy',
+      description: 'Foundational security directives establishing administrative, technical, and physical safeguards across corporate cloud environments and clinical data boundaries.',
+      category: 'Information Security',
+      status: PolicyStatus.PUBLISHED,
+      ownerId: adminUser.id,
+      businessUnit: 'Global Infosec',
+      departmentId: 'f769a52c-6e80-4960-8f00-9b8ad8935272',
+      projectId: '8c664ac7-56bf-45da-8bd1-cd8a0c5f1406',
+      effectiveDate: policyDaysAgo(180),
+      reviewDate: policyDaysAhead(185),
+      reviewCadenceDays: 365,
+      version: 2,
+      versions: [
+        {
+          id: 'pv000000-0000-0000-0000-000000000001',
+          versionNumber: '1.0.0',
+          changeLog: 'Initial baseline information security policy release.',
+          content: '# Enterprise Information Security Policy v1.0.0\n\n## 1. Purpose\nEstablishes mandatory baseline security measures for all clinical systems.\n\n## 2. Scope\nApplies to all employees, contractors, and computing facilities.',
+          createdAt: policyDaysAgo(365),
+          isPublished: false,
+        },
+        {
+          id: 'pv000000-0000-0000-0000-000000000002',
+          versionNumber: '2.0.0',
+          changeLog: 'Annual revision: Added multi-factor authentication mandates, zero-trust network boundaries, and DPDP data localization requirements.',
+          content: '# Enterprise Information Security Policy v2.0.0\n\n## 1. Executive Summary\nMeridian Health safeguards protected health information (PHI) and clinical records through defense-in-depth.\n\n## 2. Core Security Mandates\n- All production cloud services must enforce MFA and FIDO2 keys.\n- Cryptographic protocols must meet TLS 1.3 and AES-256-GCM standards.\n- Zero-trust network microsegmentation applies to all microservices.\n\n## 3. Compliance and Audit Oversight\nAnnual third-party SOC 2 Type II and ISO 27001 recertification is mandatory.',
+          createdAt: policyDaysAgo(180),
+          isPublished: true,
+        },
+      ],
+      mappings: [
+        {
+          controlId: 'c0000000-0000-0000-0000-000000000001',
+          rationale: 'Mandatory zero-trust identity and MFA enforcement across all user sessions.',
+        },
+        {
+          controlId: 'c0000000-0000-0000-0000-000000000002',
+          rationale: 'Cryptographic data-at-rest and in-transit requirements enforced for patient databases.',
+        },
+        {
+          controlId: 'c0000000-0000-0000-0000-000000000005',
+          rationale: 'Centralized SIEM monitoring and audit event logging required for 365 days retention.',
+        },
+      ],
+      attestations: [
+        { userId: adminUser.id, ip: '10.0.1.15', daysAgoAttested: 170 },
+        { userId: '00000000-0000-0000-0000-000000000003', ip: '10.0.1.18', daysAgoAttested: 165 },
+        { userId: '00000000-0000-0000-0000-000000000004', ip: '10.0.2.22', daysAgoAttested: 160 },
+      ],
+    },
+    {
+      id: 'p0000000-0000-0000-0000-000000000002',
+      code: 'POL-IAM-001',
+      title: 'Identity & Access Management (IAM) Policy',
+      description: 'Governs role-based access control (RBAC), privileged account security, quarterly entitlement certifications, and credential lifecycle.',
+      category: 'Access Control',
+      status: PolicyStatus.PUBLISHED,
+      ownerId: adminUser.id,
+      businessUnit: 'Security Operations',
+      departmentId: 'f769a52c-6e80-4960-8f00-9b8ad8935272',
+      projectId: '8c664ac7-56bf-45da-8bd1-cd8a0c5f1406',
+      effectiveDate: policyDaysAgo(395),
+      reviewDate: policyDaysAgo(30), // OVERDUE REVIEW (30 days past due)
+      reviewCadenceDays: 365,
+      version: 1,
+      versions: [
+        {
+          id: 'pv000000-0000-0000-0000-000000000003',
+          versionNumber: '1.0.0',
+          changeLog: 'Initial IAM and password complexity policy release.',
+          content: '# Identity & Access Management (IAM) Policy\n\n## 1. Principles\nAccess is granted strictly based on least privilege and need-to-know.\n\n## 2. Password & Key Requirements\n- Passwords must be at least 14 characters with high entropy.\n- Privileged administrative accounts require hardware MFA tokens.',
+          createdAt: policyDaysAgo(395),
+          isPublished: true,
+        },
+      ],
+      mappings: [
+        {
+          controlId: 'c0000000-0000-0000-0000-000000000001',
+          rationale: 'Directly specifies authentication controls and credential complexity standards.',
+        },
+      ],
+      exception: {
+        id: 'pe000000-0000-0000-0000-000000000001',
+        title: 'Legacy FTP analyzer system exception for biometric laboratory hardware',
+        reason: 'Laboratory analyzer firmware does not support multi-factor authentication. Device is isolated on an air-gapped laboratory VLAN behind a bastioned jump proxy.',
+        requestedById: '00000000-0000-0000-0000-000000000004',
+        status: PolicyExceptionStatus.PENDING,
+        expiresAt: policyDaysAhead(90),
+      },
+    },
+    {
+      id: 'p0000000-0000-0000-0000-000000000003',
+      code: 'POL-PRIV-001',
+      title: 'Data Protection & DPDP Privacy Policy',
+      description: 'Directives on collecting, processing, storing, and disposing personal healthcare and employee data pursuant to India DPDP Act and HIPAA standards.',
+      category: 'Data Privacy',
+      status: PolicyStatus.PUBLISHED,
+      ownerId: '00000000-0000-0000-0000-000000000003',
+      businessUnit: 'Privacy Office',
+      departmentId: '61a2ffe5-ea78-4796-8f3a-020bc30792cb',
+      projectId: '637ad495-3a20-449c-8948-f589e1ac1e6d',
+      effectiveDate: policyDaysAgo(90),
+      reviewDate: policyDaysAhead(275),
+      reviewCadenceDays: 365,
+      version: 1,
+      versions: [
+        {
+          id: 'pv000000-0000-0000-0000-000000000004',
+          versionNumber: '1.0.0',
+          changeLog: 'Adopted comprehensive DPDP compliance standards and patient consent frameworks.',
+          content: '# Data Protection & DPDP Privacy Policy\n\n## 1. Scope & Applicability\nAll electronic health records (EHR) and personally identifiable information (PII) processed across Meridian facilities.\n\n## 2. Data Principal Rights\nMechanisms for data access, rectification, erasure, and consent withdrawal.',
+          createdAt: policyDaysAgo(90),
+          isPublished: true,
+        },
+      ],
+      mappings: [
+        {
+          controlId: 'c0000000-0000-0000-0000-000000000002',
+          rationale: 'Mandates AES-256 database-level encryption for all stored personal health records.',
+        },
+        {
+          controlId: 'c0000000-0000-0000-0000-000000000007',
+          rationale: 'Defines regulatory breach notification protocols under DPDP Section 8.',
+        },
+      ],
+    },
+    {
+      id: 'p0000000-0000-0000-0000-000000000004',
+      code: 'POL-IR-001',
+      title: 'Cyber Incident Response & Crisis Management Policy',
+      description: 'Standardized operational procedures for incident detection, triage, containment, forensic eradication, and post-incident lessons learned.',
+      category: 'Incident Response',
+      status: PolicyStatus.APPROVED,
+      ownerId: '00000000-0000-0000-0000-000000000004',
+      businessUnit: 'SecOps',
+      departmentId: 'f769a52c-6e80-4960-8f00-9b8ad8935272',
+      projectId: '8c664ac7-56bf-45da-8bd1-cd8a0c5f1406',
+      effectiveDate: policyDaysAgo(15),
+      reviewDate: policyDaysAhead(350),
+      reviewCadenceDays: 365,
+      version: 1,
+      versions: [
+        {
+          id: 'pv000000-0000-0000-0000-000000000005',
+          versionNumber: '1.0.0',
+          changeLog: 'Approved by Information Security Committee.',
+          content: '# Cyber Incident Response Policy\n\n## 1. Incident Severity Levels\nClassifies Severity 1 (Critical Ransomware/Breach) through Severity 4 (Low anomaly).\n\n## 2. Notification Timelines\nExecutive leadership notified within 1 hour; supervisory authorities within 72 hours.',
+          createdAt: policyDaysAgo(15),
+          isPublished: false,
+        },
+      ],
+      mappings: [
+        {
+          controlId: 'c0000000-0000-0000-0000-000000000007',
+          rationale: 'Prescribes mandatory 72-hour regulatory notification procedures for data breaches.',
+        },
+        {
+          controlId: 'c0000000-0000-0000-0000-000000000003',
+          rationale: 'Requires emergency standby recovery protocols and periodic disaster drills.',
+        },
+      ],
+    },
+    {
+      id: 'p0000000-0000-0000-0000-000000000005',
+      code: 'POL-BCP-001',
+      title: 'Business Continuity & Immutable Backup Framework',
+      description: 'Recovery Time Objective (RTO) and Recovery Point Objective (RPO) targets with immutable air-gapped backup schedules for disaster preparedness.',
+      category: 'Business Continuity',
+      status: PolicyStatus.UNDER_REVIEW,
+      ownerId: '00000000-0000-0000-0000-000000000005',
+      businessUnit: 'DevOps / SRE',
+      departmentId: 'a59ae98d-3fea-4fe3-8463-1d9378db250f',
+      projectId: null,
+      effectiveDate: null,
+      reviewDate: policyDaysAhead(60),
+      reviewCadenceDays: 180,
+      version: 1,
+      versions: [
+        {
+          id: 'pv000000-0000-0000-0000-000000000006',
+          versionNumber: '0.9.0',
+          changeLog: 'Submitted for legal and compliance review.',
+          content: '# Business Continuity & Disaster Recovery Framework\n\n## 1. Target Metrics\n- RTO: 2 hours for tier-1 patient platform services.\n- RPO: 15 minutes via continuous journal streaming.',
+          createdAt: policyDaysAgo(10),
+          isPublished: false,
+        },
+      ],
+      mappings: [
+        {
+          controlId: 'c0000000-0000-0000-0000-000000000003',
+          rationale: 'Enforces immutable WORM backups and automated quarterly failover rehearsals.',
+        },
+      ],
+    },
+    {
+      id: 'p0000000-0000-0000-0000-000000000006',
+      code: 'POL-TPRM-001',
+      title: 'Third-Party Vendor Risk & Supply Chain Management',
+      description: 'Vendor pre-procurement due diligence, ongoing risk tiering, contractual security covenants, and mandatory periodic audit evaluations.',
+      category: 'Vendor Management',
+      status: PolicyStatus.DRAFT,
+      ownerId: adminUser.id,
+      businessUnit: 'Procurement & Risk',
+      departmentId: '1b0cab51-3133-401f-962b-3a18a0182868',
+      projectId: 'fd913d71-7b81-4368-bbe9-6f8d0a67e95b',
+      effectiveDate: null,
+      reviewDate: null,
+      reviewCadenceDays: 365,
+      version: 1,
+      versions: [
+        {
+          id: 'pv000000-0000-0000-0000-000000000007',
+          versionNumber: '0.1.0',
+          changeLog: 'Initial working draft created by Procurement Security team.',
+          content: '# Third-Party Vendor Risk Management Policy\n\n## 1. Classification\nCritical SaaS vendors, data center providers, and clinical diagnostic suppliers.',
+          createdAt: policyDaysAgo(5),
+          isPublished: false,
+        },
+      ],
+      mappings: [
+        {
+          controlId: 'c0000000-0000-0000-0000-000000000006',
+          rationale: 'Standardizes screening questionnaires and contractual security clauses.',
+        },
+      ],
+    },
+    {
+      id: 'p0000000-0000-0000-0000-000000000007',
+      code: 'POL-AIMS-001',
+      title: 'Responsible AI Governance & Machine Learning Safety Policy',
+      description: 'Guidelines for evaluating AI/LLM models, clinical diagnostic algorithms, training data integrity, bias mitigation, and ISO 42001 certification compliance.',
+      category: 'Compliance',
+      status: PolicyStatus.PUBLISHED,
+      ownerId: '00000000-0000-0000-0000-000000000003',
+      businessUnit: 'AI Safety Office',
+      departmentId: '61a2ffe5-ea78-4796-8f3a-020bc30792cb',
+      projectId: '637ad495-3a20-449c-8948-f589e1ac1e6d',
+      effectiveDate: policyDaysAgo(60),
+      reviewDate: policyDaysAhead(305),
+      reviewCadenceDays: 365,
+      version: 1,
+      versions: [
+        {
+          id: 'pv000000-0000-0000-0000-000000000008',
+          versionNumber: '1.0.0',
+          changeLog: 'Published following external AI ethics and safety committee audit.',
+          content: '# Responsible AI Governance & Safety Policy\n\n## 1. Purpose\nGovern ethical application of machine learning in clinical diagnosis and triage.\n\n## 2. Invariant Rules\nHuman clinician in-the-loop oversight is legally mandatory for all diagnostic recommendations.',
+          createdAt: policyDaysAgo(60),
+          isPublished: true,
+        },
+      ],
+      mappings: [
+        {
+          controlId: 'c0000000-0000-0000-0000-000000000004',
+          rationale: 'Mandatory algorithmic risk and impact assessments (AIMS/DPIA) prior to deployment.',
+        },
+      ],
+    },
+    {
+      id: 'p0000000-0000-0000-0000-000000000008',
+      code: 'POL-LEG-001',
+      title: 'Legacy BYOD & Remote Work Access Policy',
+      description: 'Superceded telework requirements from 2021 now replaced by Enterprise Zero-Trust Endpoint Protection standard.',
+      category: 'Acceptable Use',
+      status: PolicyStatus.RETIRED,
+      ownerId: adminUser.id,
+      businessUnit: 'HR Operations',
+      departmentId: '30b7e55f-002f-4326-bc6c-1e32b0be925c',
+      projectId: '4c122b46-671b-4106-aa87-aa2218a30197',
+      effectiveDate: policyDaysAgo(1000),
+      reviewDate: policyDaysAgo(400),
+      reviewCadenceDays: 365,
+      version: 1,
+      versions: [
+        {
+          id: 'pv000000-0000-0000-0000-000000000009',
+          versionNumber: '1.1.0',
+          changeLog: 'Archived and marked RETIRED; superseded by POL-SEC-001 and MDM standards.',
+          content: '# Legacy BYOD Guidelines (RETIRED)\n\nThis policy is obsolete. Consult current Endpoint MDM configuration guidelines.',
+          createdAt: policyDaysAgo(1000),
+          isPublished: true,
+        },
+      ],
+      mappings: [
+        {
+          controlId: 'c0000000-0000-0000-0000-000000000008',
+          rationale: 'Historical mapping superseded by mandatory hardware-managed workstation controls.',
+        },
+      ],
+    },
+  ];
+
+  for (const p of demoSeedPolicies) {
+    const policy = await prisma.policy.upsert({
+      where: { id: p.id },
+      update: {
+        code: p.code,
+        title: p.title,
+        description: p.description,
+        category: p.category,
+        status: p.status,
+        ownerId: p.ownerId,
+        businessUnit: p.businessUnit,
+        departmentId: p.departmentId,
+        projectId: p.projectId,
+        effectiveDate: p.effectiveDate,
+        reviewDate: p.reviewDate,
+        reviewCadenceDays: p.reviewCadenceDays,
+        version: p.version,
+      },
+      create: {
+        id: p.id,
+        organizationId: org.id,
+        code: p.code,
+        title: p.title,
+        description: p.description,
+        category: p.category,
+        status: p.status,
+        ownerId: p.ownerId,
+        businessUnit: p.businessUnit,
+        departmentId: p.departmentId,
+        projectId: p.projectId,
+        effectiveDate: p.effectiveDate,
+        reviewDate: p.reviewDate,
+        reviewCadenceDays: p.reviewCadenceDays,
+        createdById: adminUser.id,
+        version: p.version,
+      },
+    });
+
+    let publishedVersionId: string | null = null;
+
+    for (const v of p.versions) {
+      const pVer = await prisma.policyVersion.upsert({
+        where: {
+          policyId_versionNumber: {
+            policyId: policy.id,
+            versionNumber: v.versionNumber,
+          },
+        },
+        update: {
+          content: v.content,
+          changeLog: v.changeLog,
+        },
+        create: {
+          id: v.id,
+          policyId: policy.id,
+          versionNumber: v.versionNumber,
+          content: v.content,
+          changeLog: v.changeLog,
+          createdById: p.ownerId,
+          createdAt: v.createdAt,
+        },
+      });
+
+      if (v.isPublished) {
+        publishedVersionId = pVer.id;
+      }
+    }
+
+    if (publishedVersionId) {
+      await prisma.policy.update({
+        where: { id: policy.id },
+        data: { publishedVersionId },
+      });
+    }
+
+    if (p.mappings) {
+      for (const m of p.mappings) {
+        await prisma.policyControl.upsert({
+          where: {
+            policyId_controlId: {
+              policyId: policy.id,
+              controlId: m.controlId,
+            },
+          },
+          update: {
+            rationale: m.rationale,
+            status: MappingStatus.APPROVED,
+          },
+          create: {
+            organizationId: org.id,
+            policyId: policy.id,
+            controlId: m.controlId,
+            rationale: m.rationale,
+            status: MappingStatus.APPROVED,
+            version: 1,
+            createdById: adminUser.id,
+          },
+        });
+      }
+    }
+
+    if (p.exception) {
+      await prisma.policyException.upsert({
+        where: { id: p.exception.id },
+        update: {
+          title: p.exception.title,
+          reason: p.exception.reason,
+          status: p.exception.status,
+          expiresAt: p.exception.expiresAt,
+        },
+        create: {
+          id: p.exception.id,
+          organizationId: org.id,
+          policyId: policy.id,
+          title: p.exception.title,
+          reason: p.exception.reason,
+          status: p.exception.status,
+          requestedById: p.exception.requestedById,
+          expiresAt: p.exception.expiresAt,
+        },
+      });
+    }
+
+    if (p.attestations && publishedVersionId) {
+      for (const a of p.attestations) {
+        await prisma.policyAttestation.upsert({
+          where: {
+            policyVersionId_userId: {
+              policyVersionId: publishedVersionId,
+              userId: a.userId,
+            },
+          },
+          update: {},
+          create: {
+            organizationId: org.id,
+            policyVersionId: publishedVersionId,
+            userId: a.userId,
+            ipAddress: a.ip,
+            attestedAt: policyDaysAgo(a.daysAgoAttested),
+          },
+        });
+      }
+    }
+  }
+
+  console.log('Seeding completed successfully with 7 assets, 11 demo risks, 8 demo controls, 8 corporate policies, and 11 compliance tasks.');
 }
 
 main()
