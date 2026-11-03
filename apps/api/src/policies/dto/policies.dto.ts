@@ -44,6 +44,24 @@ export class CreatePolicyDto {
   @IsString()
   @IsOptional()
   projectId?: string;
+
+  @IsEnum(['INTERNAL', 'EXTERNAL', 'PUBLIC', 'PRIVATE'], {
+    message: 'policyType must be one of: INTERNAL, EXTERNAL, PUBLIC, PRIVATE',
+  })
+  @IsOptional()
+  policyType?: 'INTERNAL' | 'EXTERNAL' | 'PUBLIC' | 'PRIVATE' = 'INTERNAL';
+
+  @IsDateString()
+  @IsOptional()
+  effectiveDate?: string;
+
+  @IsDateString()
+  @IsOptional()
+  expiryDate?: string;
+
+  @IsDateString()
+  @IsOptional()
+  reviewDate?: string;
 }
 
 export class UpdatePolicyDto {
@@ -84,6 +102,24 @@ export class UpdatePolicyDto {
   @IsString()
   @IsOptional()
   projectId?: string;
+
+  @IsEnum(['INTERNAL', 'EXTERNAL', 'PUBLIC', 'PRIVATE'], {
+    message: 'policyType must be one of: INTERNAL, EXTERNAL, PUBLIC, PRIVATE',
+  })
+  @IsOptional()
+  policyType?: 'INTERNAL' | 'EXTERNAL' | 'PUBLIC' | 'PRIVATE';
+
+  @IsDateString()
+  @IsOptional()
+  effectiveDate?: string;
+
+  @IsDateString()
+  @IsOptional()
+  expiryDate?: string;
+
+  @IsDateString()
+  @IsOptional()
+  reviewDate?: string;
 
   @IsString()
   @IsOptional()
@@ -286,4 +322,20 @@ export class ImportPolicyDocDto {
   @IsString()
   @IsOptional()
   fileType?: string; // 'markdown' | 'text' | 'docx'
+}
+
+export class CreatePolicyShareDto {
+  @IsString()
+  @IsNotEmpty()
+  sharedWithUserId!: string;
+
+  @IsEnum(['VIEW', 'DOWNLOAD', 'EDIT'], {
+    message: 'permission must be one of: VIEW, DOWNLOAD, EDIT',
+  })
+  @IsNotEmpty()
+  permission!: 'VIEW' | 'DOWNLOAD' | 'EDIT';
+
+  @IsString()
+  @IsOptional()
+  notes?: string;
 }

@@ -68,13 +68,27 @@ export default function MainPage() {
   };
 
   const navigateToView = (nextView: string, params?: Record<string, any>) => {
-    setView(nextView);
+    let resolvedView = nextView;
+    if (resolvedView === 'compliance') resolvedView = 'board';
+    setView(resolvedView);
     setViewParams(params || {});
     setMobileSidebarOpen(false);
 
     if (typeof window !== 'undefined') {
-      const url = nextView === 'dashboard' ? window.location.pathname : `?view=${encodeURIComponent(nextView)}`;
-      window.history.pushState({ view: nextView, params }, '', url);
+      const searchParams = new URLSearchParams();
+      if (resolvedView !== 'dashboard') {
+        searchParams.set('view', resolvedView);
+      }
+      if (params) {
+        Object.entries(params).forEach(([k, v]) => {
+          if (v !== undefined && v !== null && v !== '') {
+            searchParams.set(k, String(v));
+          }
+        });
+      }
+      const qs = searchParams.toString();
+      const url = qs ? `?${qs}` : window.location.pathname;
+      window.history.pushState({ view: resolvedView, params }, '', url);
     }
   };
 
@@ -82,9 +96,21 @@ export default function MainPage() {
   useEffect(() => {
     const handleUrlSync = () => {
       if (typeof window !== 'undefined') {
-        const params = new URLSearchParams(window.location.search);
-        const urlView = params.get('view') || 'dashboard';
+        const urlParams = new URLSearchParams(window.location.search);
+        let urlView = urlParams.get('view') || 'dashboard';
+        if (urlView === 'compliance') urlView = 'board';
         setView(urlView);
+
+        const extractedParams: Record<string, any> = {};
+        urlParams.forEach((val, key) => {
+          if (key !== 'view') {
+            extractedParams[key] = val;
+          }
+        });
+        if (window.history.state?.params) {
+          Object.assign(extractedParams, window.history.state.params);
+        }
+        setViewParams(extractedParams);
       }
     };
 

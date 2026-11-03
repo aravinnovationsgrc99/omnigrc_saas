@@ -57,6 +57,19 @@ export class BusinessAuditsController {
     return this.businessAuditsService.createPlan(authCtx, dto);
   }
 
+  @Get('summary')
+  async getSummary(
+    @CurrentUser() user: any,
+    @Query('frameworkId') frameworkId?: string,
+  ) {
+    const authCtx: ResourceAuthContext = {
+      userId: user.userId || user.id || user.sub,
+      organizationId: user.organizationId,
+      role: user.role,
+    };
+    return this.businessAuditsService.getSummary(authCtx, frameworkId);
+  }
+
   @Get('plans')
   async findAllPlans(
     @CurrentUser() user: any,

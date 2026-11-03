@@ -21,6 +21,7 @@ import {
   AiDraftPolicyDto,
   SharePolicyDto,
   ImportPolicyDocDto,
+  CreatePolicyShareDto,
 } from './dto/policies.dto';
 import {
   PolicyDto,
@@ -34,7 +35,27 @@ import {
   PolicyAttestationSummaryDto,
   Role,
   NotificationType,
+  PolicyShareDto,
+  PolicySharePermission,
 } from '@omnigrc/shared';
+import * as fs from 'fs';
+import * as path from 'path';
+import {
+  Document as DocxDocument,
+  Packer as DocxPacker,
+  Paragraph as DocxParagraph,
+  TextRun as DocxTextRun,
+  Table as DocxTable,
+  TableRow as DocxTableRow,
+  TableCell as DocxTableCell,
+  Header as DocxHeader,
+  Footer as DocxFooter,
+  PageNumber as DocxPageNumber,
+  AlignmentType as DocxAlignmentType,
+  HeadingLevel as DocxHeadingLevel,
+  WidthType as DocxWidthType,
+  ImageRun as DocxImageRun,
+} from 'docx';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ClaudeProvider } from '../controls/ai/claude.provider';
 import { GeminiProvider } from '../controls/ai/gemini.provider';
@@ -64,6 +85,104 @@ export class PoliciesService {
     @Optional() private readonly geminiProvider?: GeminiProvider,
   ) {
     this.mapToDto = this.mapToDto.bind(this);
+  }
+
+  private getStoreFilePath(): string {
+    const dir = path.resolve(process.cwd(), 'uploads', 'policies');
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    return path.join(dir, 'policy-metadata-store.json');
+  }
+
+  private loadMetadataStore(): {
+    extensions: Record<
+      string,
+      {
+        policyType?: string;
+        effectiveDate?: string;
+        expiryDate?: string;
+        reviewDate?: string;
+        publishedAt?: string;
+      }
+    >;
+    shares: PolicyShareDto[];
+  } {
+    const filePath = this.getStoreFilePath();
+    if (!fs.existsSync(filePath)) {
+      return { extensions: {}, shares: [] };
+    }
+    try {
+      const raw = fs.readFileSync(filePath, 'utf8');
+      const parsed = JSON.parse(raw);
+      return {
+        extensions: parsed.extensions || {},
+        shares: Array.isArray(parsed.shares) ? parsed.shares : [],
+      };
+    } catch {
+      return { extensions: {}, shares: [] };
+    }
+  }
+
+  private saveMetadataStore(store: { extensions: any; shares: any[] }): void {
+    const filePath = this.getStoreFilePath();
+    fs.writeFileSync(filePath, JSON.stringify(store, null, 2), 'utf8');
+  }
+
+  private validateDates(effectiveDate?: string | Date | null, expiryDate?: string | Date | null): void {
+    if (effectiveDate && expiryDate) {
+      const eff = new Date(effectiveDate).getTime();
+      const exp = new Date(expiryDate).getTime();
+      if (exp < eff) {
+        throw new BadRequestException('Expiry date cannot be earlier than effective date');
+      }
+    }
+  }
+
+  private async verifyPolicyAccess(
+    authCtx: ResourceAuthContext,
+    policy: any,
+    requiredPermission: 'VIEW' | 'DOWNLOAD' | 'EDIT',
+  ): Promise<void> {
+    if (policy.organizationId !== authCtx.organizationId) {
+      throw new ForbiddenException('Cross-tenant policy access denied.');
+    }
+
+    if (authCtx.role === Role.ADMIN || authCtx.role === Role.MSSP_ADMIN) {
+      return;
+    }
+
+    if (policy.ownerId === authCtx.userId || policy.createdById === authCtx.userId) {
+      return;
+    }
+
+    const store = this.loadMetadataStore();
+    const activeShare = store.shares.find(
+      (s) =>
+        s.policyId === policy.id &&
+        s.organizationId === authCtx.organizationId &&
+        s.sharedWithUserId === authCtx.userId &&
+        !s.revokedAt,
+    );
+
+    if (!activeShare) {
+      if (authCtx.role === Role.ANALYST && requiredPermission === 'VIEW') {
+        return;
+      }
+      throw new ForbiddenException(
+        `You do not have ${requiredPermission} permission for this policy.`,
+      );
+    }
+
+    const permissionRank: Record<string, number> = { VIEW: 1, DOWNLOAD: 2, EDIT: 3 };
+    const userRank = permissionRank[activeShare.permission] || 0;
+    const reqRank = permissionRank[requiredPermission] || 1;
+
+    if (userRank < reqRank) {
+      throw new ForbiddenException(
+        `Insufficient permission. Your granted level is "${activeShare.permission}", but "${requiredPermission}" is required.`,
+      );
+    }
   }
 
   async findAll(authCtx: ResourceAuthContext, query: PolicyQueryDto): Promise<PaginatedPoliciesDto> {
@@ -144,10 +263,14 @@ export class PoliciesService {
       throw new NotFoundException(`Policy with ID "${id}" not found`);
     }
 
+    await this.verifyPolicyAccess(authCtx, policy, 'VIEW');
+
     return this.mapToDto(policy);
   }
 
   async create(authCtx: ResourceAuthContext, dto: CreatePolicyDto): Promise<PolicyDto> {
+    this.validateDates(dto.effectiveDate, dto.expiryDate);
+
     await this.resourceAuthService.authorize(authCtx, {
       action: 'WRITE',
       departmentId: dto.departmentId,
@@ -182,6 +305,8 @@ export class PoliciesService {
         businessUnit: dto.businessUnit || null,
         reviewCadenceDays: dto.reviewCadenceDays || 365,
         createdById: authCtx.userId,
+        ...(dto.effectiveDate && { effectiveDate: new Date(dto.effectiveDate) }),
+        ...(dto.reviewDate && { reviewDate: new Date(dto.reviewDate) }),
         versions: {
           create: {
             versionNumber: '1.0',
@@ -196,6 +321,15 @@ export class PoliciesService {
         versions: true,
       },
     });
+
+    const store = this.loadMetadataStore();
+    store.extensions[policy.id] = {
+      policyType: dto.policyType || 'INTERNAL',
+      effectiveDate: dto.effectiveDate ? new Date(dto.effectiveDate).toISOString() : undefined,
+      expiryDate: dto.expiryDate ? new Date(dto.expiryDate).toISOString() : undefined,
+      reviewDate: dto.reviewDate ? new Date(dto.reviewDate).toISOString() : undefined,
+    };
+    this.saveMetadataStore(store);
 
     await this.auditLogsService.log({
       organizationId: authCtx.organizationId,
@@ -244,6 +378,14 @@ export class PoliciesService {
     if (!existing) {
       throw new NotFoundException(`Policy with ID "${id}" not found`);
     }
+
+    await this.verifyPolicyAccess(authCtx, existing, 'EDIT');
+
+    const store = this.loadMetadataStore();
+    const currentExt = store.extensions[id] || {};
+    const effDate = dto.effectiveDate !== undefined ? dto.effectiveDate : (existing.effectiveDate || currentExt.effectiveDate);
+    const expDate = dto.expiryDate !== undefined ? dto.expiryDate : currentExt.expiryDate;
+    this.validateDates(effDate, expDate);
 
     if (dto.expectedUpdatedAt) {
       const expected = new Date(dto.expectedUpdatedAt).getTime();
@@ -313,6 +455,8 @@ export class PoliciesService {
         ...(dto.reviewCadenceDays !== undefined && { reviewCadenceDays: dto.reviewCadenceDays }),
         ...(dto.departmentId !== undefined && { departmentId: dto.departmentId }),
         ...(dto.projectId !== undefined && { projectId: dto.projectId }),
+        ...(dto.effectiveDate !== undefined && { effectiveDate: dto.effectiveDate ? new Date(dto.effectiveDate) : null }),
+        ...(dto.reviewDate !== undefined && { reviewDate: dto.reviewDate ? new Date(dto.reviewDate) : null }),
         version: { increment: 1 },
       },
     });
@@ -329,6 +473,15 @@ export class PoliciesService {
         `Policy revision conflict: expected version ${dto.expectedVersion}, but current version is ${current.version}. Please reload the latest changes.`,
       );
     }
+
+    store.extensions[id] = {
+      ...currentExt,
+      ...(dto.policyType !== undefined && { policyType: dto.policyType }),
+      ...(dto.effectiveDate !== undefined && { effectiveDate: dto.effectiveDate ? new Date(dto.effectiveDate).toISOString() : undefined }),
+      ...(dto.expiryDate !== undefined && { expiryDate: dto.expiryDate ? new Date(dto.expiryDate).toISOString() : undefined }),
+      ...(dto.reviewDate !== undefined && { reviewDate: dto.reviewDate ? new Date(dto.reviewDate).toISOString() : undefined }),
+    };
+    this.saveMetadataStore(store);
 
     const updated = await this.prisma.policy.findUniqueOrThrow({
       where: { id },
@@ -1621,11 +1774,35 @@ export class PoliciesService {
     suggestedCadenceDays: number;
     providerUsed: string;
   }> {
-    const org = await this.prisma.organization.findUnique({
-      where: { id: authCtx.organizationId },
-      select: { name: true },
-    });
-    const companyName = dto.companyContext || org?.name || 'Enterprise Organization';
+    const [org, profile] = await Promise.all([
+      this.prisma.organization.findUnique({
+        where: { id: authCtx.organizationId },
+        select: { name: true, primaryRegion: true },
+      }),
+      this.prisma.organizationComplianceProfile.findUnique({
+        where: { organizationId: authCtx.organizationId },
+      }),
+    ]);
+    const customAttrs: any = (profile?.customAttributes as any) || {};
+    const companyName = org?.name || 'Enterprise Organization';
+    const industry = profile?.industrySector || customAttrs.industry || '';
+    const description = customAttrs.description || '';
+    const activities = customAttrs.businessActivities || '';
+    const address = customAttrs.registeredAddress || '';
+
+    // Merge authentic canonical profile data; never fabricate missing attributes
+    const companyContextStr = dto.companyContext
+      ? dto.companyContext
+      : [
+          `Company Name: ${companyName}`,
+          industry ? `Industry: ${industry}` : null,
+          description ? `Description: ${description}` : null,
+          activities ? `Business Activities: ${activities}` : null,
+          address ? `Registered Address: ${address}` : null,
+        ]
+          .filter(Boolean)
+          .join('\n');
+
     const category = dto.category || 'Information Security';
     const title = dto.title.trim();
     const policyType = dto.policyType || 'INTERNAL';
@@ -1649,13 +1826,14 @@ Do not output preamble or conversational filler. Return only the complete Markdo
 
     const userPrompt = `Generate a ${depth} enterprise ${category} policy document titled "${title}".
 Policy Classification: ${policyType}
-Company Context: ${companyName}
+Company Context:
+${companyContextStr}
 Applicable Regulatory / Security Standards: ${standard}
 Key Specific Requirements to Incorporate:
 ${dto.keyRequirements || 'Standard enterprise controls, zero trust access principles, audit logging, incident notification SLAs, and data protection rules.'}`;
 
     let content = '';
-    let providerUsed = 'GRC Template Generator';
+    let providerUsed = 'Deterministic GRC Template (Heuristic Fallback)';
 
     // 1. Try Claude first (User preferred for Policy Drafting)
     if (this.claudeProvider && this.claudeProvider.isAvailable()) {
@@ -1679,6 +1857,7 @@ ${dto.keyRequirements || 'Standard enterprise controls, zero trust access princi
 
     // 3. Fallback to rich deterministic template if AI providers unavailable in local environment
     if (!content) {
+      providerUsed = 'Deterministic GRC Template (Heuristic Fallback)';
       const catCode = category.slice(0, 3).toUpperCase();
       content = `# ${title}
 
@@ -1970,7 +2149,7 @@ ${content.slice(0, 12000)}`;
 
       overallScore = Math.max(35, 100 - deductions);
       status = overallScore >= 80 ? 'PASSED' : overallScore >= 60 ? 'NEEDS_REVISION' : 'DEFICIENT';
-      modelUsed = 'OMNiGRC Automated Heuristic Validator';
+      modelUsed = 'GRC Heuristic Rule Engine (Deterministic Fallback)';
     }
 
     await this.auditLogsService.log({
@@ -1996,6 +2175,565 @@ ${content.slice(0, 12000)}`;
       validatedAt: new Date().toISOString(),
       modelUsed,
     };
+  }
+
+  async exportDocx(
+    authCtx: ResourceAuthContext,
+    id: string,
+  ): Promise<{ buffer: Buffer; filename: string }> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+    const policy = await this.prisma.policy.findFirst({
+      where: { id, ...scopeWhere, deletedAt: null },
+      include: {
+        publishedVersion: true,
+        versions: { orderBy: { createdAt: 'desc' }, take: 1 },
+        controlAssociations: { include: { control: true } },
+      },
+    });
+
+    if (!policy) {
+      throw new NotFoundException(`Policy with ID "${id}" not found`);
+    }
+
+    await this.verifyPolicyAccess(authCtx, policy, 'DOWNLOAD');
+
+    const [org, profile] = await Promise.all([
+      this.prisma.organization.findUnique({
+        where: { id: authCtx.organizationId },
+      }),
+      this.prisma.organizationComplianceProfile.findUnique({
+        where: { organizationId: authCtx.organizationId },
+      }),
+    ]);
+
+    const customAttrs: any = (profile?.customAttributes as any) || {};
+    const companyName = org?.name || 'OMNiGRC Enterprise';
+    const store = this.loadMetadataStore();
+    const ext = store.extensions[id] || {};
+
+    const policyType = ext.policyType || 'INTERNAL';
+    const effectiveDateStr = policy.effectiveDate
+      ? this.toIsoString(policy.effectiveDate).split('T')[0]
+      : ext.effectiveDate
+      ? ext.effectiveDate.split('T')[0]
+      : 'Immediate';
+    const expiryDateStr = ext.expiryDate ? ext.expiryDate.split('T')[0] : 'Continuous / Annual Renewal';
+    const reviewDateStr = policy.reviewDate
+      ? this.toIsoString(policy.reviewDate).split('T')[0]
+      : ext.reviewDate
+      ? ext.reviewDate.split('T')[0]
+      : 'Annual Review';
+
+    const versionNumber =
+      policy.publishedVersion?.versionNumber || policy.versions?.[0]?.versionNumber || '1.0';
+    const rawContent =
+      policy.publishedVersion?.content ||
+      policy.versions?.[0]?.content ||
+      `# ${policy.title}\n\n1. Purpose & Scope\n2. Policy Statements`;
+
+    // Attempt to load company logo image safely
+    let logoImageRun: DocxImageRun | null = null;
+    if (customAttrs.logoFilePath && fs.existsSync(customAttrs.logoFilePath)) {
+      try {
+        const logoBuf = fs.readFileSync(customAttrs.logoFilePath);
+        logoImageRun = new DocxImageRun({
+          data: logoBuf,
+          type: 'png',
+          transformation: { width: 120, height: 38 },
+        });
+      } catch {}
+    } else if (customAttrs.logoDataUri) {
+      try {
+        const match = customAttrs.logoDataUri.match(/^data:image\/([a-zA-Z]+);base64,(.+)$/);
+        if (match) {
+          const rawType = match[1].toLowerCase();
+          const imgType: 'jpg' | 'png' | 'gif' | 'bmp' = rawType === 'jpeg' ? 'jpg' : (['jpg', 'png', 'gif', 'bmp'].includes(rawType) ? (rawType as any) : 'png');
+          const logoBuf = Buffer.from(match[2], 'base64');
+          logoImageRun = new DocxImageRun({
+            data: logoBuf,
+            type: imgType,
+            transformation: { width: 120, height: 38 },
+          });
+        }
+      } catch {}
+    }
+
+    // Build header children
+    const headerChildren: any[] = [];
+    if (logoImageRun) {
+      headerChildren.push(
+        new DocxParagraph({
+          alignment: DocxAlignmentType.RIGHT,
+          children: [
+            logoImageRun,
+            new DocxTextRun({ text: '   ' }),
+            new DocxTextRun({
+              text: `${companyName} | ${policy.code} | v${versionNumber}`,
+              italics: true,
+              size: 16,
+              color: '555555',
+            }),
+          ],
+        }),
+      );
+    } else {
+      headerChildren.push(
+        new DocxParagraph({
+          alignment: DocxAlignmentType.RIGHT,
+          children: [
+            new DocxTextRun({
+              text: `${companyName} | ${policy.code} | v${versionNumber}`,
+              italics: true,
+              size: 16,
+              color: '555555',
+            }),
+          ],
+        }),
+      );
+    }
+
+    // Build document control metadata table
+    const docControlTable = new DocxTable({
+      width: { size: 100, type: DocxWidthType.PERCENTAGE },
+      rows: [
+        new DocxTableRow({
+          children: [
+            new DocxTableCell({
+              children: [new DocxParagraph({ children: [new DocxTextRun({ text: 'Policy Identifier', bold: true })] })],
+              width: { size: 25, type: DocxWidthType.PERCENTAGE },
+            }),
+            new DocxTableCell({
+              children: [new DocxParagraph({ text: policy.code })],
+              width: { size: 25, type: DocxWidthType.PERCENTAGE },
+            }),
+            new DocxTableCell({
+              children: [new DocxParagraph({ children: [new DocxTextRun({ text: 'Classification', bold: true })] })],
+              width: { size: 25, type: DocxWidthType.PERCENTAGE },
+            }),
+            new DocxTableCell({
+              children: [new DocxParagraph({ text: policyType })],
+              width: { size: 25, type: DocxWidthType.PERCENTAGE },
+            }),
+          ],
+        }),
+        new DocxTableRow({
+          children: [
+            new DocxTableCell({
+              children: [new DocxParagraph({ children: [new DocxTextRun({ text: 'Version', bold: true })] })],
+            }),
+            new DocxTableCell({
+              children: [new DocxParagraph({ text: `v${versionNumber}` })],
+            }),
+            new DocxTableCell({
+              children: [new DocxParagraph({ children: [new DocxTextRun({ text: 'Lifecycle Status', bold: true })] })],
+            }),
+            new DocxTableCell({
+              children: [new DocxParagraph({ text: policy.status })],
+            }),
+          ],
+        }),
+        new DocxTableRow({
+          children: [
+            new DocxTableCell({
+              children: [new DocxParagraph({ children: [new DocxTextRun({ text: 'Document Owner', bold: true })] })],
+            }),
+            new DocxTableCell({
+              children: [new DocxParagraph({ text: policy.ownerId || 'CISO' })],
+            }),
+            new DocxTableCell({
+              children: [new DocxParagraph({ children: [new DocxTextRun({ text: 'Responsible Dept', bold: true })] })],
+            }),
+            new DocxTableCell({
+              children: [new DocxParagraph({ text: policy.businessUnit || 'Enterprise Information Security' })],
+            }),
+          ],
+        }),
+        new DocxTableRow({
+          children: [
+            new DocxTableCell({
+              children: [new DocxParagraph({ children: [new DocxTextRun({ text: 'Effective Date', bold: true })] })],
+            }),
+            new DocxTableCell({
+              children: [new DocxParagraph({ text: effectiveDateStr })],
+            }),
+            new DocxTableCell({
+              children: [new DocxParagraph({ children: [new DocxTextRun({ text: 'Expiry Date', bold: true })] })],
+            }),
+            new DocxTableCell({
+              children: [new DocxParagraph({ text: expiryDateStr })],
+            }),
+          ],
+        }),
+        new DocxTableRow({
+          children: [
+            new DocxTableCell({
+              children: [new DocxParagraph({ children: [new DocxTextRun({ text: 'Next Review Date', bold: true })] })],
+            }),
+            new DocxTableCell({
+              children: [new DocxParagraph({ text: reviewDateStr })],
+            }),
+            new DocxTableCell({
+              children: [new DocxParagraph({ children: [new DocxTextRun({ text: 'Review Cadence', bold: true })] })],
+            }),
+            new DocxTableCell({
+              children: [new DocxParagraph({ text: `${policy.reviewCadenceDays} Days (Annual)` })],
+            }),
+          ],
+        }),
+        new DocxTableRow({
+          children: [
+            new DocxTableCell({
+              children: [new DocxParagraph({ children: [new DocxTextRun({ text: 'Approval Status', bold: true })] })],
+            }),
+            new DocxTableCell({
+              children: [new DocxParagraph({ text: policy.status === 'PUBLISHED' ? 'Approved & Enforced' : policy.status === 'APPROVED' ? 'Approved by CISO' : 'Draft / Under Review' })],
+            }),
+            new DocxTableCell({
+              children: [new DocxParagraph({ children: [new DocxTextRun({ text: 'Approved By', bold: true })] })],
+            }),
+            new DocxTableCell({
+              children: [new DocxParagraph({ text: policy.status === 'PUBLISHED' || policy.status === 'APPROVED' ? 'Chief Information Security Officer (CISO)' : 'Pending Formal Approval' })],
+            }),
+          ],
+        }),
+      ],
+    });
+
+    // Parse Markdown body into structured Docx elements
+    const bodyElements: any[] = [];
+    const lines = rawContent.split(/\r?\n/);
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        continue;
+      }
+      if (trimmed.startsWith('# ')) {
+        bodyElements.push(
+          new DocxParagraph({
+            text: trimmed.slice(2).trim(),
+            heading: DocxHeadingLevel.HEADING_1,
+            spacing: { before: 240, after: 120 },
+          }),
+        );
+      } else if (trimmed.startsWith('## ')) {
+        bodyElements.push(
+          new DocxParagraph({
+            text: trimmed.slice(3).trim(),
+            heading: DocxHeadingLevel.HEADING_2,
+            spacing: { before: 200, after: 100 },
+          }),
+        );
+      } else if (trimmed.startsWith('### ')) {
+        bodyElements.push(
+          new DocxParagraph({
+            text: trimmed.slice(4).trim(),
+            heading: DocxHeadingLevel.HEADING_3,
+            spacing: { before: 160, after: 80 },
+          }),
+        );
+      } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+        bodyElements.push(
+          new DocxParagraph({
+            bullet: { level: 0 },
+            children: [new DocxTextRun({ text: trimmed.slice(2).trim() })],
+            spacing: { after: 60 },
+          }),
+        );
+      } else if (/^\d+\.\s/.test(trimmed)) {
+        const itemText = trimmed.replace(/^\d+\.\s*/, '');
+        bodyElements.push(
+          new DocxParagraph({
+            children: [new DocxTextRun({ text: itemText })],
+            spacing: { after: 60 },
+          }),
+        );
+      } else if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+        if (trimmed.includes('---')) continue;
+        const cells = trimmed.split('|').slice(1, -1).map((c) => c.trim());
+        bodyElements.push(
+          new DocxParagraph({
+            children: [new DocxTextRun({ text: cells.join('  |  '), size: 18 })],
+            spacing: { after: 40 },
+          }),
+        );
+      } else {
+        bodyElements.push(
+          new DocxParagraph({
+            children: [new DocxTextRun({ text: trimmed })],
+            spacing: { after: 120 },
+          }),
+        );
+      }
+    }
+
+    const doc = new DocxDocument({
+      sections: [
+        {
+          properties: {
+            page: {
+              margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 },
+            },
+          },
+          headers: {
+            default: new DocxHeader({ children: headerChildren }),
+          },
+          footers: {
+            default: new DocxFooter({
+              children: [
+                new DocxParagraph({
+                  alignment: DocxAlignmentType.CENTER,
+                  children: [
+                    new DocxTextRun({ text: 'Page ', size: 18, color: '666666' }),
+                    new DocxTextRun({ children: [DocxPageNumber.CURRENT], size: 18, color: '666666' }),
+                    new DocxTextRun({ text: ' of ', size: 18, color: '666666' }),
+                    new DocxTextRun({ children: [DocxPageNumber.TOTAL_PAGES], size: 18, color: '666666' }),
+                    new DocxTextRun({
+                      text: `  |  ${companyName}  |  ${policy.code}  |  v${versionNumber}  |  Confidential`,
+                      size: 18,
+                      color: '666666',
+                    }),
+                  ],
+                }),
+              ],
+            }),
+          },
+          children: [
+            new DocxParagraph({
+              text: policy.title,
+              heading: DocxHeadingLevel.TITLE,
+              spacing: { after: 200 },
+            }),
+            new DocxParagraph({
+              text: 'Document Control Information',
+              heading: DocxHeadingLevel.HEADING_2,
+              spacing: { before: 200, after: 150 },
+            }),
+            docControlTable,
+            new DocxParagraph({ text: '', spacing: { after: 200 } }),
+            ...bodyElements,
+          ],
+        },
+      ],
+    });
+
+    const buffer = await DocxPacker.toBuffer(doc);
+    const sanitizedTitle = policy.title.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filename = `${policy.code}_${sanitizedTitle}.docx`;
+
+    await this.auditLogsService.log({
+      action: 'POLICY_DOCX_EXPORTED',
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      entityType: 'Policy',
+      entityId: id,
+      metadata: { filename, sizeBytes: buffer.length },
+    });
+
+    return { buffer, filename };
+  }
+
+  async shareWithUser(
+    authCtx: ResourceAuthContext,
+    policyId: string,
+    dto: CreatePolicyShareDto,
+  ): Promise<PolicyShareDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+    const policy = await this.prisma.policy.findFirst({
+      where: { id: policyId, ...scopeWhere, deletedAt: null },
+    });
+
+    if (!policy) {
+      throw new NotFoundException(`Policy with ID "${policyId}" not found`);
+    }
+
+    const isOwnerOrAdmin =
+      authCtx.role === Role.ADMIN ||
+      authCtx.role === Role.MSSP_ADMIN ||
+      policy.ownerId === authCtx.userId ||
+      policy.createdById === authCtx.userId;
+
+    const store = this.loadMetadataStore();
+
+    if (!isOwnerOrAdmin) {
+      const actorShare = store.shares.find(
+        (s) =>
+          s.policyId === policyId &&
+          s.sharedWithUserId === authCtx.userId &&
+          !s.revokedAt,
+      );
+      if (!actorShare || actorShare.permission !== 'EDIT') {
+        throw new ForbiddenException(
+          'You must be an administrator, the policy owner, or have EDIT permission to share this policy.',
+        );
+      }
+    }
+
+    const targetUser = await this.prisma.user.findFirst({
+      where: { id: dto.sharedWithUserId, organizationId: authCtx.organizationId },
+    });
+
+    if (!targetUser) {
+      throw new NotFoundException(`User "${dto.sharedWithUserId}" not found in your organization.`);
+    }
+
+    const actorUser = await this.prisma.user.findUnique({
+      where: { id: authCtx.userId },
+      select: { name: true, email: true },
+    });
+
+    const existingIndex = store.shares.findIndex(
+      (s) =>
+        s.policyId === policyId &&
+        s.sharedWithUserId === dto.sharedWithUserId &&
+        !s.revokedAt,
+    );
+
+    const shareId = `share-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const newShare: PolicyShareDto = {
+      id: shareId,
+      policyId,
+      organizationId: authCtx.organizationId,
+      sharedWithUserId: dto.sharedWithUserId,
+      sharedWithUserName: targetUser.name,
+      sharedWithUserEmail: targetUser.email,
+      permission: dto.permission as PolicySharePermission,
+      sharedByUserId: authCtx.userId,
+      sharedByUserName: actorUser?.name || 'Authorized Member',
+      createdAt: new Date().toISOString(),
+      revokedAt: null,
+      revokedByUserId: null,
+      revokedByUserName: null,
+    };
+
+    if (existingIndex >= 0) {
+      store.shares[existingIndex] = newShare;
+    } else {
+      store.shares.push(newShare);
+    }
+    this.saveMetadataStore(store);
+
+    if (this.notificationsService) {
+      try {
+        await this.notificationsService.notify({
+          organizationId: authCtx.organizationId,
+          userId: dto.sharedWithUserId,
+          type: NotificationType.TASK_ASSIGNED,
+          message: `You were granted ${dto.permission} access to policy "${policy.title}" (${policy.code}). Secure Link: /dashboard?view=policies&policyId=${policy.id}`,
+          entityType: 'Policy',
+          entityId: policy.id,
+        });
+      } catch {}
+    }
+
+    await this.auditLogsService.log({
+      action: 'POLICY_SHARE_GRANTED',
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      entityType: 'Policy',
+      entityId: policyId,
+      metadata: {
+        sharedWithUserId: dto.sharedWithUserId,
+        sharedWithUserEmail: targetUser.email,
+        permission: dto.permission,
+      },
+    });
+
+    return newShare;
+  }
+
+  async getPolicyShares(
+    authCtx: ResourceAuthContext,
+    policyId: string,
+  ): Promise<PolicyShareDto[]> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+    const policy = await this.prisma.policy.findFirst({
+      where: { id: policyId, ...scopeWhere, deletedAt: null },
+    });
+
+    if (!policy) {
+      throw new NotFoundException(`Policy with ID "${policyId}" not found`);
+    }
+
+    const store = this.loadMetadataStore();
+    return store.shares.filter(
+      (s) => s.policyId === policyId && s.organizationId === authCtx.organizationId,
+    );
+  }
+
+  async revokePolicyShare(
+    authCtx: ResourceAuthContext,
+    policyId: string,
+    shareId: string,
+  ): Promise<{ success: boolean }> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+    const policy = await this.prisma.policy.findFirst({
+      where: { id: policyId, ...scopeWhere, deletedAt: null },
+    });
+
+    if (!policy) {
+      throw new NotFoundException(`Policy with ID "${policyId}" not found`);
+    }
+
+    const isOwnerOrAdmin =
+      authCtx.role === Role.ADMIN ||
+      authCtx.role === Role.MSSP_ADMIN ||
+      policy.ownerId === authCtx.userId ||
+      policy.createdById === authCtx.userId;
+
+    const store = this.loadMetadataStore();
+    const shareIndex = store.shares.findIndex(
+      (s) => s.id === shareId && s.policyId === policyId,
+    );
+
+    if (shareIndex < 0) {
+      throw new NotFoundException(`Share record "${shareId}" not found for this policy.`);
+    }
+
+    const share = store.shares[shareIndex];
+
+    if (!isOwnerOrAdmin && share.sharedByUserId !== authCtx.userId) {
+      throw new ForbiddenException('Only administrators, the policy owner, or the grantor can revoke this share.');
+    }
+
+    const actorUser = await this.prisma.user.findUnique({
+      where: { id: authCtx.userId },
+      select: { name: true },
+    });
+
+    share.revokedAt = new Date().toISOString();
+    share.revokedByUserId = authCtx.userId;
+    share.revokedByUserName = actorUser?.name || 'Administrator';
+
+    store.shares[shareIndex] = share;
+    this.saveMetadataStore(store);
+
+    if (this.notificationsService) {
+      try {
+        await this.notificationsService.notify({
+          organizationId: authCtx.organizationId,
+          userId: share.sharedWithUserId,
+          type: NotificationType.TASK_ASSIGNED,
+          message: `Your ${share.permission} access to policy "${policy.title}" (${policy.code}) has been revoked.`,
+          entityType: 'Policy',
+          entityId: policy.id,
+        });
+      } catch {}
+    }
+
+    await this.auditLogsService.log({
+      action: 'POLICY_SHARE_REVOKED',
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      entityType: 'Policy',
+      entityId: policyId,
+      metadata: {
+        shareId,
+        sharedWithUserId: share.sharedWithUserId,
+        revokedPermission: share.permission,
+      },
+    });
+
+    return { success: true };
   }
 
   async sharePolicy(
@@ -2098,6 +2836,9 @@ ${content.slice(0, 12000)}`;
   }
 
   private mapToDto(policy: any): PolicyDto {
+    const store = this.loadMetadataStore();
+    const ext = store.extensions[policy.id] || {};
+
     return {
       id: policy.id,
       organizationId: policy.organizationId,
@@ -2107,30 +2848,40 @@ ${content.slice(0, 12000)}`;
       title: policy.title,
       description: policy.description,
       category: policy.category,
+      policyType: ext.policyType || policy.policyType || 'INTERNAL',
       status: policy.status as PolicyStatus,
       ownerId: policy.ownerId,
       businessUnit: policy.businessUnit,
       publishedVersionId: policy.publishedVersionId,
-      publishedVersion: policy.publishedVersion ? {
-        id: policy.publishedVersion.id,
-        policyId: policy.publishedVersion.policyId,
-        versionNumber: policy.publishedVersion.versionNumber,
-        content: policy.publishedVersion.content,
-        changeLog: policy.publishedVersion.changeLog,
-        createdById: policy.publishedVersion.createdById,
-        createdAt: this.toIsoString(policy.publishedVersion.createdAt),
-      } : null,
-      versions: policy.versions ? policy.versions.map((v: any) => ({
-        id: v.id,
-        policyId: v.policyId,
-        versionNumber: v.versionNumber,
-        content: v.content,
-        changeLog: v.changeLog,
-        createdById: v.createdById,
-        createdAt: this.toIsoString(v.createdAt),
-      })) : [],
-      effectiveDate: policy.effectiveDate ? this.toIsoString(policy.effectiveDate) : null,
-      reviewDate: policy.reviewDate ? this.toIsoString(policy.reviewDate) : null,
+      publishedVersion: policy.publishedVersion
+        ? {
+            id: policy.publishedVersion.id,
+            policyId: policy.publishedVersion.policyId,
+            versionNumber: policy.publishedVersion.versionNumber,
+            content: policy.publishedVersion.content,
+            changeLog: policy.publishedVersion.changeLog,
+            createdById: policy.publishedVersion.createdById,
+            createdAt: this.toIsoString(policy.publishedVersion.createdAt),
+          }
+        : null,
+      versions: policy.versions
+        ? policy.versions.map((v: any) => ({
+            id: v.id,
+            policyId: v.policyId,
+            versionNumber: v.versionNumber,
+            content: v.content,
+            changeLog: v.changeLog,
+            createdById: v.createdById,
+            createdAt: this.toIsoString(v.createdAt),
+          }))
+        : [],
+      effectiveDate: policy.effectiveDate ? this.toIsoString(policy.effectiveDate) : ext.effectiveDate || null,
+      expiryDate: ext.expiryDate || null,
+      reviewDate: policy.reviewDate ? this.toIsoString(policy.reviewDate) : ext.reviewDate || null,
+      publishedAt:
+        policy.status === PolicyStatus.PUBLISHED
+          ? ext.publishedAt || this.toIsoString(policy.updatedAt)
+          : null,
       reviewCadenceDays: policy.reviewCadenceDays,
       createdById: policy.createdById,
       createdAt: this.toIsoString(policy.createdAt),

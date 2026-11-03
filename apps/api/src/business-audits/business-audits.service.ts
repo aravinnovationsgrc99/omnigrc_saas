@@ -17,6 +17,7 @@ import {
   NotificationType,
   calculateAuditScore,
   AuditPlanDto,
+  AuditSummaryDto,
   AuditScheduleDto,
   AuditAssessmentDto,
   AuditFindingDto,
@@ -455,6 +456,61 @@ export class BusinessAuditsService {
       total,
       page,
       limit,
+    };
+  }
+
+  async getSummary(
+    authCtx: ResourceAuthContext,
+    frameworkId?: string,
+  ): Promise<AuditSummaryDto> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+
+    const planWhere: any = { ...scopeWhere };
+    if (frameworkId && frameworkId.trim()) {
+      planWhere.frameworkId = frameworkId.trim();
+    }
+
+    const [total, statusGroups, findingsTotal, findingsOpen, capaOpen] = await Promise.all([
+      this.prisma.auditPlan.count({
+        where: planWhere,
+      }),
+      this.prisma.auditPlan.groupBy({
+        by: ['status'],
+        where: planWhere,
+        _count: true,
+      }),
+      this.prisma.auditFinding.count({
+        where: { organizationId: authCtx.organizationId },
+      }),
+      this.prisma.auditFinding.count({
+        where: {
+          organizationId: authCtx.organizationId,
+          status: { in: [FindingStatus.OPEN, FindingStatus.IN_REMEDIATION, FindingStatus.READY_FOR_VERIFICATION] },
+        },
+      }),
+      this.prisma.auditCapa.count({
+        where: {
+          organizationId: authCtx.organizationId,
+          status: { in: [CapaStatus.OPEN, CapaStatus.IN_PROGRESS] },
+        },
+      }),
+    ]);
+
+    const byStatus: Record<string, number> = {};
+    for (const g of statusGroups) {
+      byStatus[g.status] = g._count;
+    }
+
+    return {
+      total,
+      inProgress: byStatus[AuditPlanStatus.IN_PROGRESS] || 0,
+      completed: byStatus[AuditPlanStatus.COMPLETED] || 0,
+      planned: byStatus[AuditPlanStatus.PLANNED] || 0,
+      draft: byStatus[AuditPlanStatus.DRAFT] || 0,
+      archived: byStatus[AuditPlanStatus.ARCHIVED] || 0,
+      findingsTotal,
+      findingsOpen,
+      capaOpen,
     };
   }
 

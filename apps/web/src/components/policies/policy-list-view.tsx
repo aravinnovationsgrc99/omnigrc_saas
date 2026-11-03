@@ -29,6 +29,12 @@ import {
   Layers,
   ChevronRight,
   Filter,
+  Users,
+  UserCheck,
+  History,
+  Lock,
+  Eye,
+  Calendar,
 } from 'lucide-react';
 import { apiRequest } from '@/lib/api-client';
 import {
@@ -87,10 +93,23 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('Information Security');
   const [policyType, setPolicyType] = useState('INTERNAL');
+  const [effectiveDate, setEffectiveDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [expiryDate, setExpiryDate] = useState(() => {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() + 1);
+    return d.toISOString().split('T')[0];
+  });
+  const [reviewDate, setReviewDate] = useState(() => {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() + 1);
+    return d.toISOString().split('T')[0];
+  });
   const [ownerId, setOwnerId] = useState('CISO');
   const [targetAudience, setTargetAudience] = useState('All Personnel');
   const [standardOrFramework, setStandardOrFramework] = useState('ISO 27001 / SOC 2 Type II');
   const [keyRequirements, setKeyRequirements] = useState('');
+  const [companyContext, setCompanyContext] = useState('');
+  const [orgDetails, setOrgDetails] = useState<any>(null);
   const [initialContent, setInitialContent] = useState(
     '# Policy Title\n\n1. Objective & Purpose\n2. Scope\n3. Compliance Rules and Controls\n4. Enforcement & Violations',
   );
@@ -118,6 +137,10 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
   const [editCategory, setEditCategory] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editContent, setEditContent] = useState('');
+  const [editPolicyType, setEditPolicyType] = useState('INTERNAL');
+  const [editEffectiveDate, setEditEffectiveDate] = useState('');
+  const [editExpiryDate, setEditExpiryDate] = useState('');
+  const [editReviewDate, setEditReviewDate] = useState('');
   const [savingDraft, setSavingDraft] = useState(false);
 
   // Mapped Controls State
@@ -136,8 +159,19 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
   const [showValidationModal, setShowValidationModal] = useState(false);
 
-  // Email Sharing State
+  // Policy Sharing & Access Control State
   const [showShareModal, setShowShareModal] = useState(false);
+  const [shareActiveTab, setShareActiveTab] = useState<'members' | 'history' | 'email'>('members');
+  const [orgMembers, setOrgMembers] = useState<any[]>([]);
+  const [policyShares, setPolicyShares] = useState<any[]>([]);
+  const [loadingShares, setLoadingShares] = useState(false);
+  const [selectedMemberId, setSelectedMemberId] = useState('');
+  const [selectedPermission, setSelectedPermission] = useState<'VIEW' | 'DOWNLOAD' | 'EDIT'>('VIEW');
+  const [shareExpiresAt, setShareExpiresAt] = useState('');
+  const [submittingInternalShare, setSubmittingInternalShare] = useState(false);
+  const [revokingShareId, setRevokingShareId] = useState<string | null>(null);
+
+  // Email Sharing State
   const [shareEmails, setShareEmails] = useState('');
   const [shareCustomMessage, setShareCustomMessage] = useState('');
   const [submittingShare, setSubmittingShare] = useState(false);
@@ -161,7 +195,135 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
     fetchPolicies();
     fetchCategories();
     fetchApprovalWorkflows();
+    fetchOrgDetails();
+    fetchOrgMembers();
   }, [filterStatus]);
+
+  async function fetchOrgDetails() {
+    try {
+      const details = await apiRequest<any>('/organization-members/details');
+      setOrgDetails(details);
+      if (details) {
+        const parts = [
+          details.name ? `Company: ${details.name}` : '',
+          details.industry ? `Industry: ${details.industry}` : '',
+          details.businessActivities ? `Activities: ${details.businessActivities}` : '',
+          details.registeredAddress ? `Address: ${details.registeredAddress}` : '',
+        ].filter(Boolean);
+        if (parts.length > 0) {
+          setCompanyContext((prev) => (prev ? prev : parts.join(' | ')));
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  async function fetchOrgMembers() {
+    try {
+      const members = await apiRequest<any[]>('/organization-members');
+      const list = Array.isArray(members) ? members : [];
+      setOrgMembers(list);
+      if (list.length > 0 && !selectedMemberId) {
+        setSelectedMemberId(list[0].userId);
+      }
+    } catch {
+      setOrgMembers([]);
+    }
+  }
+
+  async function fetchPolicyShares(policyId: string) {
+    setLoadingShares(true);
+    try {
+      const shares = await apiRequest<any[]>(`/policies/${policyId}/shares`);
+      setPolicyShares(Array.isArray(shares) ? shares : []);
+    } catch {
+      setPolicyShares([]);
+    } finally {
+      setLoadingShares(false);
+    }
+  }
+
+  function handleOpenShareModal(policy: PolicyDto) {
+    setSelectedPolicy(policy);
+    setShowShareModal(true);
+    setShareActiveTab('members');
+    fetchPolicyShares(policy.id);
+    fetchOrgMembers();
+  }
+
+  async function handleGrantInternalShare(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedPolicy || !selectedMemberId) {
+      addToast('Please select a member to grant policy access.', 'error');
+      return;
+    }
+    setSubmittingInternalShare(true);
+    try {
+      await apiRequest(`/policies/${selectedPolicy.id}/shares`, {
+        method: 'POST',
+        body: JSON.stringify({
+          sharedWithUserId: selectedMemberId,
+          permission: selectedPermission,
+          expiresAt: shareExpiresAt ? new Date(shareExpiresAt).toISOString() : undefined,
+        }),
+      });
+      addToast(`Access granted (${selectedPermission}) to user.`, 'success');
+      fetchPolicyShares(selectedPolicy.id);
+    } catch (err: any) {
+      addToast(`Failed to grant share: ${err.message}`, 'error');
+    } finally {
+      setSubmittingInternalShare(false);
+    }
+  }
+
+  async function handleRevokeInternalShare(shareId: string) {
+    if (!selectedPolicy) return;
+    setRevokingShareId(shareId);
+    try {
+      await apiRequest(`/policies/${selectedPolicy.id}/shares/${shareId}`, {
+        method: 'DELETE',
+      });
+      addToast('User policy access revoked.', 'success');
+      fetchPolicyShares(selectedPolicy.id);
+    } catch (err: any) {
+      addToast(`Failed to revoke share: ${err.message}`, 'error');
+    } finally {
+      setRevokingShareId(null);
+    }
+  }
+
+  async function handleExportDocx(policy: PolicyDto) {
+    try {
+      addToast(`Generating branded Word document for ${policy.code}...`, 'info');
+      const token =
+        typeof window !== 'undefined'
+          ? localStorage.getItem('omnigrc_auth_token') || sessionStorage.getItem('omnigrc_auth_token')
+          : '';
+      const response = await fetch(`/api/policies/${policy.id}/export/docx`, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (!response.ok) {
+        const errJson = await response.json().catch(() => ({}));
+        throw new Error(errJson.message || `Export failed: ${response.statusText}`);
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const sanitizedTitle = policy.title.replace(/[^a-zA-Z0-9_-]/g, '_');
+      a.download = `${policy.code}_${sanitizedTitle}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      addToast(`Exported ${policy.code} as branded Word document (.docx).`, 'success');
+    } catch (err: any) {
+      addToast(`Word export failed: ${err.message}`, 'error');
+    }
+  }
 
   async function fetchPolicies() {
     setLoading(true);
@@ -258,6 +420,7 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
           targetAudience,
           standardOrFramework,
           keyRequirements,
+          companyContext: companyContext || undefined,
           pageDepth: 'STANDARD',
         }),
       });
@@ -405,6 +568,12 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
+    if (effectiveDate && expiryDate) {
+      if (new Date(expiryDate).getTime() < new Date(effectiveDate).getTime()) {
+        addToast('Expiry date must be on or after the effective date.', 'error');
+        return;
+      }
+    }
     setSubmitting(true);
     try {
       await apiRequest('/policies', {
@@ -414,6 +583,10 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
           title,
           description,
           category,
+          policyType,
+          effectiveDate: effectiveDate ? new Date(effectiveDate).toISOString() : undefined,
+          expiryDate: expiryDate ? new Date(expiryDate).toISOString() : undefined,
+          reviewDate: reviewDate ? new Date(reviewDate).toISOString() : undefined,
           ownerId,
           reviewCadenceDays: Number(reviewCadenceDays),
           initialContent,
@@ -445,6 +618,16 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
     setEditCode(policy.code);
     setEditCategory(policy.category);
     setEditDescription(policy.description || '');
+    setEditPolicyType(policy.policyType || 'INTERNAL');
+    setEditEffectiveDate((policy as any).effectiveDate ? (policy as any).effectiveDate.split('T')[0] : '');
+    setEditExpiryDate((policy as any).expiryDate ? (policy as any).expiryDate.split('T')[0] : '');
+    setEditReviewDate(
+      policy.reviewDate
+        ? typeof policy.reviewDate === 'string'
+          ? policy.reviewDate.split('T')[0]
+          : new Date(policy.reviewDate).toISOString().split('T')[0]
+        : '',
+    );
 
     const currentContent =
       policy.versions && policy.versions.length > 0
@@ -484,6 +667,12 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
 
   async function handleSaveDraft() {
     if (!selectedPolicy) return;
+    if (editEffectiveDate && editExpiryDate) {
+      if (new Date(editExpiryDate).getTime() < new Date(editEffectiveDate).getTime()) {
+        addToast('Expiry date must be on or after the effective date.', 'error');
+        return;
+      }
+    }
     setSavingDraft(true);
     try {
       const updated = await apiRequest<PolicyDto>(`/policies/${selectedPolicy.id}`, {
@@ -494,6 +683,10 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
           category: editCategory,
           description: editDescription,
           content: editContent,
+          policyType: editPolicyType,
+          effectiveDate: editEffectiveDate ? new Date(editEffectiveDate).toISOString() : undefined,
+          expiryDate: editExpiryDate ? new Date(editExpiryDate).toISOString() : undefined,
+          reviewDate: editReviewDate ? new Date(editReviewDate).toISOString() : undefined,
           expectedUpdatedAt: selectedPolicy.updatedAt,
           expectedVersion: selectedPolicy.version,
         }),
@@ -848,7 +1041,22 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
             >
               <div>
                 <div className="flex items-center justify-between gap-2 mb-2">
-                  <span className="omni-mono text-xs font-bold text-slate-500">{p.code}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="omni-mono text-xs font-bold text-slate-500">{p.code}</span>
+                    <span
+                      className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${
+                        p.policyType === 'PUBLIC'
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : p.policyType === 'EXTERNAL'
+                          ? 'bg-purple-50 text-purple-700 border-purple-200'
+                          : p.policyType === 'PRIVATE'
+                          ? 'bg-rose-50 text-rose-700 border-rose-200'
+                          : 'bg-blue-50 text-blue-700 border-blue-200'
+                      }`}
+                    >
+                      {p.policyType || 'INTERNAL'}
+                    </span>
+                  </div>
                   <span
                     className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${
                       p.status === 'PUBLISHED'
@@ -867,6 +1075,7 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
                 <p className="text-xs text-slate-500 line-clamp-2 mb-3">
                   {p.description || 'No description'}
                 </p>
+
                 <div className="text-xs text-slate-600 space-y-1">
                   <div>
                     <strong>Category:</strong> {p.category}
@@ -892,15 +1101,67 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
                     )}
                   </div>
                 </div>
+
+                {/* 5 Distinct Dates */}
+                <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] text-slate-600 pt-2 border-t border-slate-100 my-2 bg-slate-50/50 p-2 rounded-lg">
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">Created:</span>
+                    <span className="font-medium text-slate-700">{new Date(p.createdAt).toLocaleDateString()}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">Effective:</span>
+                    <span className="font-medium text-slate-700">
+                      {(p as any).effectiveDate ? new Date((p as any).effectiveDate).toLocaleDateString() : 'Immediate'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">Expiry:</span>
+                    <span className="font-medium text-slate-700">
+                      {(p as any).expiryDate ? new Date((p as any).expiryDate).toLocaleDateString() : 'Continuous'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">Next Review:</span>
+                    <span className="font-medium text-slate-700">
+                      {p.reviewDate ? new Date(p.reviewDate).toLocaleDateString() : 'Annual'}
+                    </span>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="text-slate-400 block text-[10px]">Published:</span>
+                    <span className="font-medium text-slate-700">
+                      {(p as any).publishedAt
+                        ? new Date((p as any).publishedAt).toLocaleDateString()
+                        : p.status === 'PUBLISHED'
+                        ? new Date(p.updatedAt).toLocaleDateString()
+                        : 'Unpublished'}
+                    </span>
+                  </div>
+                </div>
               </div>
 
-              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                <button
-                  onClick={() => handleOpenPolicy(p)}
-                  className="text-xs font-semibold text-teal-700 hover:text-teal-900"
-                >
-                  View Details & Content
-                </button>
+              <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => handleOpenPolicy(p)}
+                    className="text-xs font-semibold text-teal-700 hover:text-teal-900"
+                  >
+                    View Details & Content
+                  </button>
+                  <button
+                    onClick={() => handleExportDocx(p)}
+                    className="text-xs font-semibold text-slate-700 hover:text-slate-900 flex items-center gap-1 px-2 py-0.5 rounded border border-slate-200 hover:bg-slate-50 transition"
+                    title="Export genuine branded OOXML Word document"
+                  >
+                    <FileText size={12} className="text-blue-600" /> Word
+                  </button>
+                  <button
+                    onClick={() => handleOpenShareModal(p)}
+                    className="text-xs font-semibold text-slate-700 hover:text-slate-900 flex items-center gap-1 px-2 py-0.5 rounded border border-slate-200 hover:bg-slate-50 transition"
+                    title="Manage team access & sharing"
+                  >
+                    <Share2 size={12} className="text-teal-600" /> Share
+                  </button>
+                </div>
                 <div className="flex items-center gap-1">
                   {p.status === 'DRAFT' && (
                     <button
@@ -1105,10 +1366,10 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
                       onChange={(e) => setPolicyType(e.target.value)}
                       className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 bg-white"
                     >
-                      <option value="INTERNAL">Internal (Company-Wide)</option>
-                      <option value="CONFIDENTIAL">Confidential (Restricted)</option>
-                      <option value="EXTERNAL">External (Third Parties)</option>
+                      <option value="INTERNAL">Internal</option>
+                      <option value="EXTERNAL">External</option>
                       <option value="PUBLIC">Public</option>
+                      <option value="PRIVATE">Private</option>
                     </select>
                   </div>
                   <div>
@@ -1140,6 +1401,25 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
                       className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
                     />
                   </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-slate-700">
+                      Organization Context & Profile
+                    </label>
+                    <span className="text-[10px] text-teal-700 font-medium">Pre-populated from Profile</span>
+                  </div>
+                  <textarea
+                    rows={2}
+                    value={companyContext}
+                    onChange={(e) => setCompanyContext(e.target.value)}
+                    placeholder="e.g. Meridian Health Pvt. Ltd. | Healthcare & Telehealth | HIPAA & ISO 27001 scope"
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 bg-slate-50"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-0.5">
+                    Note: Editing company context here applies exclusively to this AI generation and will not alter canonical organization settings.
+                  </p>
                 </div>
 
                 <div>
@@ -1264,6 +1544,57 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
                   </div>
                 </div>
 
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Classification
+                    </label>
+                    <select
+                      value={policyType}
+                      onChange={(e) => setPolicyType(e.target.value)}
+                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 bg-white"
+                    >
+                      <option value="INTERNAL">Internal</option>
+                      <option value="EXTERNAL">External</option>
+                      <option value="PUBLIC">Public</option>
+                      <option value="PRIVATE">Private</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Effective Date
+                    </label>
+                    <input
+                      type="date"
+                      value={effectiveDate}
+                      onChange={(e) => setEffectiveDate(e.target.value)}
+                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Expiry Date
+                    </label>
+                    <input
+                      type="date"
+                      value={expiryDate}
+                      onChange={(e) => setExpiryDate(e.target.value)}
+                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Review Date
+                    </label>
+                    <input
+                      type="date"
+                      value={reviewDate}
+                      onChange={(e) => setReviewDate(e.target.value)}
+                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+                    />
+                  </div>
+                </div>
+
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-xs font-semibold text-slate-700">
@@ -1381,14 +1712,19 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
         </div>
       )}
 
-      {/* Share Policy Modal */}
+      {/* Policy Sharing & Granular Access Control Drawer / Modal */}
       {showShareModal && selectedPolicy && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 omni-fade-in">
-          <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-xl">
+          <div className="bg-white rounded-xl max-w-2xl w-full p-6 shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b pb-3 mb-4">
               <div className="flex items-center gap-2 text-teal-800">
                 <Share2 size={18} />
-                <h2 className="text-base font-bold text-slate-900">Share Policy with Stakeholders</h2>
+                <div>
+                  <h2 className="text-base font-bold text-slate-900">
+                    Policy Access & Sharing: {selectedPolicy.code}
+                  </h2>
+                  <p className="text-xs text-slate-500">{selectedPolicy.title}</p>
+                </div>
               </div>
               <button
                 type="button"
@@ -1398,53 +1734,283 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
                 <X size={16} />
               </button>
             </div>
-            <form onSubmit={handleSharePolicy} className="space-y-4">
-              <p className="text-xs text-slate-600">
-                Send an internal notification and email alert linking directly to <strong>{selectedPolicy.code} - {selectedPolicy.title}</strong>.
-              </p>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Recipient Email Addresses (comma separated)
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. auditor@enterprise.com, ciso@enterprise.com"
-                  value={shareEmails}
-                  onChange={(e) => setShareEmails(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Custom Message (Optional)
-                </label>
-                <textarea
-                  rows={2}
-                  placeholder="e.g. Please review section 4 on access control requirements before the upcoming audit."
-                  value={shareCustomMessage}
-                  onChange={(e) => setShareCustomMessage(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setShowShareModal(false)}
-                  className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg"
+
+            {/* Modal Tabs */}
+            <div className="flex items-center gap-2 border-b border-slate-200 mb-4 pb-1">
+              <button
+                type="button"
+                onClick={() => setShareActiveTab('members')}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-t-md transition ${
+                  shareActiveTab === 'members'
+                    ? 'bg-teal-50 text-teal-900 border-b-2 border-teal-700'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <span className="flex items-center gap-1.5">
+                  <Users size={13} /> Internal Team Access
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShareActiveTab('history')}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-t-md transition ${
+                  shareActiveTab === 'history'
+                    ? 'bg-teal-50 text-teal-900 border-b-2 border-teal-700'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <span className="flex items-center gap-1.5">
+                  <History size={13} /> Revocation & Audit History
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShareActiveTab('email')}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-t-md transition ${
+                  shareActiveTab === 'email'
+                    ? 'bg-teal-50 text-teal-900 border-b-2 border-teal-700'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <span className="flex items-center gap-1.5">
+                  <Send size={13} /> Email Notification
+                </span>
+              </button>
+            </div>
+
+            {/* TAB 1: Team Access */}
+            {shareActiveTab === 'members' && (
+              <div className="space-y-5">
+                {/* Grant Access Form */}
+                <form
+                  onSubmit={handleGrantInternalShare}
+                  className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-3"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submittingShare}
-                  className="px-4 py-1.5 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg disabled:opacity-50 flex items-center gap-1.5"
-                >
-                  <Send size={13} />
-                  {submittingShare ? 'Sending...' : 'Send Notification'}
-                </button>
+                  <span className="text-xs font-bold text-slate-800 block uppercase tracking-wider">
+                    Grant Granular User Permission
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="sm:col-span-1">
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Select Member
+                      </label>
+                      <select
+                        value={selectedMemberId}
+                        onChange={(e) => setSelectedMemberId(e.target.value)}
+                        className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-teal-600"
+                      >
+                        {orgMembers.map((m) => (
+                          <option key={m.userId} value={m.userId}>
+                            {m.name || m.email} ({m.role})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Permission Level
+                      </label>
+                      <select
+                        value={selectedPermission}
+                        onChange={(e) => setSelectedPermission(e.target.value as any)}
+                        className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-teal-600"
+                      >
+                        <option value="VIEW">VIEW (Read & Attest)</option>
+                        <option value="DOWNLOAD">DOWNLOAD (Read & Export DOCX/MD)</option>
+                        <option value="EDIT">EDIT (Modify Drafts & Metadata)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Access Expiry (Optional)
+                      </label>
+                      <input
+                        type="date"
+                        value={shareExpiresAt}
+                        onChange={(e) => setShareExpiresAt(e.target.value)}
+                        className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-teal-600"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-end pt-1">
+                    <button
+                      type="submit"
+                      disabled={submittingInternalShare || !selectedMemberId}
+                      className="px-3.5 py-1.5 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg disabled:opacity-50 flex items-center gap-1.5 transition"
+                    >
+                      <UserCheck size={13} />
+                      {submittingInternalShare ? 'Granting...' : 'Grant Access'}
+                    </button>
+                  </div>
+                </form>
+
+                {/* Active Shares List */}
+                <div>
+                  <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">
+                    Active Permissions for this Policy
+                  </h3>
+                  {loadingShares ? (
+                    <div className="text-xs text-slate-500 py-3 text-center">Loading active shares...</div>
+                  ) : policyShares.filter((s) => !s.revokedAt).length === 0 ? (
+                    <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-center text-xs text-slate-500">
+                      No explicit granular shares granted. Organization members access this policy based on default role permissions.
+                    </div>
+                  ) : (
+                    <div className="border border-slate-200 rounded-lg overflow-hidden">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
+                          <tr>
+                            <th className="px-3 py-2">User</th>
+                            <th className="px-3 py-2">Permission</th>
+                            <th className="px-3 py-2">Granted By</th>
+                            <th className="px-3 py-2">Granted At</th>
+                            <th className="px-3 py-2 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {policyShares
+                            .filter((s) => !s.revokedAt)
+                            .map((share) => (
+                              <tr key={share.id} className="hover:bg-slate-50/50">
+                                <td className="px-3 py-2">
+                                  <div className="font-medium text-slate-900">{share.sharedWithUserName || 'Member'}</div>
+                                  <div className="text-[11px] text-slate-400 font-mono">{share.sharedWithUserEmail}</div>
+                                </td>
+                                <td className="px-3 py-2">
+                                  <span
+                                    className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                      share.permission === 'EDIT'
+                                        ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                        : share.permission === 'DOWNLOAD'
+                                        ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                        : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    }`}
+                                  >
+                                    {share.permission}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2 text-slate-600">{share.sharedByUserName || 'Admin'}</td>
+                                <td className="px-3 py-2 text-slate-500">
+                                  {new Date(share.createdAt).toLocaleDateString()}
+                                </td>
+                                <td className="px-3 py-2 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRevokeInternalShare(share.id)}
+                                    disabled={revokingShareId === share.id}
+                                    className="px-2 py-1 text-[11px] font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 rounded transition disabled:opacity-50"
+                                  >
+                                    {revokingShareId === share.id ? 'Revoking...' : 'Revoke'}
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
               </div>
-            </form>
+            )}
+
+            {/* TAB 2: Revocation & Audit History */}
+            {shareActiveTab === 'history' && (
+              <div className="space-y-3">
+                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">
+                  Historical Share & Revocation Log
+                </h3>
+                {policyShares.filter((s) => s.revokedAt).length === 0 ? (
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-center text-xs text-slate-500">
+                    No historical share revocations recorded for this policy.
+                  </div>
+                ) : (
+                  <div className="border border-slate-200 rounded-lg overflow-hidden">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
+                        <tr>
+                          <th className="px-3 py-2">User</th>
+                          <th className="px-3 py-2">Level</th>
+                          <th className="px-3 py-2">Revoked By</th>
+                          <th className="px-3 py-2">Revoked Date</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {policyShares
+                          .filter((s) => s.revokedAt)
+                          .map((share) => (
+                            <tr key={share.id} className="text-slate-500 bg-slate-50/30">
+                              <td className="px-3 py-2">
+                                <div className="font-medium text-slate-700">{share.sharedWithUserName || 'Member'}</div>
+                                <div className="text-[11px] text-slate-400 font-mono">{share.sharedWithUserEmail}</div>
+                              </td>
+                              <td className="px-3 py-2">
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-100 text-slate-600">
+                                  {share.permission}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-slate-700">{share.revokedByUserName || 'Administrator'}</td>
+                              <td className="px-3 py-2 font-mono text-[11px]">
+                                {new Date(share.revokedAt).toLocaleString()}
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB 3: Email Notification */}
+            {shareActiveTab === 'email' && (
+              <form onSubmit={handleSharePolicy} className="space-y-4">
+                <p className="text-xs text-slate-600">
+                  Send an email notification with direct portal link to <strong>{selectedPolicy.code} - {selectedPolicy.title}</strong>.
+                </p>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Recipient Email Addresses (comma separated)
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. auditor@enterprise.com, ciso@enterprise.com"
+                    value={shareEmails}
+                    onChange={(e) => setShareEmails(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Custom Message (Optional)
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="e.g. Please review section 4 on access control requirements before the upcoming audit."
+                    value={shareCustomMessage}
+                    onChange={(e) => setShareCustomMessage(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+                  />
+                </div>
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowShareModal(false)}
+                    className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submittingShare}
+                    className="px-4 py-1.5 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    <Send size={13} />
+                    {submittingShare ? 'Sending...' : 'Send Notification'}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
@@ -1591,11 +2157,18 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
                   {validatingAi ? 'Auditing...' : 'Validate with AI'}
                 </button>
                 <button
-                  onClick={() => setShowShareModal(true)}
-                  className="px-2.5 py-1 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded flex items-center gap-1 transition"
-                  title="Share policy via email notification"
+                  onClick={() => handleExportDocx(selectedPolicy)}
+                  className="px-2.5 py-1 text-xs font-semibold text-blue-800 bg-blue-50 border border-blue-200 hover:bg-blue-100 rounded flex items-center gap-1 transition"
+                  title="Export branded OOXML Word document (.docx)"
                 >
-                  <Share2 size={13} /> Share
+                  <FileText size={13} className="text-blue-700" /> Export Word (.docx)
+                </button>
+                <button
+                  onClick={() => handleOpenShareModal(selectedPolicy)}
+                  className="px-2.5 py-1 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded flex items-center gap-1 transition"
+                  title="Manage team access permissions & sharing"
+                >
+                  <Share2 size={13} /> Share Access
                 </button>
                 {selectedPolicy.status === 'DRAFT' && !isEditingDraft && (
                   <button
@@ -1669,6 +2242,57 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
                   />
                 </div>
 
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Classification
+                    </label>
+                    <select
+                      value={editPolicyType}
+                      onChange={(e) => setEditPolicyType(e.target.value)}
+                      className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded bg-white"
+                    >
+                      <option value="INTERNAL">Internal</option>
+                      <option value="EXTERNAL">External</option>
+                      <option value="PUBLIC">Public</option>
+                      <option value="PRIVATE">Private</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Effective Date
+                    </label>
+                    <input
+                      type="date"
+                      value={editEffectiveDate}
+                      onChange={(e) => setEditEffectiveDate(e.target.value)}
+                      className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Expiry Date
+                    </label>
+                    <input
+                      type="date"
+                      value={editExpiryDate}
+                      onChange={(e) => setEditExpiryDate(e.target.value)}
+                      className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Review Date
+                    </label>
+                    <input
+                      type="date"
+                      value={editReviewDate}
+                      onChange={(e) => setEditReviewDate(e.target.value)}
+                      className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded"
+                    />
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Content Editor
@@ -1705,24 +2329,90 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
                 <h2 className="text-xl font-bold text-slate-900 mb-1">{selectedPolicy.title}</h2>
                 <p className="text-xs text-slate-500 mb-4">{selectedPolicy.description}</p>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3 bg-slate-50 rounded-lg text-xs mb-4">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs mb-4">
                   <div>
-                    <span className="text-slate-500 block">Category:</span>
-                    <strong className="text-slate-800">{selectedPolicy.category}</strong>
+                    <span className="text-slate-400 block text-[10px] font-semibold uppercase">Classification</span>
+                    <span
+                      className={`inline-block mt-0.5 px-2 py-0.5 text-[11px] font-bold rounded border ${
+                        selectedPolicy.policyType === 'PUBLIC'
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : selectedPolicy.policyType === 'EXTERNAL'
+                          ? 'bg-purple-50 text-purple-700 border-purple-200'
+                          : selectedPolicy.policyType === 'PRIVATE'
+                          ? 'bg-rose-50 text-rose-700 border-rose-200'
+                          : 'bg-blue-50 text-blue-700 border-blue-200'
+                      }`}
+                    >
+                      {selectedPolicy.policyType || 'INTERNAL'}
+                    </span>
                   </div>
                   <div>
-                    <span className="text-slate-500 block">Owner:</span>
-                    <strong className="text-slate-800">{selectedPolicy.ownerId}</strong>
+                    <span className="text-slate-400 block text-[10px] font-semibold uppercase">Category</span>
+                    <strong className="text-slate-800 text-xs mt-0.5 block">{selectedPolicy.category}</strong>
                   </div>
                   <div>
-                    <span className="text-slate-500 block">Cadence:</span>
-                    <strong className="text-slate-800">
-                      {selectedPolicy.reviewCadenceDays} days
+                    <span className="text-slate-400 block text-[10px] font-semibold uppercase">Owner</span>
+                    <strong className="text-slate-800 text-xs mt-0.5 block">{selectedPolicy.ownerId}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px] font-semibold uppercase">Status</span>
+                    <span
+                      className={`inline-block mt-0.5 px-2 py-0.5 text-[11px] font-bold rounded ${
+                        selectedPolicy.status === 'PUBLISHED'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : selectedPolicy.status === 'APPROVED'
+                          ? 'bg-blue-100 text-blue-800'
+                          : selectedPolicy.status === 'UNDER_REVIEW'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-slate-100 text-slate-700'
+                      }`}
+                    >
+                      {selectedPolicy.status}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">Created At:</span>
+                    <strong className="text-slate-700 font-mono text-[11px]">
+                      {new Date(selectedPolicy.createdAt).toLocaleDateString()}
                     </strong>
                   </div>
                   <div>
-                    <span className="text-slate-500 block">Status:</span>
-                    <strong className="text-slate-800">{selectedPolicy.status}</strong>
+                    <span className="text-slate-400 block text-[10px]">Effective Date:</span>
+                    <strong className="text-slate-700 font-mono text-[11px]">
+                      {(selectedPolicy as any).effectiveDate
+                        ? new Date((selectedPolicy as any).effectiveDate).toLocaleDateString()
+                        : 'Immediate'}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">Expiry Date:</span>
+                    <strong className="text-slate-700 font-mono text-[11px]">
+                      {(selectedPolicy as any).expiryDate
+                        ? new Date((selectedPolicy as any).expiryDate).toLocaleDateString()
+                        : 'Continuous Renewal'}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">Next Review:</span>
+                    <strong className="text-slate-700 font-mono text-[11px]">
+                      {selectedPolicy.reviewDate
+                        ? new Date(selectedPolicy.reviewDate).toLocaleDateString()
+                        : `${selectedPolicy.reviewCadenceDays} Days`}
+                    </strong>
+                  </div>
+                  <div className="col-span-2 sm:col-span-4 pt-1.5 border-t border-slate-200 flex items-center justify-between text-[11px] text-slate-500">
+                    <span>
+                      Published At:{' '}
+                      <strong className="text-slate-700 font-mono">
+                        {(selectedPolicy as any).publishedAt
+                          ? new Date((selectedPolicy as any).publishedAt).toLocaleDateString()
+                          : selectedPolicy.status === 'PUBLISHED'
+                          ? new Date(selectedPolicy.updatedAt).toLocaleDateString()
+                          : 'Unpublished'}
+                      </strong>
+                    </span>
+                    <span>Review Cadence: <strong>{selectedPolicy.reviewCadenceDays} days</strong></span>
                   </div>
                 </div>
 
@@ -1877,6 +2567,13 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
                       </div>
                       <div className="flex items-center gap-2">
                         <button
+                          onClick={() => handleExportDocx(selectedPolicy)}
+                          className="px-2.5 py-1 text-xs text-white bg-blue-700 border border-blue-800 rounded hover:bg-blue-800 flex items-center gap-1 font-semibold shadow-2xs"
+                          title="Export branded OOXML Word document (.docx)"
+                        >
+                          <FileText size={13} /> Export .docx
+                        </button>
+                        <button
                           onClick={() =>
                             downloadPolicyContent(
                               selectedPolicy,
@@ -1921,6 +2618,13 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
                         Draft Version <strong>v{selectedPolicy.versions[0].versionNumber}</strong> ({selectedPolicy.status})
                       </span>
                       <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleExportDocx(selectedPolicy)}
+                          className="px-2.5 py-1 text-xs text-white bg-blue-700 border border-blue-800 rounded hover:bg-blue-800 flex items-center gap-1 font-semibold shadow-2xs"
+                          title="Export branded OOXML Word document (.docx)"
+                        >
+                          <FileText size={13} /> Export .docx
+                        </button>
                         <button
                           onClick={() =>
                             downloadPolicyContent(

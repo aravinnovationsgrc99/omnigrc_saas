@@ -31,6 +31,7 @@ describe('BusinessAuditsService', () => {
       auditPlan: {
         findMany: jest.fn(),
         count: jest.fn(),
+        groupBy: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
@@ -691,6 +692,32 @@ describe('BusinessAuditsService', () => {
           }),
         }),
       );
+    });
+
+    it('should calculate authoritative audit status summary metrics from db', async () => {
+      const authCtx = { userId: 'admin-1', organizationId: 'org-1', role: Role.ADMIN };
+      prisma.auditPlan.count.mockResolvedValue(5);
+      prisma.auditPlan.groupBy.mockResolvedValue([
+        { status: AuditPlanStatus.IN_PROGRESS, _count: 2 },
+        { status: AuditPlanStatus.COMPLETED, _count: 2 },
+        { status: AuditPlanStatus.PLANNED, _count: 1 },
+      ]);
+      prisma.auditFinding.count.mockResolvedValueOnce(14).mockResolvedValueOnce(3);
+      prisma.auditCapa.count.mockResolvedValue(1);
+
+      const summary = await service.getSummary(authCtx);
+
+      expect(summary).toEqual({
+        total: 5,
+        inProgress: 2,
+        completed: 2,
+        planned: 1,
+        draft: 0,
+        archived: 0,
+        findingsTotal: 14,
+        findingsOpen: 3,
+        capaOpen: 1,
+      });
     });
 
     it('should clear old clause associations transactionally when changing framework without supplying clause IDs', async () => {

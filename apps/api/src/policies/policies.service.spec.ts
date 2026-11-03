@@ -104,6 +104,26 @@ describe('PoliciesService', () => {
       organization: {
         findUnique: jest.fn().mockResolvedValue({ id: 'org-1', name: 'Meridian Health Pvt. Ltd.' }),
       },
+      user: {
+        findUnique: jest.fn().mockImplementation(({ where }: any) =>
+          Promise.resolve({ id: where?.id || 'usr-1', name: 'Test Member', email: 'member@enterprise.com' }),
+        ),
+        findFirst: jest.fn().mockImplementation(({ where }: any) =>
+          Promise.resolve({ id: where?.id || 'usr-1', name: 'Test Member', email: 'member@enterprise.com' }),
+        ),
+      },
+      organizationComplianceProfile: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'prof-1',
+          organizationId: 'org-1',
+          industrySector: 'Healthcare',
+          customAttributes: {
+            description: 'Healthcare provider',
+            businessActivities: 'Clinical Care and Telehealth Services',
+            registeredAddress: '123 Medical Park, Suite 400',
+          },
+        }),
+      },
     };
 
     auditLogsService = {
@@ -1019,6 +1039,100 @@ describe('PoliciesService', () => {
       expect(imported.wordCount).toBeGreaterThan(10);
       expect(auditLogsService.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'POLICY_DOCUMENT_IMPORTED' }),
+      );
+    });
+
+    it('should validate dates and throw BadRequestException when expiryDate is before effectiveDate', async () => {
+      await expect(
+        service.create(adminCtx, {
+          code: 'POL-DATE-ERR',
+          title: 'Invalid Date Policy',
+          category: 'Compliance',
+          policyType: 'INTERNAL',
+          effectiveDate: '2026-12-01',
+          expiryDate: '2026-11-01',
+        } as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should grant internal user share and log audit event', async () => {
+      prisma.policy.findFirst.mockResolvedValueOnce({
+        id: 'pol-share-internal-1',
+        code: 'POL-INT-001',
+        title: 'Internal Access Policy',
+        organizationId: 'org-1',
+      });
+
+      const shareResult = await service.shareWithUser(adminCtx, 'pol-share-internal-1', {
+        sharedWithUserId: 'usr-member-1',
+        permission: 'VIEW',
+      });
+
+      expect(shareResult).toBeDefined();
+      expect(shareResult.policyId).toBe('pol-share-internal-1');
+      expect(shareResult.permission).toBe('VIEW');
+      expect(shareResult.sharedWithUserId).toBe('usr-member-1');
+      expect(auditLogsService.log).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'POLICY_SHARE_GRANTED' }),
+      );
+    });
+
+    it('should list active policy shares for a policy', async () => {
+      prisma.policy.findFirst.mockResolvedValueOnce({
+        id: 'pol-share-internal-1',
+        code: 'POL-INT-001',
+        title: 'Internal Access Policy',
+        organizationId: 'org-1',
+      });
+
+      const shares = await service.getPolicyShares(adminCtx, 'pol-share-internal-1');
+      expect(Array.isArray(shares)).toBe(true);
+      expect(shares.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('should revoke internal policy share and log audit event', async () => {
+      prisma.policy.findFirst.mockResolvedValue({
+        id: 'pol-share-internal-1',
+        code: 'POL-INT-001',
+        title: 'Internal Access Policy',
+        organizationId: 'org-1',
+      });
+
+      const shares = await service.getPolicyShares(adminCtx, 'pol-share-internal-1');
+      const activeShare = shares.find((s) => !s.revokedAt);
+      expect(activeShare).toBeDefined();
+
+      const revoked = await service.revokePolicyShare(adminCtx, 'pol-share-internal-1', activeShare!.id);
+      expect(revoked.success).toBe(true);
+      expect(auditLogsService.log).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'POLICY_SHARE_REVOKED' }),
+      );
+    });
+
+    it('should export genuine OOXML .docx buffer with document control table', async () => {
+      prisma.policy.findFirst.mockResolvedValueOnce({
+        id: 'pol-export-1',
+        code: 'POL-DOCX-001',
+        title: 'Document Export Verification Policy',
+        organizationId: 'org-1',
+        status: PolicyStatus.PUBLISHED,
+        publishedVersion: {
+          id: 'pv-exp-1',
+          versionNumber: '1.0',
+          content: '# 1. Purpose\nThis is a verified test policy.\n\n# 2. Scope\nApplies to all employees.',
+        },
+        versions: [],
+        controlAssociations: [],
+      });
+
+      const docxResult = await service.exportDocx(adminCtx, 'pol-export-1');
+      expect(docxResult).toBeDefined();
+      expect(Buffer.isBuffer(docxResult.buffer)).toBe(true);
+      expect(docxResult.buffer.length).toBeGreaterThan(100);
+      expect(docxResult.filename).toContain('POL-DOCX-001');
+      expect(docxResult.filename.endsWith('.docx')).toBe(true);
+      expect(auditLogsService.log).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'POLICY_DOCX_EXPORTED' }),
       );
     });
   });

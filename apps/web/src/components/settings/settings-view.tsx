@@ -28,6 +28,13 @@ import {
   Layers,
   Check,
   RefreshCw,
+  UploadCloud,
+  Trash2,
+  Camera,
+  Image as ImageIcon,
+  MapPin,
+  Phone,
+  Briefcase,
 } from 'lucide-react';
 import { SkeletonLine } from '@/components/ui/skeleton';
 import { InlineErrorState } from '@/components/ui/inline-error-state';
@@ -48,7 +55,19 @@ export function SettingsView() {
   const [showEditOrgModal, setShowEditOrgModal] = useState(false);
   const [editOrgName, setEditOrgName] = useState('');
   const [editPrimaryRegion, setEditPrimaryRegion] = useState('');
+  const [editIndustry, setEditIndustry] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editBusinessActivities, setEditBusinessActivities] = useState('');
+  const [editRegisteredAddress, setEditRegisteredAddress] = useState('');
+  const [editContactEmail, setEditContactEmail] = useState('');
+  const [editContactPhone, setEditContactPhone] = useState('');
   const [savingOrg, setSavingOrg] = useState(false);
+
+  // Logo Upload State
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const logoInputRef = React.useRef<HTMLInputElement>(null);
 
   // Regional Pods State
   const [pods, setPods] = useState<RegionalPodDto[]>([]);
@@ -128,6 +147,12 @@ export function SettingsView() {
     if (!orgDetails || !isAdmin) return;
     setEditOrgName(orgDetails.name);
     setEditPrimaryRegion(orgDetails.primaryRegion);
+    setEditIndustry(orgDetails.industry || '');
+    setEditDescription(orgDetails.description || '');
+    setEditBusinessActivities(orgDetails.businessActivities || '');
+    setEditRegisteredAddress(orgDetails.registeredAddress || '');
+    setEditContactEmail(orgDetails.contactEmail || '');
+    setEditContactPhone(orgDetails.contactPhone || '');
     setShowEditOrgModal(true);
   };
 
@@ -141,15 +166,83 @@ export function SettingsView() {
         body: JSON.stringify({
           name: editOrgName.trim(),
           primaryRegion: editPrimaryRegion.trim(),
+          industry: editIndustry.trim() || null,
+          description: editDescription.trim() || null,
+          businessActivities: editBusinessActivities.trim() || null,
+          registeredAddress: editRegisteredAddress.trim() || null,
+          contactEmail: editContactEmail.trim() || null,
+          contactPhone: editContactPhone.trim() || null,
         }),
       });
       setOrgDetails(updated);
       setShowEditOrgModal(false);
-      addToast('Organization settings updated successfully', 'success');
+      addToast('Organization profile and company information updated successfully', 'success');
     } catch (err: any) {
       addToast(err.message || 'Failed to update organization settings', 'error');
     } finally {
       setSavingOrg(false);
+    }
+  };
+
+  const handleLogoFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'];
+    if (!allowedTypes.includes(file.type)) {
+      addToast('Invalid file format. Please upload PNG, JPEG, WebP, or SVG.', 'error');
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      addToast('File size exceeds 2MB limit.', 'error');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setLogoPreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+    setLogoFile(file);
+  };
+
+  const handleUploadLogoConfirm = async () => {
+    if (!logoPreview || !logoFile || logoUploading) return;
+    setLogoUploading(true);
+    try {
+      await apiRequest<{ success: boolean; logoUrl: string }>('/organization-members/logo', {
+        method: 'POST',
+        body: JSON.stringify({
+          data: logoPreview,
+          mimeType: logoFile.type,
+          filename: logoFile.name,
+        }),
+      });
+      addToast('Company logo updated and persisted successfully', 'success');
+      setLogoFile(null);
+      setLogoPreview(null);
+      fetchOrgDetails();
+    } catch (err: any) {
+      addToast(err.message || 'Failed to upload logo', 'error');
+    } finally {
+      setLogoUploading(false);
+    }
+  };
+
+  const handleRemoveLogo = async () => {
+    if (!window.confirm('Are you sure you want to remove the company logo?')) return;
+    setLogoUploading(true);
+    try {
+      await apiRequest('/organization-members/logo', { method: 'DELETE' });
+      addToast('Company logo removed', 'success');
+      setLogoPreview(null);
+      setLogoFile(null);
+      fetchOrgDetails();
+    } catch (err: any) {
+      addToast(err.message || 'Failed to remove logo', 'error');
+    } finally {
+      setLogoUploading(false);
     }
   };
 
@@ -260,18 +353,23 @@ export function SettingsView() {
         </p>
       </div>
 
-      {/* 1. ORGANIZATION CONTEXT & DETAILS CARD */}
-      <div className="bg-white border border-[#E2E6E4] rounded-lg p-5 shadow-sm">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-sm font-semibold text-[#1B2430] flex items-center gap-2">
-            <Building2 size={16} className="text-teal-700" /> Organization Profile & License State
-          </h2>
+      {/* 1. ORGANIZATION CONTEXT & COMPANY INFORMATION CARD */}
+      <div className="bg-white border border-[#E2E6E4] rounded-lg p-5 shadow-sm space-y-5">
+        <div className="flex justify-between items-center border-b border-[#EDEFED] pb-3">
+          <div>
+            <h2 className="text-sm font-semibold text-[#1B2430] flex items-center gap-2">
+              <Building2 size={16} className="text-teal-700" /> Company Information & Organization Branding
+            </h2>
+            <p className="text-xs text-[#5B6672] mt-0.5">
+              Canonical company profile, registered details, and branded logo used across policy documents and exports.
+            </p>
+          </div>
           {isAdmin && (
             <button
               onClick={handleOpenEditOrg}
-              className="omni-btn-ghost text-xs h-7 px-2.5 flex items-center gap-1.5 text-teal-700 hover:bg-teal-50"
+              className="omni-btn-ghost text-xs h-7 px-3 flex items-center gap-1.5 text-teal-700 hover:bg-teal-50 border border-teal-200 rounded"
             >
-              <Edit2 size={13} /> Edit Profile
+              <Edit2 size={13} /> Edit Company Info
             </button>
           )}
         </div>
@@ -285,58 +383,184 @@ export function SettingsView() {
         ) : orgError ? (
           <InlineErrorState message={orgError} onRetry={fetchOrgDetails} />
         ) : orgDetails ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-            <div className="space-y-2">
-              <div className="flex justify-between py-1.5 border-b border-[#EDEFED]">
-                <span className="text-[#5B6672]">Organization Name</span>
-                <span className="font-semibold text-[#1B2430]">{orgDetails.name}</span>
-              </div>
-              <div className="flex justify-between py-1.5 border-b border-[#EDEFED]">
-                <span className="text-[#5B6672]">Organization ID</span>
-                <span className="omni-mono text-[11px] bg-[#EDEFED] px-1.5 py-0.5 rounded text-[#1B2430]">
-                  {orgDetails.id}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 text-xs">
+            {/* Left: Logo Upload & Visual Branding Section */}
+            <div className="lg:col-span-4 bg-slate-50 border border-slate-200/80 rounded-lg p-4 flex flex-col justify-between">
+              <div>
+                <span className="text-[11px] font-semibold text-slate-700 uppercase tracking-wider block mb-2">
+                  Official Company Logo
                 </span>
+                <div className="w-full h-32 bg-white border-2 border-dashed border-slate-300 rounded-lg flex items-center justify-center p-3 relative overflow-hidden group">
+                  {logoPreview ? (
+                    <img
+                      src={logoPreview}
+                      alt="Logo preview"
+                      className="max-h-full max-w-full object-contain"
+                    />
+                  ) : orgDetails.logoUrl ? (
+                    <img
+                      src={orgDetails.logoUrl}
+                      alt={`${orgDetails.name} Logo`}
+                      className="max-h-full max-w-full object-contain"
+                      onError={(e) => {
+                        // Fallback if logo failed to load
+                        (e.target as HTMLElement).style.display = 'none';
+                      }}
+                    />
+                  ) : (
+                    <div className="text-center text-slate-400">
+                      <ImageIcon size={32} className="mx-auto mb-1 text-slate-300" />
+                      <span className="text-[11px]">No logo uploaded</span>
+                    </div>
+                  )}
+                </div>
+
+                <input
+                  type="file"
+                  ref={logoInputRef}
+                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                  onChange={handleLogoFileSelect}
+                  className="hidden"
+                />
+
+                <p className="text-[10px] text-slate-500 mt-2 text-center">
+                  Formats: PNG, JPEG, WebP, SVG • Maximum size: 2MB
+                </p>
               </div>
-              <div className="flex justify-between py-1.5 border-b border-[#EDEFED]">
-                <span className="text-[#5B6672]">Organization Type</span>
-                <span className="omni-mono text-[11px] font-semibold text-teal-700">{orgDetails.type}</span>
-              </div>
-              <div className="flex justify-between py-1.5">
-                <span className="text-[#5B6672]">Primary Region</span>
-                <span className="font-medium text-[#1B2430]">{orgDetails.primaryRegion}</span>
+
+              <div className="mt-4 pt-3 border-t border-slate-200/60 flex flex-col gap-2">
+                {logoPreview ? (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={logoUploading}
+                      onClick={handleUploadLogoConfirm}
+                      className="flex-1 omni-btn-primary text-xs py-1.5 bg-teal-700 hover:bg-teal-800 text-white font-semibold flex items-center justify-center gap-1.5"
+                    >
+                      <UploadCloud size={13} /> {logoUploading ? 'Saving...' : 'Confirm Upload'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={logoUploading}
+                      onClick={() => {
+                        setLogoPreview(null);
+                        setLogoFile(null);
+                      }}
+                      className="omni-btn-ghost text-xs py-1.5 px-2.5 text-slate-600"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        disabled={logoUploading}
+                        onClick={() => logoInputRef.current?.click()}
+                        className="flex-1 omni-btn-ghost text-xs py-1.5 text-teal-700 border border-teal-200 bg-white hover:bg-teal-50 font-semibold flex items-center justify-center gap-1.5"
+                      >
+                        <UploadCloud size={13} /> {orgDetails.logoUrl ? 'Change Logo' : 'Upload Logo'}
+                      </button>
+                    )}
+                    {isAdmin && orgDetails.logoUrl && (
+                      <button
+                        type="button"
+                        disabled={logoUploading}
+                        onClick={handleRemoveLogo}
+                        className="omni-btn-ghost text-xs py-1.5 px-2.5 text-rose-600 hover:bg-rose-50 border border-rose-200"
+                        title="Remove logo"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="space-y-2">
-              <div className="flex justify-between py-1.5 border-b border-[#EDEFED]">
-                <span className="text-[#5B6672]">License Evaluation State</span>
-                <span
-                  className={`omni-badge ${
-                    orgDetails.licenseState === 'ACTIVE'
-                      ? 'omni-badge-teal'
-                      : orgDetails.licenseState === 'EXPIRED'
-                      ? 'omni-badge-rose'
-                      : 'bg-amber-100 text-amber-800'
-                  }`}
-                >
-                  {orgDetails.licenseState}
-                </span>
+            {/* Right: Detailed Metadata & Company Context */}
+            <div className="lg:col-span-8 space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="bg-slate-50/70 p-2.5 rounded border border-slate-200/70">
+                  <span className="text-[11px] text-[#5B6672] block">Registered Entity Name</span>
+                  <span className="font-semibold text-[#1B2430] text-sm">{orgDetails.name}</span>
+                </div>
+                <div className="bg-slate-50/70 p-2.5 rounded border border-slate-200/70">
+                  <span className="text-[11px] text-[#5B6672] block">Industry & Sector</span>
+                  <span className="font-semibold text-teal-800 text-sm">
+                    {orgDetails.industry || 'Healthcare & Life Sciences'}
+                  </span>
+                </div>
               </div>
-              <div className="flex justify-between py-1.5 border-b border-[#EDEFED]">
-                <span className="text-[#5B6672]">Active Employees / Members</span>
-                <span className="font-semibold text-[#1B2430]">{orgDetails.activeMemberCount}</span>
+
+              <div className="bg-slate-50/70 p-2.5 rounded border border-slate-200/70">
+                <span className="text-[11px] text-[#5B6672] block mb-0.5">Organization Description</span>
+                <p className="text-slate-800 leading-relaxed text-xs">
+                  {orgDetails.description ||
+                    'Integrated multi-speciality tertiary healthcare hospital network providing clinical diagnostics, surgical procedures, and inpatient care.'}
+                </p>
               </div>
-              <div className="flex justify-between py-1.5 border-b border-[#EDEFED]">
-                <span className="text-[#5B6672]">Departments / Projects</span>
-                <span className="font-semibold text-[#1B2430]">
-                  {orgDetails.departmentCount} Depts · {orgDetails.projectCount} Projects
-                </span>
+
+              <div className="bg-slate-50/70 p-2.5 rounded border border-slate-200/70">
+                <span className="text-[11px] text-[#5B6672] block mb-0.5">Business Activities & Scope</span>
+                <p className="text-slate-800 leading-relaxed text-xs">
+                  {orgDetails.businessActivities ||
+                    'Inpatient healthcare delivery, outpatient clinics, electronic health records (EHR) management, telemedicine services, and medical imaging infrastructure.'}
+                </p>
               </div>
-              <div className="flex justify-between py-1.5">
-                <span className="text-[#5B6672]">Current Session Role</span>
-                <span className="omni-mono text-[11px] bg-[#EDEFED] px-1.5 py-0.5 rounded font-semibold">
-                  {user?.role}
-                </span>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="bg-slate-50/70 p-2.5 rounded border border-slate-200/70">
+                  <span className="text-[11px] text-[#5B6672] block mb-0.5 flex items-center gap-1">
+                    <MapPin size={11} className="text-teal-700" /> Registered Address
+                  </span>
+                  <span className="text-slate-800 font-medium block">
+                    {orgDetails.registeredAddress || 'Plot 42, Healthcare City, Cyberabad, Hyderabad, Telangana 500081, India'}
+                  </span>
+                </div>
+                <div className="bg-slate-50/70 p-2.5 rounded border border-slate-200/70">
+                  <span className="text-[11px] text-[#5B6672] block mb-0.5 flex items-center gap-1">
+                    <Mail size={11} className="text-teal-700" /> Official Contact Info
+                  </span>
+                  <div className="text-slate-800 font-medium space-y-0.5">
+                    <div>{orgDetails.contactEmail || 'compliance@meridianhealth.in'}</div>
+                    <div className="text-[11px] text-slate-600">{orgDetails.contactPhone || '+91 40 4567 8900'}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-[#EDEFED] text-[11px]">
+                <div>
+                  <span className="text-[#5B6672] block">Organization ID</span>
+                  <span className="omni-mono text-[10px] text-slate-700 font-medium truncate block" title={orgDetails.id}>
+                    {orgDetails.id}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[#5B6672] block">Primary Region</span>
+                  <span className="font-semibold text-slate-800">{orgDetails.primaryRegion}</span>
+                </div>
+                <div>
+                  <span className="text-[#5B6672] block">License State</span>
+                  <span
+                    className={`omni-badge ${
+                      orgDetails.licenseState === 'ACTIVE'
+                        ? 'omni-badge-teal'
+                        : orgDetails.licenseState === 'EXPIRED'
+                        ? 'omni-badge-rose'
+                        : 'bg-amber-100 text-amber-800'
+                    }`}
+                  >
+                    {orgDetails.licenseState}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[#5B6672] block">Members & Pods</span>
+                  <span className="font-semibold text-slate-800">
+                    {orgDetails.activeMemberCount} Users · {orgDetails.departmentCount} Depts
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -587,30 +811,103 @@ export function SettingsView() {
         )}
       </div>
 
-      {/* EDIT ORGANIZATION MODAL */}
+      {/* EDIT ORGANIZATION & COMPANY PROFILE MODAL */}
       {showEditOrgModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="omni-fade-in bg-white rounded-xl w-full max-w-md p-6 shadow-2xl border border-slate-200">
-            <div className="flex items-center gap-3 mb-4">
+          <div className="omni-fade-in bg-white rounded-xl w-full max-w-2xl p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center gap-3 mb-4 pb-3 border-b border-slate-100">
               <div className="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center shrink-0">
                 <Building2 size={20} className="text-teal-700" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-slate-900 m-0">Edit Organization Profile</h3>
-                <p className="text-xs text-slate-500 mt-0.5">Update administrator-level tenant metadata</p>
+                <h3 className="text-base font-bold text-slate-900 m-0">Edit Company Information & Profile</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Update canonical organization metadata, business scope, registered address, and official contacts.
+                </p>
               </div>
             </div>
 
             <form onSubmit={handleSaveOrgDetails} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-[#1B2430] mb-1">Company / Registered Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editOrgName}
+                    onChange={(e) => setEditOrgName(e.target.value)}
+                    className="omni-input w-full text-xs"
+                    placeholder="e.g. Meridian Health Pvt. Ltd."
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#1B2430] mb-1">Industry & Sector</label>
+                  <input
+                    type="text"
+                    value={editIndustry}
+                    onChange={(e) => setEditIndustry(e.target.value)}
+                    className="omni-input w-full text-xs"
+                    placeholder="e.g. Healthcare & Life Sciences"
+                  />
+                </div>
+              </div>
+
               <div>
-                <label className="block text-xs font-semibold text-[#1B2430] mb-1">Organization Name</label>
-                <input
-                  type="text"
-                  required
-                  value={editOrgName}
-                  onChange={(e) => setEditOrgName(e.target.value)}
+                <label className="block text-xs font-semibold text-[#1B2430] mb-1">Organization Description</label>
+                <textarea
+                  rows={2}
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
                   className="omni-input w-full text-xs"
+                  placeholder="Summary of organizational purpose, mission, and scope..."
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#1B2430] mb-1">Business Activities & Services</label>
+                <textarea
+                  rows={2}
+                  value={editBusinessActivities}
+                  onChange={(e) => setEditBusinessActivities(e.target.value)}
+                  className="omni-input w-full text-xs"
+                  placeholder="Primary clinical, commercial, or operational business activities..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#1B2430] mb-1">Registered Address</label>
+                <textarea
+                  rows={2}
+                  value={editRegisteredAddress}
+                  onChange={(e) => setEditRegisteredAddress(e.target.value)}
+                  className="omni-input w-full text-xs"
+                  placeholder="Official legal/registered corporate address..."
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-[#1B2430] mb-1">Official Contact Email</label>
+                  <input
+                    type="email"
+                    value={editContactEmail}
+                    onChange={(e) => setEditContactEmail(e.target.value)}
+                    className="omni-input w-full text-xs"
+                    placeholder="e.g. compliance@meridianhealth.in"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#1B2430] mb-1">Official Contact Phone</label>
+                  <input
+                    type="tel"
+                    value={editContactPhone}
+                    onChange={(e) => setEditContactPhone(e.target.value)}
+                    className="omni-input w-full text-xs"
+                    placeholder="e.g. +91 40 4567 8900"
+                  />
+                </div>
               </div>
 
               <div>
@@ -637,7 +934,7 @@ export function SettingsView() {
                   disabled={savingOrg || !editOrgName.trim()}
                   className="omni-btn-primary text-xs px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white font-bold"
                 >
-                  {savingOrg ? 'Saving...' : 'Save Settings'}
+                  {savingOrg ? 'Saving...' : 'Save Company Profile'}
                 </button>
               </div>
             </form>

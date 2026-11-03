@@ -9,6 +9,7 @@ import {
     Query,
     UseGuards,
     Req,
+    Res,
 } from '@nestjs/common';
 import { PoliciesService } from './policies.service';
 import {
@@ -27,6 +28,7 @@ import {
     AiDraftPolicyDto,
     SharePolicyDto,
     ImportPolicyDocDto,
+    CreatePolicyShareDto,
 } from './dto/policies.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -35,7 +37,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Role } from '@omnigrc/shared';
 import { RequiresActiveLicense } from '../common/decorators/requires-active-license.decorator';
 import { ResourceAuthContext } from '../auth/resource-authorization.service';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import { RequireCapability } from '../common/decorators/require-capability.decorator';
 
 @Controller('policies')
@@ -417,5 +419,69 @@ export class PoliciesController {
             role: user.role,
         };
         return this.policiesService.sharePolicy(authCtx, id, dto);
+    }
+
+    @Get(':id/export/docx')
+    @Roles(Role.ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+    async exportDocx(
+        @CurrentUser() user: any,
+        @Param('id') id: string,
+        @Res() res: Response,
+    ) {
+        const authCtx: ResourceAuthContext = {
+            userId: user.userId,
+            organizationId: user.organizationId,
+            role: user.role,
+        };
+        const { buffer, filename } = await this.policiesService.exportDocx(authCtx, id);
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        return res.send(buffer);
+    }
+
+    @Post(':id/shares')
+    @RequiresActiveLicense()
+    @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+    async shareWithUser(
+        @CurrentUser() user: any,
+        @Param('id') id: string,
+        @Body() dto: CreatePolicyShareDto,
+    ) {
+        const authCtx: ResourceAuthContext = {
+            userId: user.userId,
+            organizationId: user.organizationId,
+            role: user.role,
+        };
+        return this.policiesService.shareWithUser(authCtx, id, dto);
+    }
+
+    @Get(':id/shares')
+    @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+    async getPolicyShares(
+        @CurrentUser() user: any,
+        @Param('id') id: string,
+    ) {
+        const authCtx: ResourceAuthContext = {
+            userId: user.userId,
+            organizationId: user.organizationId,
+            role: user.role,
+        };
+        return this.policiesService.getPolicyShares(authCtx, id);
+    }
+
+    @Delete(':id/shares/:shareId')
+    @RequiresActiveLicense()
+    @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+    async revokePolicyShare(
+        @CurrentUser() user: any,
+        @Param('id') id: string,
+        @Param('shareId') shareId: string,
+    ) {
+        const authCtx: ResourceAuthContext = {
+            userId: user.userId,
+            organizationId: user.organizationId,
+            role: user.role,
+        };
+        return this.policiesService.revokePolicyShare(authCtx, id, shareId);
     }
 }

@@ -1,4 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import * as fs from 'fs';
+import * as path from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { LicenseVerificationService } from '../license-verification/license-verification.service';
@@ -298,7 +300,7 @@ export class OrganizationMembersService {
     const evalLicense = await this.licenseVerificationService.getEvaluatedStateForOrganization(organizationId);
     const isReadOnly = evalLicense.state === 'EXPIRED';
 
-    const [activeMemberCount, departmentCount, projectCount, rawEntitlements] = await Promise.all([
+    const [activeMemberCount, departmentCount, projectCount, rawEntitlements, profile] = await Promise.all([
       this.prisma.organizationMembership.count({
         where: { organizationId, status: ProductAccessStatus.ACTIVE },
       }),
@@ -315,6 +317,9 @@ export class OrganizationMembersService {
           frameworkVersion: { select: { id: true, version: true, name: true } },
         },
       }),
+      this.prisma.organizationComplianceProfile.findUnique({
+        where: { organizationId },
+      }),
     ]);
 
     const entitlements: OrganizationEntitlementDetailDto[] = rawEntitlements.map((e) => ({
@@ -329,6 +334,15 @@ export class OrganizationMembersService {
       source: e.source,
     }));
 
+    const customAttrs: any = (profile?.customAttributes as any) || {};
+    const industry = profile?.industrySector || customAttrs.industry || null;
+    const description = customAttrs.description || null;
+    const businessActivities = customAttrs.businessActivities || null;
+    const registeredAddress = customAttrs.registeredAddress || null;
+    const contactEmail = customAttrs.contactEmail || null;
+    const contactPhone = customAttrs.contactPhone || null;
+    const logoUrl = customAttrs.logoUrl || null;
+
     return {
       id: org.id,
       name: org.name,
@@ -337,6 +351,13 @@ export class OrganizationMembersService {
       primaryRegion: org.primaryRegion,
       primaryFramework: org.primaryFramework,
       slackWebhookUrl: org.slackWebhookUrl,
+      description,
+      industry,
+      businessActivities,
+      registeredAddress,
+      contactEmail,
+      contactPhone,
+      logoUrl,
       onboardingCompleted: org.onboardingCompleted,
       createdAt: org.createdAt.toISOString(),
       licenseState: evalLicense.state,
@@ -375,10 +396,52 @@ export class OrganizationMembersService {
     if (dto.primaryFramework && dto.primaryFramework.trim()) updateData.primaryFramework = dto.primaryFramework.trim();
     if (dto.slackWebhookUrl !== undefined) updateData.slackWebhookUrl = dto.slackWebhookUrl ? dto.slackWebhookUrl.trim() : null;
 
-    const updated = await this.prisma.organization.update({
-      where: { id: organizationId },
-      data: updateData,
-    });
+    if (Object.keys(updateData).length > 0) {
+      await this.prisma.organization.update({
+        where: { id: organizationId },
+        data: updateData,
+      });
+    }
+
+    // Update Company Profile Attributes (industry, description, activities, address, contact)
+    const hasProfileUpdates =
+      dto.industry !== undefined ||
+      dto.description !== undefined ||
+      dto.businessActivities !== undefined ||
+      dto.registeredAddress !== undefined ||
+      dto.contactEmail !== undefined ||
+      dto.contactPhone !== undefined ||
+      dto.logoUrl !== undefined;
+
+    if (hasProfileUpdates) {
+      const existingProfile = await this.prisma.organizationComplianceProfile.findUnique({
+        where: { organizationId },
+      });
+      const currentAttrs: any = (existingProfile?.customAttributes as any) || {};
+      const updatedAttrs = {
+        ...currentAttrs,
+        ...(dto.description !== undefined && { description: dto.description?.trim() || null }),
+        ...(dto.industry !== undefined && { industry: dto.industry?.trim() || null }),
+        ...(dto.businessActivities !== undefined && { businessActivities: dto.businessActivities?.trim() || null }),
+        ...(dto.registeredAddress !== undefined && { registeredAddress: dto.registeredAddress?.trim() || null }),
+        ...(dto.contactEmail !== undefined && { contactEmail: dto.contactEmail?.trim() || null }),
+        ...(dto.contactPhone !== undefined && { contactPhone: dto.contactPhone?.trim() || null }),
+        ...(dto.logoUrl !== undefined && { logoUrl: dto.logoUrl?.trim() || null }),
+      };
+
+      await this.prisma.organizationComplianceProfile.upsert({
+        where: { organizationId },
+        create: {
+          organizationId,
+          industrySector: dto.industry?.trim() || null,
+          customAttributes: updatedAttrs,
+        },
+        update: {
+          ...(dto.industry !== undefined && { industrySector: dto.industry?.trim() || null }),
+          customAttributes: updatedAttrs,
+        },
+      });
+    }
 
     await this.auditLogs.log({
       action: 'ORGANIZATION_SETTINGS_CHANGED',
@@ -386,10 +449,198 @@ export class OrganizationMembersService {
       actorId: actorUserId,
       entityType: 'Organization',
       entityId: organizationId,
-      metadata: { updatedFields: Object.keys(updateData) },
+      metadata: {
+        updatedFields: [
+          ...Object.keys(updateData),
+          ...(hasProfileUpdates ? ['companyProfile'] : []),
+        ],
+      },
     });
 
     return this.getOrganizationDetails(organizationId);
+  }
+
+  /**
+   * Upload and persist organization-specific logo with type, size, and header validation.
+   */
+  async uploadLogo(
+    organizationId: string,
+    actorUserId: string,
+    actorRole: Role,
+    dto: { data: string; mimeType: string; filename?: string },
+  ): Promise<{ success: boolean; logoUrl: string }> {
+    if (actorRole !== Role.ADMIN && actorRole !== Role.MSSP_ADMIN) {
+      throw new ForbiddenException('Only Organization Administrators can upload company logos.');
+    }
+
+    const allowedMimeTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'];
+    if (!allowedMimeTypes.includes(dto.mimeType)) {
+      throw new BadRequestException(
+        `Invalid logo file format "${dto.mimeType}". Allowed formats: PNG, JPEG, WebP, SVG.`,
+      );
+    }
+
+    // Clean base64 data prefix if passed
+    const cleanBase64 = dto.data.replace(/^data:[^;]+;base64,/, '');
+    const buffer = Buffer.from(cleanBase64, 'base64');
+
+    // Max 2MB file size enforcement
+    const MAX_SIZE = 2 * 1024 * 1024;
+    if (buffer.length > MAX_SIZE) {
+      throw new BadRequestException(`Logo file size (${Math.round(buffer.length / 1024)}KB) exceeds 2MB limit.`);
+    }
+
+    // Validate image header / magic numbers
+    if (dto.mimeType === 'image/png') {
+      const pngMagic = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+      if (buffer.length < 8 || !buffer.subarray(0, 8).equals(pngMagic)) {
+        throw new BadRequestException('File content does not match PNG signature.');
+      }
+    } else if (dto.mimeType === 'image/jpeg') {
+      if (buffer.length < 3 || buffer[0] !== 0xff || buffer[1] !== 0xd8 || buffer[2] !== 0xff) {
+        throw new BadRequestException('File content does not match JPEG signature.');
+      }
+    } else if (dto.mimeType === 'image/webp') {
+      const riff = buffer.subarray(0, 4).toString('ascii');
+      const webp = buffer.subarray(8, 12).toString('ascii');
+      if (riff !== 'RIFF' || webp !== 'WEBP') {
+        throw new BadRequestException('File content does not match WebP signature.');
+      }
+    } else if (dto.mimeType === 'image/svg+xml') {
+      const text = buffer.toString('utf8').trim();
+      if (!text.startsWith('<svg') && !text.startsWith('<?xml')) {
+        throw new BadRequestException('File content does not match valid SVG format.');
+      }
+    }
+
+    // Persist to tenant-scoped storage directory
+    const ext = dto.mimeType === 'image/png' ? 'png' : dto.mimeType === 'image/jpeg' ? 'jpg' : dto.mimeType === 'image/webp' ? 'webp' : 'svg';
+    const logoDir = path.resolve(process.cwd(), 'uploads', 'logos', organizationId);
+    if (!fs.existsSync(logoDir)) {
+      fs.mkdirSync(logoDir, { recursive: true });
+    }
+
+    const filePath = path.join(logoDir, `logo.${ext}`);
+    fs.writeFileSync(filePath, buffer);
+
+    const logoUrl = `/api/organization-members/logo`;
+    const dataUri = `data:${dto.mimeType};base64,${cleanBase64}`;
+
+    // Update profile customAttributes
+    const existingProfile = await this.prisma.organizationComplianceProfile.findUnique({
+      where: { organizationId },
+    });
+    const currentAttrs: any = (existingProfile?.customAttributes as any) || {};
+    const updatedAttrs = {
+      ...currentAttrs,
+      logoUrl,
+      logoDataUri: dataUri,
+      logoMimeType: dto.mimeType,
+      logoFilePath: filePath,
+      logoUpdatedAt: new Date().toISOString(),
+    };
+
+    await this.prisma.organizationComplianceProfile.upsert({
+      where: { organizationId },
+      create: {
+        organizationId,
+        customAttributes: updatedAttrs,
+      },
+      update: {
+        customAttributes: updatedAttrs,
+      },
+    });
+
+    await this.auditLogs.log({
+      action: 'ORGANIZATION_LOGO_UPDATED',
+      organizationId,
+      actorId: actorUserId,
+      entityType: 'Organization',
+      entityId: organizationId,
+      metadata: { mimeType: dto.mimeType, sizeBytes: buffer.length },
+    });
+
+    return { success: true, logoUrl };
+  }
+
+  /**
+   * Get organization logo image stream/buffer safely scoped to tenant.
+   */
+  async getLogo(organizationId: string): Promise<{ buffer: Buffer; mimeType: string } | null> {
+    const profile = await this.prisma.organizationComplianceProfile.findUnique({
+      where: { organizationId },
+    });
+    const attrs: any = (profile?.customAttributes as any) || {};
+
+    if (attrs.logoFilePath && fs.existsSync(attrs.logoFilePath)) {
+      const buffer = fs.readFileSync(attrs.logoFilePath);
+      return { buffer, mimeType: attrs.logoMimeType || 'image/png' };
+    }
+
+    if (attrs.logoDataUri) {
+      const match = attrs.logoDataUri.match(/^data:([^;]+);base64,(.+)$/);
+      if (match) {
+        return {
+          buffer: Buffer.from(match[2], 'base64'),
+          mimeType: match[1],
+        };
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Delete organization logo.
+   */
+  async deleteLogo(organizationId: string, actorUserId: string, actorRole: Role): Promise<{ success: boolean }> {
+    if (actorRole !== Role.ADMIN && actorRole !== Role.MSSP_ADMIN) {
+      throw new ForbiddenException('Only Organization Administrators can delete company logos.');
+    }
+
+    const profile = await this.prisma.organizationComplianceProfile.findUnique({
+      where: { organizationId },
+    });
+    const attrs: any = (profile?.customAttributes as any) || {};
+
+    if (attrs.logoFilePath && fs.existsSync(attrs.logoFilePath)) {
+      try {
+        fs.unlinkSync(attrs.logoFilePath);
+      } catch {
+        // continue
+      }
+    }
+
+    const updatedAttrs = {
+      ...attrs,
+      logoUrl: null,
+      logoDataUri: null,
+      logoMimeType: null,
+      logoFilePath: null,
+      logoUpdatedAt: new Date().toISOString(),
+    };
+
+    await this.prisma.organizationComplianceProfile.upsert({
+      where: { organizationId },
+      create: {
+        organizationId,
+        customAttributes: updatedAttrs,
+      },
+      update: {
+        customAttributes: updatedAttrs,
+      },
+    });
+
+    await this.auditLogs.log({
+      action: 'ORGANIZATION_LOGO_REMOVED',
+      organizationId,
+      actorId: actorUserId,
+      entityType: 'Organization',
+      entityId: organizationId,
+      metadata: {},
+    });
+
+    return { success: true };
   }
 }
 

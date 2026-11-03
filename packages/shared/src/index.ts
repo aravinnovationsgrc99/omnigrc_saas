@@ -1494,6 +1494,26 @@ export interface PolicyExceptionDto {
   mappedControlCount?: number;
 }
 
+export type PolicyClassificationType = 'INTERNAL' | 'EXTERNAL' | 'PUBLIC' | 'PRIVATE';
+
+export type PolicySharePermission = 'VIEW' | 'DOWNLOAD' | 'EDIT';
+
+export interface PolicyShareDto {
+  id: string;
+  policyId: string;
+  organizationId: string;
+  sharedWithUserId: string;
+  sharedWithUserName?: string;
+  sharedWithUserEmail?: string;
+  permission: PolicySharePermission;
+  sharedByUserId: string;
+  sharedByUserName?: string;
+  createdAt: string;
+  revokedAt?: string | null;
+  revokedByUserId?: string | null;
+  revokedByUserName?: string | null;
+}
+
 export interface PolicyDto {
   id: string;
   organizationId: string;
@@ -1501,14 +1521,19 @@ export interface PolicyDto {
   title: string;
   description?: string | null;
   category: string;
+  policyType?: PolicyClassificationType | string;
   status: PolicyStatus;
   ownerId: string;
   businessUnit?: string | null;
+  departmentId?: string | null;
+  targetFrameworks?: string[];
   publishedVersionId?: string | null;
   publishedVersion?: PolicyVersionDto | null;
   versions?: PolicyVersionDto[];
   effectiveDate?: Date | string | null;
+  expiryDate?: Date | string | null;
   reviewDate?: Date | string | null;
+  publishedAt?: Date | string | null;
   reviewCadenceDays: number;
   createdById: string;
   createdAt: Date | string;
@@ -2011,6 +2036,18 @@ export interface PaginatedAuditPlansDto {
   total: number;
   page: number;
   limit: number;
+}
+
+export interface AuditSummaryDto {
+  total: number;
+  inProgress: number;
+  completed: number;
+  planned: number;
+  draft: number;
+  archived: number;
+  findingsTotal: number;
+  findingsOpen: number;
+  capaOpen: number;
 }
 
 export interface PaginatedAuditFindingsDto {
@@ -2749,6 +2786,13 @@ export interface OrganizationDetailsDto {
   primaryRegion: string;
   primaryFramework?: string | null;
   slackWebhookUrl?: string | null;
+  description?: string | null;
+  industry?: string | null;
+  businessActivities?: string | null;
+  registeredAddress?: string | null;
+  contactEmail?: string | null;
+  contactPhone?: string | null;
+  logoUrl?: string | null;
   onboardingCompleted: boolean;
   createdAt: string;
   licenseState: string;
@@ -2764,6 +2808,13 @@ export interface UpdateOrganizationDetailsDto {
   primaryRegion?: string;
   primaryFramework?: string;
   slackWebhookUrl?: string;
+  description?: string;
+  industry?: string;
+  businessActivities?: string;
+  registeredAddress?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  logoUrl?: string;
 }
 
 
