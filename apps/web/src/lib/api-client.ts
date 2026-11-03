@@ -1,10 +1,21 @@
-const rawApiUrl: string =
-  process.env.NEXT_PUBLIC_API_URL ||
-  (process.env.NODE_ENV === 'production'
-    ? 'https://omnigrc-saas.onrender.com'
-    : 'http://localhost:3001');
+export function getApiBaseUrl(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL.replace(/\/+$/, '');
+  }
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return 'http://localhost:3001';
+    }
+  }
+  return (
+    process.env.NODE_ENV === 'production'
+      ? 'https://omnigrc-saas.onrender.com'
+      : 'http://localhost:3001'
+  ).replace(/\/+$/, '');
+}
 
-export const API_BASE_URL: string = rawApiUrl.replace(/\/+$/, '');
+export const API_BASE_URL: string = getApiBaseUrl();
 
 const ACCESS_TOKEN_KEY = 'omnigrc_access_token';
 const REFRESH_TOKEN_KEY = 'omnigrc_refresh_token';
@@ -72,8 +83,9 @@ export class ApiClientError extends Error {
 
 export async function apiRequest<T = any>(
   endpoint: string,
-  options: RequestInit = {},
+  options: RequestInit & { timeoutMs?: number } = {},
 ): Promise<T> {
+  const baseUrl = getApiBaseUrl();
   const { accessToken, refreshToken } = getStoredTokens();
 
   const headers: Record<string, string> = {
@@ -85,10 +97,26 @@ export async function apiRequest<T = any>(
     headers['Authorization'] = `Bearer ${accessToken}`;
   }
 
-  let response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    ...options,
-    headers,
-  });
+  const timeoutMs = options.timeoutMs ?? 15000;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}${endpoint}`, {
+      ...options,
+      headers,
+      signal: options.signal || controller.signal,
+    });
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      throw new ApiClientError(`Request to ${endpoint} timed out after ${timeoutMs}ms`, 408, 'REQUEST_TIMEOUT');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   // Handle 401 token refresh retry logic
   if (
@@ -99,7 +127,7 @@ export async function apiRequest<T = any>(
     !endpoint.includes('/auth/refresh')
   ) {
     try {
-      const refreshRes = await fetch(`${API_BASE_URL}/auth/refresh`, {
+      const refreshRes = await fetch(`${baseUrl}/auth/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refreshToken }),
@@ -110,7 +138,7 @@ export async function apiRequest<T = any>(
         setStoredTokens(tokens.accessToken, tokens.refreshToken);
         headers['Authorization'] = `Bearer ${tokens.accessToken}`;
 
-        response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        response = await fetch(`${baseUrl}${endpoint}`, {
           ...options,
           headers,
         });

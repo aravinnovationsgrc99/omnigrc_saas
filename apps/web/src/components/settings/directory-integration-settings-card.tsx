@@ -86,8 +86,8 @@ export function DirectoryIntegrationSettingsCard() {
       const data = await apiRequest<DirectoryIntegrationConfigDto | null>('/directory/config');
       if (data) {
         setConfig(data);
-        setTenantId(data.tenantId);
-        setClientId(data.clientId);
+        setTenantId(data.tenantId || '');
+        setClientId(data.clientId || '');
         setDomain(data.domain || '');
         setEnabled(data.enabled);
         setDefaultRole(data.defaultRole);
@@ -95,9 +95,21 @@ export function DirectoryIntegrationSettingsCard() {
         setAutoDeactivate(data.autoDeactivateUsers);
         setDeactThreshold(data.deactivationThresholdPct);
         setGroupMappings(data.groupMappings || []);
+      } else {
+        setConfig(null);
       }
     } catch (err: any) {
-      addToast(err.message || 'Failed to load directory configuration.', 'error');
+      // Gracefully treat 404 or unconfigured endpoints as Not Configured without throwing intrusive error alerts
+      if (
+        err.statusCode === 404 ||
+        err.status === 404 ||
+        err.message?.includes('Cannot GET /directory/config') ||
+        err.message?.includes('Not Found')
+      ) {
+        setConfig(null);
+      } else {
+        addToast(err.message || 'Failed to load directory configuration.', 'error');
+      }
     } finally {
       setLoading(false);
     }
@@ -109,7 +121,7 @@ export function DirectoryIntegrationSettingsCard() {
       addToast('Only administrators can modify directory integration settings.', 'error');
       return;
     }
-    if (!tenantId.trim() || !clientId.trim()) {
+    if (!tenantId?.trim() || !clientId?.trim()) {
       addToast('Tenant ID and Client ID are required.', 'error');
       return;
     }
@@ -148,7 +160,7 @@ export function DirectoryIntegrationSettingsCard() {
   }
 
   async function handleTestConnection() {
-    if (!tenantId.trim() || !clientId.trim()) {
+    if (!tenantId?.trim() || !clientId?.trim()) {
       addToast('Please provide Tenant ID and Client ID first.', 'error');
       return;
     }
@@ -511,7 +523,7 @@ export function DirectoryIntegrationSettingsCard() {
           <div className="flex items-center justify-between pt-3 border-t border-slate-200">
             <button
               type="button"
-              disabled={testing || saving || !tenantId.trim() || !clientId.trim()}
+              disabled={testing || saving || !tenantId?.trim() || !clientId?.trim()}
               onClick={handleTestConnection}
               className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg shadow-xs transition disabled:opacity-50"
             >

@@ -38,8 +38,8 @@ export function TeamInvitationsView() {
     }
     setLoading(true);
     try {
-      const data = await apiRequest<InvitationDto[]>('/auth/invitations');
-      setInvitations(data);
+      const data = await apiRequest<any>('/auth/invitations');
+      setInvitations(Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : []);
     } catch {
       setInvitations([]);
     } finally {

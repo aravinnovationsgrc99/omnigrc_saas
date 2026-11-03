@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { LicenseVerificationService } from '../license-verification/license-verification.service';
 import { FrameworkEntitlementsService } from '../frameworks/framework-entitlements.service';
+import { TenantContext } from '../tenant/tenant.context';
 import {
   Role,
   ProductAccessStatus,
@@ -26,58 +27,60 @@ export class OrganizationMembersService {
 
 
   async findAll(organizationId: string): Promise<OrganizationMemberDto[]> {
-    const users = await this.prisma.user.findMany({
-      where: { organizationId },
-      include: {
-        memberships: {
-          where: { organizationId },
-          include: {
-            departments: { include: { department: { select: { id: true, name: true } } } },
-            projects: { include: { project: { select: { id: true, name: true } } } },
+    return TenantContext.run({ organizationId }, async () => {
+      const users = await this.prisma.user.findMany({
+        where: { organizationId },
+        include: {
+          memberships: {
+            where: { organizationId },
+            include: {
+              departments: { include: { department: { select: { id: true, name: true } } } },
+              projects: { include: { project: { select: { id: true, name: true } } } },
+            },
           },
         },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+        orderBy: { createdAt: 'desc' },
+      });
 
-    const members: OrganizationMemberDto[] = [];
-    for (const u of users) {
-      let m = u.memberships[0];
-      if (!m) {
-        // Auto-provision membership record if absent
-        m = await this.prisma.organizationMembership.create({
-          data: {
-            organizationId,
-            userId: u.id,
-            role: u.role as Role,
-            status: ProductAccessStatus.ACTIVE,
-          },
-          include: {
-            departments: { include: { department: { select: { id: true, name: true } } } },
-            projects: { include: { project: { select: { id: true, name: true } } } },
-          },
+      const members: OrganizationMemberDto[] = [];
+      for (const u of users) {
+        let m = u.memberships[0];
+        if (!m) {
+          // Auto-provision membership record if absent
+          m = await this.prisma.organizationMembership.create({
+            data: {
+              organizationId,
+              userId: u.id,
+              role: u.role as Role,
+              status: ProductAccessStatus.ACTIVE,
+            },
+            include: {
+              departments: { include: { department: { select: { id: true, name: true } } } },
+              projects: { include: { project: { select: { id: true, name: true } } } },
+            },
+          });
+        }
+
+        members.push({
+          id: m.id,
+          userId: u.id,
+          organizationId: m.organizationId,
+          name: u.name,
+          email: u.email,
+          role: m.role as Role,
+          productAccessStatus: m.status as ProductAccessStatus,
+          status: m.status as ProductAccessStatus,
+          user: { id: u.id, email: u.email },
+          grantedAt: m.grantedAt.toISOString(),
+          revokedAt: m.revokedAt ? m.revokedAt.toISOString() : null,
+          revokedById: m.revokedById,
+          departments: m.departments.map((d) => ({ id: d.department.id, name: d.department.name })),
+          projects: m.projects.map((p) => ({ id: p.project.id, name: p.project.name })),
         });
       }
 
-      members.push({
-        id: m.id,
-        userId: u.id,
-        organizationId: m.organizationId,
-        name: u.name,
-        email: u.email,
-        role: m.role as Role,
-        productAccessStatus: m.status as ProductAccessStatus,
-        status: m.status as ProductAccessStatus,
-        user: { id: u.id, email: u.email },
-        grantedAt: m.grantedAt.toISOString(),
-        revokedAt: m.revokedAt ? m.revokedAt.toISOString() : null,
-        revokedById: m.revokedById,
-        departments: m.departments.map((d) => ({ id: d.department.id, name: d.department.name })),
-        projects: m.projects.map((p) => ({ id: p.project.id, name: p.project.name })),
-      });
-    }
-
-    return members;
+      return members;
+    });
   }
 
   async findOne(organizationId: string, memberIdOrUserId: string): Promise<OrganizationMemberDto> {
@@ -289,84 +292,86 @@ export class OrganizationMembersService {
    * Fetch complete Organization Administrative Details from backend
    */
   async getOrganizationDetails(organizationId: string): Promise<OrganizationDetailsDto> {
-    const org = await this.prisma.organization.findUnique({
-      where: { id: organizationId },
+    return TenantContext.run({ organizationId }, async () => {
+      const org = await this.prisma.organization.findUnique({
+        where: { id: organizationId },
+      });
+
+      if (!org) {
+        throw new NotFoundException(`Organization "${organizationId}" not found.`);
+      }
+
+      const evalLicense = await this.licenseVerificationService.getEvaluatedStateForOrganization(organizationId);
+      const isReadOnly = evalLicense.state === 'EXPIRED';
+
+      const [activeMemberCount, departmentCount, projectCount, rawEntitlements, profile] = await Promise.all([
+        this.prisma.organizationMembership.count({
+          where: { organizationId, status: ProductAccessStatus.ACTIVE },
+        }),
+        this.prisma.department.count({
+          where: { organizationId },
+        }),
+        this.prisma.project.count({
+          where: { organizationId },
+        }),
+        this.prisma.organizationFrameworkEntitlement.findMany({
+          where: { organizationId },
+          include: {
+            framework: { select: { id: true, code: true, name: true } },
+            frameworkVersion: { select: { id: true, version: true, name: true } },
+          },
+        }),
+        this.prisma.organizationComplianceProfile.findUnique({
+          where: { organizationId },
+        }),
+      ]);
+
+      const entitlements: OrganizationEntitlementDetailDto[] = rawEntitlements.map((e) => ({
+        id: e.id,
+        frameworkId: e.frameworkId,
+        frameworkCode: e.framework.code,
+        frameworkName: e.framework.name,
+        versionId: e.versionId,
+        versionName: e.frameworkVersion ? `${e.frameworkVersion.name} (${e.frameworkVersion.version})` : null,
+        status: e.status,
+        expiresAt: e.expiresAt ? e.expiresAt.toISOString() : null,
+        source: e.source,
+      }));
+
+      const customAttrs: any = (profile?.customAttributes as any) || {};
+      const industry = profile?.industrySector || customAttrs.industry || null;
+      const description = customAttrs.description || null;
+      const businessActivities = customAttrs.businessActivities || null;
+      const registeredAddress = customAttrs.registeredAddress || null;
+      const contactEmail = customAttrs.contactEmail || null;
+      const contactPhone = customAttrs.contactPhone || null;
+      const logoUrl = customAttrs.logoUrl || null;
+
+      return {
+        id: org.id,
+        name: org.name,
+        type: org.type,
+        parentOrganizationId: org.parentOrganizationId,
+        primaryRegion: org.primaryRegion,
+        primaryFramework: org.primaryFramework,
+        slackWebhookUrl: org.slackWebhookUrl,
+        description,
+        industry,
+        businessActivities,
+        registeredAddress,
+        contactEmail,
+        contactPhone,
+        logoUrl,
+        onboardingCompleted: org.onboardingCompleted,
+        createdAt: org.createdAt.toISOString(),
+        licenseState: evalLicense.state,
+        isReadOnly,
+        activeMemberCount,
+        departmentCount,
+        projectCount,
+        entitlements,
+      };
     });
-
-    if (!org) {
-      throw new NotFoundException(`Organization "${organizationId}" not found.`);
-    }
-
-    const evalLicense = await this.licenseVerificationService.getEvaluatedStateForOrganization(organizationId);
-    const isReadOnly = evalLicense.state === 'EXPIRED';
-
-    const [activeMemberCount, departmentCount, projectCount, rawEntitlements, profile] = await Promise.all([
-      this.prisma.organizationMembership.count({
-        where: { organizationId, status: ProductAccessStatus.ACTIVE },
-      }),
-      this.prisma.department.count({
-        where: { organizationId },
-      }),
-      this.prisma.project.count({
-        where: { organizationId },
-      }),
-      this.prisma.organizationFrameworkEntitlement.findMany({
-        where: { organizationId },
-        include: {
-          framework: { select: { id: true, code: true, name: true } },
-          frameworkVersion: { select: { id: true, version: true, name: true } },
-        },
-      }),
-      this.prisma.organizationComplianceProfile.findUnique({
-        where: { organizationId },
-      }),
-    ]);
-
-    const entitlements: OrganizationEntitlementDetailDto[] = rawEntitlements.map((e) => ({
-      id: e.id,
-      frameworkId: e.frameworkId,
-      frameworkCode: e.framework.code,
-      frameworkName: e.framework.name,
-      versionId: e.versionId,
-      versionName: e.frameworkVersion ? `${e.frameworkVersion.name} (${e.frameworkVersion.version})` : null,
-      status: e.status,
-      expiresAt: e.expiresAt ? e.expiresAt.toISOString() : null,
-      source: e.source,
-    }));
-
-    const customAttrs: any = (profile?.customAttributes as any) || {};
-    const industry = profile?.industrySector || customAttrs.industry || null;
-    const description = customAttrs.description || null;
-    const businessActivities = customAttrs.businessActivities || null;
-    const registeredAddress = customAttrs.registeredAddress || null;
-    const contactEmail = customAttrs.contactEmail || null;
-    const contactPhone = customAttrs.contactPhone || null;
-    const logoUrl = customAttrs.logoUrl || null;
-
-    return {
-      id: org.id,
-      name: org.name,
-      type: org.type,
-      parentOrganizationId: org.parentOrganizationId,
-      primaryRegion: org.primaryRegion,
-      primaryFramework: org.primaryFramework,
-      slackWebhookUrl: org.slackWebhookUrl,
-      description,
-      industry,
-      businessActivities,
-      registeredAddress,
-      contactEmail,
-      contactPhone,
-      logoUrl,
-      onboardingCompleted: org.onboardingCompleted,
-      createdAt: org.createdAt.toISOString(),
-      licenseState: evalLicense.state,
-      isReadOnly,
-      activeMemberCount,
-      departmentCount,
-      projectCount,
-      entitlements,
-    };
   }
 
   /**

@@ -58,8 +58,8 @@ export function PolicyCategoriesSettingsCard() {
     setLoading(true);
     setError(null);
     try {
-      const data = await apiRequest<PolicyCategoryDto[]>('/policies/categories');
-      setCategories(data || []);
+      const data = await apiRequest<any>('/policies/categories');
+      setCategories(Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : []);
     } catch (err: any) {
       setError(err.message || 'Failed to load policy categories');
     } finally {

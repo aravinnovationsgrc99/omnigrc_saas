@@ -588,6 +588,8 @@ export function SettingsView() {
             <SkeletonLine height="24px" width="100%" />
             <SkeletonLine height="24px" width="100%" />
           </div>
+        ) : orgError ? (
+          <InlineErrorState message={orgError} onRetry={fetchOrgDetails} />
         ) : !orgDetails || orgDetails.entitlements.length === 0 ? (
           <div className="text-center py-6 border border-dashed border-[#EDEFED] rounded-lg bg-[#FAFBFB]">
             <Shield size={24} className="mx-auto text-gray-400 mb-2" />

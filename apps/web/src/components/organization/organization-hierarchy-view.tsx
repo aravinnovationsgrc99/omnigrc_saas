@@ -5,8 +5,9 @@ import { useAuth } from '@/context/auth-context';
 import { useToast } from '@/context/toast-context';
 import { apiRequest } from '@/lib/api-client';
 import { DepartmentDto, ProjectDto, OrganizationMemberDto, Role, ProductAccessStatus } from '@omnigrc/shared';
-import { Building2, FolderKanban, Users, Plus, Shield, Lock, AlertTriangle, CheckCircle2, UserX, UserCheck, Settings, ShieldAlert, Edit2, Trash2, ArrowRight } from 'lucide-react';
+import { Building2, FolderKanban, Users, Plus, Shield, Lock, AlertTriangle, CheckCircle2, UserX, UserCheck, Settings, ShieldAlert, Edit2, Trash2, ArrowRight, RefreshCw } from 'lucide-react';
 import { SkeletonLine } from '@/components/ui/skeleton';
+import { InlineErrorState } from '@/components/ui/inline-error-state';
 
 export function OrganizationHierarchyView() {
   const { user, organization } = useAuth();
@@ -21,6 +22,7 @@ export function OrganizationHierarchyView() {
   const [projects, setProjects] = useState<ProjectDto[]>([]);
   const [members, setMembers] = useState<OrganizationMemberDto[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hierarchyError, setHierarchyError] = useState<string | null>(null);
 
   // Modals & Forms
   const [showDeptModal, setShowDeptModal] = useState(false);
@@ -47,17 +49,18 @@ export function OrganizationHierarchyView() {
 
   const fetchData = async () => {
     setLoading(true);
+    setHierarchyError(null);
     try {
       const [deptRes, projRes, membRes] = await Promise.all([
-        apiRequest<DepartmentDto[]>('/departments').catch(() => []),
-        apiRequest<ProjectDto[]>('/projects').catch(() => []),
-        apiRequest<OrganizationMemberDto[]>('/organization-members').catch(() => []),
+        apiRequest<DepartmentDto[]>('/departments'),
+        apiRequest<ProjectDto[]>('/projects'),
+        apiRequest<OrganizationMemberDto[]>('/organization-members'),
       ]);
-      setDepartments(deptRes);
-      setProjects(projRes);
-      setMembers(membRes);
-    } catch {
-      addToast('Failed to load organization hierarchy data', 'error');
+      setDepartments(Array.isArray(deptRes) ? deptRes : []);
+      setProjects(Array.isArray(projRes) ? projRes : []);
+      setMembers(Array.isArray(membRes) ? membRes : []);
+    } catch (err: any) {
+      setHierarchyError(err.message || 'Failed to load organization hierarchy data');
     } finally {
       setLoading(false);
     }
@@ -174,14 +177,14 @@ export function OrganizationHierarchyView() {
             </p>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <button
               onClick={() => setActiveTab('departments')}
               className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                 activeTab === 'departments' ? 'bg-teal-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
-              Departments ({departments.length})
+              Departments ({loading ? '...' : departments.length})
             </button>
             <button
               onClick={() => setActiveTab('projects')}
@@ -189,7 +192,7 @@ export function OrganizationHierarchyView() {
                 activeTab === 'projects' ? 'bg-teal-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
-              Projects ({projects.length})
+              Projects ({loading ? '...' : projects.length})
             </button>
             <button
               onClick={() => setActiveTab('members')}
@@ -197,7 +200,15 @@ export function OrganizationHierarchyView() {
                 activeTab === 'members' ? 'bg-teal-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
-              Members & Selective Access ({members.length})
+              Members & Selective Access ({loading ? '...' : members.length})
+            </button>
+            <button
+              onClick={fetchData}
+              disabled={loading}
+              title="Refresh hierarchy"
+              className="p-1.5 text-gray-500 hover:text-teal-700 hover:bg-gray-100 rounded-md transition-colors ml-1"
+            >
+              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
             </button>
           </div>
         </div>
@@ -218,6 +229,10 @@ export function OrganizationHierarchyView() {
         <div className="bg-white border border-[#E2E6E4] rounded-lg p-6 space-y-3">
           <SkeletonLine height="24px" width="40%" />
           <SkeletonLine height="100px" width="100%" />
+        </div>
+      ) : hierarchyError ? (
+        <div className="bg-white border border-[#E2E6E4] rounded-lg p-6">
+          <InlineErrorState message={hierarchyError} onRetry={fetchData} />
         </div>
       ) : (
         <>

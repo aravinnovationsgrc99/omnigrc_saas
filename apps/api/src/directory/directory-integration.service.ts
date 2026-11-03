@@ -44,6 +44,10 @@ export class DirectoryIntegrationService {
    * Retrieves active directory integration config for organization (secret is masked)
    */
   async getConfig(authCtx: ResourceAuthContext): Promise<DirectoryIntegrationConfigDto | null> {
+    if (!authCtx?.organizationId) {
+      return null;
+    }
+
     const config = await this.prisma.directoryIntegrationConfig.findUnique({
       where: { organizationId: authCtx.organizationId },
       include: {
