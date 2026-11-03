@@ -101,6 +101,9 @@ describe('PoliciesService', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
+      organization: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'org-1', name: 'Meridian Health Pvt. Ltd.' }),
+      },
     };
 
     auditLogsService = {
@@ -909,6 +912,114 @@ describe('PoliciesService', () => {
         expect(results[1].reason).toBeInstanceOf(ConflictException);
         expect(results[1].reason.message).toContain('Policy revision conflict');
       }
+    });
+  });
+
+  describe('Policy Management AI & Document Operations (Consolidated WS3)', () => {
+    const adminCtx = {
+      userId: 'user-admin-1',
+      organizationId: 'org-1',
+      role: Role.ADMIN,
+    };
+
+    it('should generate structured GRC policy draft with standard sections and return suggested metadata', async () => {
+      const result = await service.generateAiDraft(adminCtx, {
+        title: 'Cloud Security and Infrastructure Access Policy',
+        category: 'Information Security',
+        policyType: 'INTERNAL',
+        standardOrFramework: 'ISO 27001 / SOC 2',
+      });
+
+      expect(result).toBeDefined();
+      expect(result.suggestedTitle).toBe('Cloud Security and Infrastructure Access Policy');
+      expect(result.suggestedCode).toMatch(/^POL-INF-\d+$/);
+      expect(result.suggestedCategory).toBe('Information Security');
+      expect(result.content).toContain('# Cloud Security and Infrastructure Access Policy');
+      expect(result.content).toContain('Purpose & Objectives');
+      expect(result.content).toContain('Scope & Target Audience');
+      expect(result.content).toContain('Policy Statements & Requirements');
+      expect(result.content).toContain('Roles & Responsibilities');
+      expect(result.content).toContain('Exceptions & Waivers');
+      expect(result.content).toContain('Compliance Monitoring & Enforcement');
+      expect(auditLogsService.log).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'POLICY_AI_DRAFT_GENERATED' }),
+      );
+    });
+
+    it('should validate policy with AI and return readiness score and actionable findings', async () => {
+      prisma.policy.findFirst.mockResolvedValueOnce({
+        id: 'pol-val-1',
+        code: 'POL-SEC-001',
+        title: 'Information Security Policy',
+        category: 'Information Security',
+        organizationId: 'org-1',
+        versions: [{ content: 'Short draft with minimal content.' }],
+        controlAssociations: [],
+      });
+
+      const report = await service.validatePolicyWithAi(adminCtx, 'pol-val-1');
+
+      expect(report).toBeDefined();
+      expect(report.policyId).toBe('pol-val-1');
+      expect(report.overallScore).toBeGreaterThanOrEqual(35);
+      expect(['PASSED', 'NEEDS_REVISION', 'DEFICIENT']).toContain(report.status);
+      expect(report.findings.length).toBeGreaterThan(0);
+      expect(report.findings[0]).toHaveProperty('recommendation');
+      expect(auditLogsService.log).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'POLICY_AI_VALIDATED' }),
+      );
+    });
+
+    it('should share policy with recipient emails and log audit event', async () => {
+      prisma.policy.findFirst.mockResolvedValueOnce({
+        id: 'pol-share-1',
+        code: 'POL-SEC-001',
+        title: 'Information Security Policy',
+        organizationId: 'org-1',
+        publishedVersion: { id: 'pv-1', versionNumber: '1.0' },
+        versions: [],
+      });
+
+      const shareResult = await service.sharePolicy(adminCtx, 'pol-share-1', {
+        recipientEmails: ['ciso@enterprise.com', 'auditor@external.com'],
+        message: 'Please review before external audit.',
+      });
+
+      expect(shareResult.success).toBe(true);
+      expect(shareResult.sentToCount).toBe(2);
+      expect(auditLogsService.log).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'POLICY_SHARED' }),
+      );
+    });
+
+    it('should reject sharing when no valid email is provided', async () => {
+      prisma.policy.findFirst.mockResolvedValueOnce({
+        id: 'pol-share-2',
+        code: 'POL-SEC-002',
+        title: 'Access Policy',
+        organizationId: 'org-1',
+      });
+
+      await expect(
+        service.sharePolicy(adminCtx, 'pol-share-2', { recipientEmails: ['invalid-email'] }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should import document content, extract title, and count words', async () => {
+      const docMarkdown = '# Data Classification and Privacy Directive\n\nAll corporate records must be classified into Public, Internal, and Confidential categories.';
+
+      const imported = await service.importDocumentContent(adminCtx, {
+        content: docMarkdown,
+        filename: 'data-classification.md',
+        fileType: 'markdown',
+      });
+
+      expect(imported.extractedContent).toBe(docMarkdown);
+      expect(imported.suggestedTitle).toBe('Data Classification and Privacy Directive');
+      expect(imported.wordCount).toBeGreaterThan(10);
+      expect(auditLogsService.log).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'POLICY_DOCUMENT_IMPORTED' }),
+      );
     });
   });
 });

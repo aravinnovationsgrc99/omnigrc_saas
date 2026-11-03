@@ -2068,7 +2068,7 @@ ${content.slice(0, 12000)}`;
     }
 
     let suggestedTitle: string | undefined;
-    const firstLine = clean.split('\n')[0].replace(/^[#\s*_-]+/, '').trim();
+    const firstLine = clean.split(/\r?\n/)[0].replace(/^[#\s*_-]+/, '').trim();
     if (firstLine && firstLine.length < 120) {
       suggestedTitle = firstLine;
     }
