@@ -41,14 +41,14 @@ export function DashboardView({ onNavigateToView }: DashboardViewProps) {
   const [error, setError] = useState<string | null>(null);
   const [isCustomizerOpen, setIsCustomizerOpen] = useState(false);
 
-  const fetchDashboardData = async (isManualRefresh = false) => {
+  const fetchDashboardData = async (isManualRefresh = false, retryCount = 0) => {
     try {
       if (isManualRefresh) setRefreshing(true);
       else setLoading(true);
       setError(null);
 
       const [metricsData, prefData] = await Promise.all([
-        apiRequest<OverviewMetricsDto>('/metrics/overview'),
+        apiRequest<OverviewMetricsDto>('/metrics/overview', { timeoutMs: 45000 }),
         apiRequest<UserDashboardPreferenceDto>('/dashboard/preferences').catch(() => null),
       ]);
 
@@ -58,6 +58,12 @@ export function DashboardView({ onNavigateToView }: DashboardViewProps) {
       const reconciled = reconcileLayout(rawLayout);
       setLayout(reconciled);
     } catch (err: any) {
+      if (retryCount < 1 && (err?.code === 'REQUEST_TIMEOUT' || err?.status === 408 || err?.message?.includes('timed out'))) {
+        setTimeout(() => {
+          fetchDashboardData(isManualRefresh, retryCount + 1);
+        }, 1500);
+        return;
+      }
       setError(err?.message || 'Failed to load executive metrics');
     } finally {
       setLoading(false);

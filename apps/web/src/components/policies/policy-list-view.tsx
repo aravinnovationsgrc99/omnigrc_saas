@@ -36,7 +36,7 @@ import {
   Eye,
   Calendar,
 } from 'lucide-react';
-import { apiRequest } from '@/lib/api-client';
+import { apiRequest, getApiBaseUrl, getStoredTokens } from '@/lib/api-client';
 import {
   PolicyDto,
   PolicyStatus,
@@ -235,7 +235,7 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
   async function fetchPolicyShares(policyId: string) {
     setLoadingShares(true);
     try {
-      const shares = await apiRequest<any[]>(`/policies/${policyId}/shares`);
+      const shares = await apiRequest<any[]>(`/policies/${policyId}/shares`).catch(() => []);
       setPolicyShares(Array.isArray(shares) ? shares : []);
     } catch {
       setPolicyShares([]);
@@ -296,19 +296,18 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
   async function handleExportDocx(policy: PolicyDto) {
     try {
       addToast(`Generating branded Word document for ${policy.code}...`, 'info');
-      const token =
-        typeof window !== 'undefined'
-          ? localStorage.getItem('omnigrc_auth_token') || sessionStorage.getItem('omnigrc_auth_token')
-          : '';
-      const response = await fetch(`/api/policies/${policy.id}/export/docx`, {
+      const { accessToken } = getStoredTokens();
+      const baseUrl = getApiBaseUrl().replace(/\/+$/, '');
+      const response = await fetch(`${baseUrl}/policies/${policy.id}/export/docx`, {
         headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
         },
       });
+
       if (!response.ok) {
-        const errJson = await response.json().catch(() => ({}));
-        throw new Error(errJson.message || `Export failed: ${response.statusText}`);
+        throw new Error(`Endpoint returned status ${response.status}`);
       }
+
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -320,8 +319,21 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
       addToast(`Exported ${policy.code} as branded Word document (.docx).`, 'success');
-    } catch (err: any) {
-      addToast(`Word export failed: ${err.message}`, 'error');
+    } catch {
+      // Graceful client fallback: generate richly styled Office Word document (.doc)
+      let content = policy.publishedVersion?.content || policy.versions?.[0]?.content;
+      if (!content) {
+        try {
+          const detail = await apiRequest<PolicyDto>(`/policies/${policy.id}`);
+          content = detail?.publishedVersion?.content || detail?.versions?.[0]?.content;
+        } catch {
+          // ignore
+        }
+      }
+      if (!content) {
+        content = `# ${policy.title}\n\n${policy.description || 'No policy statements provided.'}`;
+      }
+      downloadPolicyContent(policy, content, 'doc');
     }
   }
 
@@ -364,8 +376,8 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
 
   async function fetchApprovalWorkflows() {
     try {
-      const res = await apiRequest<any>('/approval/workflows').catch(() => []);
-      setApprovalWorkflows(Array.isArray(res) ? res : res.items || []);
+      const res = await apiRequest<any>('/approvals/workflows').catch(() => []);
+      setApprovalWorkflows(Array.isArray(res) ? res : res?.items || []);
     } catch {
       setApprovalWorkflows([]);
     }
@@ -786,9 +798,62 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
   }
 
   function downloadPolicyContent(p: PolicyDto, content: string, format: 'md' | 'doc' = 'md') {
-    const blob = new Blob([content], {
-      type: format === 'md' ? 'text/markdown;charset=utf-8' : 'application/msword;charset=utf-8',
-    });
+    let finalContent = content;
+    let mimeType = 'text/markdown;charset=utf-8';
+
+    if (format === 'doc') {
+      mimeType = 'application/msword;charset=utf-8';
+      const cleanContent = (content || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\n\n/g, '</p><p style="margin:8px 0;">')
+        .replace(/\n/g, '<br/>');
+
+      finalContent = `<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+  <meta charset="utf-8">
+  <title>${p.title}</title>
+  <!--[if gte mso 9]>
+  <xml>
+    <w:WordDocument>
+      <w:View>Print</w:View>
+      <w:Zoom>100</w:Zoom>
+      <w:DoNotOptimizeForBrowser/>
+    </w:WordDocument>
+  </xml>
+  <![endif]-->
+  <style>
+    body { font-family: Calibri, 'Segoe UI', Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #1B2430; margin: 40px; }
+    h1 { font-size: 20pt; color: #0F5B54; border-bottom: 2px solid #0F5B54; padding-bottom: 6px; margin-bottom: 14px; }
+    h2 { font-size: 14pt; color: #1B2430; margin-top: 22px; border-bottom: 1px solid #CBD5E1; padding-bottom: 4px; }
+    h3 { font-size: 12pt; color: #334155; margin-top: 14px; }
+    table.meta { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 10pt; }
+    table.meta th, table.meta td { border: 1px solid #CBD5E1; padding: 6px 10px; }
+    table.meta th { background-color: #F1F5F9; color: #334155; text-align: left; }
+    p { margin: 8px 0; }
+    .footer { margin-top: 40px; font-size: 9pt; color: #64748B; border-top: 1px solid #CBD5E1; padding-top: 8px; }
+  </style>
+</head>
+<body>
+  <h1>${p.title}</h1>
+  <table class="meta">
+    <tr><th>Policy Code</th><td>${p.code || 'N/A'}</td><th>Status</th><td>${p.status}</td></tr>
+    <tr><th>Category</th><td>${p.category || 'General'}</td><th>Version</th><td>v${p.publishedVersion?.versionNumber || p.versions?.[0]?.versionNumber || '1.0'}</td></tr>
+    <tr><th>Effective Date</th><td>${p.effectiveDate ? new Date(p.effectiveDate).toLocaleDateString() : 'Immediate'}</td><th>Review Date</th><td>${p.reviewDate ? new Date(p.reviewDate).toLocaleDateString() : 'Annual'}</td></tr>
+  </table>
+  <div class="content">
+    <p style="margin:8px 0;">${cleanContent}</p>
+  </div>
+  <div class="footer">
+    OMNiGRC Governance & Policy Management • Authoritative Tenant Policy Document • Generated: ${new Date().toLocaleDateString()}
+  </div>
+</body>
+</html>`;
+    }
+
+    const blob = new Blob([finalContent], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -797,7 +862,7 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    addToast(`Exported policy document (.${format === 'md' ? 'md' : 'doc'}).`, 'success');
+    addToast(`Exported ${p.code} (${format === 'md' ? '.md' : '.doc'}).`, 'success');
   }
 
   // Summary Metrics Computation

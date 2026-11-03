@@ -27,7 +27,7 @@ import {
 } from '@omnigrc/shared';
 import { RequireCapability } from '../common/decorators/require-capability.decorator';
 
-@Controller('approvals')
+@Controller(['approvals', 'approval'])
 @UseGuards(JwtAuthGuard, RolesGuard)
 @RequireCapability('APPROVAL_ENGINE')
 export class ApprovalEngineController {

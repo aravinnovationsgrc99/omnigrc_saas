@@ -85,6 +85,7 @@ export function AuditListView({ initialStatus, initialTab }: AuditListViewProps 
   );
   const [workspaceTab, setWorkspaceTab] = useState<'overview' | 'execution' | 'findings' | 'capas' | 'evidence' | 'completion'>('overview');
   const [plans, setPlans] = useState<AuditPlanDto[]>([]);
+  const [unfilteredPlans, setUnfilteredPlans] = useState<AuditPlanDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPlan, setSelectedPlan] = useState<AuditPlanDto | null>(null);
 
@@ -237,7 +238,11 @@ export function AuditListView({ initialStatus, initialTab }: AuditListViewProps 
 
       const qs = params.toString() ? `?${params.toString()}` : '';
       const res = await apiRequest<PaginatedAuditPlansDto>(`/business-audits/plans${qs}`);
-      setPlans(res.items || []);
+      const items = res.items || [];
+      setPlans(items);
+      if (!filterFrameworkId && !filterStatus && !filterSearch.trim()) {
+        setUnfilteredPlans(items);
+      }
     } catch (err: any) {
       toastRef.current(`Failed to load audit plans: ${err.message}`, 'error');
     } finally {
@@ -260,7 +265,7 @@ export function AuditListView({ initialStatus, initialTab }: AuditListViewProps 
       setSummary(res);
     } catch {
       try {
-        const overview = await apiRequest<any>('/metrics/overview');
+        const overview = await apiRequest<any>('/metrics/overview', { timeoutMs: 25000 });
         if (overview?.audits) {
           const a = overview.audits;
           const bps = a.byPlanStatus || {};
@@ -274,6 +279,31 @@ export function AuditListView({ initialStatus, initialTab }: AuditListViewProps 
             findingsTotal: a.findingsTotal || 0,
             findingsOpen: a.findingsOpenCount || 0,
             capaOpen: a.capaOpenCount || 0,
+          });
+          return;
+        }
+      } catch {
+        // Fallback: Query live plans & findings directly from DB endpoints
+      }
+
+      try {
+        const [allPlansRes, allFindingsRes] = await Promise.all([
+          apiRequest<PaginatedAuditPlansDto>('/business-audits/plans?limit=1000').catch(() => null),
+          apiRequest<{ items: any[]; total: number }>('/business-audits/findings?limit=1000').catch(() => null),
+        ]);
+        const items = allPlansRes?.items || [];
+        const fItems = allFindingsRes?.items || [];
+        if (items.length > 0 || fItems.length > 0) {
+          setSummary({
+            total: allPlansRes?.total ?? items.length,
+            inProgress: items.filter((p) => p.status === 'IN_PROGRESS').length,
+            completed: items.filter((p) => p.status === 'COMPLETED').length,
+            planned: items.filter((p) => p.status === 'PLANNED').length,
+            draft: items.filter((p) => p.status === 'DRAFT').length,
+            archived: items.filter((p) => p.status === 'ARCHIVED').length,
+            findingsTotal: allFindingsRes?.total ?? fItems.length,
+            findingsOpen: fItems.filter((f) => ['OPEN', 'IN_REMEDIATION', 'READY_FOR_VERIFICATION'].includes(f.status)).length,
+            capaOpen: 0,
           });
         }
       } catch {
@@ -1074,11 +1104,12 @@ export function AuditListView({ initialStatus, initialTab }: AuditListViewProps 
   const eligibility = selectedPlan ? checkCompletionEligibility(selectedPlan) : null;
 
   // Real DB Metrics with graceful fallback
-  const totalCount = summary ? summary.total : plans.length;
-  const activeCount = summary ? summary.inProgress : plans.filter((p) => p.status === 'IN_PROGRESS').length;
-  const plannedCount = summary ? summary.planned : plans.filter((p) => p.status === 'PLANNED').length;
-  const completedCount = summary ? summary.completed : plans.filter((p) => p.status === 'COMPLETED').length;
-  const draftCount = summary ? summary.draft : plans.filter((p) => p.status === 'DRAFT').length;
+  const fallbackPlans = unfilteredPlans.length > 0 ? unfilteredPlans : plans;
+  const totalCount = summary ? summary.total : fallbackPlans.length;
+  const activeCount = summary ? summary.inProgress : fallbackPlans.filter((p) => p.status === 'IN_PROGRESS').length;
+  const plannedCount = summary ? summary.planned : fallbackPlans.filter((p) => p.status === 'PLANNED').length;
+  const completedCount = summary ? summary.completed : fallbackPlans.filter((p) => p.status === 'COMPLETED').length;
+  const draftCount = summary ? summary.draft : fallbackPlans.filter((p) => p.status === 'DRAFT').length;
   const findingsOpenCount = summary ? summary.findingsOpen : findings.filter((f) => f.status === 'OPEN' || f.status === 'IN_REMEDIATION' || f.status === 'READY_FOR_VERIFICATION').length;
 
   return (

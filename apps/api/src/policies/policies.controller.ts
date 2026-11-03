@@ -47,13 +47,17 @@ import { RequireCapability } from '../common/decorators/require-capability.decor
 export class PoliciesController {
     constructor(private readonly policiesService: PoliciesService) { }
 
+    private extractAuthCtx(user: any): ResourceAuthContext {
+        return {
+            userId: user?.userId || user?.id || user?.sub,
+            organizationId: user?.organizationId,
+            role: user?.role,
+        };
+    }
+
     @Get('categories')
     async listCategories(@CurrentUser() user: any) {
-        const authCtx: ResourceAuthContext = {
-            userId: user.userId,
-            organizationId: user.organizationId,
-            role: user.role,
-        };
+        const authCtx = this.extractAuthCtx(user);
         return this.policiesService.listCategories(authCtx);
     }
 
@@ -64,11 +68,7 @@ export class PoliciesController {
         @CurrentUser() user: any,
         @Body() dto: CreatePolicyCategoryDto,
     ) {
-        const authCtx: ResourceAuthContext = {
-            userId: user.userId,
-            organizationId: user.organizationId,
-            role: user.role,
-        };
+        const authCtx = this.extractAuthCtx(user);
         return this.policiesService.createCategory(authCtx, dto.name);
     }
 
@@ -80,11 +80,7 @@ export class PoliciesController {
         @Param('categoryName') categoryName: string,
         @Body() dto: RenamePolicyCategoryDto,
     ) {
-        const authCtx: ResourceAuthContext = {
-            userId: user.userId,
-            organizationId: user.organizationId,
-            role: user.role,
-        };
+        const authCtx = this.extractAuthCtx(user);
         return this.policiesService.renameCategory(authCtx, decodeURIComponent(categoryName), dto.newName);
     }
 
@@ -95,21 +91,13 @@ export class PoliciesController {
         @CurrentUser() user: any,
         @Param('categoryName') categoryName: string,
     ) {
-        const authCtx: ResourceAuthContext = {
-            userId: user.userId,
-            organizationId: user.organizationId,
-            role: user.role,
-        };
+        const authCtx = this.extractAuthCtx(user);
         return this.policiesService.deleteCategory(authCtx, decodeURIComponent(categoryName));
     }
 
     @Get('pending-acknowledgements')
     async getMyPendingPolicies(@CurrentUser() user: any) {
-        const authCtx: ResourceAuthContext = {
-            userId: user.userId,
-            organizationId: user.organizationId,
-            role: user.role,
-        };
+        const authCtx = this.extractAuthCtx(user);
         return this.policiesService.getMyPendingPolicies(authCtx);
     }
 
@@ -118,11 +106,7 @@ export class PoliciesController {
         @CurrentUser() user: any,
         @Query() query: PolicyQueryDto,
     ) {
-        const authCtx: ResourceAuthContext = {
-            userId: user.userId,
-            organizationId: user.organizationId,
-            role: user.role,
-        };
+        const authCtx = this.extractAuthCtx(user);
         return this.policiesService.findAll(authCtx, query);
     }
 
@@ -131,11 +115,7 @@ export class PoliciesController {
         @CurrentUser() user: any,
         @Param('id') id: string,
     ) {
-        const authCtx: ResourceAuthContext = {
-            userId: user.userId,
-            organizationId: user.organizationId,
-            role: user.role,
-        };
+        const authCtx = this.extractAuthCtx(user);
         return this.policiesService.findOne(authCtx, id);
     }
 
@@ -146,11 +126,7 @@ export class PoliciesController {
         @CurrentUser() user: any,
         @Body() dto: CreatePolicyDto,
     ) {
-        const authCtx: ResourceAuthContext = {
-            userId: user.userId,
-            organizationId: user.organizationId,
-            role: user.role,
-        };
+        const authCtx = this.extractAuthCtx(user);
         return this.policiesService.create(authCtx, dto);
     }
 
@@ -162,11 +138,7 @@ export class PoliciesController {
         @Param('id') id: string,
         @Body() dto: UpdatePolicyDto,
     ) {
-        const authCtx: ResourceAuthContext = {
-            userId: user.userId,
-            organizationId: user.organizationId,
-            role: user.role,
-        };
+        const authCtx = this.extractAuthCtx(user);
         return this.policiesService.updateMetadata(authCtx, id, dto);
     }
 
@@ -178,11 +150,7 @@ export class PoliciesController {
         @Param('id') id: string,
         @Body() dto: CreatePolicyVersionDto,
     ) {
-        const authCtx: ResourceAuthContext = {
-            userId: user.userId,
-            organizationId: user.organizationId,
-            role: user.role,
-        };
+        const authCtx = this.extractAuthCtx(user);
         return this.policiesService.createVersion(authCtx, id, dto);
     }
 
@@ -196,11 +164,7 @@ export class PoliciesController {
         @Param('id') id: string,
         @Body() dto: PolicyLifecycleActionDto,
     ) {
-        const authCtx: ResourceAuthContext = {
-            userId: user.userId,
-            organizationId: user.organizationId,
-            role: user.role,
-        };
+        const authCtx = this.extractAuthCtx(user);
         return this.policiesService.submitForReview(authCtx, id, dto.expectedVersion);
     }
 
@@ -212,11 +176,7 @@ export class PoliciesController {
         @Param('id') id: string,
         @Body() dto: PolicyLifecycleActionDto,
     ) {
-        const authCtx: ResourceAuthContext = {
-            userId: user.userId,
-            organizationId: user.organizationId,
-            role: user.role,
-        };
+        const authCtx = this.extractAuthCtx(user);
         return this.policiesService.approve(authCtx, id, dto.expectedVersion);
     }
 
@@ -228,11 +188,7 @@ export class PoliciesController {
         @Param('id') id: string,
         @Body() dto: RejectPolicyDto,
     ) {
-        const authCtx: ResourceAuthContext = {
-            userId: user.userId,
-            organizationId: user.organizationId,
-            role: user.role,
-        };
+        const authCtx = this.extractAuthCtx(user);
         return this.policiesService.reject(authCtx, id, dto.reason, dto.expectedVersion);
     }
 
@@ -244,11 +200,7 @@ export class PoliciesController {
         @Param('id') id: string,
         @Body() dto: PublishPolicyDto,
     ) {
-        const authCtx: ResourceAuthContext = {
-            userId: user.userId,
-            organizationId: user.organizationId,
-            role: user.role,
-        };
+        const authCtx = this.extractAuthCtx(user);
         return this.policiesService.publish(authCtx, id, dto.versionId, dto.expectedVersion);
     }
 
@@ -260,11 +212,7 @@ export class PoliciesController {
         @Param('id') id: string,
         @Body() dto: PolicyLifecycleActionDto,
     ) {
-        const authCtx: ResourceAuthContext = {
-            userId: user.userId,
-            organizationId: user.organizationId,
-            role: user.role,
-        };
+        const authCtx = this.extractAuthCtx(user);
         return this.policiesService.retire(authCtx, id, dto.expectedVersion);
     }
 
@@ -276,11 +224,7 @@ export class PoliciesController {
         @Param('versionId') versionId: string,
         @Req() req: Request,
     ) {
-        const authCtx: ResourceAuthContext = {
-            userId: user.userId,
-            organizationId: user.organizationId,
-            role: user.role,
-        };
+        const authCtx = this.extractAuthCtx(user);
         const ipAddress = req.ip || (req.headers['x-forwarded-for'] as string);
         return this.policiesService.attestVersion(authCtx, versionId, ipAddress);
     }
@@ -293,11 +237,7 @@ export class PoliciesController {
         @Param('id') id: string,
         @Body() dto: CreatePolicyExceptionDto,
     ) {
-        const authCtx: ResourceAuthContext = {
-            userId: user.userId,
-            organizationId: user.organizationId,
-            role: user.role,
-        };
+        const authCtx = this.extractAuthCtx(user);
         return this.policiesService.createException(authCtx, id, dto);
     }
 
@@ -309,11 +249,7 @@ export class PoliciesController {
         @Param('id') id: string,
         @Req() req: Request,
     ) {
-        const authCtx: ResourceAuthContext = {
-            userId: user.userId,
-            organizationId: user.organizationId,
-            role: user.role,
-        };
+        const authCtx = this.extractAuthCtx(user);
         const ipAddress = req.ip || (req.headers['x-forwarded-for'] as string);
         return this.policiesService.attestPolicy(authCtx, id, ipAddress);
     }
@@ -324,11 +260,7 @@ export class PoliciesController {
         @Param('id') id: string,
         @Query('versionId') versionId?: string,
     ) {
-        const authCtx: ResourceAuthContext = {
-            userId: user.userId,
-            organizationId: user.organizationId,
-            role: user.role,
-        };
+        const authCtx = this.extractAuthCtx(user);
         return this.policiesService.getPolicyAttestations(authCtx, id, versionId);
     }
 
@@ -337,11 +269,7 @@ export class PoliciesController {
         @CurrentUser() user: any,
         @Param('id') id: string,
     ) {
-        const authCtx: ResourceAuthContext = {
-            userId: user.userId,
-            organizationId: user.organizationId,
-            role: user.role,
-        };
+        const authCtx = this.extractAuthCtx(user);
         return this.policiesService.getPolicyAcknowledgementSummary(authCtx, id);
     }
 
@@ -353,11 +281,7 @@ export class PoliciesController {
         @Param('id') id: string,
         @Body() dto: SubmitPolicyApprovalDto,
     ) {
-        const authCtx: ResourceAuthContext = {
-            userId: user.userId,
-            organizationId: user.organizationId,
-            role: user.role,
-        };
+        const authCtx = this.extractAuthCtx(user);
         return this.policiesService.submitForApproval(authCtx, id, dto);
     }
     @Post('ai-draft')
@@ -367,11 +291,7 @@ export class PoliciesController {
         @CurrentUser() user: any,
         @Body() dto: AiDraftPolicyDto,
     ) {
-        const authCtx: ResourceAuthContext = {
-            userId: user.userId,
-            organizationId: user.organizationId,
-            role: user.role,
-        };
+        const authCtx = this.extractAuthCtx(user);
         return this.policiesService.generateAiDraft(authCtx, dto);
     }
 
@@ -382,11 +302,7 @@ export class PoliciesController {
         @CurrentUser() user: any,
         @Body() dto: ImportPolicyDocDto,
     ) {
-        const authCtx: ResourceAuthContext = {
-            userId: user.userId,
-            organizationId: user.organizationId,
-            role: user.role,
-        };
+        const authCtx = this.extractAuthCtx(user);
         return this.policiesService.importDocumentContent(authCtx, dto);
     }
 
@@ -397,11 +313,7 @@ export class PoliciesController {
         @CurrentUser() user: any,
         @Param('id') id: string,
     ) {
-        const authCtx: ResourceAuthContext = {
-            userId: user.userId,
-            organizationId: user.organizationId,
-            role: user.role,
-        };
+        const authCtx = this.extractAuthCtx(user);
         return this.policiesService.validatePolicyWithAi(authCtx, id);
     }
 
@@ -413,11 +325,7 @@ export class PoliciesController {
         @Param('id') id: string,
         @Body() dto: SharePolicyDto,
     ) {
-        const authCtx: ResourceAuthContext = {
-            userId: user.userId,
-            organizationId: user.organizationId,
-            role: user.role,
-        };
+        const authCtx = this.extractAuthCtx(user);
         return this.policiesService.sharePolicy(authCtx, id, dto);
     }
 
@@ -428,11 +336,7 @@ export class PoliciesController {
         @Param('id') id: string,
         @Res() res: Response,
     ) {
-        const authCtx: ResourceAuthContext = {
-            userId: user.userId,
-            organizationId: user.organizationId,
-            role: user.role,
-        };
+        const authCtx = this.extractAuthCtx(user);
         const { buffer, filename } = await this.policiesService.exportDocx(authCtx, id);
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -447,11 +351,7 @@ export class PoliciesController {
         @Param('id') id: string,
         @Body() dto: CreatePolicyShareDto,
     ) {
-        const authCtx: ResourceAuthContext = {
-            userId: user.userId,
-            organizationId: user.organizationId,
-            role: user.role,
-        };
+        const authCtx = this.extractAuthCtx(user);
         return this.policiesService.shareWithUser(authCtx, id, dto);
     }
 
@@ -461,11 +361,7 @@ export class PoliciesController {
         @CurrentUser() user: any,
         @Param('id') id: string,
     ) {
-        const authCtx: ResourceAuthContext = {
-            userId: user.userId,
-            organizationId: user.organizationId,
-            role: user.role,
-        };
+        const authCtx = this.extractAuthCtx(user);
         return this.policiesService.getPolicyShares(authCtx, id);
     }
 
@@ -477,11 +373,7 @@ export class PoliciesController {
         @Param('id') id: string,
         @Param('shareId') shareId: string,
     ) {
-        const authCtx: ResourceAuthContext = {
-            userId: user.userId,
-            organizationId: user.organizationId,
-            role: user.role,
-        };
+        const authCtx = this.extractAuthCtx(user);
         return this.policiesService.revokePolicyShare(authCtx, id, shareId);
     }
 }

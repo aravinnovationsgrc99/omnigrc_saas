@@ -97,7 +97,7 @@ export async function apiRequest<T = any>(
     headers['Authorization'] = `Bearer ${accessToken}`;
   }
 
-  const timeoutMs = options.timeoutMs ?? 15000;
+  const timeoutMs = options.timeoutMs ?? 45000;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
