@@ -42,30 +42,35 @@ export function PolicyGovernanceWidget({ metrics, onNavigateToView }: PolicyGove
       label: 'Published',
       value: published,
       color: '#10b981',
+      onClick: onNavigateToView ? () => onNavigateToView('policies', { initialStatus: 'PUBLISHED' }) : undefined,
     },
     {
       key: 'under_review',
       label: 'Under Review',
       value: underReview,
       color: '#0284c7',
+      onClick: onNavigateToView ? () => onNavigateToView('policies', { initialStatus: 'UNDER_REVIEW' }) : undefined,
     },
     {
       key: 'approved',
       label: 'Approved',
       value: approved,
       color: '#f59e0b',
+      onClick: onNavigateToView ? () => onNavigateToView('policies', { initialStatus: 'APPROVED' }) : undefined,
     },
     {
       key: 'draft',
       label: 'Draft',
       value: draft,
       color: '#64748b',
+      onClick: onNavigateToView ? () => onNavigateToView('policies', { initialStatus: 'DRAFT' }) : undefined,
     },
     {
       key: 'retired',
       label: 'Retired',
       value: retired,
       color: '#94a3b8',
+      onClick: onNavigateToView ? () => onNavigateToView('policies', { initialStatus: 'RETIRED' }) : undefined,
     },
   ];
 

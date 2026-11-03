@@ -39,24 +39,28 @@ export function AuditReadinessWidget({ metrics, onNavigateToView }: AuditReadine
       label: 'In Progress',
       value: inProgressPlans,
       color: '#0284c7',
+      onClick: onNavigateToView ? () => onNavigateToView('audits', { initialStatus: 'IN_PROGRESS' }) : undefined,
     },
     {
       key: 'planned',
       label: 'Planned',
       value: plannedPlans,
       color: '#f59e0b',
+      onClick: onNavigateToView ? () => onNavigateToView('audits', { initialStatus: 'PLANNED' }) : undefined,
     },
     {
       key: 'completed',
       label: 'Completed',
       value: completedPlans,
       color: '#10b981',
+      onClick: onNavigateToView ? () => onNavigateToView('audits', { initialStatus: 'COMPLETED' }) : undefined,
     },
     {
       key: 'draft',
       label: 'Draft',
       value: draftPlans,
       color: '#94a3b8',
+      onClick: onNavigateToView ? () => onNavigateToView('audits', { initialStatus: 'DRAFT' }) : undefined,
     },
   ];
 
@@ -90,9 +94,9 @@ export function AuditReadinessWidget({ metrics, onNavigateToView }: AuditReadine
         {/* Readiness Score Strip */}
         <div className="grid grid-cols-2 gap-2 mb-4">
           <div
-            onClick={() => onNavigateToView?.('audits', { status: 'ACTIVE' })}
+            onClick={() => onNavigateToView?.('audits', { initialStatus: 'IN_PROGRESS', status: 'IN_PROGRESS' })}
             className="bg-teal-50/50 p-2.5 rounded-lg border border-teal-100/60 hover:bg-teal-100/50 transition-colors cursor-pointer"
-            title="Inspect Overall Audit Readiness Score"
+            title="Inspect Active Audit Plans"
           >
             <div className="flex items-center gap-1 text-xs text-teal-700 font-medium">
               <ShieldCheck size={13} /> Audit Score
@@ -103,7 +107,7 @@ export function AuditReadinessWidget({ metrics, onNavigateToView }: AuditReadine
           </div>
 
           <div
-            onClick={() => onNavigateToView?.('audits', { tab: 'assessments' })}
+            onClick={() => onNavigateToView?.('audits', { initialTab: 'assessments', tab: 'assessments' })}
             className="bg-slate-50 p-2.5 rounded-lg border border-slate-200/80 hover:bg-slate-100/50 transition-colors cursor-pointer"
             title="Inspect Active Assessments"
           >
@@ -130,13 +134,13 @@ export function AuditReadinessWidget({ metrics, onNavigateToView }: AuditReadine
 
       <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
         <span
-          onClick={() => onNavigateToView?.('audits', { tab: 'findings', status: 'OPEN' })}
+          onClick={() => onNavigateToView?.('audits', { initialTab: 'findings', tab: 'findings', initialStatus: 'OPEN', status: 'OPEN' })}
           className="hover:text-amber-700 cursor-pointer"
         >
           Open Findings: <strong className="text-slate-900 omni-mono">{findingsOpen}</strong>
         </span>
         <span
-          onClick={() => onNavigateToView?.('audits', { tab: 'capa' })}
+          onClick={() => onNavigateToView?.('audits', { initialTab: 'findings', tab: 'findings' })}
           className="hover:text-teal-700 cursor-pointer flex items-center gap-1"
         >
           <CheckCircle2 size={12} className="text-teal-600" />

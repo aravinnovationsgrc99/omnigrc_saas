@@ -24,6 +24,9 @@ import {
     PolicyLifecycleActionDto,
     RejectPolicyDto,
     PublishPolicyDto,
+    AiDraftPolicyDto,
+    SharePolicyDto,
+    ImportPolicyDocDto,
 } from './dto/policies.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -354,5 +357,65 @@ export class PoliciesController {
             role: user.role,
         };
         return this.policiesService.submitForApproval(authCtx, id, dto);
+    }
+    @Post('ai-draft')
+    @RequiresActiveLicense()
+    @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+    async generateAiDraft(
+        @CurrentUser() user: any,
+        @Body() dto: AiDraftPolicyDto,
+    ) {
+        const authCtx: ResourceAuthContext = {
+            userId: user.userId,
+            organizationId: user.organizationId,
+            role: user.role,
+        };
+        return this.policiesService.generateAiDraft(authCtx, dto);
+    }
+
+    @Post('import-doc')
+    @RequiresActiveLicense()
+    @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+    async importDocument(
+        @CurrentUser() user: any,
+        @Body() dto: ImportPolicyDocDto,
+    ) {
+        const authCtx: ResourceAuthContext = {
+            userId: user.userId,
+            organizationId: user.organizationId,
+            role: user.role,
+        };
+        return this.policiesService.importDocumentContent(authCtx, dto);
+    }
+
+    @Post(':id/validate')
+    @RequiresActiveLicense()
+    @Roles(Role.ADMIN, Role.ANALYST, Role.EXTERNAL_AUDITOR, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+    async validatePolicyWithAi(
+        @CurrentUser() user: any,
+        @Param('id') id: string,
+    ) {
+        const authCtx: ResourceAuthContext = {
+            userId: user.userId,
+            organizationId: user.organizationId,
+            role: user.role,
+        };
+        return this.policiesService.validatePolicyWithAi(authCtx, id);
+    }
+
+    @Post(':id/share')
+    @RequiresActiveLicense()
+    @Roles(Role.ADMIN, Role.ANALYST, Role.MSSP_ADMIN, Role.MSSP_ANALYST)
+    async sharePolicy(
+        @CurrentUser() user: any,
+        @Param('id') id: string,
+        @Body() dto: SharePolicyDto,
+    ) {
+        const authCtx: ResourceAuthContext = {
+            userId: user.userId,
+            organizationId: user.organizationId,
+            role: user.role,
+        };
+        return this.policiesService.sharePolicy(authCtx, id, dto);
     }
 }

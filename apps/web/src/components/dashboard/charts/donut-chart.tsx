@@ -7,6 +7,7 @@ export interface ChartSegment {
   label: string;
   value: number;
   color: string; // CSS color string e.g. '#f43f5e' or Tailwind hex
+  onClick?: () => void;
 }
 
 interface DonutChartProps {
@@ -104,7 +105,21 @@ export function DonutChart({
                 strokeWidth={hoveredIdx === seg.idx ? thickness + 4 : thickness}
                 strokeDasharray={seg.strokeDasharray}
                 strokeDashoffset={seg.strokeDashoffset}
-                className="transition-all duration-300 cursor-pointer origin-center"
+                className="transition-all duration-300 cursor-pointer origin-center focus:outline-none"
+                tabIndex={seg.onClick ? 0 : undefined}
+                role={seg.onClick ? 'button' : undefined}
+                aria-label={`${seg.label}: ${seg.value} (${seg.percentage}%)`}
+                onClick={seg.onClick}
+                onKeyDown={
+                  seg.onClick
+                    ? (e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          seg.onClick?.();
+                        }
+                      }
+                    : undefined
+                }
                 onMouseEnter={() => setHoveredIdx(seg.idx)}
                 onMouseLeave={() => setHoveredIdx(null)}
               />
@@ -127,11 +142,24 @@ export function DonutChart({
           {segmentPaths.map((seg) => (
             <div
               key={seg.key}
+              role={seg.onClick ? 'button' : undefined}
+              tabIndex={seg.onClick ? 0 : undefined}
+              onClick={seg.onClick}
+              onKeyDown={
+                seg.onClick
+                  ? (e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        seg.onClick?.();
+                      }
+                    }
+                  : undefined
+              }
               onMouseEnter={() => setHoveredIdx(seg.idx)}
               onMouseLeave={() => setHoveredIdx(null)}
               className={`flex items-center justify-between text-xs p-1.5 rounded-md transition-colors cursor-pointer ${
                 hoveredIdx === seg.idx ? 'bg-slate-100 font-semibold' : 'hover:bg-slate-50'
-              }`}
+              } ${seg.onClick ? 'hover:text-teal-800' : ''}`}
             >
               <div className="flex items-center gap-2 truncate pr-2">
                 <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: seg.color }} />

@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsEnum, IsOptional, IsInt, Min, Max, IsDateString } from 'class-validator';
+import { IsString, IsNotEmpty, IsEnum, IsOptional, IsInt, Min, Max, IsDateString, IsArray } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PolicyStatus, PolicyExceptionStatus } from '@omnigrc/shared';
 
@@ -225,4 +225,65 @@ export class SubmitPolicyApprovalDto {
   @Min(1)
   @IsOptional()
   dueDays?: number = 7;
+}
+
+export class AiDraftPolicyDto {
+  @IsString()
+  @IsNotEmpty()
+  title!: string;
+
+  @IsString()
+  @IsOptional()
+  category?: string;
+
+  @IsString()
+  @IsOptional()
+  policyType?: string; // 'INTERNAL' | 'EXTERNAL' | 'PUBLIC' | 'PRIVATE'
+
+  @IsString()
+  @IsOptional()
+  targetAudience?: string;
+
+  @IsString()
+  @IsOptional()
+  standardOrFramework?: string; // e.g. 'ISO 27001:2022', 'SOC 2 Type II', 'NIST CSF', 'HIPAA'
+
+  @IsString()
+  @IsOptional()
+  keyRequirements?: string;
+
+  @IsString()
+  @IsOptional()
+  companyContext?: string;
+
+  @IsString()
+  @IsOptional()
+  pageDepth?: string; // 'CONCISE' | 'STANDARD' | 'COMPREHENSIVE'
+}
+
+export class SharePolicyDto {
+  @IsArray()
+  @IsNotEmpty()
+  recipientEmails!: string[];
+
+  @IsString()
+  @IsOptional()
+  message?: string;
+
+  @IsOptional()
+  includeContent?: boolean;
+}
+
+export class ImportPolicyDocDto {
+  @IsString()
+  @IsNotEmpty()
+  content!: string;
+
+  @IsString()
+  @IsOptional()
+  filename?: string;
+
+  @IsString()
+  @IsOptional()
+  fileType?: string; // 'markdown' | 'text' | 'docx'
 }

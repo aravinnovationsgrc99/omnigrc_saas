@@ -18,6 +18,9 @@ import {
   PolicyQueryDto,
   AttestPolicyDto,
   SubmitPolicyApprovalDto,
+  AiDraftPolicyDto,
+  SharePolicyDto,
+  ImportPolicyDocDto,
 } from './dto/policies.dto';
 import {
   PolicyDto,
@@ -33,6 +36,8 @@ import {
   NotificationType,
 } from '@omnigrc/shared';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ClaudeProvider } from '../controls/ai/claude.provider';
+import { GeminiProvider } from '../controls/ai/gemini.provider';
 
 export const DEFAULT_POLICY_CATEGORIES = [
   'Information Security',
@@ -55,6 +60,8 @@ export class PoliciesService {
     private readonly resourceAuthService: ResourceAuthorizationService,
     @Optional() private readonly approvalEngineService?: ApprovalEngineService,
     @Optional() private readonly notificationsService?: NotificationsService,
+    @Optional() private readonly claudeProvider?: ClaudeProvider,
+    @Optional() private readonly geminiProvider?: GeminiProvider,
   ) {
     this.mapToDto = this.mapToDto.bind(this);
   }
@@ -1600,6 +1607,487 @@ export class PoliciesService {
       expiresAt: exception.expiresAt ? exception.expiresAt.toISOString() : null,
       createdAt: exception.createdAt.toISOString(),
       updatedAt: exception.updatedAt.toISOString(),
+    };
+  }
+
+  async generateAiDraft(
+    authCtx: ResourceAuthContext,
+    dto: AiDraftPolicyDto,
+  ): Promise<{
+    content: string;
+    suggestedTitle: string;
+    suggestedCode: string;
+    suggestedCategory: string;
+    suggestedCadenceDays: number;
+    providerUsed: string;
+  }> {
+    const org = await this.prisma.organization.findUnique({
+      where: { id: authCtx.organizationId },
+      select: { name: true },
+    });
+    const companyName = dto.companyContext || org?.name || 'Enterprise Organization';
+    const category = dto.category || 'Information Security';
+    const title = dto.title.trim();
+    const policyType = dto.policyType || 'INTERNAL';
+    const standard = dto.standardOrFramework || 'ISO 27001 / SOC 2 / NIST CSF';
+    const depth = dto.pageDepth || 'STANDARD';
+
+    // Formulate structured prompt for GRC policy creation
+    const systemPrompt = `You are an elite enterprise Governance, Risk, and Compliance (GRC) architect and lead policy author for ${companyName}.
+Your objective is to generate an authoritative, audit-ready, standard-aligned GRC policy document formatted cleanly in GitHub Flavored Markdown.
+The policy must adhere strictly to modern compliance frameworks including ${standard}.
+Always produce formal sections:
+1. Document Control & Version History (table with Version, Date, Author, Change Summary)
+2. Purpose & Objective
+3. Scope & Target Audience (${dto.targetAudience || 'All full-time employees, contractors, third-party vendors, and system administrators'})
+4. Policy Statements & Requirements (bulleted or numbered clauses with clear SHALL/MUST terminology)
+5. Roles & Responsibilities (RACI or role table: Executive Leadership, CISO / SecOps, Line Managers, All Personnel)
+6. Exceptions, Waivers & Escalation Procedure
+7. Compliance Monitoring, Auditing & Enforcement (penalties for non-compliance)
+8. Review Cadence & Document Maintenance
+Do not output preamble or conversational filler. Return only the complete Markdown document.`;
+
+    const userPrompt = `Generate a ${depth} enterprise ${category} policy document titled "${title}".
+Policy Classification: ${policyType}
+Company Context: ${companyName}
+Applicable Regulatory / Security Standards: ${standard}
+Key Specific Requirements to Incorporate:
+${dto.keyRequirements || 'Standard enterprise controls, zero trust access principles, audit logging, incident notification SLAs, and data protection rules.'}`;
+
+    let content = '';
+    let providerUsed = 'GRC Template Generator';
+
+    // 1. Try Claude first (User preferred for Policy Drafting)
+    if (this.claudeProvider && this.claudeProvider.isAvailable()) {
+      try {
+        content = await this.claudeProvider.generateText(systemPrompt, userPrompt);
+        providerUsed = 'Claude (Anthropic)';
+      } catch (err: any) {
+        // Fallback to Gemini if Claude call fails
+      }
+    }
+
+    // 2. Fallback to Gemini if content empty
+    if (!content && this.geminiProvider && this.geminiProvider.isAvailable()) {
+      try {
+        content = await this.geminiProvider.generateText(systemPrompt, userPrompt);
+        providerUsed = 'Gemini (Google)';
+      } catch (err: any) {
+        // Fallback to deterministic template
+      }
+    }
+
+    // 3. Fallback to rich deterministic template if AI providers unavailable in local environment
+    if (!content) {
+      const catCode = category.slice(0, 3).toUpperCase();
+      content = `# ${title}
+
+## 1. Document Control & Metadata
+| Property | Value |
+| :--- | :--- |
+| **Organization** | ${companyName} |
+| **Classification** | ${policyType} |
+| **Applicable Standards** | ${standard} |
+| **Effective Date** | ${new Date().toISOString().split('T')[0]} |
+| **Review Cadence** | Annual (365 Days) |
+| **Document Owner** | Chief Information Security Officer (CISO) |
+
+### Version History
+| Version | Date | Author | Description of Changes |
+| :--- | :--- | :--- | :--- |
+| 1.0 | ${new Date().toISOString().split('T')[0]} | GRC Lead | Initial Draft generated for review |
+
+---
+
+## 2. Purpose & Objectives
+The purpose of this ${title} is to define the mandatory requirements and baseline practices for ${companyName} to safeguard information assets, uphold data integrity, and guarantee operational continuity. This policy aligns with the security benchmarks specified in **${standard}**.
+
+Key objectives include:
+* Ensuring adequate protection against unauthorized access, disclosure, alteration, and disruption.
+* Demonstrating adherence to regulatory requirements and contractual obligations.
+* Establishing clear accountability for data custody and system governance.
+
+---
+
+## 3. Scope & Target Audience
+This policy applies to:
+* All personnel, including permanent employees, temporary contractors, interns, and third-party vendors accessing ${companyName} infrastructure or processing company information.
+* All corporate endpoints, cloud platforms, networks, data repositories, and on-premise hardware.
+* Scope classification: **${policyType}**.
+
+---
+
+## 4. Policy Statements & Requirements
+
+### 4.1 Governance & Operational Baseline
+1. All users **MUST** authenticate via centralized Single Sign-On (SSO) with Multi-Factor Authentication (MFA) enabled for all corporate systems and services.
+2. Access rights **SHALL** follow the Principle of Least Privilege (PoLP) and role-based access control (RBAC).
+3. Privilege access reviews **MUST** occur quarterly, with immediate deprovisioning upon employee or contractor separation within 24 hours.
+
+### 4.2 Security Controls & Asset Protection
+1. All corporate workstations and mobile devices accessing enterprise systems **MUST** be enrolled in Mobile Device Management (MDM) with disk encryption (AES-256) active.
+2. Critical security patches and high-severity vulnerability fixes **MUST** be deployed within 14 calendar days of vendor release.
+3. Production data **SHALL NOT** be utilized in non-production, staging, or testing environments without approved cryptographic masking.
+
+### 4.3 Incident Response & Escalation
+1. Any suspected or confirmed security breach, unauthorized access, or loss of corporate assets **MUST** be reported immediately (within 60 minutes) to the Security Operations Center (SOC).
+2. The Incident Response Team **SHALL** initiate containment protocols in accordance with the Incident Management Playbook.
+
+---
+
+## 5. Roles & Responsibilities
+| Role | Responsibility |
+| :--- | :--- |
+| **Executive Leadership** | Approves policy, allocates resources, and enforces corporate accountability. |
+| **CISO & Security Team** | Maintains policy, conducts vulnerability assessments, and monitors compliance metrics. |
+| **Department Managers** | Ensures direct reports complete mandatory policy acknowledgements and adhere to controls. |
+| **All Personnel** | Adheres to policy rules, completes training, and reports anomalies promptly. |
+
+---
+
+## 6. Exceptions & Waivers
+Any temporary deviation or business exception to this policy **MUST** be formally requested via the OMNiGRC Policy Exception Workflow.
+* Exceptions require written approval from the CISO and designated Risk Owner.
+* Approved waivers expire after a maximum of 180 days, requiring reassessment and compensatory security controls.
+
+---
+
+## 7. Compliance Monitoring & Enforcement
+* Compliance with this policy is subject to ongoing automated telemetry, periodic internal audits, and external assessments.
+* Violations of this policy may result in disciplinary action up to and including revocation of system access, termination of employment, and legal proceedings where applicable.
+
+---
+
+## 8. Review Schedule
+This policy shall be formally reviewed at least annually or following material architectural or regulatory modifications to ensure ongoing fitness and alignment with **${standard}**.`;
+    }
+
+    // Code suggestion: POL-{CAT_PREFIX}-{RANDOM_3_DIGITS}
+    const catPrefix = category.replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase() || 'GEN';
+    const randomNum = Math.floor(100 + Math.random() * 900);
+    const suggestedCode = `POL-${catPrefix}-${randomNum}`;
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'POLICY_AI_DRAFT_GENERATED',
+      entityType: 'Policy',
+      entityId: suggestedCode,
+      metadata: {
+        title,
+        category,
+        standard,
+        providerUsed,
+      },
+    });
+
+    return {
+      content,
+      suggestedTitle: title,
+      suggestedCode,
+      suggestedCategory: category,
+      suggestedCadenceDays: 365,
+      providerUsed,
+    };
+  }
+
+  async validatePolicyWithAi(
+    authCtx: ResourceAuthContext,
+    id: string,
+  ): Promise<{
+    policyId: string;
+    policyCode: string;
+    overallScore: number;
+    status: 'PASSED' | 'NEEDS_REVISION' | 'DEFICIENT';
+    findings: Array<{
+      severity: 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
+      section: string;
+      title: string;
+      description: string;
+      recommendation: string;
+    }>;
+    validatedAt: string;
+    modelUsed: string;
+  }> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+    const policy = await this.prisma.policy.findFirst({
+      where: { id, ...scopeWhere, deletedAt: null },
+      include: {
+        publishedVersion: true,
+        versions: { orderBy: { createdAt: 'desc' }, take: 1 },
+        controlAssociations: true,
+      },
+    });
+
+    if (!policy) throw new NotFoundException(`Policy with ID "${id}" not found`);
+
+    const content =
+      policy.versions?.[0]?.content ||
+      policy.publishedVersion?.content ||
+      policy.description ||
+      '';
+
+    let overallScore = 85;
+    let status: 'PASSED' | 'NEEDS_REVISION' | 'DEFICIENT' = 'PASSED';
+    let findings: Array<{
+      severity: 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
+      section: string;
+      title: string;
+      description: string;
+      recommendation: string;
+    }> = [];
+    let modelUsed = 'Gemini (Google)';
+
+    const systemPrompt = `You are an elite ISO 27001 / SOC 2 / NIST GRC lead auditor reviewing an organizational security policy.
+Evaluate the policy text for:
+1. Completeness of Purpose, Scope, Specific Requirements, Roles, Exception Handling, Enforcement.
+2. Clear normative language (MUST, SHALL, PROHIBITED).
+3. Measurability and audit readiness.
+Respond in valid JSON only matching schema:
+{
+  "overallScore": number (0-100),
+  "status": "PASSED" | "NEEDS_REVISION" | "DEFICIENT",
+  "findings": [
+    {
+      "severity": "HIGH" | "MEDIUM" | "LOW" | "INFO",
+      "section": string,
+      "title": string,
+      "description": string,
+      "recommendation": string
+    }
+  ]
+}`;
+
+    const userPrompt = `Evaluate this policy document:
+Title: "${policy.title}"
+Code: "${policy.code}"
+Category: "${policy.category}"
+Content:
+${content.slice(0, 12000)}`;
+
+    let aiRaw = '';
+    // Priority 1: Gemini (User preferred for Policy Validation)
+    if (this.geminiProvider && this.geminiProvider.isAvailable()) {
+      try {
+        aiRaw = await this.geminiProvider.generateText(systemPrompt, userPrompt);
+        modelUsed = 'Gemini 1.5 Flash';
+      } catch (err) {
+        // Fallback
+      }
+    }
+
+    if (!aiRaw && this.claudeProvider && this.claudeProvider.isAvailable()) {
+      try {
+        aiRaw = await this.claudeProvider.generateText(systemPrompt, userPrompt);
+        modelUsed = 'Claude Haiku';
+      } catch (err) {
+        // Fallback
+      }
+    }
+
+    if (aiRaw) {
+      try {
+        const cleanJson = aiRaw.replace(/```json/gi, '').replace(/```/g, '').trim();
+        const parsed = JSON.parse(cleanJson);
+        if (typeof parsed.overallScore === 'number') overallScore = parsed.overallScore;
+        if (parsed.status) status = parsed.status;
+        if (Array.isArray(parsed.findings)) findings = parsed.findings;
+      } catch {
+        // Fallback to rule-based analysis below
+      }
+    }
+
+    // If findings list is empty, perform heuristic GRC section checklist
+    if (findings.length === 0) {
+      const lower = content.toLowerCase();
+      const hasPurpose = lower.includes('purpose') || lower.includes('objective');
+      const hasScope = lower.includes('scope');
+      const hasRoles = lower.includes('responsibilit') || lower.includes('raci');
+      const hasExceptions = lower.includes('exception') || lower.includes('waiver');
+      const hasEnforcement = lower.includes('enforce') || lower.includes('violation') || lower.includes('disciplinary');
+      const hasControls = policy.controlAssociations && policy.controlAssociations.length > 0;
+
+      let deductions = 0;
+      if (!hasPurpose) {
+        deductions += 15;
+        findings.push({
+          severity: 'HIGH',
+          section: 'Purpose & Objectives',
+          title: 'Missing Explicit Purpose Statement',
+          description: 'The document lacks a dedicated Purpose section clarifying regulatory rationale.',
+          recommendation: 'Add Section 2 outlining specific business objectives and regulatory drivers.',
+        });
+      }
+      if (!hasScope) {
+        deductions += 15;
+        findings.push({
+          severity: 'HIGH',
+          section: 'Scope',
+          title: 'Unclear Target Audience & System Boundary',
+          description: 'No explicit Scope section defining applicable users, infrastructure, or data boundaries.',
+          recommendation: 'Explicitly specify whether contractors, mobile devices, and cloud tenants are covered.',
+        });
+      }
+      if (!hasRoles) {
+        deductions += 10;
+        findings.push({
+          severity: 'MEDIUM',
+          section: 'Governance',
+          title: 'Roles & Responsibilities Undefined',
+          description: 'Lacks role breakdown for Line Managers, CISO, and General Personnel.',
+          recommendation: 'Include a RACI matrix or role assignment table.',
+        });
+      }
+      if (!hasExceptions) {
+        deductions += 10;
+        findings.push({
+          severity: 'MEDIUM',
+          section: 'Compliance',
+          title: 'No Formal Exception Handling Clause',
+          description: 'Lacks a documented waiver or exception protocol for legacy systems.',
+          recommendation: 'State that exceptions require written CISO signoff with a 180-day maximum duration.',
+        });
+      }
+      if (!hasEnforcement) {
+        deductions += 10;
+        findings.push({
+          severity: 'LOW',
+          section: 'Enforcement',
+          title: 'Missing Disciplinary Actions Specification',
+          description: 'Consequences for willful non-compliance are not stipulated.',
+          recommendation: 'Add standard HR escalation and disciplinary action reference.',
+        });
+      }
+      if (!hasControls) {
+        findings.push({
+          severity: 'INFO',
+          section: 'Framework Mapping',
+          title: 'No Associated Controls Mapped',
+          description: 'Policy is not linked to any security catalogue controls in OMNiGRC.',
+          recommendation: 'Map this policy to ISO 27001 or SOC 2 controls using the Mapped Controls panel.',
+        });
+      }
+
+      overallScore = Math.max(35, 100 - deductions);
+      status = overallScore >= 80 ? 'PASSED' : overallScore >= 60 ? 'NEEDS_REVISION' : 'DEFICIENT';
+      modelUsed = 'OMNiGRC Automated Heuristic Validator';
+    }
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'POLICY_AI_VALIDATED',
+      entityType: 'Policy',
+      entityId: policy.id,
+      metadata: {
+        overallScore,
+        status,
+        findingsCount: findings.length,
+        modelUsed,
+      },
+    });
+
+    return {
+      policyId: policy.id,
+      policyCode: policy.code,
+      overallScore,
+      status,
+      findings,
+      validatedAt: new Date().toISOString(),
+      modelUsed,
+    };
+  }
+
+  async sharePolicy(
+    authCtx: ResourceAuthContext,
+    id: string,
+    dto: SharePolicyDto,
+  ): Promise<{
+    success: boolean;
+    sentToCount: number;
+    recipients: string[];
+    message: string;
+  }> {
+    const scopeWhere = await this.resourceAuthService.getScopeWhereClause(authCtx);
+    const policy = await this.prisma.policy.findFirst({
+      where: { id, ...scopeWhere, deletedAt: null },
+      include: { publishedVersion: true, versions: { take: 1, orderBy: { createdAt: 'desc' } } },
+    });
+
+    if (!policy) throw new NotFoundException(`Policy with ID "${id}" not found`);
+
+    const validEmails = dto.recipientEmails.filter((e) => typeof e === 'string' && e.includes('@'));
+    if (validEmails.length === 0) {
+      throw new BadRequestException('At least one valid recipient email address must be provided');
+    }
+
+    if (this.notificationsService) {
+      for (const email of validEmails) {
+        await this.notificationsService.notify({
+          organizationId: authCtx.organizationId,
+          userId: email,
+          type: NotificationType.TASK_ASSIGNED,
+          message: dto.message || `Policy "${policy.title}" (${policy.code}) was shared with you for review.`,
+          entityType: 'Policy',
+          entityId: policy.id,
+        });
+      }
+    }
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'POLICY_SHARED',
+      entityType: 'Policy',
+      entityId: policy.id,
+      metadata: {
+        recipients: validEmails,
+        customMessage: dto.message,
+      },
+    });
+
+    return {
+      success: true,
+      sentToCount: validEmails.length,
+      recipients: validEmails,
+      message: `Policy successfully shared with ${validEmails.length} recipient(s).`,
+    };
+  }
+
+  async importDocumentContent(
+    authCtx: ResourceAuthContext,
+    dto: ImportPolicyDocDto,
+  ): Promise<{
+    extractedContent: string;
+    suggestedTitle?: string;
+    wordCount: number;
+  }> {
+    let clean = dto.content.trim();
+    if (clean.length === 0) {
+      throw new BadRequestException('Document content cannot be empty');
+    }
+
+    let suggestedTitle: string | undefined;
+    const firstLine = clean.split('\n')[0].replace(/^[#\s*_-]+/, '').trim();
+    if (firstLine && firstLine.length < 120) {
+      suggestedTitle = firstLine;
+    }
+
+    const words = clean.split(/\s+/).filter(Boolean).length;
+
+    await this.auditLogsService.log({
+      organizationId: authCtx.organizationId,
+      actorId: authCtx.userId,
+      action: 'POLICY_DOCUMENT_IMPORTED',
+      entityType: 'Policy',
+      entityId: dto.filename || 'import',
+      metadata: { filename: dto.filename, fileType: dto.fileType, words },
+    });
+
+    return {
+      extractedContent: clean,
+      suggestedTitle,
+      wordCount: words,
     };
   }
 

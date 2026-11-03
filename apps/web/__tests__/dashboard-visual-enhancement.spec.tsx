@@ -70,11 +70,14 @@ describe('Dashboard Visual Enhancement & Chart-Type Restoration', () => {
   };
 
   const mockMetrics: OverviewMetricsDto = {
+    organizationId: 'org-test-1',
+    timestamp: new Date().toISOString(),
     risks: {
       totalOpen: 4,
       byScoreBand: { HIGH: 2, MEDIUM: 1, LOW: 1 },
       byStatus: { OPEN: 2, IN_TREATMENT: 2, ACCEPTED: 1, CLOSED: 2 },
       heatmap: {
+        totalOpenCount: 4,
         matrix: buildMockHeatmapMatrix(),
       },
       isAvailable: true,
@@ -82,6 +85,7 @@ describe('Dashboard Visual Enhancement & Chart-Type Restoration', () => {
     vendors: {
       total: 10,
       byCriticality: { CRITICAL: 2, HIGH: 3, MEDIUM: 3, LOW: 2 },
+      byStatus: {} as any,
       requiringReviewCount: 1,
       assessmentsOverdueCount: 1,
       isAvailable: true,

@@ -36,18 +36,21 @@ export function ComplianceObligationsWidget({ metrics, onNavigateToView }: Compl
       label: 'Completed Tasks',
       value: completed,
       color: '#10b981',
+      onClick: onNavigateToView ? () => onNavigateToView('board', { initialFilter: 'completed' }) : undefined,
     },
     {
       key: 'upcoming',
       label: 'Due in 30 Days',
       value: upcoming,
       color: '#f59e0b',
+      onClick: onNavigateToView ? () => onNavigateToView('board', { initialFilter: 'upcoming' }) : undefined,
     },
     {
       key: 'overdue',
       label: 'Overdue SLA',
       value: overdue,
       color: '#ef4444',
+      onClick: onNavigateToView ? () => onNavigateToView('board', { initialFilter: 'overdue' }) : undefined,
     },
   ];
 
@@ -94,7 +97,7 @@ export function ComplianceObligationsWidget({ metrics, onNavigateToView }: Compl
 
       <div className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-100">
         <div
-          onClick={() => onNavigateToView?.('board', { filter: 'upcoming' })}
+          onClick={() => onNavigateToView?.('board', { initialFilter: 'upcoming', filter: 'upcoming' })}
           className="bg-amber-50/50 p-2.5 rounded-lg border border-amber-100/60 hover:bg-amber-100/50 transition-colors cursor-pointer"
           title="Filter Tasks Due within 30 Days"
         >
@@ -107,7 +110,7 @@ export function ComplianceObligationsWidget({ metrics, onNavigateToView }: Compl
         </div>
 
         <div
-          onClick={() => onNavigateToView?.('board', { filter: 'overdue' })}
+          onClick={() => onNavigateToView?.('board', { initialFilter: 'overdue', filter: 'overdue' })}
           className="bg-rose-50/50 p-2.5 rounded-lg border border-rose-100/60 hover:bg-rose-100/50 transition-colors cursor-pointer"
           title="Filter Overdue Tasks"
         >
@@ -120,7 +123,7 @@ export function ComplianceObligationsWidget({ metrics, onNavigateToView }: Compl
         </div>
 
         <div
-          onClick={() => onNavigateToView?.('board', { filter: 'completed' })}
+          onClick={() => onNavigateToView?.('board', { initialFilter: 'completed', filter: 'completed' })}
           className="bg-emerald-50/50 p-2.5 rounded-lg border border-emerald-100/60 hover:bg-emerald-100/50 transition-colors cursor-pointer"
           title="Filter Completed Tasks"
         >

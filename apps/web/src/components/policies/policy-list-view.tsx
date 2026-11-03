@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   FileCheck,
   Plus,
@@ -19,6 +19,16 @@ import {
   ShieldCheck,
   Trash2,
   AlertTriangle,
+  Sparkles,
+  Share2,
+  Send,
+  Upload,
+  BookOpen,
+  HelpCircle,
+  Award,
+  Layers,
+  ChevronRight,
+  Filter,
 } from 'lucide-react';
 import { apiRequest } from '@/lib/api-client';
 import {
@@ -36,35 +46,65 @@ import { PolicyEditor } from './policy-editor';
 
 interface PolicyListViewProps {
   initialStatus?: string;
+  initialFilter?: string;
+  initialTab?: string;
 }
 
-export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
+interface ValidationFinding {
+  severity: 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
+  section: string;
+  title: string;
+  description: string;
+  recommendation: string;
+}
+
+interface ValidationResult {
+  policyId: string;
+  policyCode: string;
+  overallScore: number;
+  status: 'PASSED' | 'NEEDS_REVISION' | 'DEFICIENT';
+  findings: ValidationFinding[];
+  validatedAt: string;
+  modelUsed: string;
+}
+
+export function PolicyListView({ initialStatus, initialFilter, initialTab }: PolicyListViewProps = {}) {
   const { addToast } = useToast();
   const [policies, setPolicies] = useState<PolicyDto[]>([]);
   const [categories, setCategories] = useState<PolicyCategoryDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingCategories, setLoadingCategories] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>(initialStatus || 'ALL');
+  const [filterOverdueCadence, setFilterOverdueCadence] = useState<boolean>(initialFilter === 'overdue');
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedPolicy, setSelectedPolicy] = useState<PolicyDto | null>(null);
 
-  // Create Form State
+  // Create Form Mode & AI Drafting State
+  const [createMode, setCreateMode] = useState<'manual' | 'ai'>('manual');
   const [code, setCode] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('Information Security');
+  const [policyType, setPolicyType] = useState('INTERNAL');
   const [ownerId, setOwnerId] = useState('CISO');
+  const [targetAudience, setTargetAudience] = useState('All Personnel');
+  const [standardOrFramework, setStandardOrFramework] = useState('ISO 27001 / SOC 2 Type II');
+  const [keyRequirements, setKeyRequirements] = useState('');
   const [initialContent, setInitialContent] = useState(
     '# Policy Title\n\n1. Objective & Purpose\n2. Scope\n3. Compliance Rules and Controls\n4. Enforcement & Violations',
   );
   const [reviewCadenceDays, setReviewCadenceDays] = useState(365);
   const [submitting, setSubmitting] = useState(false);
+  const [generatingAiDraft, setGeneratingAiDraft] = useState(false);
+  const [aiProviderUsed, setAiProviderUsed] = useState<string | null>(null);
 
   // Acknowledgement Summary & Approval State
   const [ackSummary, setAckSummary] = useState<any | null>(null);
   const [loadingAckSummary, setLoadingAckSummary] = useState(false);
   const [submittingApproval, setSubmittingApproval] = useState(false);
+  const [approvalWorkflows, setApprovalWorkflows] = useState<any[]>([]);
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string>('');
 
   // Rejection State
   const [rejectingPolicyId, setRejectingPolicyId] = useState<string | null>(null);
@@ -91,6 +131,20 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
   const [submittingMapping, setSubmittingMapping] = useState(false);
   const [unmappingControlId, setUnmappingControlId] = useState<string | null>(null);
 
+  // AI Validation State
+  const [validatingAi, setValidatingAi] = useState(false);
+  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
+  const [showValidationModal, setShowValidationModal] = useState(false);
+
+  // Email Sharing State
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareEmails, setShareEmails] = useState('');
+  const [shareCustomMessage, setShareCustomMessage] = useState('');
+  const [submittingShare, setSubmittingShare] = useState(false);
+
+  // Document Import File Input Ref
+  const docImportFileRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     if (initialStatus) {
       setFilterStatus(initialStatus);
@@ -98,8 +152,15 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
   }, [initialStatus]);
 
   useEffect(() => {
+    if (initialFilter === 'overdue') {
+      setFilterOverdueCadence(true);
+    }
+  }, [initialFilter]);
+
+  useEffect(() => {
     fetchPolicies();
     fetchCategories();
+    fetchApprovalWorkflows();
   }, [filterStatus]);
 
   async function fetchPolicies() {
@@ -124,7 +185,6 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
         setCategory(data[0].name);
       }
     } catch {
-      // Fallback to default if endpoint unavailable
       setCategories([
         { id: '1', name: 'Information Security', isDefault: true, policyCount: 0 },
         { id: '2', name: 'Data Privacy', isDefault: true, policyCount: 0 },
@@ -137,6 +197,15 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
       ]);
     } finally {
       setLoadingCategories(false);
+    }
+  }
+
+  async function fetchApprovalWorkflows() {
+    try {
+      const res = await apiRequest<any>('/approval/workflows').catch(() => []);
+      setApprovalWorkflows(Array.isArray(res) ? res : res.items || []);
+    } catch {
+      setApprovalWorkflows([]);
     }
   }
 
@@ -163,6 +232,119 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
       addToast(`Failed to load controls catalogue: ${err.message}`, 'error');
     } finally {
       setLoadingCatalogueControls(false);
+    }
+  }
+
+  async function handleGenerateAiDraft() {
+    if (!title.trim()) {
+      addToast('Please enter a policy title before generating with AI.', 'error');
+      return;
+    }
+    setGeneratingAiDraft(true);
+    try {
+      const draft = await apiRequest<{
+        content: string;
+        suggestedTitle: string;
+        suggestedCode: string;
+        suggestedCategory: string;
+        suggestedCadenceDays: number;
+        providerUsed: string;
+      }>('/policies/ai-draft', {
+        method: 'POST',
+        body: JSON.stringify({
+          title,
+          category,
+          policyType,
+          targetAudience,
+          standardOrFramework,
+          keyRequirements,
+          pageDepth: 'STANDARD',
+        }),
+      });
+
+      setInitialContent(draft.content);
+      if (!code) setCode(draft.suggestedCode);
+      if (draft.suggestedCadenceDays) setReviewCadenceDays(draft.suggestedCadenceDays);
+      setAiProviderUsed(draft.providerUsed);
+      setCreateMode('manual');
+      addToast(`AI Draft generated successfully using ${draft.providerUsed}! Review and save as Draft.`, 'success');
+    } catch (err: any) {
+      addToast(`AI Draft generation failed: ${err.message}`, 'error');
+    } finally {
+      setGeneratingAiDraft(false);
+    }
+  }
+
+  async function handleValidatePolicy(policyId: string) {
+    setValidatingAi(true);
+    try {
+      const res = await apiRequest<ValidationResult>(`/policies/${policyId}/validate`, {
+        method: 'POST',
+      });
+      setValidationResult(res);
+      setShowValidationModal(true);
+      addToast(`Policy validated with AI (${res.modelUsed}). Score: ${res.overallScore}%`, 'success');
+    } catch (err: any) {
+      addToast(`Validation failed: ${err.message}`, 'error');
+    } finally {
+      setValidatingAi(false);
+    }
+  }
+
+  async function handleSharePolicy(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedPolicy) return;
+    const emails = shareEmails.split(/[,;\s]+/).map((e) => e.trim()).filter((e) => e.includes('@'));
+    if (emails.length === 0) {
+      addToast('Please enter at least one valid recipient email.', 'error');
+      return;
+    }
+    setSubmittingShare(true);
+    try {
+      await apiRequest(`/policies/${selectedPolicy.id}/share`, {
+        method: 'POST',
+        body: JSON.stringify({
+          recipientEmails: emails,
+          message: shareCustomMessage || undefined,
+        }),
+      });
+      addToast(`Policy successfully shared with ${emails.length} recipient(s).`, 'success');
+      setShowShareModal(false);
+      setShareEmails('');
+      setShareCustomMessage('');
+    } catch (err: any) {
+      addToast(`Failed to share policy: ${err.message}`, 'error');
+    } finally {
+      setSubmittingShare(false);
+    }
+  }
+
+  async function handleImportDocumentFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const res = await apiRequest<{
+        extractedContent: string;
+        suggestedTitle?: string;
+        wordCount: number;
+      }>('/policies/import-doc', {
+        method: 'POST',
+        body: JSON.stringify({
+          content: text,
+          filename: file.name,
+          fileType: file.name.endsWith('.docx') ? 'docx' : 'markdown',
+        }),
+      });
+
+      setInitialContent(res.extractedContent);
+      if (res.suggestedTitle && !title) setTitle(res.suggestedTitle);
+      addToast(`Imported ${file.name} (${res.wordCount} words) into policy draft.`, 'success');
+    } catch (err: any) {
+      addToast(`Import failed: ${err.message}`, 'error');
+    } finally {
+      if (docImportFileRef.current) docImportFileRef.current.value = '';
     }
   }
 
@@ -243,6 +425,7 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
       setTitle('');
       setDescription('');
       setReviewCadenceDays(365);
+      setAiProviderUsed(null);
       setInitialContent(
         '# Policy Title\n\n1. Objective & Purpose\n2. Scope\n3. Compliance Rules and Controls\n4. Enforcement & Violations',
       );
@@ -269,14 +452,12 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
         : policy.publishedVersion?.content || '';
     setEditContent(currentContent);
 
-    // Fetch acknowledgement summary for attestation metrics
     setLoadingAckSummary(true);
     apiRequest<any>(`/policies/${policy.id}/acknowledgement-summary`)
       .then((data) => setAckSummary(data))
       .catch(() => setAckSummary(null))
       .finally(() => setLoadingAckSummary(false));
 
-    // Fetch mapped controls
     fetchPolicyMappedControls(policy.id);
   }
 
@@ -288,6 +469,7 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
         method: 'POST',
         body: JSON.stringify({
           title: `Formal Approval for Policy: ${selectedPolicy.title}`,
+          workflowId: selectedWorkflowId || undefined,
           dueDays: 14,
         }),
       });
@@ -329,7 +511,7 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
         err.message?.toLowerCase().includes('conflict')
       ) {
         addToast(
-          'Conflict detected: This policy was modified concurrently by another user. Reloading latest version...',
+          'Conflict detected: This policy was modified concurrently. Reloading latest version...',
           'error',
         );
         try {
@@ -410,20 +592,37 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
     }
   }
 
-  function downloadPolicyContent(p: PolicyDto, content: string) {
-    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+  function downloadPolicyContent(p: PolicyDto, content: string, format: 'md' | 'doc' = 'md') {
+    const blob = new Blob([content], {
+      type: format === 'md' ? 'text/markdown;charset=utf-8' : 'application/msword;charset=utf-8',
+    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${p.code || 'policy'}_${p.title.replace(/\s+/g, '_')}.md`;
+    a.download = `${p.code || 'policy'}_${p.title.replace(/\s+/g, '_')}.${format === 'md' ? 'md' : 'doc'}`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    addToast('Downloaded policy document (.md).', 'success');
+    addToast(`Exported policy document (.${format === 'md' ? 'md' : 'doc'}).`, 'success');
   }
 
+  // Summary Metrics Computation
+  const publishedCount = policies.filter((p) => p.status === 'PUBLISHED').length;
+  const underReviewCount = policies.filter((p) => p.status === 'UNDER_REVIEW').length;
+  const approvedCount = policies.filter((p) => p.status === 'APPROVED').length;
+  const draftCount = policies.filter((p) => p.status === 'DRAFT').length;
+  const retiredCount = policies.filter((p) => p.status === 'RETIRED').length;
+  const overdueCadenceCount = policies.filter(
+    (p) => p.reviewDate && new Date(p.reviewDate) < new Date(),
+  ).length;
+
   const filteredPolicies = policies.filter((p) => {
+    if (filterOverdueCadence) {
+      const isOverdue = p.reviewDate && new Date(p.reviewDate) < new Date();
+      if (!isOverdue) return false;
+    }
+
     if (!searchQuery.trim()) return true;
     const query = searchQuery.toLowerCase();
     return (
@@ -435,6 +634,16 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
 
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 omni-fade-in">
+      {/* Hidden file input for DOC / MD Import */}
+      <input
+        type="file"
+        ref={docImportFileRef}
+        onChange={handleImportDocumentFile}
+        accept=".md,.txt,.doc,.docx"
+        className="hidden"
+      />
+
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <div className="flex items-center gap-2">
@@ -442,15 +651,129 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
             <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Policy Management</h1>
           </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Controlled policy lifecycle (Draft → Review → Published → Retired), control mappings, and version attestation.
+            Controlled policy lifecycle (Draft → Review → Approved → Published → Retired), AI drafting, framework control mappings, and attestation.
           </p>
         </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg transition-colors shadow-sm"
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              setCreateMode('ai');
+              setShowCreateModal(true);
+            }}
+            className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-teal-800 bg-teal-50 border border-teal-200 hover:bg-teal-100 rounded-lg transition-colors shadow-2xs"
+          >
+            <Sparkles size={14} className="text-teal-600" /> Draft with AI
+          </button>
+          <button
+            onClick={() => {
+              setCreateMode('manual');
+              setShowCreateModal(true);
+            }}
+            className="inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg transition-colors shadow-sm"
+          >
+            <Plus size={15} /> Create Policy Draft
+          </button>
+        </div>
+      </div>
+
+      {/* Policy Status Overview Metrics Strip (Clickable Drilldown) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-7 gap-2.5 mb-6">
+        <div
+          onClick={() => {
+            setFilterStatus('ALL');
+            setFilterOverdueCadence(false);
+          }}
+          className={`p-3 bg-white border rounded-xl shadow-2xs cursor-pointer transition-all hover:shadow-xs ${
+            filterStatus === 'ALL' && !filterOverdueCadence ? 'border-teal-500 ring-2 ring-teal-100' : 'border-slate-200'
+          }`}
+          title="Filter All Policies"
         >
-          <Plus size={16} /> Create Policy Draft
-        </button>
+          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Total</span>
+          <span className="text-xl font-bold text-slate-900 omni-mono mt-0.5 block">{policies.length}</span>
+        </div>
+
+        <div
+          onClick={() => {
+            setFilterStatus('PUBLISHED');
+            setFilterOverdueCadence(false);
+          }}
+          className={`p-3 bg-white border rounded-xl shadow-2xs cursor-pointer transition-all hover:shadow-xs ${
+            filterStatus === 'PUBLISHED' && !filterOverdueCadence ? 'border-emerald-500 ring-2 ring-emerald-100' : 'border-slate-200'
+          }`}
+          title="Filter Published Policies"
+        >
+          <span className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wider block">Published</span>
+          <span className="text-xl font-bold text-emerald-800 omni-mono mt-0.5 block">{publishedCount}</span>
+        </div>
+
+        <div
+          onClick={() => {
+            setFilterStatus('UNDER_REVIEW');
+            setFilterOverdueCadence(false);
+          }}
+          className={`p-3 bg-white border rounded-xl shadow-2xs cursor-pointer transition-all hover:shadow-xs ${
+            filterStatus === 'UNDER_REVIEW' && !filterOverdueCadence ? 'border-sky-500 ring-2 ring-sky-100' : 'border-slate-200'
+          }`}
+          title="Filter Policies Under Review"
+        >
+          <span className="text-[11px] font-semibold text-sky-700 uppercase tracking-wider block">In Review</span>
+          <span className="text-xl font-bold text-sky-800 omni-mono mt-0.5 block">{underReviewCount}</span>
+        </div>
+
+        <div
+          onClick={() => {
+            setFilterStatus('APPROVED');
+            setFilterOverdueCadence(false);
+          }}
+          className={`p-3 bg-white border rounded-xl shadow-2xs cursor-pointer transition-all hover:shadow-xs ${
+            filterStatus === 'APPROVED' && !filterOverdueCadence ? 'border-amber-500 ring-2 ring-amber-100' : 'border-slate-200'
+          }`}
+          title="Filter Approved Policies"
+        >
+          <span className="text-[11px] font-semibold text-amber-700 uppercase tracking-wider block">Approved</span>
+          <span className="text-xl font-bold text-amber-800 omni-mono mt-0.5 block">{approvedCount}</span>
+        </div>
+
+        <div
+          onClick={() => {
+            setFilterStatus('DRAFT');
+            setFilterOverdueCadence(false);
+          }}
+          className={`p-3 bg-white border rounded-xl shadow-2xs cursor-pointer transition-all hover:shadow-xs ${
+            filterStatus === 'DRAFT' && !filterOverdueCadence ? 'border-slate-500 ring-2 ring-slate-100' : 'border-slate-200'
+          }`}
+          title="Filter Draft Policies"
+        >
+          <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider block">Drafts</span>
+          <span className="text-xl font-bold text-slate-700 omni-mono mt-0.5 block">{draftCount}</span>
+        </div>
+
+        <div
+          onClick={() => {
+            setFilterStatus('RETIRED');
+            setFilterOverdueCadence(false);
+          }}
+          className={`p-3 bg-white border rounded-xl shadow-2xs cursor-pointer transition-all hover:shadow-xs ${
+            filterStatus === 'RETIRED' && !filterOverdueCadence ? 'border-slate-500 ring-2 ring-slate-100' : 'border-slate-200'
+          }`}
+          title="Filter Retired Policies"
+        >
+          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Retired</span>
+          <span className="text-xl font-bold text-slate-600 omni-mono mt-0.5 block">{retiredCount}</span>
+        </div>
+
+        <div
+          onClick={() => {
+            setFilterOverdueCadence((prev) => !prev);
+          }}
+          className={`p-3 bg-white border rounded-xl shadow-2xs cursor-pointer transition-all hover:shadow-xs ${
+            filterOverdueCadence ? 'border-rose-500 ring-2 ring-rose-100' : 'border-slate-200'
+          }`}
+          title="Filter Policies Overdue for Review"
+        >
+          <span className="text-[11px] font-semibold text-rose-700 uppercase tracking-wider block">Overdue Review</span>
+          <span className="text-xl font-bold text-rose-800 omni-mono mt-0.5 block">{overdueCadenceCount}</span>
+        </div>
       </div>
 
       {/* Search and Filter Controls */}
@@ -459,15 +782,30 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
           {['ALL', 'DRAFT', 'UNDER_REVIEW', 'APPROVED', 'PUBLISHED', 'RETIRED'].map((st) => (
             <button
               key={st}
-              onClick={() => setFilterStatus(st)}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-t-md transition-colors whitespace-nowrap ${filterStatus === st
+              onClick={() => {
+                setFilterStatus(st);
+                setFilterOverdueCadence(false);
+              }}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-t-md transition-colors whitespace-nowrap ${
+                filterStatus === st && !filterOverdueCadence
                   ? 'bg-white border border-slate-200 border-b-white text-teal-800 -mb-px'
                   : 'text-slate-600 hover:text-slate-900'
-                }`}
+              }`}
             >
               {st.replace('_', ' ')}
             </button>
           ))}
+          {filterOverdueCadence && (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded bg-rose-50 text-rose-800 border border-rose-200">
+              <Clock size={12} /> Overdue Review Only
+              <button
+                onClick={() => setFilterOverdueCadence(false)}
+                className="ml-1 text-rose-600 hover:text-rose-900 font-bold"
+              >
+                ×
+              </button>
+            </span>
+          )}
         </div>
         <div className="relative w-full sm:w-64">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -490,13 +828,15 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
         </div>
       </div>
 
-      {/* Policy List */}
+      {/* Policy List Grid */}
       {loading ? (
         <div className="p-8 text-center text-sm text-slate-500">Loading policies...</div>
       ) : filteredPolicies.length === 0 ? (
         <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-500">
           {searchQuery
             ? `No policies matching search query "${searchQuery}".`
+            : filterOverdueCadence
+            ? 'No policies currently overdue for annual review.'
             : `No policies found for state "${filterStatus}".`}
         </div>
       ) : (
@@ -510,14 +850,15 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <span className="omni-mono text-xs font-bold text-slate-500">{p.code}</span>
                   <span
-                    className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${p.status === 'PUBLISHED'
+                    className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${
+                      p.status === 'PUBLISHED'
                         ? 'bg-emerald-100 text-emerald-800'
                         : p.status === 'APPROVED'
-                          ? 'bg-blue-100 text-blue-800'
-                          : p.status === 'UNDER_REVIEW'
-                            ? 'bg-amber-100 text-amber-800'
-                            : 'bg-slate-100 text-slate-700'
-                      }`}
+                        ? 'bg-blue-100 text-blue-800'
+                        : p.status === 'UNDER_REVIEW'
+                        ? 'bg-amber-100 text-amber-800'
+                        : 'bg-slate-100 text-slate-700'
+                    }`}
                   >
                     {p.status}
                   </span>
@@ -626,7 +967,7 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
             <form onSubmit={handleRejectPolicy} className="space-y-4">
               <p className="text-xs text-slate-600">
                 Rejecting this policy will return its status back to <strong>DRAFT</strong> and increment its revision number.
-                Please provide a rejection reason or revision notes for the author.
+                Please provide revision notes for the author.
               </p>
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -635,7 +976,7 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
                 <textarea
                   required
                   rows={3}
-                  placeholder="e.g. Needs clarification on section 3.2 data retention rules before approval."
+                  placeholder="e.g. Needs clarification on section 3.2 data retention rules."
                   value={rejectionReason}
                   onChange={(e) => setRejectionReason(e.target.value)}
                   className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
@@ -665,130 +1006,302 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
         </div>
       )}
 
-      {/* Create Modal */}
+      {/* Create Modal (with AI Drafting & Document Import) */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 omni-fade-in">
           <div className="bg-white rounded-xl max-w-3xl w-full p-6 shadow-xl max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b pb-3 mb-4">
               <div>
-                <h2 className="text-lg font-bold text-slate-900">Create New Policy Draft</h2>
+                <h2 className="text-lg font-bold text-slate-900">
+                  {createMode === 'ai' ? 'Draft GRC Policy with AI' : 'Create New Policy Draft'}
+                </h2>
                 <p className="text-xs text-slate-500">
-                  Standardized GRC policy document with Markdown authoring, document import, and category assignment.
+                  {createMode === 'ai'
+                    ? 'AI-assisted standard-aligned policy generation using Claude & Gemini with enterprise governance context.'
+                    : 'Standardized GRC policy document with Markdown authoring, document import, and category assignment.'}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowCreateModal(false)}
-                className="text-slate-400 hover:text-slate-600 p-1"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreate} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Policy Code
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. POL-SEC-001"
-                    value={code}
-                    onChange={(e) => setCode(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 omni-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Category
-                  </label>
-                  <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 bg-white"
+              <div className="flex items-center gap-2">
+                <div className="flex rounded-lg border border-slate-200 p-0.5 bg-slate-50">
+                  <button
+                    type="button"
+                    onClick={() => setCreateMode('manual')}
+                    className={`px-2.5 py-1 text-xs font-semibold rounded ${
+                      createMode === 'manual' ? 'bg-white text-slate-800 shadow-2xs' : 'text-slate-500'
+                    }`}
                   >
-                    {categories.map((c) => (
-                      <option key={c.id || c.name} value={c.name}>
-                        {c.name} {c.isDefault ? '(Default)' : ''}
-                      </option>
-                    ))}
-                    {!categories.some((c) => c.name === category) && category && (
-                      <option value={category}>{category}</option>
-                    )}
-                  </select>
+                    Manual
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCreateMode('ai')}
+                    className={`px-2.5 py-1 text-xs font-semibold rounded flex items-center gap-1 ${
+                      createMode === 'ai' ? 'bg-teal-700 text-white shadow-2xs' : 'text-teal-700'
+                    }`}
+                  >
+                    <Sparkles size={12} /> AI Draft
+                  </button>
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Title</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Information Security & Acceptable Use Policy"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Summary / Scope Description
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Mandatory user obligations and security rules"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Review Cadence (Days)
-                  </label>
-                  <input
-                    type="number"
-                    min="30"
-                    max="730"
-                    value={reviewCadenceDays}
-                    onChange={(e) => setReviewCadenceDays(Number(e.target.value))}
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Policy Content & Clauses
-                </label>
-                <PolicyEditor
-                  content={initialContent}
-                  onChange={setInitialContent}
-                  documentTitle={title || code || 'new-policy-draft'}
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg"
+                  className="text-slate-400 hover:text-slate-600 p-1"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-4 py-2 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg disabled:opacity-50"
-                >
-                  {submitting ? 'Creating...' : 'Create Policy Draft'}
+                  <X size={18} />
                 </button>
               </div>
-            </form>
+            </div>
+
+            {/* AI Drafting Assistant Form */}
+            {createMode === 'ai' ? (
+              <div className="space-y-4">
+                <div className="p-3 bg-teal-50/70 border border-teal-100 rounded-lg text-xs text-teal-900 flex items-start gap-2">
+                  <Sparkles size={16} className="text-teal-700 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-semibold block">Enterprise AI Policy Authoring</span>
+                    Claude and Gemini generate complete, structured clauses tailored to your classification, standard benchmarks, and business scope.
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Policy Title <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Cloud Security & Infrastructure Access Policy"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Category
+                    </label>
+                    <select
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 bg-white"
+                    >
+                      {categories.map((c) => (
+                        <option key={c.id || c.name} value={c.name}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Classification
+                    </label>
+                    <select
+                      value={policyType}
+                      onChange={(e) => setPolicyType(e.target.value)}
+                      className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 bg-white"
+                    >
+                      <option value="INTERNAL">Internal (Company-Wide)</option>
+                      <option value="CONFIDENTIAL">Confidential (Restricted)</option>
+                      <option value="EXTERNAL">External (Third Parties)</option>
+                      <option value="PUBLIC">Public</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Applicable Framework
+                    </label>
+                    <select
+                      value={standardOrFramework}
+                      onChange={(e) => setStandardOrFramework(e.target.value)}
+                      className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 bg-white"
+                    >
+                      <option value="ISO 27001:2022">ISO 27001:2022</option>
+                      <option value="SOC 2 Type II">SOC 2 Type II</option>
+                      <option value="NIST CSF 2.0">NIST CSF 2.0</option>
+                      <option value="HIPAA Security Rule">HIPAA Security Rule</option>
+                      <option value="GDPR / Data Privacy">GDPR / Data Privacy</option>
+                      <option value="PCI-DSS v4.0">PCI-DSS v4.0</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Target Audience
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. All Staff, DevOps & SecOps"
+                      value={targetAudience}
+                      onChange={(e) => setTargetAudience(e.target.value)}
+                      className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Specific Requirements or Organizational Mandates (Optional)
+                  </label>
+                  <textarea
+                    rows={3}
+                    placeholder="e.g. Mandatory MFA on all AWS root accounts, AES-256 at rest, quarterly key rotation, 30-day incident log retention."
+                    value={keyRequirements}
+                    onChange={(e) => setKeyRequirements(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setCreateMode('manual')}
+                    className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg"
+                  >
+                    Switch to Manual
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleGenerateAiDraft}
+                    disabled={generatingAiDraft || !title.trim()}
+                    className="px-4 py-2 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    <Sparkles size={14} className={generatingAiDraft ? 'animate-spin' : ''} />
+                    {generatingAiDraft ? 'Drafting Policy with AI...' : 'Generate Policy Draft'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* Manual Policy Creation Form */
+              <form onSubmit={handleCreate} className="space-y-4">
+                {aiProviderUsed && (
+                  <div className="flex items-center justify-between p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800">
+                    <span className="flex items-center gap-1.5 font-semibold">
+                      <Sparkles size={14} /> Draft populated using {aiProviderUsed}. Review and save.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setAiProviderUsed(null)}
+                      className="text-emerald-700 hover:text-emerald-900"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Policy Code
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. POL-SEC-001"
+                      value={code}
+                      onChange={(e) => setCode(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 omni-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Category
+                    </label>
+                    <select
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 bg-white"
+                    >
+                      {categories.map((c) => (
+                        <option key={c.id || c.name} value={c.name}>
+                          {c.name} {c.isDefault ? '(Default)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Title</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Information Security & Acceptable Use Policy"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Summary / Scope Description
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Mandatory user obligations and security rules"
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Review Cadence (Days)
+                    </label>
+                    <input
+                      type="number"
+                      min="30"
+                      max="730"
+                      value={reviewCadenceDays}
+                      onChange={(e) => setReviewCadenceDays(Number(e.target.value))}
+                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-slate-700">
+                      Policy Content & Clauses
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => docImportFileRef.current?.click()}
+                      className="text-xs font-semibold text-teal-700 hover:text-teal-900 flex items-center gap-1"
+                    >
+                      <Upload size={12} /> Import Document (.md / .docx)
+                    </button>
+                  </div>
+                  <PolicyEditor
+                    content={initialContent}
+                    onChange={setInitialContent}
+                    documentTitle={title || code || 'new-policy-draft'}
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateModal(false)}
+                    className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="px-4 py-2 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg disabled:opacity-50"
+                  >
+                    {submitting ? 'Creating...' : 'Create Policy Draft'}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
@@ -868,29 +1381,222 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
         </div>
       )}
 
+      {/* Share Policy Modal */}
+      {showShareModal && selectedPolicy && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 omni-fade-in">
+          <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-xl">
+            <div className="flex items-center justify-between border-b pb-3 mb-4">
+              <div className="flex items-center gap-2 text-teal-800">
+                <Share2 size={18} />
+                <h2 className="text-base font-bold text-slate-900">Share Policy with Stakeholders</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowShareModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <form onSubmit={handleSharePolicy} className="space-y-4">
+              <p className="text-xs text-slate-600">
+                Send an internal notification and email alert linking directly to <strong>{selectedPolicy.code} - {selectedPolicy.title}</strong>.
+              </p>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Recipient Email Addresses (comma separated)
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. auditor@enterprise.com, ciso@enterprise.com"
+                  value={shareEmails}
+                  onChange={(e) => setShareEmails(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Custom Message (Optional)
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="e.g. Please review section 4 on access control requirements before the upcoming audit."
+                  value={shareCustomMessage}
+                  onChange={(e) => setShareCustomMessage(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowShareModal(false)}
+                  className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingShare}
+                  className="px-4 py-1.5 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  <Send size={13} />
+                  {submittingShare ? 'Sending...' : 'Send Notification'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* AI Validation Results Modal */}
+      {showValidationModal && validationResult && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 omni-fade-in">
+          <div className="bg-white rounded-xl max-w-2xl w-full p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b pb-3 mb-4">
+              <div className="flex items-center gap-2">
+                <Sparkles size={18} className="text-teal-700" />
+                <h2 className="text-base font-bold text-slate-900">
+                  AI Compliance Validation Report
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowValidationModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Score strip */}
+              <div className="flex items-center justify-between p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
+                <div>
+                  <span className="text-xs text-slate-500 font-medium block">Audit Readiness Score</span>
+                  <div className="flex items-baseline gap-2 mt-0.5">
+                    <span className="text-2xl font-bold text-slate-900 omni-mono">
+                      {validationResult.overallScore}%
+                    </span>
+                    <span
+                      className={`text-xs font-bold px-2 py-0.5 rounded ${
+                        validationResult.status === 'PASSED'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : validationResult.status === 'NEEDS_REVISION'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-rose-100 text-rose-800'
+                      }`}
+                    >
+                      {validationResult.status}
+                    </span>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-[11px] text-slate-400 block font-mono">
+                    Model: {validationResult.modelUsed}
+                  </span>
+                  <span className="text-[10px] text-slate-400">
+                    {new Date(validationResult.validatedAt).toLocaleTimeString()}
+                  </span>
+                </div>
+              </div>
+
+              {/* Findings */}
+              <div>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">
+                  Validation Findings & Actionable Gaps ({validationResult.findings.length})
+                </h4>
+                {validationResult.findings.length === 0 ? (
+                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 text-center font-medium">
+                    No compliance gaps detected. The policy meets all standard GRC requirements!
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {validationResult.findings.map((f, idx) => (
+                      <div
+                        key={idx}
+                        className="p-3 bg-white border border-slate-200 rounded-lg text-xs shadow-2xs space-y-1"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold text-slate-900">{f.title}</span>
+                          <span
+                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                              f.severity === 'HIGH'
+                                ? 'bg-rose-100 text-rose-800'
+                                : f.severity === 'MEDIUM'
+                                ? 'bg-amber-100 text-amber-800'
+                                : f.severity === 'LOW'
+                                ? 'bg-sky-100 text-sky-800'
+                                : 'bg-slate-100 text-slate-700'
+                            }`}
+                          >
+                            {f.severity}
+                          </span>
+                        </div>
+                        <p className="text-slate-600 text-[11.5px]">{f.description}</p>
+                        <p className="text-teal-800 text-[11px] font-medium pt-0.5">
+                          <strong>Recommendation:</strong> {f.recommendation}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end pt-3 border-t">
+                <button
+                  type="button"
+                  onClick={() => setShowValidationModal(false)}
+                  className="px-4 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg"
+                >
+                  Close Report
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Policy Details & Editor Modal */}
       {selectedPolicy && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 omni-fade-in">
-          <div className="bg-white rounded-xl max-w-3xl w-full p-6 shadow-xl max-h-[92vh] overflow-y-auto flex flex-col">
+          <div className="bg-white rounded-xl max-w-4xl w-full p-6 shadow-xl max-h-[92vh] overflow-y-auto flex flex-col">
             <div className="flex items-center justify-between border-b pb-3 mb-4">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-mono font-bold text-teal-800 bg-teal-100 px-2 py-0.5 rounded border border-teal-200">
                   {selectedPolicy.code}
                 </span>
                 <span
-                  className={`text-xs font-semibold px-2 py-0.5 rounded ${selectedPolicy.status === 'PUBLISHED'
+                  className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                    selectedPolicy.status === 'PUBLISHED'
                       ? 'bg-emerald-100 text-emerald-800'
                       : selectedPolicy.status === 'APPROVED'
-                        ? 'bg-blue-100 text-blue-800'
-                        : selectedPolicy.status === 'UNDER_REVIEW'
-                          ? 'bg-amber-100 text-amber-800'
-                          : 'bg-slate-100 text-slate-700'
-                    }`}
+                      ? 'bg-blue-100 text-blue-800'
+                      : selectedPolicy.status === 'UNDER_REVIEW'
+                      ? 'bg-amber-100 text-amber-800'
+                      : 'bg-slate-100 text-slate-700'
+                  }`}
                 >
                   {selectedPolicy.status}
                 </span>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleValidatePolicy(selectedPolicy.id)}
+                  disabled={validatingAi}
+                  className="px-2.5 py-1 text-xs font-semibold text-teal-800 bg-teal-50 border border-teal-200 hover:bg-teal-100 rounded flex items-center gap-1 transition"
+                  title="Run AI completeness & compliance gap audit"
+                >
+                  <Sparkles size={13} className={validatingAi ? 'animate-spin' : ''} />
+                  {validatingAi ? 'Auditing...' : 'Validate with AI'}
+                </button>
+                <button
+                  onClick={() => setShowShareModal(true)}
+                  className="px-2.5 py-1 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded flex items-center gap-1 transition"
+                  title="Share policy via email notification"
+                >
+                  <Share2 size={13} /> Share
+                </button>
                 {selectedPolicy.status === 'DRAFT' && !isEditingDraft && (
                   <button
                     onClick={() => setIsEditingDraft(true)}
@@ -937,9 +1643,6 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
                           {c.name}
                         </option>
                       ))}
-                      {!categories.some((c) => c.name === editCategory) && editCategory && (
-                        <option value={editCategory}>{editCategory}</option>
-                      )}
                     </select>
                   </div>
                 </div>
@@ -1025,18 +1728,34 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
 
                 {/* Acknowledgement Tracking & Formal Approval Panel */}
                 <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl mb-4 space-y-3">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
                       Attestation & Acknowledgement Tracking
                     </span>
-                    <button
-                      onClick={handleSubmitApproval}
-                      disabled={submittingApproval}
-                      className="px-3 py-1 text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white rounded-lg flex items-center gap-1.5 transition"
-                    >
-                      <CheckCircle2 size={13} />
-                      {submittingApproval ? 'Submitting...' : 'Submit for Formal Approval'}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {approvalWorkflows.length > 0 && (
+                        <select
+                          value={selectedWorkflowId}
+                          onChange={(e) => setSelectedWorkflowId(e.target.value)}
+                          className="text-xs border border-slate-300 rounded px-2 py-1 bg-white"
+                        >
+                          <option value="">Default Workflow</option>
+                          {approvalWorkflows.map((w: any) => (
+                            <option key={w.id} value={w.id}>
+                              {w.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      <button
+                        onClick={handleSubmitApproval}
+                        disabled={submittingApproval}
+                        className="px-3 py-1 text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white rounded-lg flex items-center gap-1.5 transition"
+                      >
+                        <CheckCircle2 size={13} />
+                        {submittingApproval ? 'Submitting...' : 'Submit for Formal Approval'}
+                      </button>
+                    </div>
                   </div>
 
                   {loadingAckSummary ? (
@@ -1103,10 +1822,11 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
                             <div className="flex items-center gap-2">
                               <span className="font-semibold text-slate-900">{mc.controlName}</span>
                               <span
-                                className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${mc.status === MappingStatus.APPROVED
+                                className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                  mc.status === MappingStatus.APPROVED
                                     ? 'bg-emerald-100 text-emerald-800'
                                     : 'bg-slate-100 text-slate-700'
-                                  }`}
+                                }`}
                               >
                                 {mc.status}
                               </span>
@@ -1161,11 +1881,24 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
                             downloadPolicyContent(
                               selectedPolicy,
                               selectedPolicy.publishedVersion?.content || '',
+                              'md',
                             )
                           }
                           className="px-2.5 py-1 text-xs text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50 flex items-center gap-1"
                         >
                           <Download size={13} /> Export .md
+                        </button>
+                        <button
+                          onClick={() =>
+                            downloadPolicyContent(
+                              selectedPolicy,
+                              selectedPolicy.publishedVersion?.content || '',
+                              'doc',
+                            )
+                          }
+                          className="px-2.5 py-1 text-xs text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50 flex items-center gap-1"
+                        >
+                          <FileText size={13} /> Export .doc
                         </button>
                         <button
                           onClick={() => handleAttest(selectedPolicy.publishedVersion!.id)}
@@ -1177,7 +1910,7 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
                     </div>
                     <PolicyEditor
                       content={selectedPolicy.publishedVersion.content}
-                      onChange={() => { }}
+                      onChange={() => {}}
                       readOnly={true}
                     />
                   </div>
@@ -1187,21 +1920,36 @@ export function PolicyListView({ initialStatus }: PolicyListViewProps = {}) {
                       <span>
                         Draft Version <strong>v{selectedPolicy.versions[0].versionNumber}</strong> ({selectedPolicy.status})
                       </span>
-                      <button
-                        onClick={() =>
-                          downloadPolicyContent(
-                            selectedPolicy,
-                            selectedPolicy.versions?.[0]?.content || '',
-                          )
-                        }
-                        className="px-2.5 py-1 text-xs text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50 flex items-center gap-1"
-                      >
-                        <Download size={13} /> Export .md
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() =>
+                            downloadPolicyContent(
+                              selectedPolicy,
+                              selectedPolicy.versions?.[0]?.content || '',
+                              'md',
+                            )
+                          }
+                          className="px-2.5 py-1 text-xs text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50 flex items-center gap-1"
+                        >
+                          <Download size={13} /> Export .md
+                        </button>
+                        <button
+                          onClick={() =>
+                            downloadPolicyContent(
+                              selectedPolicy,
+                              selectedPolicy.versions?.[0]?.content || '',
+                              'doc',
+                            )
+                          }
+                          className="px-2.5 py-1 text-xs text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50 flex items-center gap-1"
+                        >
+                          <FileText size={13} /> Export .doc
+                        </button>
+                      </div>
                     </div>
                     <PolicyEditor
                       content={selectedPolicy.versions[0].content}
-                      onChange={() => { }}
+                      onChange={() => {}}
                       readOnly={true}
                     />
                   </div>

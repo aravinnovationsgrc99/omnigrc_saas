@@ -22,6 +22,21 @@ export class ClaudeProvider implements AiProvider {
     return Boolean(this.anthropic);
   }
 
+  async generateText(systemPrompt: string, userPrompt: string): Promise<string> {
+    if (!this.anthropic) {
+      throw new Error('Claude API client not initialized.');
+    }
+    const model = process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001';
+    const response = await this.anthropic.messages.create({
+      model,
+      max_tokens: 3500,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }],
+    });
+    const textBlock = response.content.find((b) => b.type === 'text') as Anthropic.TextBlock | undefined;
+    return textBlock?.text || '';
+  }
+
   async suggestMappings(params: {
     controlName: string;
     controlDescription: string;

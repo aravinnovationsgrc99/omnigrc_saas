@@ -49,7 +49,11 @@ function getDueDateBadgeClass(dueDateStr?: string | null, status?: TaskStatus) {
   }
 }
 
-export function ComplianceBoardView() {
+export interface ComplianceBoardViewProps {
+  initialFilter?: string;
+}
+
+export function ComplianceBoardView({ initialFilter }: ComplianceBoardViewProps = {}) {
   const { showToast } = useToast();
   const [tasks, setTasks] = useState<ComplianceTaskDto[]>([]);
   const [summary, setSummary] = useState<ComplianceTaskSummaryDto>({ overdue: 0, due30: 0, due60: 0, due90: 0, totalOpen: 0 });
@@ -58,7 +62,14 @@ export function ComplianceBoardView() {
 
   // Filters & Search
   const [search, setSearch] = useState('');
+  const [activeFilter, setActiveFilter] = useState<string>(initialFilter || 'ALL');
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (initialFilter) {
+      setActiveFilter(initialFilter);
+    }
+  }, [initialFilter]);
 
   // Drawer state
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -148,6 +159,17 @@ export function ComplianceBoardView() {
   };
 
   const filteredTasks = tasks.filter((t) => {
+    if (activeFilter === 'overdue') {
+      const isOverdue = t.dueDate && new Date(t.dueDate) < new Date() && t.status !== TaskStatus.COMPLETE;
+      if (!isOverdue) return false;
+    } else if (activeFilter === 'upcoming') {
+      const now = new Date();
+      const in30d = t.dueDate && new Date(t.dueDate) >= now && (new Date(t.dueDate).getTime() - now.getTime()) <= 30 * 24 * 60 * 60 * 1000 && t.status !== TaskStatus.COMPLETE;
+      if (!in30d) return false;
+    } else if (activeFilter === 'completed') {
+      if (t.status !== TaskStatus.COMPLETE) return false;
+    }
+
     if (!search.trim()) return true;
     const s = search.toLowerCase().trim();
     return (
@@ -163,7 +185,21 @@ export function ComplianceBoardView() {
       {/* Header */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 mb-5">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Compliance Board</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Compliance Board</h1>
+            {activeFilter !== 'ALL' && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-teal-100 text-teal-800 border border-teal-200">
+                Filter: {activeFilter}
+                <button
+                  onClick={() => setActiveFilter('ALL')}
+                  className="ml-1 text-teal-600 hover:text-teal-900 font-bold"
+                  title="Clear filter"
+                >
+                  ×
+                </button>
+              </span>
+            )}
+          </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
             Track compliance tasks, drag-and-drop workflow status, link Phase 4 Controls, and monitor 30/60/90 day rolling deadlines.
           </p>
@@ -178,11 +214,16 @@ export function ComplianceBoardView() {
 
       {/* 30/60/90 Day Dashboard Strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 mb-6">
-        <div style={{
-          flex: 1, minWidth: 160, background: '#FFFFFF', border: '1px solid #F1C7CC', borderRadius: 10, padding: '16px 20px',
-        }}>
+        <div
+          onClick={() => setActiveFilter(activeFilter === 'overdue' ? 'ALL' : 'overdue')}
+          className={`cursor-pointer transition-all ${activeFilter === 'overdue' ? 'ring-2 ring-rose-600 shadow-md' : 'hover:shadow-sm'}`}
+          style={{
+            flex: 1, minWidth: 160, background: '#FFFFFF', border: '1px solid #F1C7CC', borderRadius: 10, padding: '16px 20px',
+          }}
+          title="Click to filter overdue tasks"
+        >
           <div style={{ fontSize: 12, fontWeight: 600, color: '#801F2B', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-            Overdue Tasks
+            Overdue Tasks {activeFilter === 'overdue' && '✓'}
           </div>
           <div className="omni-mono" style={{ fontSize: 26, fontWeight: 700, color: '#801F2B', marginTop: 4 }}>
             {summary.overdue}
@@ -190,11 +231,16 @@ export function ComplianceBoardView() {
           <div style={{ fontSize: 11.5, color: '#8B95A1', marginTop: 2 }}>Requires immediate action</div>
         </div>
 
-        <div style={{
-          flex: 1, minWidth: 160, background: '#FFFFFF', border: '1px solid #F8E2BC', borderRadius: 10, padding: '16px 20px',
-        }}>
+        <div
+          onClick={() => setActiveFilter(activeFilter === 'upcoming' ? 'ALL' : 'upcoming')}
+          className={`cursor-pointer transition-all ${activeFilter === 'upcoming' ? 'ring-2 ring-amber-600 shadow-md' : 'hover:shadow-sm'}`}
+          style={{
+            flex: 1, minWidth: 160, background: '#FFFFFF', border: '1px solid #F8E2BC', borderRadius: 10, padding: '16px 20px',
+          }}
+          title="Click to filter tasks due in 30 days"
+        >
           <div style={{ fontSize: 12, fontWeight: 600, color: '#8F5900', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-            Due in 30 Days
+            Due in 30 Days {activeFilter === 'upcoming' && '✓'}
           </div>
           <div className="omni-mono" style={{ fontSize: 26, fontWeight: 700, color: '#8F5900', marginTop: 4 }}>
             {summary.due30}
@@ -202,9 +248,13 @@ export function ComplianceBoardView() {
           <div style={{ fontSize: 11.5, color: '#8B95A1', marginTop: 2 }}>Short-term deliverables</div>
         </div>
 
-        <div style={{
-          flex: 1, minWidth: 160, background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10, padding: '16px 20px',
-        }}>
+        <div
+          onClick={() => setActiveFilter(activeFilter === 'due60' ? 'ALL' : 'due60')}
+          className={`cursor-pointer transition-all ${activeFilter === 'due60' ? 'ring-2 ring-slate-600 shadow-md' : 'hover:shadow-sm'}`}
+          style={{
+            flex: 1, minWidth: 160, background: '#FFFFFF', border: '1px solid #E2E6E4', borderRadius: 10, padding: '16px 20px',
+          }}
+        >
           <div style={{ fontSize: 12, fontWeight: 600, color: '#5B6672', textTransform: 'uppercase', letterSpacing: 0.5 }}>
             Due in 60 Days
           </div>
@@ -214,16 +264,21 @@ export function ComplianceBoardView() {
           <div style={{ fontSize: 11.5, color: '#8B95A1', marginTop: 2 }}>Medium-term roadmap</div>
         </div>
 
-        <div style={{
-          flex: 1, minWidth: 160, background: '#FFFFFF', border: '1px solid #BEE3E0', borderRadius: 10, padding: '16px 20px',
-        }}>
+        <div
+          onClick={() => setActiveFilter(activeFilter === 'completed' ? 'ALL' : 'completed')}
+          className={`cursor-pointer transition-all ${activeFilter === 'completed' ? 'ring-2 ring-teal-600 shadow-md' : 'hover:shadow-sm'}`}
+          style={{
+            flex: 1, minWidth: 160, background: '#FFFFFF', border: '1px solid #BEE3E0', borderRadius: 10, padding: '16px 20px',
+          }}
+          title="Click to filter completed tasks"
+        >
           <div style={{ fontSize: 12, fontWeight: 600, color: '#0C5A56', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-            Due in 90 Days
+            Completed Tasks {activeFilter === 'completed' && '✓'}
           </div>
           <div className="omni-mono" style={{ fontSize: 26, fontWeight: 700, color: '#0C5A56', marginTop: 4 }}>
-            {summary.due90}
+            {tasks.filter((t) => t.status === TaskStatus.COMPLETE).length}
           </div>
-          <div style={{ fontSize: 11.5, color: '#8B95A1', marginTop: 2 }}>Quarterly targets</div>
+          <div style={{ fontSize: 11.5, color: '#8B95A1', marginTop: 2 }}>Fulfilled obligations</div>
         </div>
       </div>
 

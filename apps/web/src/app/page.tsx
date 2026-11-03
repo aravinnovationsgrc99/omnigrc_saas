@@ -182,17 +182,38 @@ export default function MainPage() {
                     onNavigateToRisk={(assetId) => navigateToView('risk', { assetId })}
                   />
                 )}
-                {view === 'vulnerabilities' && <VulnerabilityListView />}
+                {view === 'vulnerabilities' && (
+                  <VulnerabilityListView
+                    initialSeverity={viewParams?.initialSeverity || viewParams?.severity}
+                    initialStatus={viewParams?.initialStatus || viewParams?.status}
+                    initialFilter={viewParams?.initialFilter || viewParams?.filter}
+                  />
+                )}
                 {view === 'incidents' && <IncidentListView />}
                 {view === 'remediation' && <RemediationView />}
                 {view === 'controls' && <ControlMappingView onNavigateToView={(v) => navigateToView(v)} />}
                 {view === 'frameworks' && <FrameworkLibraryView />}
-                {view === 'policies' && <PolicyListView initialStatus={viewParams?.status} />}
+                {view === 'policies' && (
+                  <PolicyListView
+                    initialStatus={viewParams?.initialStatus || viewParams?.status}
+                    initialFilter={viewParams?.initialFilter || viewParams?.filter}
+                    initialTab={viewParams?.initialTab || viewParams?.tab}
+                  />
+                )}
                 {view === 'approvals' && <ApprovalCenterView />}
-                {view === 'audits' && <AuditListView />}
+                {view === 'audits' && (
+                  <AuditListView
+                    initialStatus={viewParams?.initialStatus || viewParams?.status}
+                    initialTab={viewParams?.initialTab || viewParams?.tab}
+                  />
+                )}
                 {view === 'vendors' && <VendorListView />}
                 {view === 'evidence' && <EvidenceVaultView />}
-                {view === 'board' && <ComplianceBoardView />}
+                {view === 'board' && (
+                  <ComplianceBoardView
+                    initialFilter={viewParams?.initialFilter || viewParams?.filter}
+                  />
+                )}
                 {view === 'intelligence' && (
                   <GrcIntelligenceView
                     onNavigateToView={(v, params) => navigateToView(v, params)}

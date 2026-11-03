@@ -56,7 +56,12 @@ interface OrgMemberOption {
   role?: string;
 }
 
-export function AuditListView() {
+export interface AuditListViewProps {
+  initialStatus?: string;
+  initialTab?: string;
+}
+
+export function AuditListView({ initialStatus, initialTab }: AuditListViewProps = {}) {
   const { addToast } = useToast();
   let currentUser: any = null;
   try {
@@ -72,7 +77,11 @@ export function AuditListView() {
   const [submittingReopen, setSubmittingReopen] = useState(false);
   const toastRef = React.useRef(addToast);
   toastRef.current = addToast;
-  const [activeTab, setActiveTab] = useState<'plans' | 'assessments' | 'findings'>('plans');
+  const [activeTab, setActiveTab] = useState<'plans' | 'assessments' | 'findings'>(
+    (initialTab as any) === 'findings' || (initialTab as any) === 'assessments'
+      ? (initialTab as any)
+      : 'plans'
+  );
   const [workspaceTab, setWorkspaceTab] = useState<'overview' | 'execution' | 'findings' | 'capas' | 'evidence' | 'completion'>('overview');
   const [plans, setPlans] = useState<AuditPlanDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -90,8 +99,23 @@ export function AuditListView() {
 
   // List Filters
   const [filterFrameworkId, setFilterFrameworkId] = useState<string>('');
-  const [filterStatus, setFilterStatus] = useState<string>('');
+  const [filterStatus, setFilterStatus] = useState<string>(initialStatus || '');
   const [filterSearch, setFilterSearch] = useState<string>('');
+
+  useEffect(() => {
+    if (initialTab && ['plans', 'assessments', 'findings'].includes(initialTab)) {
+      setActiveTab(initialTab as any);
+    }
+  }, [initialTab]);
+
+  useEffect(() => {
+    if (initialStatus) {
+      setFilterStatus(initialStatus);
+      if (initialTab === 'findings') {
+        setFindingFilterStatus(initialStatus);
+      }
+    }
+  }, [initialStatus, initialTab]);
 
   // Form State - Audit Plan (Dynamic Scope)
   const [planTitle, setPlanTitle] = useState('');
