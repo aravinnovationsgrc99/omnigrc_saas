@@ -23,6 +23,7 @@ import {
   EvidenceScanStatus,
   PaginatedAuditPlansDto,
   PaginatedAuditFindingsDto,
+  AuditSummaryDto,
   calculateAuditScore,
   formatOwnerDisplay,
 } from '@omnigrc/shared';
@@ -101,6 +102,10 @@ export function AuditListView({ initialStatus, initialTab }: AuditListViewProps 
   const [filterFrameworkId, setFilterFrameworkId] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<string>(initialStatus || '');
   const [filterSearch, setFilterSearch] = useState<string>('');
+
+  // Real Database Metrics & Status Summary
+  const [summary, setSummary] = useState<AuditSummaryDto | null>(null);
+  const [loadingSummary, setLoadingSummary] = useState(true);
 
   useEffect(() => {
     if (initialTab && ['plans', 'assessments', 'findings'].includes(initialTab)) {
@@ -243,6 +248,45 @@ export function AuditListView({ initialStatus, initialTab }: AuditListViewProps 
   useEffect(() => {
     fetchPlans();
   }, [fetchPlans]);
+
+  // Fetch authoritative audit status summary directly from DB
+  const fetchSummary = useCallback(async () => {
+    setLoadingSummary(true);
+    try {
+      const params = new URLSearchParams();
+      if (filterFrameworkId) params.set('frameworkId', filterFrameworkId);
+      const qs = params.toString() ? `?${params.toString()}` : '';
+      const res = await apiRequest<AuditSummaryDto>(`/business-audits/summary${qs}`);
+      setSummary(res);
+    } catch {
+      try {
+        const overview = await apiRequest<any>('/metrics/overview');
+        if (overview?.audits) {
+          const a = overview.audits;
+          const bps = a.byPlanStatus || {};
+          setSummary({
+            total: a.totalPlans || 0,
+            inProgress: bps.IN_PROGRESS || 0,
+            completed: bps.COMPLETED || 0,
+            planned: bps.PLANNED || 0,
+            draft: bps.DRAFT || 0,
+            archived: bps.ARCHIVED || 0,
+            findingsTotal: a.findingsTotal || 0,
+            findingsOpen: a.findingsOpenCount || 0,
+            capaOpen: a.capaOpenCount || 0,
+          });
+        }
+      } catch {
+        // graceful fallback
+      }
+    } finally {
+      setLoadingSummary(false);
+    }
+  }, [filterFrameworkId]);
+
+  useEffect(() => {
+    fetchSummary();
+  }, [fetchSummary]);
 
   // Fetch all findings
   const fetchFindings = useCallback(async () => {
@@ -413,6 +457,7 @@ export function AuditListView({ initialStatus, initialTab }: AuditListViewProps 
       });
       addToast('Audit Plan successfully marked as COMPLETED and finalized!', 'success');
       await fetchPlans();
+      fetchSummary();
       if (selectedPlan && selectedPlan.id === planId) {
         const updated = await apiRequest<AuditPlanDto>(`/business-audits/plans/${planId}`);
         setSelectedPlan(updated);
@@ -535,6 +580,7 @@ export function AuditListView({ initialStatus, initialTab }: AuditListViewProps 
       setSelectedVersionId('');
       setSelectedReferenceIds([]);
       fetchPlans();
+      fetchSummary();
     } catch (err: any) {
       addToast(`Failed to create plan: ${err.message}`, 'error');
     }
@@ -551,6 +597,7 @@ export function AuditListView({ initialStatus, initialTab }: AuditListViewProps 
       });
       addToast('Audit Assessment execution run started.', 'success');
       await fetchPlans();
+      fetchSummary();
       if (selectedPlan && selectedPlan.id === planId) {
         const updated = await apiRequest<AuditPlanDto>(`/business-audits/plans/${planId}`);
         setSelectedPlan(updated);
@@ -1025,6 +1072,14 @@ export function AuditListView({ initialStatus, initialTab }: AuditListViewProps 
       })
     : null;
   const eligibility = selectedPlan ? checkCompletionEligibility(selectedPlan) : null;
+
+  // Real DB Metrics with graceful fallback
+  const totalCount = summary ? summary.total : plans.length;
+  const activeCount = summary ? summary.inProgress : plans.filter((p) => p.status === 'IN_PROGRESS').length;
+  const plannedCount = summary ? summary.planned : plans.filter((p) => p.status === 'PLANNED').length;
+  const completedCount = summary ? summary.completed : plans.filter((p) => p.status === 'COMPLETED').length;
+  const draftCount = summary ? summary.draft : plans.filter((p) => p.status === 'DRAFT').length;
+  const findingsOpenCount = summary ? summary.findingsOpen : findings.filter((f) => f.status === 'OPEN' || f.status === 'IN_REMEDIATION' || f.status === 'READY_FOR_VERIFICATION').length;
 
   return (
     <>
@@ -1918,6 +1973,129 @@ export function AuditListView({ initialStatus, initialTab }: AuditListViewProps 
         </button>
       </div>
 
+      {/* Audit Status Overview Metrics Strip (Clickable Drilldown) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div
+          onClick={() => {
+            setActiveTab('plans');
+            setFilterStatus('');
+          }}
+          className={`p-3.5 bg-white border rounded-xl shadow-2xs cursor-pointer transition-all hover:shadow-xs ${
+            activeTab === 'plans' && !filterStatus
+              ? 'border-teal-500 ring-2 ring-teal-100 bg-teal-50/20'
+              : 'border-slate-200 hover:border-slate-300'
+          }`}
+          title="Show All Audit Plans"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Total Plans</span>
+            <ClipboardList className="w-3.5 h-3.5 text-slate-400" />
+          </div>
+          <span className="text-2xl font-bold text-slate-900 omni-mono mt-1 block">{totalCount}</span>
+          <span className="text-[11px] text-slate-400 mt-0.5 block">All scoped plans</span>
+        </div>
+
+        <div
+          onClick={() => {
+            setActiveTab('plans');
+            setFilterStatus(filterStatus === 'IN_PROGRESS' && activeTab === 'plans' ? '' : 'IN_PROGRESS');
+          }}
+          className={`p-3.5 bg-white border rounded-xl shadow-2xs cursor-pointer transition-all hover:shadow-xs ${
+            activeTab === 'plans' && filterStatus === 'IN_PROGRESS'
+              ? 'border-sky-500 ring-2 ring-sky-100 bg-sky-50/20'
+              : 'border-slate-200 hover:border-slate-300'
+          }`}
+          title="Filter Active / In Progress Audits"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-sky-700 uppercase tracking-wider block">Active</span>
+            <Play className="w-3.5 h-3.5 text-sky-600 fill-sky-600" />
+          </div>
+          <span className="text-2xl font-bold text-sky-800 omni-mono mt-1 block">{activeCount}</span>
+          <span className="text-[11px] text-sky-600/70 mt-0.5 block">Execution underway</span>
+        </div>
+
+        <div
+          onClick={() => {
+            setActiveTab('plans');
+            setFilterStatus(filterStatus === 'PLANNED' && activeTab === 'plans' ? '' : 'PLANNED');
+          }}
+          className={`p-3.5 bg-white border rounded-xl shadow-2xs cursor-pointer transition-all hover:shadow-xs ${
+            activeTab === 'plans' && filterStatus === 'PLANNED'
+              ? 'border-amber-500 ring-2 ring-amber-100 bg-amber-50/20'
+              : 'border-slate-200 hover:border-slate-300'
+          }`}
+          title="Filter Planned Audits"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-amber-700 uppercase tracking-wider block">Planned</span>
+            <Calendar className="w-3.5 h-3.5 text-amber-600" />
+          </div>
+          <span className="text-2xl font-bold text-amber-800 omni-mono mt-1 block">{plannedCount}</span>
+          <span className="text-[11px] text-amber-600/70 mt-0.5 block">Scheduled & scoped</span>
+        </div>
+
+        <div
+          onClick={() => {
+            setActiveTab('plans');
+            setFilterStatus(filterStatus === 'COMPLETED' && activeTab === 'plans' ? '' : 'COMPLETED');
+          }}
+          className={`p-3.5 bg-white border rounded-xl shadow-2xs cursor-pointer transition-all hover:shadow-xs ${
+            activeTab === 'plans' && filterStatus === 'COMPLETED'
+              ? 'border-emerald-500 ring-2 ring-emerald-100 bg-emerald-50/20'
+              : 'border-slate-200 hover:border-slate-300'
+          }`}
+          title="Filter Completed Audits"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wider block">Completed</span>
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+          </div>
+          <span className="text-2xl font-bold text-emerald-800 omni-mono mt-1 block">{completedCount}</span>
+          <span className="text-[11px] text-emerald-600/70 mt-0.5 block">Audited & closed</span>
+        </div>
+
+        <div
+          onClick={() => {
+            setActiveTab('plans');
+            setFilterStatus(filterStatus === 'DRAFT' && activeTab === 'plans' ? '' : 'DRAFT');
+          }}
+          className={`p-3.5 bg-white border rounded-xl shadow-2xs cursor-pointer transition-all hover:shadow-xs ${
+            activeTab === 'plans' && filterStatus === 'DRAFT'
+              ? 'border-slate-500 ring-2 ring-slate-100 bg-slate-50/50'
+              : 'border-slate-200 hover:border-slate-300'
+          }`}
+          title="Filter Draft Audits"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider block">Draft</span>
+            <FileText className="w-3.5 h-3.5 text-slate-500" />
+          </div>
+          <span className="text-2xl font-bold text-slate-700 omni-mono mt-1 block">{draftCount}</span>
+          <span className="text-[11px] text-slate-400 mt-0.5 block">In authoring</span>
+        </div>
+
+        <div
+          onClick={() => {
+            setActiveTab('findings');
+            setFindingFilterStatus(findingFilterStatus === 'OPEN' ? '' : 'OPEN');
+          }}
+          className={`p-3.5 bg-white border rounded-xl shadow-2xs cursor-pointer transition-all hover:shadow-xs ${
+            activeTab === 'findings'
+              ? 'border-rose-500 ring-2 ring-rose-100 bg-rose-50/20'
+              : 'border-slate-200 hover:border-slate-300'
+          }`}
+          title="View Open Findings & Verification"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-rose-700 uppercase tracking-wider block">Open Findings</span>
+            <AlertOctagon className="w-3.5 h-3.5 text-rose-600" />
+          </div>
+          <span className="text-2xl font-bold text-rose-800 omni-mono mt-1 block">{findingsOpenCount}</span>
+          <span className="text-[11px] text-rose-600/70 mt-0.5 block">Requires remediation</span>
+        </div>
+      </div>
+
       {/* Catalog Tabs */}
       <div className="flex items-center gap-2 border-b border-slate-200 overflow-x-auto pb-1 omni-scroll">
         {[
@@ -1958,6 +2136,7 @@ export function AuditListView({ initialStatus, initialTab }: AuditListViewProps 
               >
                 <option value="">All Lifecycle Statuses</option>
                 <option value="DRAFT">Draft</option>
+                <option value="PLANNED">Planned</option>
                 <option value="IN_PROGRESS">In Progress</option>
                 <option value="COMPLETED">Completed</option>
                 <option value="ARCHIVED">Archived</option>
@@ -1983,8 +2162,17 @@ export function AuditListView({ initialStatus, initialTab }: AuditListViewProps 
               </div>
             </div>
 
-            <div className="text-xs text-slate-500 font-medium">
-              Showing <span className="font-bold text-slate-800">{plans.length}</span> plan(s)
+            <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
+              {filterStatus && (
+                <button
+                  onClick={() => setFilterStatus('')}
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-200 hover:bg-teal-100 transition-colors"
+                  title="Clear status filter"
+                >
+                  Status: {filterStatus} <X size={11} />
+                </button>
+              )}
+              <span>Showing <span className="font-bold text-slate-800">{plans.length}</span> plan(s)</span>
             </div>
           </div>
 

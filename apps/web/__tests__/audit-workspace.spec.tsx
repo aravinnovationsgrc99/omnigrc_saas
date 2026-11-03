@@ -655,6 +655,103 @@ describe('Phase 2 — Audit Management Workspace and Workflow', () => {
         const signOffBtn = screen.getByRole('button', { name: /sign off verification/i });
         expect(signOffBtn).toBeDisabled();
       });
+
+      it('fetches and displays authoritative status counts for Total, Active, Planned, Completed, Draft, Open Findings', async () => {
+        mockedApiRequest.mockImplementation((url: string) => {
+          if (url.includes('/business-audits/summary')) {
+            return Promise.resolve({
+              total: 5,
+              inProgress: 2,
+              completed: 2,
+              planned: 1,
+              draft: 0,
+              archived: 0,
+              findingsTotal: 14,
+              findingsOpen: 3,
+              capaOpen: 1,
+            });
+          }
+          if (url.includes('/business-audits/plans')) {
+            return Promise.resolve({
+              items: [
+                {
+                  id: 'plan-1',
+                  organizationId: 'org-test',
+                  title: 'ISO 27001 Audit',
+                  status: AuditPlanStatus.IN_PROGRESS,
+                  frameworkCode: 'ISO_27001',
+                  assessments: [],
+                  scopeReferences: [],
+                },
+              ],
+              total: 1,
+              page: 1,
+              limit: 20,
+            });
+          }
+          return Promise.resolve([]);
+        });
+
+        render(<AuditListView />);
+
+        await waitFor(() => {
+          expect(screen.getByText('Total Plans')).toBeInTheDocument();
+          expect(screen.getByText('Active')).toBeInTheDocument();
+          expect(screen.getAllByText('Planned').length).toBeGreaterThanOrEqual(1);
+          expect(screen.getAllByText('Completed').length).toBeGreaterThanOrEqual(1);
+          expect(screen.getAllByText('Draft').length).toBeGreaterThanOrEqual(1);
+          expect(screen.getByText('Open Findings')).toBeInTheDocument();
+        });
+
+        // Verify values fetched from DB
+        expect(screen.getByText('5')).toBeInTheDocument();
+        expect(screen.getAllByText('2').length).toBeGreaterThanOrEqual(2);
+        expect(screen.getByText('1')).toBeInTheDocument();
+        expect(screen.getByText('0')).toBeInTheDocument();
+        expect(screen.getByText('3')).toBeInTheDocument();
+      });
+
+      it('clicking an Active status card updates status filter and queries API', async () => {
+        let queriedUrl = '';
+        mockedApiRequest.mockImplementation((url: string) => {
+          if (url.includes('/business-audits/summary')) {
+            return Promise.resolve({
+              total: 5,
+              inProgress: 2,
+              completed: 2,
+              planned: 1,
+              draft: 0,
+              archived: 0,
+              findingsTotal: 14,
+              findingsOpen: 3,
+              capaOpen: 1,
+            });
+          }
+          if (url.includes('/business-audits/plans')) {
+            queriedUrl = url;
+            return Promise.resolve({
+              items: [],
+              total: 0,
+              page: 1,
+              limit: 20,
+            });
+          }
+          return Promise.resolve([]);
+        });
+
+        render(<AuditListView />);
+
+        await waitFor(() => {
+          expect(screen.getByText('Active')).toBeInTheDocument();
+        });
+
+        const activeCard = screen.getByTitle('Filter Active / In Progress Audits');
+        fireEvent.click(activeCard);
+
+        await waitFor(() => {
+          expect(queriedUrl).toContain('status=IN_PROGRESS');
+        });
+      });
     });
   });
 });
