@@ -703,12 +703,13 @@ describe('Phase 2 — Audit Management Workspace and Workflow', () => {
           expect(screen.getByText('Open Findings')).toBeInTheDocument();
         });
 
-        // Verify values fetched from DB
-        expect(screen.getByText('5')).toBeInTheDocument();
-        expect(screen.getAllByText('2').length).toBeGreaterThanOrEqual(2);
-        expect(screen.getByText('1')).toBeInTheDocument();
-        expect(screen.getByText('0')).toBeInTheDocument();
-        expect(screen.getByText('3')).toBeInTheDocument();
+        // Verify values fetched from DB inside each dedicated card
+        expect(screen.getByTitle('Show All Audit Plans')).toHaveTextContent('5');
+        expect(screen.getByTitle('Filter Active / In Progress Audits')).toHaveTextContent('2');
+        expect(screen.getByTitle('Filter Planned Audits')).toHaveTextContent('1');
+        expect(screen.getByTitle('Filter Completed Audits')).toHaveTextContent('2');
+        expect(screen.getByTitle('Filter Draft Audits')).toHaveTextContent('0');
+        expect(screen.getByTitle('View Open Findings & Verification')).toHaveTextContent('3');
       });
 
       it('clicking an Active status card updates status filter and queries API', async () => {
