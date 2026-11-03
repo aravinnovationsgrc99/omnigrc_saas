@@ -117,3 +117,27 @@ export class ApprovalEngineController {
     return this.approvalService.cancelInstance(organizationId, userId, id);
   }
 }
+
+@Controller('approval-workflows')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@RequireCapability('APPROVAL_ENGINE')
+export class ApprovalWorkflowsController {
+  constructor(private readonly approvalService: ApprovalEngineService) {}
+
+  @Get()
+  async getWorkflows(
+    @CurrentUser('organizationId') organizationId: string,
+  ): Promise<ApprovalWorkflowDto[]> {
+    return this.approvalService.findAllWorkflows(organizationId);
+  }
+
+  @Post()
+  @Roles(Role.ADMIN)
+  async createWorkflow(
+    @CurrentUser('organizationId') organizationId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: CreateApprovalWorkflowDto,
+  ): Promise<ApprovalWorkflowDto> {
+    return this.approvalService.createWorkflow(organizationId, userId, dto);
+  }
+}

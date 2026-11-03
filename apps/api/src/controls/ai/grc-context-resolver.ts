@@ -1,7 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GrcQueryIntent, QueryAnalysisResult } from './grc-nlp.service';
-import { GrcSourceCitation, GrcStructuredAnalysis, GrcDomain } from '@omnigrc/shared';
+import {
+  GrcSourceCitation,
+  GrcStructuredAnalysis,
+  GrcDomain,
+  GrcVisualizationPayload,
+  GrcDataSummary,
+} from '@omnigrc/shared';
 import { TenantContext } from '../../tenant/tenant.context';
 
 // Backward compatibility alias for existing test suites
@@ -27,6 +33,11 @@ export interface ResolvedContext {
   sourceTag: string;
   citations: GrcSourceCitation[];
   structuredAnalysis: GrcStructuredAnalysis;
+  dataSummary?: GrcDataSummary;
+  visualizations?: GrcVisualizationPayload[];
+  warnings?: string[];
+  rankedAreas?: { area: string; count: number; maxScore: number; avgScore: number }[];
+  rawRecords?: any[];
 }
 
 @Injectable()
@@ -172,12 +183,49 @@ export class GrcContextResolver {
 ${activeList || 'Organization currently has no commercial framework entitlements configured.'}
 Total Controls in Register: ${totalControls}`;
 
+    const frameworkRows = entitlements.map((e) => ({
+      name: e.framework.name,
+      code: e.framework.code,
+      status: e.status,
+    }));
+
+    const visualizations: GrcVisualizationPayload[] = [
+      {
+        type: 'kpi',
+        title: 'Compliance Posture KPIs',
+        kpis: [
+          { label: 'Active Frameworks', value: entitlements.length, trend: 'neutral' },
+          { label: 'Registered Controls', value: totalControls, trend: 'good' },
+        ],
+      },
+      {
+        type: 'table',
+        title: 'Commercial Framework Entitlements',
+        columns: [
+          { key: 'name', label: 'Framework Name' },
+          { key: 'code', label: 'Framework Code' },
+          { key: 'status', label: 'Status' },
+        ],
+        rows: frameworkRows,
+      },
+    ];
+
+    const dataSummary: GrcDataSummary = {
+      summary: {
+        activeFrameworks: entitlements.length,
+        totalControls,
+      },
+      records: frameworkRows,
+    };
+
     return {
       intent,
       domain: 'compliance',
       summaryText,
       sourceTag: 'Authorized Organization Data: Framework Entitlements',
       citations,
+      dataSummary,
+      visualizations,
       structuredAnalysis: {
         summary: `Your organization maintains ${totalControls} security controls and holds ${entitlements.length} active framework entitlement(s).`,
         keyFindings: [
@@ -231,12 +279,49 @@ Total Controls in Register: ${totalControls}`;
     const summaryText = `Found ${totalCount} security control(s) in Control Register:
 ${summaryItems.join('\n') || 'Zero security controls recorded.'}`;
 
+    const controlRows = controls.map((c) => ({
+      code: `CTRL-${c.id.slice(0, 6).toUpperCase()}`,
+      name: c.name,
+      category: c.category || 'General',
+    }));
+
+    const visualizations: GrcVisualizationPayload[] = [
+      {
+        type: 'kpi',
+        title: 'Controls Overview',
+        kpis: [
+          { label: 'Total Controls', value: totalCount, trend: 'good' },
+          { label: 'Sampled in Context', value: controls.length, trend: 'neutral' },
+        ],
+      },
+      {
+        type: 'table',
+        title: 'Active Security Controls',
+        columns: [
+          { key: 'code', label: 'Control ID' },
+          { key: 'name', label: 'Name' },
+          { key: 'category', label: 'Category' },
+        ],
+        rows: controlRows,
+      },
+    ];
+
+    const dataSummary: GrcDataSummary = {
+      summary: {
+        totalControls: totalCount,
+        sampledControls: controls.length,
+      },
+      records: controlRows,
+    };
+
     return {
       intent,
       domain: 'compliance',
       summaryText,
       sourceTag: 'Authorized Organization Data: Controls',
       citations,
+      dataSummary,
+      visualizations,
       structuredAnalysis: {
         summary: `Analyzed ${controls.length} security controls from your register of ${totalCount} total controls.`,
         keyFindings: controls.map(
@@ -267,6 +352,34 @@ ${summaryItems.join('\n') || 'Zero security controls recorded.'}`;
       take: 5,
     });
 
+    const totalCount = risks.length;
+    const openCount = risks.filter((r) => r.status === 'OPEN').length;
+    const highCount = risks.filter((r) => r.score >= 15).length;
+    const mediumCount = risks.filter((r) => r.score >= 8 && r.score < 15).length;
+    const lowCount = risks.filter((r) => r.score < 8).length;
+    const maxScore = risks.length > 0 ? risks[0].score : 0;
+
+    // Group risks by business area (department or category)
+    const areaMap = new Map<string, { count: number; totalScore: number; maxScore: number; risks: typeof risks }>();
+    for (const r of risks) {
+      const area = (r as any).departmentRef?.name || (r as any).department?.name || r.category || 'General Operations';
+      const existing = areaMap.get(area) || { count: 0, totalScore: 0, maxScore: 0, risks: [] };
+      existing.count += 1;
+      existing.totalScore += r.score;
+      existing.maxScore = Math.max(existing.maxScore, r.score);
+      existing.risks.push(r);
+      areaMap.set(area, existing);
+    }
+
+    const rankedAreas = Array.from(areaMap.entries())
+      .map(([area, data]) => ({
+        area,
+        count: data.count,
+        maxScore: data.maxScore,
+        avgScore: Math.round((data.totalScore / data.count) * 10) / 10,
+      }))
+      .sort((a, b) => b.maxScore - a.maxScore || b.count - a.count);
+
     const citations: GrcSourceCitation[] = risks.map((r) => ({
       id: r.id,
       title: r.title,
@@ -284,12 +397,79 @@ ${summaryItems.join('\n') || 'Zero security controls recorded.'}`;
 
     const summaryText = `Found ${risks.length} risk(s):\n${summaryItems.join('\n') || 'Organization has 0 open risks currently recorded.'}`;
 
+    const rows = risks.map((r) => {
+      const severity = r.score >= 15 ? 'HIGH' : r.score >= 8 ? 'MEDIUM' : 'LOW';
+      const area = (r as any).departmentRef?.name || (r as any).department?.name || r.category || 'General Operations';
+      return {
+        code: `RSK-${r.id.slice(0, 6).toUpperCase()}`,
+        title: r.title,
+        area,
+        score: r.score,
+        severity,
+        status: r.status,
+        owner: r.owner || 'Unassigned',
+      };
+    });
+
+    const visualizations: GrcVisualizationPayload[] = [
+      {
+        type: 'kpi',
+        title: 'Risk Posture Overview',
+        kpis: [
+          { label: 'Total Tracked Risks', value: totalCount, trend: 'neutral' },
+          { label: 'High / Critical (≥15)', value: highCount, trend: highCount > 0 ? 'critical' : 'good' },
+          { label: 'Max Exposure Score', value: maxScore, trend: maxScore >= 15 ? 'critical' : 'neutral' },
+          { label: 'Active Open Risks', value: openCount, trend: openCount > 0 ? 'warning' : 'good' },
+        ],
+      },
+      {
+        type: 'bar',
+        title: 'Risk Severity Distribution',
+        chartData: [
+          { label: 'High (≥15)', value: highCount, color: '#EF4444' },
+          { label: 'Medium (8-14)', value: mediumCount, color: '#F59E0B' },
+          { label: 'Low (<8)', value: lowCount, color: '#10B981' },
+        ],
+      },
+      {
+        type: 'table',
+        title: 'Top Risk Scores & Rankings',
+        columns: [
+          { key: 'code', label: 'Risk ID' },
+          { key: 'title', label: 'Title' },
+          { key: 'area', label: 'Business Area' },
+          { key: 'score', label: 'Score' },
+          { key: 'severity', label: 'Severity' },
+          { key: 'status', label: 'Status' },
+          { key: 'owner', label: 'Owner' },
+        ],
+        rows,
+      },
+    ];
+
+    const dataSummary: GrcDataSummary = {
+      summary: {
+        totalRisks: totalCount,
+        highRisks: highCount,
+        mediumRisks: mediumCount,
+        lowRisks: lowCount,
+        openRisks: openCount,
+        maxScore,
+      },
+      topRisks: rows,
+      rankedAreas,
+    };
+
     return {
       intent,
       domain: 'risk',
       summaryText,
       sourceTag: 'Authorized Organization Data: Risks',
       citations,
+      dataSummary,
+      visualizations,
+      rankedAreas,
+      rawRecords: risks,
       structuredAnalysis: {
         summary: `Retrieved top ${risks.length} risk record(s) ranked by calculated exposure score.`,
         keyFindings: risks.map(
@@ -337,12 +517,52 @@ ${summaryItems.join('\n') || 'Zero security controls recorded.'}`;
 
     const summaryText = `Found ${findings.length} audit finding(s):\n${summaryItems.join('\n') || 'Organization currently has 0 audit findings recorded.'}`;
 
+    const findingRows = findings.map((f) => ({
+      code: `FND-${f.id.slice(0, 6).toUpperCase()}`,
+      title: f.title,
+      severity: f.severity,
+      status: f.status,
+    }));
+
+    const visualizations: GrcVisualizationPayload[] = [
+      {
+        type: 'kpi',
+        title: 'Audit Findings Overview',
+        kpis: [
+          { label: 'Total Tracked Findings', value: findings.length, trend: findings.length > 0 ? 'warning' : 'good' },
+          { label: 'Critical / High', value: findings.filter((f) => f.severity === 'CRITICAL' || f.severity === 'HIGH').length, trend: 'critical' },
+        ],
+      },
+      {
+        type: 'table',
+        title: 'Audit Findings Register',
+        columns: [
+          { key: 'code', label: 'Finding ID' },
+          { key: 'title', label: 'Title' },
+          { key: 'severity', label: 'Severity' },
+          { key: 'status', label: 'Status' },
+        ],
+        rows: findingRows,
+      },
+    ];
+
+    const dataSummary: GrcDataSummary = {
+      summary: {
+        totalFindings: findings.length,
+        critical: findings.filter((f) => f.severity === 'CRITICAL').length,
+        high: findings.filter((f) => f.severity === 'HIGH').length,
+      },
+      records: findingRows,
+    };
+
     return {
       intent,
       domain: 'audit',
       summaryText,
       sourceTag: 'Authorized Organization Data: Audit Findings',
       citations,
+      dataSummary,
+      visualizations,
       structuredAnalysis: {
         summary: `There are ${findings.length} audit finding(s) recorded across active and completed audit plans.`,
         keyFindings: findings.map(
@@ -388,12 +608,53 @@ ${summaryItems.join('\n') || 'Zero security controls recorded.'}`;
 
     const summaryText = `Found ${vendors.length} vendor record(s):\n${summaryItems.join('\n') || 'Organization currently has 0 third-party vendors registered.'}`;
 
+    const vendorRows = vendors.map((v) => ({
+      code: `VND-${v.id.slice(0, 6).toUpperCase()}`,
+      name: v.name,
+      category: v.category || 'SaaS',
+      criticality: v.criticality,
+      status: v.status,
+    }));
+
+    const vendorVisualizations: GrcVisualizationPayload[] = [
+      {
+        type: 'kpi',
+        title: 'Vendor Risk Overview',
+        kpis: [
+          { label: 'Total Vendors', value: vendors.length, trend: 'neutral' },
+          { label: 'Critical Vendors', value: vendors.filter((v) => v.criticality === 'CRITICAL').length, trend: 'critical' },
+        ],
+      },
+      {
+        type: 'table',
+        title: 'Third-Party Vendor Register',
+        columns: [
+          { key: 'code', label: 'Vendor ID' },
+          { key: 'name', label: 'Name' },
+          { key: 'category', label: 'Category' },
+          { key: 'criticality', label: 'Criticality' },
+          { key: 'status', label: 'Status' },
+        ],
+        rows: vendorRows,
+      },
+    ];
+
+    const vendorDataSummary: GrcDataSummary = {
+      summary: {
+        totalVendors: vendors.length,
+        critical: vendors.filter((v) => v.criticality === 'CRITICAL').length,
+      },
+      records: vendorRows,
+    };
+
     return {
       intent,
       domain: 'vendor',
       summaryText,
       sourceTag: 'Authorized Organization Data: Vendors',
       citations,
+      dataSummary: vendorDataSummary,
+      visualizations: vendorVisualizations,
       structuredAnalysis: {
         summary: `Retrieved ${vendors.length} registered vendor(s) in third-party inventory.`,
         keyFindings: vendors.map(
@@ -441,12 +702,43 @@ ${summaryItems.join('\n') || 'Zero security controls recorded.'}`;
     const summaryText = `Recent Regulatory Intelligence Publications (${publications.length}):
 ${summaryItems.join('\n') || 'Zero regulatory publications currently ingested.'}`;
 
+    const pubVisualizations: GrcVisualizationPayload[] = [
+      {
+        type: 'kpi',
+        kpis: [
+          { label: 'Tracked Publications', value: publications.length, trend: 'neutral' },
+          { label: 'Active Authorities', value: new Set(publications.map((p) => p.source?.regulatorCode).filter(Boolean)).size, trend: 'good' },
+        ],
+      },
+      {
+        type: 'table',
+        title: 'Recent Regulatory Intelligence Circulars',
+        columns: [
+          { key: 'title', label: 'Publication Title' },
+          { key: 'source', label: 'Regulatory Body' },
+          { key: 'date', label: 'Publication Date' },
+        ],
+        rows: publications.map((p) => ({
+          title: p.title,
+          source: p.source?.displayName || p.source?.regulatorCode || 'Regulatory Authority',
+          date: p.publicationDate ? new Date(p.publicationDate).toLocaleDateString() : 'Recent',
+        })),
+      },
+    ];
+
     return {
       intent,
       domain: 'regulatory',
       summaryText,
       sourceTag: 'Authorized Regulatory Intelligence: Publications',
       citations,
+      visualizations: pubVisualizations,
+      dataSummary: {
+        summary: {
+          totalPublications: publications.length,
+        },
+        records: publications.map((p) => ({ id: p.id, title: p.title, source: p.source?.displayName })),
+      },
       structuredAnalysis: {
         summary: `Monitored ${publications.length} regulatory circular(s) across connected financial and security regulators.`,
         keyFindings: publications.map(
@@ -494,12 +786,43 @@ ${summaryItems.join('\n') || 'Zero regulatory publications currently ingested.'}
     const summaryText = `Tracked Regulatory Obligations (${obligations.length}):
 ${summaryItems.join('\n') || 'Zero regulatory obligations found.'}`;
 
+    const oblVisualizations: GrcVisualizationPayload[] = [
+      {
+        type: 'kpi',
+        kpis: [
+          { label: 'Regulatory Obligations', value: obligations.length, trend: 'neutral' },
+          { label: 'Connected Issuers', value: new Set(obligations.map((o) => o.publication?.source?.regulatorCode).filter(Boolean)).size, trend: 'good' },
+        ],
+      },
+      {
+        type: 'table',
+        title: 'Statutory Compliance Obligations',
+        columns: [
+          { key: 'id', label: 'Identifier' },
+          { key: 'title', label: 'Obligation Title' },
+          { key: 'source', label: 'Circular Source' },
+        ],
+        rows: obligations.map((o) => ({
+          id: o.obligationIdentifier || `OBL-${o.id.slice(0, 6).toUpperCase()}`,
+          title: o.title,
+          source: o.publication?.source?.displayName || 'Regulatory Authority',
+        })),
+      },
+    ];
+
     return {
       intent,
       domain: 'regulatory',
       summaryText,
       sourceTag: 'Authorized Regulatory Intelligence: Obligations',
       citations,
+      visualizations: oblVisualizations,
+      dataSummary: {
+        summary: {
+          totalObligations: obligations.length,
+        },
+        records: obligations.map((o) => ({ id: o.id, title: o.title, identifier: o.obligationIdentifier })),
+      },
       structuredAnalysis: {
         summary: `Tracked ${obligations.length} statutory obligations extracted from regulatory circulars.`,
         keyFindings: obligations.map(
@@ -550,12 +873,48 @@ ${summaryItems.join('\n') || 'Zero regulatory obligations found.'}`;
 
     const summaryText = `Found ${tasks.length} compliance task(s):\n${summaryItems.join('\n') || 'Organization has 0 compliance tasks registered.'}`;
 
+    const now = new Date();
+    const overdueCount = tasks.filter((t) => t.dueDate && new Date(t.dueDate) < now).length;
+    const taskVisualizations: GrcVisualizationPayload[] = [
+      {
+        type: 'kpi',
+        kpis: [
+          { label: 'Pending Tasks', value: tasks.length, trend: tasks.length > 0 ? 'warning' : 'good' },
+          { label: 'Overdue Remediations', value: overdueCount, trend: overdueCount > 0 ? 'critical' : 'good' },
+        ],
+      },
+      {
+        type: 'table',
+        title: 'Remediation & Compliance Task Register',
+        columns: [
+          { key: 'title', label: 'Task Title' },
+          { key: 'status', label: 'Status' },
+          { key: 'owner', label: 'Assigned Owner' },
+          { key: 'dueDate', label: 'Due Date' },
+        ],
+        rows: tasks.map((t) => ({
+          title: t.title,
+          status: t.status,
+          owner: t.owner || 'Unassigned',
+          dueDate: t.dueDate ? new Date(t.dueDate).toLocaleDateString() : 'No Due Date',
+        })),
+      },
+    ];
+
     return {
       intent,
       domain: 'remediation',
       summaryText,
       sourceTag: 'Authorized Organization Data: Compliance Tasks',
       citations,
+      visualizations: taskVisualizations,
+      dataSummary: {
+        summary: {
+          totalTasks: tasks.length,
+          overdueCount,
+        },
+        records: tasks.map((t) => ({ id: t.id, title: t.title, status: t.status, owner: t.owner })),
+      },
       structuredAnalysis: {
         summary: `There are ${tasks.length} active or pending compliance tasks registered in your workspace.`,
         keyFindings: tasks.map(
@@ -610,12 +969,48 @@ ${summaryItems.join('\n') || 'Zero regulatory obligations found.'}`;
 - Pending Sign-Offs: ${pendingApprovals.length}
 ${summaryItems.join('\n') || 'Zero organizational policies recorded.'}`;
 
+    const policyVisualizations: GrcVisualizationPayload[] = [
+      {
+        type: 'kpi',
+        kpis: [
+          { label: 'Organizational Policies', value: policies.length, trend: 'good' },
+          { label: 'Pending Sign-Offs', value: pendingApprovals.length, trend: pendingApprovals.length > 0 ? 'warning' : 'good' },
+        ],
+      },
+      {
+        type: 'table',
+        title: 'Policy Governance & Lifecycle Register',
+        columns: [
+          { key: 'code', label: 'Code' },
+          { key: 'title', label: 'Policy Title' },
+          { key: 'category', label: 'Category' },
+          { key: 'status', label: 'Lifecycle Status' },
+          { key: 'cadence', label: 'Review Cadence' },
+        ],
+        rows: policies.map((p) => ({
+          code: p.code,
+          title: p.title,
+          category: p.category,
+          status: p.status,
+          cadence: `${p.reviewCadenceDays}d`,
+        })),
+      },
+    ];
+
     return {
       intent,
       domain: 'governance',
       summaryText,
       sourceTag: 'Authorized Organization Data: Policies & Approvals',
       citations,
+      visualizations: policyVisualizations,
+      dataSummary: {
+        summary: {
+          totalPolicies: policies.length,
+          pendingSignOffs: pendingApprovals.length,
+        },
+        records: policies.map((p) => ({ id: p.id, code: p.code, title: p.title, status: p.status })),
+      },
       structuredAnalysis: {
         summary: `Maintains ${policies.length} documented policies and ${pendingApprovals.length} pending sign-off(s).`,
         keyFindings: policies.map(
@@ -678,12 +1073,59 @@ ${summaryItems.join('\n') || 'Zero organizational policies recorded.'}`;
 - Open Risks: ${openRisks.length} (Top: ${openRisks[0]?.title || 'None'})
 - Pending Approvals: ${pendingApprovals.length}`;
 
+    const priorityVisualizations: GrcVisualizationPayload[] = [
+      {
+        type: 'kpi',
+        kpis: [
+          { label: 'Action Items', value: openRisks.length + pendingApprovals.length, trend: 'critical' },
+          { label: 'Open Risks', value: openRisks.length, trend: 'warning' },
+          { label: 'Pending Approvals', value: pendingApprovals.length, trend: 'warning' },
+        ],
+      },
+      {
+        type: 'table',
+        title: 'Weekly Cross-Domain Priorities',
+        columns: [
+          { key: 'type', label: 'Domain' },
+          { key: 'title', label: 'Action Title' },
+          { key: 'detail', label: 'Priority / Status' },
+          { key: 'owner', label: 'Designated Party' },
+        ],
+        rows: [
+          ...openRisks.map((r) => ({
+            type: 'Risk Remediation',
+            title: r.title,
+            detail: `Risk Score: ${r.score}`,
+            owner: r.owner || 'Unassigned',
+          })),
+          ...pendingApprovals.map((a) => ({
+            type: 'Governance Sign-Off',
+            title: a.title,
+            detail: 'PENDING APPROVAL',
+            owner: 'Approver Group',
+          })),
+        ],
+      },
+    ];
+
     return {
       intent,
       domain: 'general',
       summaryText,
       sourceTag: 'Authorized Organization Data: Multi-Domain Priorities',
       citations,
+      visualizations: priorityVisualizations,
+      dataSummary: {
+        summary: {
+          totalActions: openRisks.length + pendingApprovals.length,
+          openRisksCount: openRisks.length,
+          pendingApprovalsCount: pendingApprovals.length,
+        },
+        records: [
+          ...openRisks.map((r) => ({ type: 'Risk', title: r.title, score: r.score })),
+          ...pendingApprovals.map((a) => ({ type: 'Approval', title: a.title })),
+        ],
+      },
       structuredAnalysis: {
         summary: `Identified ${openRisks.length} open risk(s) and ${pendingApprovals.length} pending sign-off(s) requiring focus this week.`,
         keyFindings: [
@@ -716,6 +1158,14 @@ ${summaryItems.join('\n') || 'Zero organizational policies recorded.'}`;
       take: 5,
     });
 
+    const totalCount = vulnerabilities.length;
+    const openCount = vulnerabilities.filter((v) => v.status === 'OPEN').length;
+    const critCount = vulnerabilities.filter((v) => v.severity === 'CRITICAL').length;
+    const highCount = vulnerabilities.filter((v) => v.severity === 'HIGH').length;
+    const medCount = vulnerabilities.filter((v) => v.severity === 'MEDIUM').length;
+    const lowCount = vulnerabilities.filter((v) => v.severity === 'LOW').length;
+    const resolvedCount = vulnerabilities.filter((v) => v.status === 'RESOLVED').length;
+
     const citations: GrcSourceCitation[] = vulnerabilities.map((v) => ({
       id: v.id,
       title: `${v.cveId || 'VULN'}: ${v.title}`,
@@ -733,17 +1183,77 @@ ${summaryItems.join('\n') || 'Zero organizational policies recorded.'}`;
 
     const summaryText = `Found ${vulnerabilities.length} tracked vulnerability record(s):\n${summaryItems.join('\n') || 'Organization currently has 0 open vulnerabilities recorded.'}`;
 
+    const rows = vulnerabilities.map((v) => ({
+      cve: v.cveId || `VULN-${v.id.slice(0, 6).toUpperCase()}`,
+      title: v.title,
+      severity: v.severity,
+      status: v.status,
+      owner: v.remediationOwner || 'Unassigned',
+    }));
+
+    const visualizations: GrcVisualizationPayload[] = [
+      {
+        type: 'kpi',
+        title: 'Vulnerability Posture KPIs',
+        kpis: [
+          { label: 'Tracked CVEs', value: totalCount, trend: 'neutral' },
+          { label: 'Critical Severity', value: critCount, trend: critCount > 0 ? 'critical' : 'good' },
+          { label: 'High Severity', value: highCount, trend: highCount > 0 ? 'warning' : 'good' },
+          { label: 'Active Open', value: openCount, trend: openCount > 0 ? 'warning' : 'good' },
+        ],
+      },
+      {
+        type: 'bar',
+        title: 'Vulnerabilities by Severity',
+        chartData: [
+          { label: 'Critical', value: critCount, color: '#DC2626' },
+          { label: 'High', value: highCount, color: '#EA580C' },
+          { label: 'Medium', value: medCount, color: '#D97706' },
+          { label: 'Low', value: lowCount, color: '#16A34A' },
+        ],
+      },
+      {
+        type: 'table',
+        title: 'Vulnerability Posture Register',
+        columns: [
+          { key: 'cve', label: 'CVE ID' },
+          { key: 'title', label: 'Title' },
+          { key: 'severity', label: 'Severity' },
+          { key: 'status', label: 'Status' },
+          { key: 'owner', label: 'Remediation Lead' },
+        ],
+        rows,
+      },
+    ];
+
+    const dataSummary: GrcDataSummary = {
+      summary: {
+        totalVulnerabilities: totalCount,
+        critical: critCount,
+        high: highCount,
+        medium: medCount,
+        low: lowCount,
+        open: openCount,
+        resolved: resolvedCount,
+      },
+      records: rows,
+    };
+
     return {
       intent,
       domain: 'compliance',
       summaryText,
       sourceTag: 'Authorized Organization Data: Vulnerabilities',
       citations,
+      dataSummary,
+      visualizations,
+      rawRecords: vulnerabilities,
       structuredAnalysis: {
         summary: `Retrieved ${vulnerabilities.length} vulnerability finding(s) from asset scans.`,
         keyFindings: vulnerabilities.map((v) => `"${v.title}" rated ${v.severity} with status ${v.status}.`),
         metrics: [
-          { label: 'Open Vulnerabilities', value: vulnerabilities.length, trend: vulnerabilities.length > 0 ? 'warning' : 'good' },
+          { label: 'Open Vulnerabilities', value: openCount, trend: openCount > 0 ? 'warning' : 'good' },
+          { label: 'Critical CVEs', value: critCount, trend: critCount > 0 ? 'critical' : 'good' },
         ],
         recommendations: ['Prioritize patch deployment for Critical and High CVEs.'],
       },

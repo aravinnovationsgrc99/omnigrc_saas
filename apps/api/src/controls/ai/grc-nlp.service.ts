@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { GrcDomain } from '@omnigrc/shared';
+import { GrcDomain, GrcQueryCategory } from '@omnigrc/shared';
 
 export enum GrcQueryIntent {
   COMPLIANCE_POSTURE = 'COMPLIANCE_POSTURE',
@@ -31,6 +31,7 @@ export interface QueryAnalysisResult {
   normalizedQuery: string;
   intent: GrcQueryIntent;
   domain: GrcDomain;
+  category?: GrcQueryCategory;
   entities: ExtractedEntities;
   isFollowUp: boolean;
   followUpTargetDomain?: GrcDomain;
@@ -105,10 +106,12 @@ export class GrcNlpService {
       }
     }
 
+    const category = this.classifyCategory(normalized, intent);
+
     const explanation = {
       intentIdentified: intent,
       rationale: this.getIntentRationale(intent, entities, followUp.isFollowUp),
-      scopeApplied: `Domain: ${domain.toUpperCase()} | Tenant-scoped authorized live data`,
+      scopeApplied: `Domain: ${domain.toUpperCase()} | Category: ${category} | Tenant-scoped authorized live data`,
     };
 
     return {
@@ -116,11 +119,59 @@ export class GrcNlpService {
       normalizedQuery: normalized,
       intent,
       domain,
+      category,
       entities,
       isFollowUp: followUp.isFollowUp,
       followUpTargetDomain: followUp.previousDomain,
       explanation,
     };
+  }
+
+  /**
+   * Categorizes query into:
+   * A. Structured GRC Data Queries
+   * B. Analytical & Interpretive Queries
+   * C. General GRC Knowledge Questions
+   * D. Mixed Queries
+   */
+  public classifyCategory(normalized: string, intent: GrcQueryIntent): GrcQueryCategory {
+    const lower = normalized.toLowerCase();
+
+    // C. General GRC Knowledge Questions
+    if (
+      (lower.startsWith('what is ') && (lower.includes('iso') || lower.includes('soc') || lower.includes('gdpr') || lower.includes('definition') || lower.includes('meaning') || lower.includes('difference between'))) ||
+      lower.includes('difference between inherent and residual') ||
+      lower.includes('what is a risk treatment plan') ||
+      lower.includes('what is separation of duties') ||
+      lower.includes('what is sod in approval')
+    ) {
+      return GrcQueryCategory.GENERAL_KNOWLEDGE;
+    }
+
+    // D. Mixed Cross-Domain Comparison Queries
+    if (
+      lower.includes('compare') &&
+      ((lower.includes('risk') && lower.includes('vulnerab')) ||
+       (lower.includes('compliance') && lower.includes('audit')) ||
+       (lower.includes('posture') && lower.includes('exposure')))
+    ) {
+      return GrcQueryCategory.MIXED;
+    }
+
+    // B. Analytical and Interpretive Queries
+    if (
+      lower.startsWith('why is') ||
+      lower.startsWith('why did') ||
+      lower.startsWith('how can we improve') ||
+      lower.includes('what patterns') ||
+      lower.includes('main reasons for our compliance gaps') ||
+      lower.includes('which business areas should management prioritize')
+    ) {
+      return GrcQueryCategory.INTERPRETIVE;
+    }
+
+    // A. Structured GRC Data Queries (Default for GRC register queries)
+    return GrcQueryCategory.STRUCTURED_DATA;
   }
 
   /**
@@ -138,8 +189,11 @@ export class GrcNlpService {
     s = s.replace(/\bshow\s+me\s+bad\s+vendors\b/gi, 'which vendors have high residual risk');
     s = s.replace(/\bwhat\s+did\s+rbi\s+change\b/gi, 'what regulatory updates from RBI could affect us');
     s = s.replace(/\bwhat\s+should\s+we\s+do\s+this\s+week\b/gi, 'what are the most important GRC actions to prioritize this week');
+    s = s.replace(/\bshow\s+our\s+(?:current\s+)?vulnerability\s+posture\b/gi, 'what open vulnerabilities and cve findings are currently tracked');
+    s = s.replace(/\bhow\s+many\s+open\s+vulnerabilities\s+do\s+we\s+have\b/gi, 'what open vulnerabilities and cve findings are currently tracked');
+    s = s.replace(/\bshow\s+(?:me\s+)?(?:the\s+)?top\s+five\s+risks\b/gi, 'what are the highest-risk areas and top risk scores across our organization');
 
-    return s;
+    return s.trim();
   }
 
   /**

@@ -27,12 +27,16 @@ export class ClaudeProvider implements AiProvider {
       throw new Error('Claude API client not initialized.');
     }
     const model = process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001';
-    const response = await this.anthropic.messages.create({
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Claude API request timed out after 8000ms')), 8000)
+    );
+    const apiPromise = this.anthropic.messages.create({
       model,
       max_tokens: 3500,
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }],
     });
+    const response = await Promise.race([apiPromise, timeoutPromise]);
     const textBlock = response.content.find((b) => b.type === 'text') as Anthropic.TextBlock | undefined;
     return textBlock?.text || '';
   }

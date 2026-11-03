@@ -3800,10 +3800,51 @@ export interface GrcChatRequestDto {
   pageContext?: GrcChatPageContext;
 }
 
-export type GrcInferenceMode = 'LIVE_AI' | 'DETERMINISTIC_FALLBACK' | 'TEST_MODE';
+export type GrcInferenceMode = 'LIVE_AI' | 'DETERMINISTIC_FALLBACK' | 'TEST_MODE' | 'DATA_GROUNDED' | 'HYBRID';
+export type GrcGenerationMode = 'DATA_GROUNDED' | 'AI_GENERATED' | 'HYBRID';
+
+export enum GrcQueryCategory {
+  STRUCTURED_DATA = 'STRUCTURED_DATA',
+  INTERPRETIVE = 'INTERPRETIVE',
+  GENERAL_KNOWLEDGE = 'GENERAL_KNOWLEDGE',
+  MIXED = 'MIXED',
+}
+
+export interface GrcVisualizationItem {
+  label: string;
+  value: number;
+  color?: string;
+  percentage?: number;
+}
+
+export interface GrcTableColumn {
+  key: string;
+  label: string;
+}
+
+export interface GrcVisualizationPayload {
+  type: 'kpi' | 'table' | 'bar' | 'donut';
+  title?: string;
+  kpis?: { label: string; value: number | string; trend?: 'good' | 'neutral' | 'warning' | 'critical' }[];
+  columns?: GrcTableColumn[];
+  rows?: Record<string, any>[];
+  chartData?: GrcVisualizationItem[];
+}
+
+export interface GrcDataSummary {
+  summary: Record<string, any>;
+  records?: Record<string, any>[];
+  breakdown?: Record<string, any>[];
+  [key: string]: any;
+}
 
 export interface GrcChatResponseDto {
   answer: string;
+  generationMode?: GrcGenerationMode;
+  provider?: string | null;
+  data?: GrcDataSummary;
+  visualizations?: GrcVisualizationPayload[];
+  warnings?: string[];
   structuredAnalysis?: GrcStructuredAnalysis;
   sourcesUsed: string[];
   citations?: GrcSourceCitation[];
@@ -3848,7 +3889,7 @@ export const EXACT_TEN_PREDEFINED_QUESTIONS: GrcSuggestedQuestion[] = [
     category: 'Risks',
     domain: 'risk',
     label: 'Highest Risk Items',
-    prompt: 'Show me our highest-risk items and explain why they are high risk.',
+    prompt: 'What are the highest-risk areas and top risk scores across our organization?',
     description: 'Analyzes severe risks, likelihood, impact, and existing treatment plans.',
   },
   {

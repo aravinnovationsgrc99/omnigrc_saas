@@ -1,5 +1,6 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, Optional } from '@nestjs/common';
 import { GeminiProvider } from './gemini.provider';
+import { ClaudeProvider } from './claude.provider';
 import { getBoundedKnowledge, KnowledgeSection } from './grc-knowledge-base';
 import { GrcContextResolver, ResolvedContext } from './grc-context-resolver';
 import { GrcNlpService, QueryAnalysisResult } from './grc-nlp.service';
@@ -11,6 +12,8 @@ import {
   GrcSourceCitation,
   GrcStructuredAnalysis,
   GrcSuggestedQuestion,
+  GrcGenerationMode,
+  GrcQueryCategory,
   EXACT_TEN_PREDEFINED_QUESTIONS,
 } from '@omnigrc/shared';
 
@@ -25,6 +28,7 @@ export class GrcIntelligenceChatService {
     private readonly geminiProvider: GeminiProvider,
     private readonly contextResolver: GrcContextResolver,
     private readonly nlpService: GrcNlpService,
+    @Optional() private readonly claudeProvider?: ClaudeProvider,
   ) {}
 
   public getPredefinedQuestions(): GrcSuggestedQuestion[] {
@@ -73,7 +77,8 @@ export class GrcIntelligenceChatService {
           (q) => q.prompt.trim().toLowerCase() === cleanPrompt.toLowerCase() || q.key === qKey,
         );
 
-      const isGeminiAvailable = this.geminiProvider.isAvailable();
+      const isGeminiAvailable = this.geminiProvider.isAvailable() && !this.geminiProvider.isCircuitOpen();
+      const isClaudeAvailable = Boolean(this.claudeProvider && this.claudeProvider.isAvailable());
       const isTestEnv = process.env.NODE_ENV === 'test';
 
       let answer = '';
@@ -85,22 +90,40 @@ export class GrcIntelligenceChatService {
         ? 'OMNiGRC Knowledge Base & Live Organization Context'
         : 'Deterministic Grounded Engine (Rule-based Fallback)';
 
-      // Predefined discovery questions are answered directly and authoritatively
-      // from the OMNiGRC Knowledge Base and verified tenant data without external LLM dependency.
-      // Open-ended queries use Gemini if available and not in test environment.
-      if (!isPredefinedQuestion && isGeminiAvailable && !isTestEnv) {
-        try {
-          const systemPrompt = this.buildGroundedSystemPrompt(kbSections, liveContext);
-          const userPromptWithHistory = this.buildUserPromptWithHistory(sanitizedHistory, cleanPrompt);
+      // Open-ended queries use Gemini if available and circuit is healthy.
+      // If Gemini fails (e.g. 403 Forbidden / billing / quota), failover to Claude.
+      if (!isPredefinedQuestion && !isTestEnv) {
+        if (isGeminiAvailable) {
+          try {
+            const systemPrompt = this.buildGroundedSystemPrompt(kbSections, liveContext);
+            const userPromptWithHistory = this.buildUserPromptWithHistory(sanitizedHistory, cleanPrompt);
 
-          answer = await this.geminiProvider.generateText(systemPrompt, userPromptWithHistory);
-          if (answer && answer.trim()) {
-            isLiveAi = true;
-            inferenceMode = 'LIVE_AI';
-            providerName = 'Google Gemini 2.5 Flash';
+            answer = await this.geminiProvider.generateText(systemPrompt, userPromptWithHistory);
+            if (answer && answer.trim()) {
+              isLiveAi = true;
+              inferenceMode = 'LIVE_AI';
+              providerName = 'Google Gemini 2.5 Flash';
+            }
+          } catch (err: any) {
+            this.logger.warn(`Gemini text generation failed, falling back to Claude/deterministic synthesis: ${err.message}`);
           }
-        } catch (err: any) {
-          this.logger.warn(`Gemini text generation failed, falling back to deterministic synthesis: ${err.message}`);
+        }
+
+        // Tier 2: Claude failover if Gemini failed or circuit was open
+        if (!answer && isClaudeAvailable && this.claudeProvider) {
+          try {
+            const systemPrompt = this.buildGroundedSystemPrompt(kbSections, liveContext);
+            const userPromptWithHistory = this.buildUserPromptWithHistory(sanitizedHistory, cleanPrompt);
+
+            answer = await this.claudeProvider.generateText(systemPrompt, userPromptWithHistory);
+            if (answer && answer.trim()) {
+              isLiveAi = true;
+              inferenceMode = 'LIVE_AI';
+              providerName = 'Anthropic Claude 3.5';
+            }
+          } catch (err: any) {
+            this.logger.warn(`Claude failover failed, falling back to deterministic synthesis: ${err.message}`);
+          }
         }
       }
 
@@ -112,8 +135,14 @@ export class GrcIntelligenceChatService {
           providerName = 'Test Engine (Grounded Simulation)';
         } else if (isPredefinedQuestion) {
           providerName = 'OMNiGRC Knowledge Base & Live Organization Context';
+        } else {
+          providerName = 'Deterministic Grounded Engine (Live DB Grounding)';
         }
       }
+
+      const generationMode: GrcGenerationMode = isLiveAi
+        ? (liveContext.dataSummary ? 'HYBRID' : 'AI_GENERATED')
+        : 'DATA_GROUNDED';
 
       // Assemble textual sourcesUsed tags for backward compatibility with existing tests
       const sourcesUsedText: string[] = [
@@ -125,7 +154,7 @@ export class GrcIntelligenceChatService {
       if (inferenceMode === 'TEST_MODE') {
         sourcesUsedText.push('Test Engine (Deterministic Simulation)');
       } else if (inferenceMode === 'LIVE_AI') {
-        sourcesUsedText.push('AI-generated explanation (Gemini)');
+        sourcesUsedText.push(`AI-generated explanation (${providerName})`);
       } else {
         sourcesUsedText.push('Deterministic Knowledge Retrieval (Fallback Engine)');
       }
@@ -149,6 +178,11 @@ export class GrcIntelligenceChatService {
         inferenceMode,
         providerName,
         isLiveAi,
+        generationMode,
+        provider: providerName,
+        data: liveContext.dataSummary,
+        visualizations: liveContext.visualizations || [],
+        warnings: liveContext.warnings || [],
         disclaimer:
           'AI Assistance Disclaimer: Outputs generated by GRC Intelligence provide contextual advisory suggestions and do not constitute legal or authoritative audit determinations.',
         allowRetry: !isLiveAi,
@@ -233,10 +267,22 @@ ${kbText}
       lines.push('');
     }
 
+    if (liveContext.rankedAreas && liveContext.rankedAreas.length > 0) {
+      lines.push(`**Highest-Risk Business Areas & Risk Score Rankings**`);
+      liveContext.rankedAreas.forEach((area, i) => {
+        lines.push(`${i + 1}. **${area.area}**: Peak Score: **${area.maxScore}** | Average Score: ${area.avgScore} (${area.count} active risk${area.count > 1 ? 's' : ''})`);
+      });
+      lines.push('');
+    }
+
     if (structuredAnalysis.keyFindings && structuredAnalysis.keyFindings.length > 0) {
       lines.push(`**Key Findings & Evidence**`);
       structuredAnalysis.keyFindings.forEach((f) => lines.push(`• ${f}`));
       lines.push('');
+    }
+
+    if (liveContext.warnings && liveContext.warnings.length > 0) {
+      liveContext.warnings.forEach((w) => lines.push(`> ⚠️ **Notice**: ${w}\n`));
     }
 
     if (structuredAnalysis.recommendations && structuredAnalysis.recommendations.length > 0) {

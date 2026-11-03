@@ -31,6 +31,8 @@ import {
 
 @Injectable()
 export class MetricsService {
+  private readonly overviewCache = new Map<string, { data: OverviewMetricsDto; expiresAt: number }>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly resourceAuthService: ResourceAuthorizationService,
@@ -45,6 +47,11 @@ export class MetricsService {
    * Entitlement-Aware: Optional module metrics are included ONLY when organization is entitled.
    */
   async getOverviewMetrics(authCtx: ResourceAuthContext): Promise<OverviewMetricsDto> {
+    const cacheKey = `${authCtx.organizationId}:${authCtx.userId || 'anon'}:${authCtx.role || 'user'}`;
+    const cached = this.overviewCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data;
+    }
     // Evaluate active capability entitlements for optional modules in parallel
     const [
       riskState,
@@ -323,7 +330,10 @@ export class MetricsService {
     const frameworkCoverage: EntitledFrameworkCoverageSummaryDto[] = await Promise.all(
       entitledFrameworks.map(async (fw) => {
         try {
-          const res = await this.frameworkCoverageService.calculateCoverage(authCtx, fw.id);
+          const res = await Promise.race([
+            this.frameworkCoverageService.calculateCoverage(authCtx, fw.id),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Coverage timeout')), 5000)),
+          ]);
           return {
             frameworkId: fw.id,
             code: fw.code,
@@ -538,7 +548,7 @@ export class MetricsService {
       })),
     ];
 
-    return {
+    const result: OverviewMetricsDto = {
       timestamp: new Date().toISOString(),
       organizationId: authCtx.organizationId,
       assets,
@@ -552,6 +562,9 @@ export class MetricsService {
       frameworkCoverage,
       attentionRequired,
     };
+
+    this.overviewCache.set(cacheKey, { data: result, expiresAt: Date.now() + 20000 });
+    return result;
   }
 
   /**
