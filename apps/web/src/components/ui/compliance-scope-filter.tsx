@@ -84,7 +84,7 @@ export function ComplianceScopeFilter({
 
   // Sync external versionId change
   useEffect(() => {
-    if (activeVersionId !== resolvedVersionId) {
+    if (activeVersionId && activeVersionId !== resolvedVersionId) {
       setResolvedVersionId(activeVersionId);
     }
   }, [activeVersionId]);

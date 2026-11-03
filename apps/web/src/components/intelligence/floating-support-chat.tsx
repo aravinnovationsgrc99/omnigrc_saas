@@ -15,6 +15,9 @@ import {
   ExternalLink,
   Activity,
   ArrowRight,
+  Database,
+  BarChart3,
+  Table as TableIcon,
 } from 'lucide-react';
 import { apiRequest } from '@/lib/api-client';
 import {
@@ -22,6 +25,10 @@ import {
   GrcSourceCitation,
   GrcStructuredAnalysis,
   GrcInferenceMode,
+  GrcGenerationMode,
+  GrcVisualizationPayload,
+  GrcDataSummary,
+  GrcChatResponseDto,
   EXACT_TEN_PREDEFINED_QUESTIONS,
 } from '@omnigrc/shared';
 
@@ -34,6 +41,10 @@ export interface ChatMessage {
   sourcesUsed?: string[];
   suggestedFollowUps?: string[];
   inferenceMode?: GrcInferenceMode;
+  generationMode?: GrcGenerationMode;
+  visualizations?: GrcVisualizationPayload[];
+  data?: GrcDataSummary;
+  warnings?: string[];
   providerName?: string;
   isLiveAi?: boolean;
   isError?: boolean;
@@ -157,17 +168,7 @@ export function FloatingSupportChat({
         content: m.content,
       }));
 
-      const data = await apiRequest<{
-        answer: string;
-        structuredAnalysis?: GrcStructuredAnalysis;
-        citations?: GrcSourceCitation[];
-        sourcesUsed?: string[];
-        suggestedFollowUps?: string[];
-        inferenceMode?: GrcInferenceMode;
-        providerName?: string;
-        isLiveAi?: boolean;
-        disclaimer?: string;
-      }>('/intelligence/chat', {
+      const data = await apiRequest<GrcChatResponseDto>('/intelligence/chat', {
         method: 'POST',
         body: JSON.stringify({
           prompt: messageContent,
@@ -194,6 +195,10 @@ export function FloatingSupportChat({
         sourcesUsed: data.sourcesUsed || [],
         suggestedFollowUps: data.suggestedFollowUps || [],
         inferenceMode: data.inferenceMode,
+        generationMode: data.generationMode,
+        visualizations: data.visualizations,
+        data: data.data,
+        warnings: data.warnings,
         providerName: data.providerName,
         isLiveAi: data.isLiveAi,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -379,7 +384,30 @@ export function FloatingSupportChat({
 
             {/* Messages Thread */}
             {messages.map((msg) => (
-              <div key={msg.id} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+              <div key={msg.id} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'} space-y-1`}>
+                {msg.role === 'assistant' && (
+                  <div className="text-[10px] font-semibold text-slate-500 px-1 flex items-center gap-1.5">
+                    <Bot className="w-3 h-3 text-teal-700" />
+                    <span>GRC Assistant</span>
+                    {msg.generationMode === 'DATA_GROUNDED' ? (
+                      <span className="text-[9px] font-semibold bg-teal-100 text-teal-900 px-1.5 py-0.2 rounded-full inline-flex items-center gap-0.5 border border-teal-200">
+                        <Database className="w-2 h-2 text-teal-700" /> Verified DB
+                      </span>
+                    ) : msg.generationMode === 'HYBRID' ? (
+                      <span className="text-[9px] font-semibold bg-blue-100 text-blue-900 px-1.5 py-0.2 rounded-full inline-flex items-center gap-0.5 border border-blue-200">
+                        <Sparkles className="w-2 h-2 text-blue-700" /> Hybrid AI
+                      </span>
+                    ) : msg.generationMode === 'AI_GENERATED' ? (
+                      <span className="text-[9px] font-semibold bg-emerald-100 text-emerald-900 px-1.5 py-0.2 rounded-full inline-flex items-center gap-0.5 border border-emerald-200">
+                        AI Generated
+                      </span>
+                    ) : msg.isLiveAi ? (
+                      <span className="text-[9px] font-medium bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded-full">
+                        Live AI
+                      </span>
+                    ) : null}
+                  </div>
+                )}
                 <div
                   className={`max-w-[92%] sm:max-w-[88%] p-3.5 rounded-2xl text-xs space-y-2.5 shadow-xs ${
                     msg.role === 'user'
@@ -396,8 +424,129 @@ export function FloatingSupportChat({
                     {msg.content}
                   </div>
 
-                  {/* Compact Metrics */}
-                  {msg.structuredAnalysis && msg.structuredAnalysis.metrics && msg.structuredAnalysis.metrics.length > 0 && (
+                  {/* Advisory Warnings */}
+                  {msg.warnings && msg.warnings.length > 0 && (
+                    <div className="p-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px] flex items-start gap-1.5">
+                      <AlertTriangle className="w-3 h-3 text-amber-600 flex-shrink-0 mt-0.5" />
+                      <div className="space-y-0.5">
+                        {msg.warnings.map((w, wIdx) => (
+                          <div key={wIdx}>{w}</div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Dynamic Visualizations: KPIs, Severity Bar, Table */}
+                  {msg.visualizations && msg.visualizations.length > 0 && (
+                    <div className="space-y-2.5 pt-2 border-t border-slate-100">
+                      {msg.visualizations.map((viz, vIdx) => (
+                        <div key={vIdx} className="space-y-1.5">
+                          {/* KPI grid */}
+                          {viz.type === 'kpi' && viz.kpis && viz.kpis.length > 0 && (
+                            <div className="grid grid-cols-2 gap-1.5">
+                              {viz.kpis.slice(0, 4).map((k, kIdx) => (
+                                <div
+                                  key={kIdx}
+                                  className={`p-1.5 rounded-lg border text-center ${
+                                    k.trend === 'critical'
+                                      ? 'bg-red-50 border-red-200 text-red-900'
+                                      : k.trend === 'warning'
+                                      ? 'bg-amber-50 border-amber-200 text-amber-900'
+                                      : k.trend === 'good'
+                                      ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                                      : 'bg-slate-50 border-slate-200 text-slate-800'
+                                  }`}
+                                >
+                                  <div className="text-xs font-bold omni-mono">{k.value}</div>
+                                  <div className="text-[9px] text-slate-500 truncate">{k.label}</div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Bar chart */}
+                          {viz.type === 'bar' && viz.chartData && viz.chartData.length > 0 && (
+                            <div className="bg-slate-50 p-2 rounded-lg border border-slate-200 space-y-1.5">
+                              {viz.title && (
+                                <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                                  <BarChart3 className="w-2.5 h-2.5 text-teal-600" /> {viz.title}
+                                </div>
+                              )}
+                              <div className="space-y-1">
+                                {viz.chartData.map((item, bIdx) => {
+                                  const color = item.color || (
+                                    item.label.toLowerCase().includes('high') || item.label.toLowerCase().includes('critical')
+                                      ? '#EF4444'
+                                      : item.label.toLowerCase().includes('med')
+                                      ? '#F59E0B'
+                                      : '#10B981'
+                                  );
+                                  return (
+                                    <div key={bIdx} className="space-y-0.5">
+                                      <div className="flex items-center justify-between text-[10px]">
+                                        <span className="font-medium text-slate-700 flex items-center gap-1">
+                                          <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ backgroundColor: color }} />
+                                          {item.label}
+                                        </span>
+                                        <span className="font-mono text-slate-900 font-bold text-[10px]">
+                                          {item.value} {item.percentage !== undefined ? `(${item.percentage}%)` : ''}
+                                        </span>
+                                      </div>
+                                      <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                                        <div
+                                          className="h-1.5 rounded-full transition-all duration-300"
+                                          style={{
+                                            width: `${Math.min(100, Math.max(0, item.percentage ?? (item.value > 0 ? 100 : 0)))}%`,
+                                            backgroundColor: color,
+                                          }}
+                                        />
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Table */}
+                          {viz.type === 'table' && viz.columns && viz.rows && (
+                            <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                              <table className="w-full text-left text-[10px]">
+                                <thead>
+                                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
+                                    {viz.columns.slice(0, 3).map((col) => (
+                                      <th key={col.key} className="py-1 px-1.5 font-semibold uppercase">
+                                        {col.label}
+                                      </th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {viz.rows.slice(0, 3).map((row, rIdx) => (
+                                    <tr key={rIdx}>
+                                      {viz.columns!.slice(0, 3).map((col) => (
+                                        <td key={col.key} className="py-1 px-1.5 text-slate-700 truncate max-w-[120px]">
+                                          {typeof row[col.key] === 'number' ? (
+                                            <span className="font-mono font-bold">{row[col.key]}</span>
+                                          ) : (
+                                            row[col.key] ?? '—'
+                                          )}
+                                        </td>
+                                      ))}
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Fallback Compact Metrics (if no viz.kpi rendered) */}
+                  {(!msg.visualizations || !msg.visualizations.some(v => v.type === 'kpi')) &&
+                    msg.structuredAnalysis && msg.structuredAnalysis.metrics && msg.structuredAnalysis.metrics.length > 0 && (
                     <div className="pt-2 border-t border-slate-100">
                       <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center gap-1">
                         <Activity className="w-3 h-3 text-teal-600" /> Metrics

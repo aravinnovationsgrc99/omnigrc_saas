@@ -417,18 +417,18 @@ ${summaryItems.join('\n') || 'Zero security controls recorded.'}`;
         title: 'Risk Posture Overview',
         kpis: [
           { label: 'Total Tracked Risks', value: totalCount, trend: 'neutral' },
-          { label: 'High / Critical (≥15)', value: highCount, trend: highCount > 0 ? 'critical' : 'good' },
+          { label: 'High Severity (≥15)', value: highCount, trend: highCount > 0 ? 'critical' : 'good' },
           { label: 'Max Exposure Score', value: maxScore, trend: maxScore >= 15 ? 'critical' : 'neutral' },
           { label: 'Active Open Risks', value: openCount, trend: openCount > 0 ? 'warning' : 'good' },
         ],
       },
       {
         type: 'bar',
-        title: 'Risk Severity Distribution',
+        title: 'Risk Severity Distribution (Score Bands)',
         chartData: [
-          { label: 'High (≥15)', value: highCount, color: '#EF4444' },
-          { label: 'Medium (8-14)', value: mediumCount, color: '#F59E0B' },
-          { label: 'Low (<8)', value: lowCount, color: '#10B981' },
+          { label: 'High (15–25)', value: highCount, color: '#EF4444' },
+          { label: 'Medium (8–14)', value: mediumCount, color: '#F59E0B' },
+          { label: 'Low (1–7)', value: lowCount, color: '#10B981' },
         ],
       },
       {

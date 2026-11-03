@@ -31,14 +31,19 @@ export function EntitledFrameworkCoverageWidget({
 
   const colorPalette = ['#0d9488', '#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#6366f1'];
 
-  const coverageItems: BarItem[] = metrics.map((fw, index) => ({
-    key: fw.frameworkId || fw.code,
-    label: `${fw.code} (${fw.name})`,
-    value: fw.coveragePercentage,
-    percentage: fw.coveragePercentage,
-    color: colorPalette[index % colorPalette.length],
-    badgeText: `${fw.covered}/${fw.totalReferences} Covered`,
-  }));
+  const hasUnavailable = metrics.some((fw) => fw.status === 'UNAVAILABLE');
+
+  const coverageItems: BarItem[] = metrics.map((fw, index) => {
+    const isUnavailable = fw.status === 'UNAVAILABLE';
+    return {
+      key: fw.frameworkId || fw.code,
+      label: `${fw.code} (${fw.name})`,
+      value: isUnavailable ? 0 : fw.coveragePercentage,
+      percentage: isUnavailable ? 0 : fw.coveragePercentage,
+      color: isUnavailable ? '#94A3B8' : colorPalette[index % colorPalette.length],
+      badgeText: isUnavailable ? 'Calculation Unavailable (Timed out)' : `${fw.covered}/${fw.totalReferences} Covered`,
+    };
+  });
 
   if (!metrics || metrics.length === 0) {
     return (
@@ -93,6 +98,13 @@ export function EntitledFrameworkCoverageWidget({
             <ChevronRight size={14} />
           </button>
         </div>
+
+        {hasUnavailable && (
+          <div className="mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-800 flex items-center gap-2">
+            <AlertCircle size={14} className="text-amber-600 shrink-0" />
+            <span>One or more framework coverage calculations timed out. Existing framework data is preserved.</span>
+          </div>
+        )}
 
         {/* Horizontal Bar Chart for Entitled Frameworks */}
         <div className="mb-4">

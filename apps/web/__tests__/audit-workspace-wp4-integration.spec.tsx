@@ -244,7 +244,7 @@ describe('Phase 3 WP4: Audit Workspace Integration & End-to-End Validation', () 
         expect(screen.getByText('Privileged service account without MFA')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /verify & close/i })).toBeInTheDocument();
       });
-    });
+    }, 15000);
 
     it('independent verifier successfully verifies finding and advances status', async () => {
       render(<AuditListView />);

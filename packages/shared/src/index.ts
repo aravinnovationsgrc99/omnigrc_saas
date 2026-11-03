@@ -2162,6 +2162,8 @@ export interface ControlCoverageMetricsDto {
   isAvailable?: boolean;
 }
 
+export type FrameworkCalculationStatus = 'COMPLETE' | 'PARTIAL' | 'UNAVAILABLE' | 'EMPTY';
+
 export interface EntitledFrameworkCoverageSummaryDto {
   frameworkId: string;
   code: string;
@@ -2171,6 +2173,8 @@ export interface EntitledFrameworkCoverageSummaryDto {
   partial: number;
   notCovered: number;
   coveragePercentage: number;
+  status?: FrameworkCalculationStatus;
+  errorMessage?: string;
 }
 
 export interface AttentionItemDto {
@@ -2194,6 +2198,7 @@ export interface OverviewMetricsDto {
   risks: RiskMetricsDto;
   controls: ControlCoverageMetricsDto;
   frameworkCoverage: EntitledFrameworkCoverageSummaryDto[];
+  frameworkCoverageStatus?: FrameworkCalculationStatus;
   attentionRequired?: AttentionItemDto[];
 }
 

@@ -16,6 +16,9 @@ import {
   Layers,
   Activity,
   FileText,
+  Database,
+  BarChart3,
+  Table as TableIcon,
 } from 'lucide-react';
 import { apiRequest } from '@/lib/api-client';
 import {
@@ -24,6 +27,10 @@ import {
   GrcSourceCitation,
   GrcStructuredAnalysis,
   GrcInferenceMode,
+  GrcGenerationMode,
+  GrcVisualizationPayload,
+  GrcDataSummary,
+  GrcChatResponseDto,
   GrcDomain,
 } from '@omnigrc/shared';
 
@@ -37,6 +44,10 @@ export interface ChatMessage {
   suggestedFollowUps?: string[];
   intent?: string;
   inferenceMode?: GrcInferenceMode;
+  generationMode?: GrcGenerationMode;
+  visualizations?: GrcVisualizationPayload[];
+  data?: GrcDataSummary;
+  warnings?: string[];
   providerName?: string;
   isLiveAi?: boolean;
   disclaimer?: string;
@@ -92,18 +103,7 @@ export function GrcIntelligenceView({ onNavigateToView }: GrcIntelligenceViewPro
     setLoading(true);
 
     try {
-      const data = await apiRequest<{
-        answer: string;
-        structuredAnalysis?: GrcStructuredAnalysis;
-        citations?: GrcSourceCitation[];
-        sourcesUsed?: string[];
-        suggestedFollowUps?: string[];
-        intent?: string;
-        inferenceMode?: GrcInferenceMode;
-        providerName?: string;
-        isLiveAi?: boolean;
-        disclaimer?: string;
-      }>('/intelligence/chat', {
+      const data = await apiRequest<GrcChatResponseDto>('/intelligence/chat', {
         method: 'POST',
         body: JSON.stringify({
           prompt: queryText.trim(),
@@ -132,6 +132,10 @@ export function GrcIntelligenceView({ onNavigateToView }: GrcIntelligenceViewPro
         suggestedFollowUps: data.suggestedFollowUps || [],
         intent: data.intent,
         inferenceMode: data.inferenceMode,
+        generationMode: data.generationMode,
+        visualizations: data.visualizations,
+        data: data.data,
+        warnings: data.warnings,
         providerName: data.providerName,
         isLiveAi: data.isLiveAi,
         disclaimer: data.disclaimer,
@@ -270,7 +274,22 @@ export function GrcIntelligenceView({ onNavigateToView }: GrcIntelligenceViewPro
                     <span className="flex items-center gap-1.5 text-teal-900 font-bold">
                       <Bot className="w-3.5 h-3.5 text-teal-700" />
                       <span>OMNiGRC Intelligence</span>
-                      {msg.isLiveAi ? (
+                      {msg.generationMode === 'DATA_GROUNDED' ? (
+                        <span className="text-[10px] font-semibold bg-teal-100 text-teal-900 px-2 py-0.5 rounded-full inline-flex items-center gap-1 border border-teal-200">
+                          <Database className="w-2.5 h-2.5 text-teal-700" />
+                          Data Grounded (Verified DB)
+                        </span>
+                      ) : msg.generationMode === 'HYBRID' ? (
+                        <span className="text-[10px] font-semibold bg-blue-100 text-blue-900 px-2 py-0.5 rounded-full inline-flex items-center gap-1 border border-blue-200">
+                          <Sparkles className="w-2.5 h-2.5 text-blue-700" />
+                          Hybrid (AI + Live DB)
+                        </span>
+                      ) : msg.generationMode === 'AI_GENERATED' ? (
+                        <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-900 px-2 py-0.5 rounded-full inline-flex items-center gap-1 border border-emerald-200">
+                          <Bot className="w-2.5 h-2.5 text-emerald-700" />
+                          AI Generated
+                        </span>
+                      ) : msg.isLiveAi ? (
                         <span className="text-[10px] font-medium bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded-full">
                           Live AI
                         </span>
@@ -299,8 +318,141 @@ export function GrcIntelligenceView({ onNavigateToView }: GrcIntelligenceViewPro
                     {msg.content}
                   </div>
 
-                  {/* Structured Analysis Metrics Cards */}
-                  {msg.structuredAnalysis && msg.structuredAnalysis.metrics && msg.structuredAnalysis.metrics.length > 0 && (
+                  {/* Fallback / Advisory Warnings */}
+                  {msg.warnings && msg.warnings.length > 0 && (
+                    <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />
+                      <div className="space-y-0.5">
+                        {msg.warnings.map((w, wIdx) => (
+                          <div key={wIdx} className="text-[11px] leading-relaxed">{w}</div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Dynamic Visualizations: KPIs, Severity Bar Charts, Tables */}
+                  {msg.visualizations && msg.visualizations.length > 0 && (
+                    <div className="space-y-3 pt-2 border-t border-slate-100">
+                      {msg.visualizations.map((viz, vIdx) => (
+                        <div key={vIdx} className="space-y-2">
+                          {/* 1. KPI Cards Grid */}
+                          {viz.type === 'kpi' && viz.kpis && viz.kpis.length > 0 && (
+                            <div>
+                              {viz.title && (
+                                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                                  <Activity className="w-3 h-3 text-teal-600" /> {viz.title}
+                                </div>
+                              )}
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                {viz.kpis.map((k, kIdx) => (
+                                  <div
+                                    key={kIdx}
+                                    className={`p-2.5 rounded-xl border text-center ${
+                                      k.trend === 'critical'
+                                        ? 'bg-red-50 border-red-200 text-red-900'
+                                        : k.trend === 'warning'
+                                        ? 'bg-amber-50 border-amber-200 text-amber-900'
+                                        : k.trend === 'good'
+                                        ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                                        : 'bg-slate-50 border-slate-200 text-slate-900'
+                                    }`}
+                                  >
+                                    <div className="text-base font-bold omni-mono">{k.value}</div>
+                                    <div className="text-[10px] text-slate-600 font-medium truncate">{k.label}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 2. Semantic Distribution Bar Chart */}
+                          {viz.type === 'bar' && viz.chartData && viz.chartData.length > 0 && (
+                            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
+                              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                                <BarChart3 className="w-3 h-3 text-teal-600" /> {viz.title || 'Severity Distribution'}
+                              </div>
+                              <div className="space-y-2">
+                                {viz.chartData.map((item, bIdx) => {
+                                  const color = item.color || (
+                                    item.label.toLowerCase().includes('high') || item.label.toLowerCase().includes('critical')
+                                      ? '#EF4444'
+                                      : item.label.toLowerCase().includes('med')
+                                      ? '#F59E0B'
+                                      : '#10B981'
+                                  );
+                                  return (
+                                    <div key={bIdx} className="space-y-1">
+                                      <div className="flex items-center justify-between text-xs">
+                                        <span className="font-semibold text-slate-700 flex items-center gap-1.5">
+                                          <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: color }} />
+                                          {item.label}
+                                        </span>
+                                        <span className="font-mono text-slate-900 font-bold">
+                                          {item.value} {item.percentage !== undefined ? `(${item.percentage}%)` : ''}
+                                        </span>
+                                      </div>
+                                      <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                                        <div
+                                          className="h-2 rounded-full transition-all duration-500"
+                                          style={{
+                                            width: `${Math.min(100, Math.max(0, item.percentage ?? (item.value > 0 ? 100 : 0)))}%`,
+                                            backgroundColor: color,
+                                          }}
+                                        />
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 3. Structured Data Table */}
+                          {viz.type === 'table' && viz.columns && viz.rows && (
+                            <div className="space-y-1.5">
+                              {viz.title && (
+                                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                                  <TableIcon className="w-3 h-3 text-teal-600" /> {viz.title}
+                                </div>
+                              )}
+                              <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-2xs">
+                                <table className="w-full text-left border-collapse text-xs">
+                                  <thead>
+                                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
+                                      {viz.columns.map((col) => (
+                                        <th key={col.key} className="py-2 px-3 font-semibold text-[11px] uppercase tracking-wider">
+                                          {col.label}
+                                        </th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100">
+                                    {viz.rows.map((row, rIdx) => (
+                                      <tr key={rIdx} className="hover:bg-slate-50/70 transition-colors">
+                                        {viz.columns!.map((col) => (
+                                          <td key={col.key} className="py-2 px-3 text-slate-700 text-xs">
+                                            {typeof row[col.key] === 'number' ? (
+                                              <span className="font-mono font-bold">{row[col.key]}</span>
+                                            ) : (
+                                              row[col.key] ?? '—'
+                                            )}
+                                          </td>
+                                        ))}
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Fallback Structured Analysis Metrics Cards (if no viz.kpi rendered) */}
+                  {(!msg.visualizations || !msg.visualizations.some(v => v.type === 'kpi')) &&
+                    msg.structuredAnalysis && msg.structuredAnalysis.metrics && msg.structuredAnalysis.metrics.length > 0 && (
                     <div className="pt-2 border-t border-slate-100">
                       <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
                         <Activity className="w-3 h-3 text-teal-600" /> Key Operational Metrics

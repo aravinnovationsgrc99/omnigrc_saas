@@ -332,19 +332,21 @@ export class MetricsService {
         try {
           const res = await Promise.race([
             this.frameworkCoverageService.calculateCoverage(authCtx, fw.id),
-            new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Coverage timeout')), 5000)),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Coverage timeout after 5000ms')), 5000)),
           ]);
+          const totalRef = res.summary.totalReferences;
           return {
             frameworkId: fw.id,
             code: fw.code,
             name: fw.name,
-            totalReferences: res.summary.totalReferences,
+            totalReferences: totalRef,
             covered: res.summary.covered,
             partial: res.summary.partial,
             notCovered: res.summary.notCovered,
             coveragePercentage: res.summary.coveragePercentage,
+            status: totalRef === 0 ? ('EMPTY' as const) : ('COMPLETE' as const),
           };
-        } catch {
+        } catch (err: any) {
           return {
             frameworkId: fw.id,
             code: fw.code,
@@ -354,10 +356,23 @@ export class MetricsService {
             partial: 0,
             notCovered: 0,
             coveragePercentage: 0,
+            status: 'UNAVAILABLE' as const,
+            errorMessage: err?.message || 'Coverage calculation timed out after 5000ms',
           };
         }
       }),
     );
+
+    const anyUnavailable = frameworkCoverage.some((f) => f.status === 'UNAVAILABLE');
+    const allUnavailable = frameworkCoverage.length > 0 && frameworkCoverage.every((f) => f.status === 'UNAVAILABLE');
+    const frameworkCoverageStatus: 'COMPLETE' | 'PARTIAL' | 'UNAVAILABLE' | 'EMPTY' =
+      entitledFrameworks.length === 0
+        ? 'EMPTY'
+        : allUnavailable
+        ? 'UNAVAILABLE'
+        : anyUnavailable
+        ? 'PARTIAL'
+        : 'COMPLETE';
 
     const totalRefSummary = frameworkCoverage.reduce((sum, f) => sum + f.totalReferences, 0);
     const coveredRefSummary = frameworkCoverage.reduce((sum, f) => sum + f.covered, 0);
@@ -560,11 +575,36 @@ export class MetricsService {
       risks,
       controls,
       frameworkCoverage,
+      frameworkCoverageStatus,
       attentionRequired,
     };
 
-    this.overviewCache.set(cacheKey, { data: result, expiresAt: Date.now() + 20000 });
+    // Only cache when calculations are healthy/complete/partial to prevent caching failed attempts
+    if (frameworkCoverageStatus !== 'UNAVAILABLE') {
+      this.overviewCache.set(cacheKey, { data: result, expiresAt: Date.now() + 20000 });
+    }
     return result;
+  }
+
+  public clearOverviewCache(organizationId?: string): void {
+    if (organizationId) {
+      for (const key of this.overviewCache.keys()) {
+        if (key.startsWith(`${organizationId}:`)) {
+          this.overviewCache.delete(key);
+        }
+      }
+    } else {
+      this.overviewCache.clear();
+    }
+  }
+
+  public getCachedOverviewMetrics(organizationId: string, userId: string = 'anon', role: string = 'user'): OverviewMetricsDto | null {
+    const key = `${organizationId}:${userId}:${role}`;
+    const entry = this.overviewCache.get(key);
+    if (entry && entry.expiresAt > Date.now()) {
+      return entry.data;
+    }
+    return null;
   }
 
   /**

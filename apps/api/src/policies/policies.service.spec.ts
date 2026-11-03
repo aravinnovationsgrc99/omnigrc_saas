@@ -1131,6 +1131,23 @@ describe('PoliciesService', () => {
       expect(docxResult.buffer.length).toBeGreaterThan(100);
       expect(docxResult.filename).toContain('POL-DOCX-001');
       expect(docxResult.filename.endsWith('.docx')).toBe(true);
+
+      // Verify genuine PKZip / OOXML Word document structure
+      expect(docxResult.buffer[0]).toBe(0x50); // 'P'
+      expect(docxResult.buffer[1]).toBe(0x4b); // 'K'
+      expect(docxResult.buffer[2]).toBe(0x03);
+      expect(docxResult.buffer[3]).toBe(0x04);
+
+      const JSZip = require('jszip');
+      const zip = await JSZip.loadAsync(docxResult.buffer);
+      expect(zip.file('[Content_Types].xml')).not.toBeNull();
+      expect(zip.file('word/document.xml')).not.toBeNull();
+      expect(zip.file('word/styles.xml')).not.toBeNull();
+      const docXml = await zip.file('word/document.xml').async('text');
+      expect(docXml).toContain('POL-DOCX-001');
+      expect(docXml).toContain('Document Export Verification Policy');
+      expect(docXml).toContain('This is a verified test policy.');
+
       expect(auditLogsService.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'POLICY_DOCX_EXPORTED' }),
       );

@@ -165,6 +165,7 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
   const [orgMembers, setOrgMembers] = useState<any[]>([]);
   const [policyShares, setPolicyShares] = useState<any[]>([]);
   const [loadingShares, setLoadingShares] = useState(false);
+  const [sharesError, setSharesError] = useState<{ status?: number; message: string } | null>(null);
   const [selectedMemberId, setSelectedMemberId] = useState('');
   const [selectedPermission, setSelectedPermission] = useState<'VIEW' | 'DOWNLOAD' | 'EDIT'>('VIEW');
   const [shareExpiresAt, setShareExpiresAt] = useState('');
@@ -234,11 +235,19 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
 
   async function fetchPolicyShares(policyId: string) {
     setLoadingShares(true);
+    setSharesError(null);
     try {
-      const shares = await apiRequest<any[]>(`/policies/${policyId}/shares`).catch(() => []);
+      const shares = await apiRequest<any[]>(`/policies/${policyId}/shares`);
       setPolicyShares(Array.isArray(shares) ? shares : []);
-    } catch {
+    } catch (err: any) {
       setPolicyShares([]);
+      const status = err?.status || err?.statusCode || 500;
+      let msg = err?.message || 'Failed to retrieve access shares.';
+      if (status === 401) msg = 'Session expired. Please re-authenticate to inspect policy permissions.';
+      else if (status === 403) msg = 'Unauthorized. You do not have permission to inspect or manage policy access shares.';
+      else if (status === 404) msg = 'Policy not found or has been removed.';
+      setSharesError({ status, message: msg });
+      addToast(msg, 'error');
     } finally {
       setLoadingShares(false);
     }
@@ -295,7 +304,7 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
 
   async function handleExportDocx(policy: PolicyDto) {
     try {
-      addToast(`Generating branded Word document for ${policy.code}...`, 'info');
+      addToast(`Generating authoritative Word document (.docx) for ${policy.code}...`, 'info');
       const { accessToken } = getStoredTokens();
       const baseUrl = getApiBaseUrl().replace(/\/+$/, '');
       const response = await fetch(`${baseUrl}/policies/${policy.id}/export/docx`, {
@@ -305,7 +314,13 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
       });
 
       if (!response.ok) {
-        throw new Error(`Endpoint returned status ${response.status}`);
+        const errorJson = await response.json().catch(() => ({}));
+        throw new Error(errorJson.message || `Endpoint returned status ${response.status} (${response.statusText})`);
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('wordprocessingml') && !contentType.includes('document')) {
+        throw new Error(`Invalid content type received: ${contentType}. Expected genuine OOXML Word document (.docx).`);
       }
 
       const blob = await response.blob();
@@ -318,22 +333,9 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-      addToast(`Exported ${policy.code} as branded Word document (.docx).`, 'success');
-    } catch {
-      // Graceful client fallback: generate richly styled Office Word document (.doc)
-      let content = policy.publishedVersion?.content || policy.versions?.[0]?.content;
-      if (!content) {
-        try {
-          const detail = await apiRequest<PolicyDto>(`/policies/${policy.id}`);
-          content = detail?.publishedVersion?.content || detail?.versions?.[0]?.content;
-        } catch {
-          // ignore
-        }
-      }
-      if (!content) {
-        content = `# ${policy.title}\n\n${policy.description || 'No policy statements provided.'}`;
-      }
-      downloadPolicyContent(policy, content, 'doc');
+      addToast(`Authoritative Word document (.docx) exported successfully for ${policy.code}.`, 'success');
+    } catch (err: any) {
+      addToast(`Word document export failed: ${err.message}`, 'error');
     }
   }
 
@@ -1916,6 +1918,23 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
                   </h3>
                   {loadingShares ? (
                     <div className="text-xs text-slate-500 py-3 text-center">Loading active shares...</div>
+                  ) : sharesError ? (
+                    <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-800 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                        <div>
+                          <p className="font-semibold">Unable to load permissions ({sharesError.status || 'Error'})</p>
+                          <p className="text-[11px] text-rose-600">{sharesError.message}</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => selectedPolicy && fetchPolicyShares(selectedPolicy.id)}
+                        className="px-2.5 py-1 text-[11px] font-semibold bg-white border border-rose-300 rounded text-rose-700 hover:bg-rose-100 transition-colors shrink-0"
+                      >
+                        Retry
+                      </button>
+                    </div>
                   ) : policyShares.filter((s) => !s.revokedAt).length === 0 ? (
                     <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-center text-xs text-slate-500">
                       No explicit granular shares granted. Organization members access this policy based on default role permissions.

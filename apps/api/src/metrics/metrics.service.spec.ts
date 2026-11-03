@@ -11,6 +11,8 @@ describe('MetricsService', () => {
   let service: MetricsService;
   let prisma: jest.Mocked<any>;
   let moduleRef: TestingModule;
+  let frameworkEntitlementsService: jest.Mocked<any>;
+  let frameworkCoverageService: jest.Mocked<any>;
 
   beforeEach(async () => {
     prisma = {
@@ -112,6 +114,8 @@ describe('MetricsService', () => {
     }).compile();
 
     service = moduleRef.get<MetricsService>(MetricsService);
+    frameworkEntitlementsService = moduleRef.get(FrameworkEntitlementsService);
+    frameworkCoverageService = moduleRef.get(FrameworkCoverageService);
   });
 
   it('should be defined', () => {
@@ -440,5 +444,28 @@ describe('MetricsService', () => {
     expect(policyAttention).toBeDefined();
     expect(policyAttention?.title).toBe('Overdue Access Policy');
     expect(policyAttention?.targetView).toBe('policies');
+  });
+
+  it('should mark timed-out framework coverage as UNAVAILABLE without caching bad results', async () => {
+    service.clearOverviewCache();
+    frameworkEntitlementsService.getEntitledFrameworkIds.mockResolvedValueOnce(['fw-slow']);
+    prisma.framework.findMany.mockResolvedValueOnce([
+      { id: 'fw-slow', code: 'ISO27001', name: 'ISO/IEC 27001' },
+    ]);
+    frameworkCoverageService.calculateCoverage.mockImplementationOnce(
+      () => new Promise((_, reject) => setTimeout(() => reject(new Error('Coverage timed out')), 50))
+    );
+
+    const authCtx = { userId: 'user-admin', organizationId: 'org-tenant-alpha', role: Role.ADMIN };
+    const result = await service.getOverviewMetrics(authCtx);
+
+    expect(result.frameworkCoverage).toBeDefined();
+    expect(result.frameworkCoverage?.length).toBe(1);
+    expect(result.frameworkCoverage?.[0].status).toBe('UNAVAILABLE');
+    expect(result.frameworkCoverageStatus).toBe('UNAVAILABLE');
+
+    // Verify it is not cached so subsequent calls can retry
+    const cached = service.getCachedOverviewMetrics('org-tenant-alpha', 'user-admin', Role.ADMIN);
+    expect(cached).toBeNull();
   });
 });
