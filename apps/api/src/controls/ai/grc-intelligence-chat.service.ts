@@ -284,43 +284,50 @@ ${kbText}
         return [
           'Which controls are missing evidence attachments?',
           'What is our compliance gap against ISO 27001?',
-          'Show designated control owners.',
+          'Show designated control owners and implementation status.',
+          'Which controls failed their most recent automated check?',
         ];
       case 'risk':
         return [
           'What are the treatment plans for high-severity risks?',
           'Which risks require executive approval?',
           'How does our residual risk compare to inherent risk?',
+          'Show top risk items by financial and operational impact.',
         ];
       case 'vendor':
         return [
           'Which vendors have expired certifications?',
           'Show vendors with Critical inherent risk.',
           'What due diligence questionnaires are pending review?',
+          'Which third-party contracts require SOC 2 renewal this quarter?',
         ];
       case 'audit':
         return [
           'What overdue CAPAs are currently open?',
           'Which audit findings are classified as High severity?',
           'When is our next scheduled internal audit?',
+          'Show findings awaiting auditor verification.',
         ];
       case 'regulatory':
         return [
           'Which regulatory obligations are unmapped to controls?',
-          'What are the newest circulars from RBI?',
-          'Show regulatory compliance gaps.',
+          'What are the newest circulars and directives published?',
+          'Show regulatory compliance gaps across frameworks.',
+          'Which regulations require mandatory reporting deadlines?',
         ];
       case 'governance':
         return [
           'Which policies are past their annual review date?',
           'What policy exception requests are pending approval?',
-          'Show employee attestation rates.',
+          'Show employee attestation rates across teams.',
+          'Which draft policies need management sign-off?',
         ];
       default:
         return [
           'What are our top GRC priorities this week?',
           'Show open findings across all audits.',
           'What is our overall compliance posture?',
+          'Which critical risks need immediate attention?',
         ];
     }
   }

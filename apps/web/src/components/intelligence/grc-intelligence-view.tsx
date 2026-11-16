@@ -33,6 +33,7 @@ import {
   GrcChatResponseDto,
   GrcDomain,
 } from '@omnigrc/shared';
+import { ChatMarkdown } from './chat-markdown';
 
 export interface ChatMessage {
   id: string;
@@ -312,10 +313,8 @@ export function GrcIntelligenceView({ onNavigateToView }: GrcIntelligenceViewPro
                   }`}
                 >
                   {/* Assistant Text Answer or User Query */}
-                  <div className={`whitespace-pre-wrap leading-relaxed break-words overflow-hidden text-xs ${
-                    msg.role === 'user' ? '!text-white font-medium' : msg.isError ? 'text-red-900' : 'text-slate-800'
-                  }`}>
-                    {msg.content}
+                  <div className="leading-relaxed break-words overflow-hidden text-xs">
+                    <ChatMarkdown content={msg.content} isUser={msg.role === 'user'} />
                   </div>
 
                   {/* Fallback / Advisory Warnings */}

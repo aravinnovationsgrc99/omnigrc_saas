@@ -3954,6 +3954,74 @@ export const EXACT_TEN_PREDEFINED_QUESTIONS: GrcSuggestedQuestion[] = [
   },
 ];
 
+export const EXTENDED_GRC_PREDEFINED_QUESTIONS: GrcSuggestedQuestion[] = [
+  ...EXACT_TEN_PREDEFINED_QUESTIONS,
+  {
+    key: 'q11-evidence-readiness',
+    category: 'Controls',
+    domain: 'compliance',
+    label: 'Evidence Readiness & Expirations',
+    prompt: 'Which security controls have expired or missing evidence attachments for upcoming audits?',
+    description: 'Surfaces automated and manual evidence files that are outdated or missing links.',
+  },
+  {
+    key: 'q12-critical-vulnerabilities',
+    category: 'Risks',
+    domain: 'risk',
+    label: 'Critical Vulnerabilities & CVEs',
+    prompt: 'What critical vulnerabilities and CVEs are currently open in our environment?',
+    description: 'Scans open security findings, CVE identifiers, and overdue remediation deadlines.',
+  },
+  {
+    key: 'q13-audit-capa-status',
+    category: 'Audits',
+    domain: 'audit',
+    label: 'CAPA & Verification Status',
+    prompt: 'Show the status of all open CAPAs and verification milestones for external audits.',
+    description: 'Tracks corrective actions, audit verification readiness, and milestone progress.',
+  },
+  {
+    key: 'q14-vendor-certifications',
+    category: 'Vendors',
+    domain: 'vendor',
+    label: 'Vendor SOC 2 & ISO Certifications',
+    prompt: 'Which third-party vendors are operating with expired SOC 2 or ISO certificates?',
+    description: 'Audits vendor certifications, security questionnaires, and risk levels.',
+  },
+  {
+    key: 'q15-policy-attestation',
+    category: 'Governance',
+    domain: 'governance',
+    label: 'Policy Employee Attestation',
+    prompt: 'What is the employee attestation progress on our published Code of Conduct and Security policies?',
+    description: 'Tracks employee policy sign-offs, pending acknowledgments, and team completion.',
+  },
+  {
+    key: 'q16-unmapped-risks',
+    category: 'Risks',
+    domain: 'risk',
+    label: 'Unmitigated High Risks',
+    prompt: 'Which high-impact risks currently lack an active or approved treatment plan?',
+    description: 'Highlights organizational risks exceeding tolerance without mitigating controls.',
+  },
+  {
+    key: 'q17-framework-gap-analysis',
+    category: 'Compliance',
+    domain: 'compliance',
+    label: 'ISO 27001 & SOC 2 Gap Analysis',
+    prompt: 'What are our primary control gaps against ISO 27001 and SOC 2 Trust Services Criteria?',
+    description: 'Performs readiness mapping across controls to identify certification blockers.',
+  },
+  {
+    key: 'q18-incident-history',
+    category: 'Executive Summary',
+    domain: 'general',
+    label: 'Recent Incident & Threat Summary',
+    prompt: 'What security incidents or compliance exceptions have been logged in the past 90 days?',
+    description: 'Summarizes recent security incidents, post-mortem status, and corrective controls.',
+  },
+];
+
 // Phase 4: Policy & Control Mapping Types
 export interface PolicyControlDto {
   id: string;
