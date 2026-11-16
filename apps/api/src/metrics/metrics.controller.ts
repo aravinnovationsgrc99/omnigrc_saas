@@ -1,4 +1,4 @@
-import { Controller, Get, Query, ParseIntPipe, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, ParseIntPipe, UseGuards, HttpException, HttpStatus } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { MetricsService } from './metrics.service';
@@ -19,7 +19,29 @@ export class MetricsController {
       organizationId: user.organizationId,
       role: user.role,
     };
-    return this.metricsService.getOverviewMetrics(authCtx);
+
+    let timer: NodeJS.Timeout | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('METRICS_TIMEOUT')), 25000);
+    });
+
+    try {
+      const result = await Promise.race([
+        this.metricsService.getOverviewMetrics(authCtx),
+        timeoutPromise,
+      ]);
+      if (timer) clearTimeout(timer);
+      return result;
+    } catch (err: any) {
+      if (timer) clearTimeout(timer);
+      if (err.message === 'METRICS_TIMEOUT') {
+        throw new HttpException(
+          { message: 'Metrics query took too long. Please retry.' },
+          HttpStatus.REQUEST_TIMEOUT,
+        );
+      }
+      throw err;
+    }
   }
 
   @Get('risks/heatmap-cell')

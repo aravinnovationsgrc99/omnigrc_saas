@@ -43,6 +43,7 @@ export interface EffectiveServiceStateResult {
 @Injectable()
 export class EffectiveServiceStateResolver {
   private readonly logger = new Logger(EffectiveServiceStateResolver.name);
+  private readonly stateCache = new Map<string, { result: EffectiveServiceStateResult; expiresAt: number }>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -51,6 +52,38 @@ export class EffectiveServiceStateResolver {
 
   /**
    * Resolve authoritative effective capability state for an organization.
+   * Results are cached in-memory for 60 seconds to reduce DB round trips on
+   * the metrics/overview endpoint which calls this method 8 times per request.
+   */
+  async resolveEffectiveState(
+    organizationId: string,
+    capabilityCode: string,
+  ): Promise<EffectiveServiceStateResult> {
+    const cacheKey = `${organizationId || '_global'}:${capabilityCode}`;
+    const cached = this.stateCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.result;
+    }
+    const result = await this._resolveEffectiveStateUncached(organizationId, capabilityCode);
+    this.stateCache.set(cacheKey, { result, expiresAt: Date.now() + 60000 });
+    return result;
+  }
+
+  /**
+   * Cache-busting: clear cached state for one organization or the entire cache.
+   */
+  clearStateCache(organizationId?: string): void {
+    if (organizationId) {
+      for (const key of this.stateCache.keys()) {
+        if (key.startsWith(`${organizationId}:`)) this.stateCache.delete(key);
+      }
+    } else {
+      this.stateCache.clear();
+    }
+  }
+
+  /**
+   * Uncached implementation.
    * Failure Semantics: Fail-Closed for unknown codes or system errors.
    * Precedence Hierarchy:
    * 1. Commercial License
@@ -59,7 +92,7 @@ export class EffectiveServiceStateResolver {
    * 4. Organization Service Override (DISABLED)
    * 5. Catalog Default
    */
-  async resolveEffectiveState(
+  private async _resolveEffectiveStateUncached(
     organizationId: string,
     capabilityCode: string,
   ): Promise<EffectiveServiceStateResult> {

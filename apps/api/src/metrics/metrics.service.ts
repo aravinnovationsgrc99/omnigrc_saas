@@ -581,9 +581,26 @@ export class MetricsService {
 
     // Only cache when calculations are healthy/complete/partial to prevent caching failed attempts
     if (frameworkCoverageStatus !== 'UNAVAILABLE') {
-      this.overviewCache.set(cacheKey, { data: result, expiresAt: Date.now() + 20000 });
+      this.overviewCache.set(cacheKey, { data: result, expiresAt: Date.now() + 60000 });
     }
     return result;
+  }
+
+  /**
+   * Returns the cached overview metrics entry for a given auth context, or null if absent/expired.
+   * Used by tests to verify caching behaviour.
+   */
+  public getCachedOverviewMetrics(
+    organizationId: string,
+    userId: string,
+    role: string,
+  ): OverviewMetricsDto | null {
+    const cacheKey = `${organizationId}:${userId || 'anon'}:${role || 'user'}`;
+    const cached = this.overviewCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data;
+    }
+    return null;
   }
 
   public clearOverviewCache(organizationId?: string): void {
