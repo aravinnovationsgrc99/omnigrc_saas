@@ -105,7 +105,8 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
     return d.toISOString().split('T')[0];
   });
   const [ownerId, setOwnerId] = useState('CISO');
-  const [targetAudience, setTargetAudience] = useState('All Personnel');
+  const [targetAudience, setTargetAudience] = useState('All Personnel (Company-Wide)');
+  const [targetDepartmentId, setTargetDepartmentId] = useState('');
   const [standardOrFramework, setStandardOrFramework] = useState('ISO 27001 / SOC 2 Type II');
   const [keyRequirements, setKeyRequirements] = useState('');
   const [companyContext, setCompanyContext] = useState('');
@@ -163,6 +164,8 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareActiveTab, setShareActiveTab] = useState<'members' | 'history' | 'email'>('members');
   const [orgMembers, setOrgMembers] = useState<any[]>([]);
+  const [departments, setDepartments] = useState<any[]>([]);
+  const [loadingDepartments, setLoadingDepartments] = useState(false);
   const [policyShares, setPolicyShares] = useState<any[]>([]);
   const [loadingShares, setLoadingShares] = useState(false);
   const [sharesError, setSharesError] = useState<{ status?: number; message: string } | null>(null);
@@ -198,6 +201,7 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
     fetchApprovalWorkflows();
     fetchOrgDetails();
     fetchOrgMembers();
+    fetchDepartments();
   }, [filterStatus]);
 
   async function fetchOrgDetails() {
@@ -230,6 +234,18 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
       }
     } catch {
       setOrgMembers([]);
+    }
+  }
+
+  async function fetchDepartments() {
+    setLoadingDepartments(true);
+    try {
+      const depts = await apiRequest<any[]>('/departments').catch(() => []);
+      setDepartments(Array.isArray(depts) ? depts : []);
+    } catch {
+      setDepartments([]);
+    } finally {
+      setLoadingDepartments(false);
     }
   }
 
@@ -630,6 +646,7 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
           expiryDate: expiryDate ? new Date(expiryDate).toISOString() : undefined,
           reviewDate: reviewDate ? new Date(reviewDate).toISOString() : undefined,
           ownerId,
+          departmentId: targetDepartmentId || undefined,
           reviewCadenceDays: Number(reviewCadenceDays),
           initialContent,
         }),
@@ -1486,15 +1503,46 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Target Audience
+                      Target Audience / Team
                     </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. All Staff, DevOps & SecOps"
-                      value={targetAudience}
-                      onChange={(e) => setTargetAudience(e.target.value)}
-                      className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
-                    />
+                    <select
+                      value={targetDepartmentId || targetAudience}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const matchedDept = departments.find((d: any) => d.id === val);
+                        if (matchedDept) {
+                          setTargetDepartmentId(matchedDept.id);
+                          setTargetAudience(matchedDept.name);
+                        } else {
+                          setTargetDepartmentId('');
+                          setTargetAudience(val);
+                        }
+                      }}
+                      className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 bg-white"
+                    >
+                      <optgroup label="🏢 General Scopes">
+                        <option value="All Personnel (Company-Wide)">All Personnel (Company-Wide)</option>
+                        <option value="Executive Management & Board">Executive Management & Board</option>
+                        <option value="Third-Party Contractors & Vendors">Third-Party Contractors & Vendors</option>
+                      </optgroup>
+                      {loadingDepartments ? (
+                        <optgroup label="🏢 Organization Departments & Teams (Live Database)">
+                          <option value="" disabled>Loading departments from database...</option>
+                        </optgroup>
+                      ) : departments.length > 0 ? (
+                        <optgroup label="🏢 Organization Departments & Teams (Live Database)">
+                          {departments.map((d: any) => (
+                            <option key={d.id} value={d.id}>
+                              {d.name} {d.code ? `(${d.code})` : ''}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ) : (
+                        <optgroup label="🏢 Organization Departments & Teams (Live Database)">
+                          <option value="" disabled>No departments in database (add in Org Settings)</option>
+                        </optgroup>
+                      )}
+                    </select>
                   </div>
                 </div>
 
@@ -1635,6 +1683,38 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
                       value={reviewCadenceDays}
                       onChange={(e) => setReviewCadenceDays(Number(e.target.value))}
                       className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Assigned Department / Team (Optional)
+                    </label>
+                    <select
+                      value={targetDepartmentId}
+                      onChange={(e) => setTargetDepartmentId(e.target.value)}
+                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 bg-white"
+                    >
+                      <option value="">(None / Organization-Wide)</option>
+                      {departments.map((d: any) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name} {d.code ? `(${d.code})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Policy Owner
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. CISO, VP Compliance"
+                      value={ownerId}
+                      onChange={(e) => setOwnerId(e.target.value)}
+                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
                     />
                   </div>
                 </div>
