@@ -216,7 +216,7 @@ export class AssetsService {
       );
     }
 
-    if (dto.owner !== undefined) {
+    if (dto.owner !== undefined && dto.owner !== existing.owner) {
       await this.validateOwner(authCtx, dto.owner);
     }
 
@@ -307,8 +307,6 @@ export class AssetsService {
 
     const trimmed = owner.trim();
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
-    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
-
     if (isUuid) {
       const user = await this.prisma.user.findFirst({
         where: { id: trimmed },
@@ -333,36 +331,7 @@ export class AssetsService {
       }
       return;
     }
-
-    if (isEmail) {
-      const user = await this.prisma.user.findFirst({
-        where: { email: trimmed.toLowerCase() },
-        include: {
-          memberships: {
-            where: { organizationId: authCtx.organizationId },
-          },
-        },
-      });
-
-      if (!user) {
-        throw new BadRequestException(`Assigned owner email "${trimmed}" not found`);
-      }
-      if (user.organizationId !== authCtx.organizationId) {
-        throw new BadRequestException('Assigned owner does not belong to this organization');
-      }
-      const activeMembership = user.memberships?.find(
-        (m: any) => m.organizationId === authCtx.organizationId && m.status === 'ACTIVE',
-      );
-      if (user.memberships && user.memberships.length > 0 && !activeMembership) {
-        throw new BadRequestException('Assigned owner does not have active membership in this organization');
-      }
-      return;
-    }
-
-    // Free-text legacy or team owner (e.g. "DevOps Team", "SecOps")
-    if (trimmed.length > 100) {
-      throw new BadRequestException('Owner name cannot exceed 100 characters');
-    }
+    throw new BadRequestException('Owner must be the stable ID of an active organization member. Historical text owners are retained only on existing records.');
   }
 
   private mapToDto(asset: any): AssetDto {

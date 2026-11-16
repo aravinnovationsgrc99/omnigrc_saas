@@ -22,7 +22,6 @@ export interface SystemOverviewDto {
     };
     aiProviders: {
       gemini: 'configured' | 'unconfigured';
-      anthropic: 'configured' | 'unconfigured';
     };
   };
 }
@@ -93,7 +92,6 @@ export class ControlPlaneSystemService {
     const isRedisConfigured = Boolean(process.env.REDIS_URL);
     const isResendConfigured = Boolean(process.env.RESEND_API_KEY && !process.env.RESEND_API_KEY.startsWith('re_123456789'));
     const isGeminiConfigured = Boolean(process.env.GEMINI_API_KEY);
-    const isAnthropicConfigured = Boolean(process.env.ANTHROPIC_API_KEY);
 
     return {
       version: this.OMNIGRC_VERSION,
@@ -113,7 +111,6 @@ export class ControlPlaneSystemService {
         },
         aiProviders: {
           gemini: isGeminiConfigured ? 'configured' : 'unconfigured',
-          anthropic: isAnthropicConfigured ? 'configured' : 'unconfigured',
         },
       },
     };

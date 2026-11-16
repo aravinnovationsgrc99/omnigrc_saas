@@ -37,9 +37,8 @@ export class HealthController {
       }
     }
 
-    // 3. AI Providers
+    // 3. AI Provider
     const geminiStatus = process.env.GEMINI_API_KEY ? 'configured' : 'mocked';
-    const claudeStatus = process.env.ANTHROPIC_API_KEY ? 'configured' : 'mocked';
 
     // 4. Integrations & Communications
     const emailStatus = (process.env.RESEND_API_KEY || process.env.SMTP_HOST)
@@ -66,7 +65,6 @@ export class HealthController {
         database: { status: dbStatus, latencyMs: dbLatencyMs },
         redis: { status: redisStatus, latencyMs: redisLatencyMs },
         gemini: { status: geminiStatus },
-        claude: { status: claudeStatus },
         email: { status: emailStatus },
         slack: { status: slackStatus },
         sentry: { status: sentryStatus },

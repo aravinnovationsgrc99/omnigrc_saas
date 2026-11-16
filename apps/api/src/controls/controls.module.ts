@@ -4,7 +4,6 @@ import { ControlsService } from './controls.service';
 import { MappingQueueService } from './ai/mapping-queue.service';
 import { AiRouterService } from './ai/ai-router.service';
 import { GeminiProvider } from './ai/gemini.provider';
-import { ClaudeProvider } from './ai/claude.provider';
 import { MockAiProvider } from './ai/mock-ai.provider';
 import { GrcIntelligenceController } from './ai/intelligence.controller';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
@@ -38,7 +37,6 @@ import { ControlImportService } from './control-import.service';
     MappingQueueService,
     AiRouterService,
     GeminiProvider,
-    ClaudeProvider,
     MockAiProvider,
     GrcNlpService,
     GrcContextResolver,

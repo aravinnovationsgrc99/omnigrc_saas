@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Building2,
   X,
@@ -13,8 +13,10 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { VendorCriticality } from '@omnigrc/shared';
+import { OrganizationMemberDto } from '@omnigrc/shared';
 import { apiRequest } from '@/lib/api-client';
 import { useToast } from '@/context/toast-context';
+import { SearchableSelect, SelectOption } from '@/components/ui/searchable-select';
 
 interface VendorCreateModalProps {
   isOpen: boolean;
@@ -31,7 +33,9 @@ export function VendorCreateModal({ isOpen, onClose, onCreated }: VendorCreateMo
   const [name, setName] = useState('');
   const [category, setCategory] = useState('SaaS Provider');
   const [criticality, setCriticality] = useState<VendorCriticality>(VendorCriticality.HIGH);
-  const [owner, setOwner] = useState('Security Team');
+  const [owner, setOwner] = useState('');
+  const [members, setMembers] = useState<OrganizationMemberDto[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
   const [websiteUrl, setWebsiteUrl] = useState('');
   const [reviewCadenceDays, setReviewCadenceDays] = useState(365);
   const [description, setDescription] = useState('');
@@ -48,11 +52,29 @@ export function VendorCreateModal({ isOpen, onClose, onCreated }: VendorCreateMo
   const [subcontractorReliance, setSubcontractorReliance] = useState<'NONE' | 'LOW' | 'MODERATE' | 'EXTENSIVE'>('LOW');
   const [subcontractorDetails, setSubcontractorDetails] = useState('');
 
+  useEffect(() => {
+    if (!isOpen) return;
+    setLoadingMembers(true);
+    apiRequest<OrganizationMemberDto[]>('/organization-members')
+      .then((data) => setMembers(data || []))
+      .catch(() => setMembers([]))
+      .finally(() => setLoadingMembers(false));
+  }, [isOpen]);
+
+  const ownerOptions = useMemo<SelectOption[]>(() => members
+    .filter((member) => member.status === 'ACTIVE' && member.productAccessStatus !== 'REVOKED')
+    .map((member) => ({
+      value: member.userId || member.id,
+      label: member.name || member.email || member.userId || member.id,
+      description: [member.email, member.role].filter(Boolean).join(' • '),
+      badge: member.role,
+    })), [members]);
+
   if (!isOpen) return null;
 
   async function handleSubmit(isDraft: boolean) {
-    if (!name.trim()) {
-      addToast('Vendor name is required.', 'error');
+    if (!name.trim() || !owner) {
+      addToast(!name.trim() ? 'Vendor name is required.' : 'Select an active organization member as the business owner.', 'error');
       setTab('general');
       return;
     }
@@ -70,7 +92,7 @@ export function VendorCreateModal({ isOpen, onClose, onCreated }: VendorCreateMo
           name: name.trim(),
           category: category.trim() || 'General',
           criticality,
-          owner: owner.trim() || 'Security Team',
+          owner,
           websiteUrl: websiteUrl.trim() || undefined,
           reviewCadenceDays: Number(reviewCadenceDays) || 365,
           description: description.trim() || undefined,
@@ -223,13 +245,13 @@ export function VendorCreateModal({ isOpen, onClose, onCreated }: VendorCreateMo
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Internal Business Owner *
                   </label>
-                  <input
-                    type="text"
-                    required
+                  <SearchableSelect
+                    options={ownerOptions}
                     value={owner}
-                    onChange={(e) => setOwner(e.target.value)}
-                    placeholder="e.g. SecOps / IT Director / Legal"
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 bg-white"
+                    onChange={setOwner}
+                    loading={loadingMembers}
+                    placeholder="Select an active organization member..."
+                    error={!loadingMembers && ownerOptions.length === 0 ? 'No active members are available for assignment.' : null}
                   />
                 </div>
                 <div>

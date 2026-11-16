@@ -472,7 +472,6 @@ export interface SystemOverview {
     };
     aiProviders: {
       gemini: 'configured' | 'unconfigured';
-      anthropic: 'configured' | 'unconfigured';
     };
   };
 }

@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { GeminiProvider } from './gemini.provider';
-import { ClaudeProvider } from './claude.provider';
 import { MockAiProvider } from './mock-ai.provider';
 import { AiProvider, CandidateClause, AiMappingResponse, SuggestedMappingItem } from './ai-provider.interface';
 import { ModelTier } from '@omnigrc/shared';
@@ -12,7 +11,6 @@ export class AiRouterService {
 
   constructor(
     private readonly geminiProvider: GeminiProvider,
-    private readonly claudeProvider: ClaudeProvider,
     private readonly mockAiProvider: MockAiProvider,
     private readonly auditLogsService: AuditLogsService,
   ) {}
@@ -59,24 +57,10 @@ export class AiRouterService {
     let provider: AiProvider = this.mockAiProvider;
     let actualTier = targetTier;
 
-    if (targetTier === ModelTier.TIER_2) {
-      if (this.claudeProvider.isAvailable()) {
-        provider = this.claudeProvider;
-      } else if (this.geminiProvider.isAvailable()) {
-        this.logger.warn(`Tier 2 requested but Anthropic key is missing — Routing Tier 2 to GeminiProvider.`);
-        provider = this.geminiProvider;
-      } else {
-        this.logger.warn(`Tier 2 requested but external keys are missing — Routing Tier 2 to MockAiProvider.`);
-        provider = this.mockAiProvider;
-      }
+    if (this.geminiProvider.isAvailable()) {
+      provider = this.geminiProvider;
     } else {
-      // Tier 1
-      if (this.geminiProvider.isAvailable()) {
-        provider = this.geminiProvider;
-      } else {
-        this.logger.warn(`Tier 1 requested but Gemini key is missing — Routing Tier 1 to MockAiProvider.`);
-        provider = this.mockAiProvider;
-      }
+      this.logger.warn(`Gemini is unavailable for ${targetTier}; using the explicitly labeled deterministic mapping fallback.`);
     }
 
     let rawResponse: AiMappingResponse;

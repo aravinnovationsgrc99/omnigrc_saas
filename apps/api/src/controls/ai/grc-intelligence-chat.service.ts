@@ -1,6 +1,5 @@
-import { Injectable, Logger, BadRequestException, Optional } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { GeminiProvider } from './gemini.provider';
-import { ClaudeProvider } from './claude.provider';
 import { getBoundedKnowledge, KnowledgeSection } from './grc-knowledge-base';
 import { GrcContextResolver, ResolvedContext } from './grc-context-resolver';
 import { GrcNlpService, QueryAnalysisResult } from './grc-nlp.service';
@@ -28,7 +27,6 @@ export class GrcIntelligenceChatService {
     private readonly geminiProvider: GeminiProvider,
     private readonly contextResolver: GrcContextResolver,
     private readonly nlpService: GrcNlpService,
-    @Optional() private readonly claudeProvider?: ClaudeProvider,
   ) {}
 
   public getPredefinedQuestions(): GrcSuggestedQuestion[] {
@@ -78,7 +76,6 @@ export class GrcIntelligenceChatService {
         );
 
       const isGeminiAvailable = this.geminiProvider.isAvailable() && !this.geminiProvider.isCircuitOpen();
-      const isClaudeAvailable = Boolean(this.claudeProvider && this.claudeProvider.isAvailable());
       const isTestEnv = process.env.NODE_ENV === 'test';
 
       let answer = '';
@@ -90,8 +87,8 @@ export class GrcIntelligenceChatService {
         ? 'OMNiGRC Knowledge Base & Live Organization Context'
         : 'Deterministic Grounded Engine (Rule-based Fallback)';
 
-      // Open-ended queries use Gemini if available and circuit is healthy.
-      // If Gemini fails (e.g. 403 Forbidden / billing / quota), failover to Claude.
+      // Open-ended queries use Gemini when available. Failures fall back only to
+      // the explicitly labeled, database-grounded deterministic response.
       if (!isPredefinedQuestion && !isTestEnv) {
         if (isGeminiAvailable) {
           try {
@@ -105,24 +102,7 @@ export class GrcIntelligenceChatService {
               providerName = 'Google Gemini 2.5 Flash';
             }
           } catch (err: any) {
-            this.logger.warn(`Gemini text generation failed, falling back to Claude/deterministic synthesis: ${err.message}`);
-          }
-        }
-
-        // Tier 2: Claude failover if Gemini failed or circuit was open
-        if (!answer && isClaudeAvailable && this.claudeProvider) {
-          try {
-            const systemPrompt = this.buildGroundedSystemPrompt(kbSections, liveContext);
-            const userPromptWithHistory = this.buildUserPromptWithHistory(sanitizedHistory, cleanPrompt);
-
-            answer = await this.claudeProvider.generateText(systemPrompt, userPromptWithHistory);
-            if (answer && answer.trim()) {
-              isLiveAi = true;
-              inferenceMode = 'LIVE_AI';
-              providerName = 'Anthropic Claude 3.5';
-            }
-          } catch (err: any) {
-            this.logger.warn(`Claude failover failed, falling back to deterministic synthesis: ${err.message}`);
+            this.logger.warn(`Gemini text generation failed; using deterministic grounded synthesis: ${err.message}`);
           }
         }
       }

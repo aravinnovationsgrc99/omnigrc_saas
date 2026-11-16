@@ -10,7 +10,6 @@ export class IntegrationsHubService {
     const isResendConfigured = !!process.env.RESEND_API_KEY || !!process.env.SMTP_HOST;
     const isSlackConfigured = !!process.env.SLACK_WEBHOOK_URL || !!process.env.DEFAULT_SLACK_WEBHOOK_URL;
     const isGeminiConfigured = !!process.env.GEMINI_API_KEY;
-    const isClaudeConfigured = !!process.env.ANTHROPIC_API_KEY;
 
     const dirConfig = await this.prisma.directoryIntegrationConfig.findUnique({
       where: { organizationId },
@@ -40,15 +39,7 @@ export class IntegrationsHubService {
         category: 'AI_LLM',
         status: isGeminiConfigured ? 'CONFIGURED' : 'AVAILABLE',
         description: 'Primary AI LLM router model for compliance framework control mapping & GRC assistance.',
-        details: { model: 'gemini-1.5-flash', tier: 'TIER_1' },
-      },
-      {
-        id: 'anthropic-claude-ai',
-        name: 'Anthropic Claude 3.5 Sonnet',
-        category: 'AI_LLM',
-        status: isClaudeConfigured ? 'CONFIGURED' : 'AVAILABLE',
-        description: 'Secondary AI LLM model for high-precision policy analysis and risk assistance.',
-        details: { model: 'claude-3-5-sonnet', tier: 'TIER_2' },
+        details: { model: process.env.GEMINI_MODEL || 'gemini-2.5-flash', tier: 'GEMINI_ONLY' },
       },
       {
         id: 'jira-software',

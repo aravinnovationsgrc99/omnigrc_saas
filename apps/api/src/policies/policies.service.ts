@@ -57,7 +57,6 @@ import {
   ImageRun as DocxImageRun,
 } from 'docx';
 import { NotificationsService } from '../notifications/notifications.service';
-import { ClaudeProvider } from '../controls/ai/claude.provider';
 import { GeminiProvider } from '../controls/ai/gemini.provider';
 
 export const DEFAULT_POLICY_CATEGORIES = [
@@ -81,7 +80,6 @@ export class PoliciesService {
     private readonly resourceAuthService: ResourceAuthorizationService,
     @Optional() private readonly approvalEngineService?: ApprovalEngineService,
     @Optional() private readonly notificationsService?: NotificationsService,
-    @Optional() private readonly claudeProvider?: ClaudeProvider,
     @Optional() private readonly geminiProvider?: GeminiProvider,
   ) {
     this.mapToDto = this.mapToDto.bind(this);
@@ -1835,18 +1833,9 @@ ${dto.keyRequirements || 'Standard enterprise controls, zero trust access princi
     let content = '';
     let providerUsed = 'Deterministic GRC Template (Heuristic Fallback)';
 
-    // 1. Try Claude first (User preferred for Policy Drafting)
-    if (this.claudeProvider && this.claudeProvider.isAvailable()) {
-      try {
-        content = await this.claudeProvider.generateText(systemPrompt, userPrompt);
-        providerUsed = 'Claude (Anthropic)';
-      } catch (err: any) {
-        // Fallback to Gemini if Claude call fails
-      }
-    }
-
-    // 2. Fallback to Gemini if content empty
-    if (!content && this.geminiProvider && this.geminiProvider.isAvailable()) {
+    // Gemini is the sole external LLM provider. If it is unavailable, the
+    // returned template is explicitly identified as deterministic.
+    if (this.geminiProvider && this.geminiProvider.isAvailable()) {
       try {
         content = await this.geminiProvider.generateText(systemPrompt, userPrompt);
         providerUsed = 'Gemini (Google)';
@@ -1855,7 +1844,7 @@ ${dto.keyRequirements || 'Standard enterprise controls, zero trust access princi
       }
     }
 
-    // 3. Fallback to rich deterministic template if AI providers unavailable in local environment
+    // Fallback to rich deterministic template if Gemini is unavailable.
     if (!content) {
       providerUsed = 'Deterministic GRC Template (Heuristic Fallback)';
       const catCode = category.slice(0, 3).toUpperCase();
@@ -2050,15 +2039,6 @@ ${content.slice(0, 12000)}`;
       try {
         aiRaw = await this.geminiProvider.generateText(systemPrompt, userPrompt);
         modelUsed = 'Gemini 1.5 Flash';
-      } catch (err) {
-        // Fallback
-      }
-    }
-
-    if (!aiRaw && this.claudeProvider && this.claudeProvider.isAvailable()) {
-      try {
-        aiRaw = await this.claudeProvider.generateText(systemPrompt, userPrompt);
-        modelUsed = 'Claude Haiku';
       } catch (err) {
         // Fallback
       }

@@ -2,7 +2,6 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AiRouterService } from './ai-router.service';
 import { MappingQueueService } from './mapping-queue.service';
 import { GeminiProvider } from './gemini.provider';
-import { ClaudeProvider } from './claude.provider';
 import { MockAiProvider } from './mock-ai.provider';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../../audit-logs/audit-logs.service';
@@ -24,10 +23,6 @@ describe('AI Job Processor & Router Unit Tests', () => {
         AiRouterService,
         {
           provide: GeminiProvider,
-          useValue: { isAvailable: () => false, suggestMappings: jest.fn() },
-        },
-        {
-          provide: ClaudeProvider,
           useValue: { isAvailable: () => false, suggestMappings: jest.fn() },
         },
         { provide: MockAiProvider, useValue: mockAiProvider },
@@ -202,8 +197,6 @@ describe('AI Job Processor & Router Unit Tests', () => {
   describe('(d) Empty Candidates Guard', () => {
     it('should return empty suggestions and skip API calls when candidates list is empty', async () => {
       const gemini = new GeminiProvider();
-      const claude = new ClaudeProvider();
-
       const geminiRes = await gemini.suggestMappings({
         controlName: 'Test Control',
         controlDescription: 'Test Description',
@@ -211,12 +204,6 @@ describe('AI Job Processor & Router Unit Tests', () => {
       });
       expect(geminiRes.suggestions).toHaveLength(0);
 
-      const claudeRes = await claude.suggestMappings({
-        controlName: 'Test Control',
-        controlDescription: 'Test Description',
-        candidates: [],
-      });
-      expect(claudeRes.suggestions).toHaveLength(0);
     });
   });
 });

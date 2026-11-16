@@ -311,6 +311,7 @@ export class VendorsService {
       dto.departmentId,
       dto.projectId,
     );
+    await this.validateActiveMemberOwner(authCtx.organizationId, dto.owner);
 
     const nextReviewDate = new Date();
     nextReviewDate.setDate(nextReviewDate.getDate() + (dto.reviewCadenceDays || 365));
@@ -396,6 +397,10 @@ export class VendorsService {
       throw new NotFoundException(`Vendor with ID "${id}" not found`);
     }
 
+    if (dto.owner !== undefined && dto.owner !== existing.owner) {
+      await this.validateActiveMemberOwner(authCtx.organizationId, dto.owner);
+    }
+
     if (dto.departmentId !== undefined || dto.projectId !== undefined) {
       const targetDeptId = dto.departmentId !== undefined ? dto.departmentId : existing.departmentId || undefined;
       const targetProjId = dto.projectId !== undefined ? dto.projectId : existing.projectId || undefined;
@@ -479,6 +484,25 @@ export class VendorsService {
     });
 
     return { success: true };
+  }
+
+  /** Owner fields store a stable user ID; historical text values remain readable. */
+  private async validateActiveMemberOwner(organizationId: string, owner: string): Promise<void> {
+    if (!owner?.trim()) {
+      throw new BadRequestException('An active organization member must be selected as the vendor owner.');
+    }
+
+    const member = await this.prisma.user.findFirst({
+      where: {
+        id: owner.trim(),
+        memberships: { some: { organizationId, status: 'ACTIVE' } },
+      },
+      select: { id: true },
+    });
+
+    if (!member) {
+      throw new BadRequestException('Vendor owner must be an active member of this organization.');
+    }
   }
 
   async createAssessment(

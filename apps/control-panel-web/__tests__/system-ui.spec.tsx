@@ -47,7 +47,7 @@ describe('CP-7 System Observatory & Key Registry UI Surface', () => {
       database: { status: 'healthy', latencyMs: 3 },
       redis: { status: 'configured' },
       resend: { status: 'configured' },
-      aiProviders: { gemini: 'configured', anthropic: 'configured' },
+      aiProviders: { gemini: 'configured' },
     },
   };
 

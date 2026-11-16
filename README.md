@@ -114,17 +114,14 @@ npm run dev --workspace=apps/web
 
 ## AI Provider Setup & Local Redis Queue
 
-The Framework Library & Control Mapping pillar uses a two-tier AI provider layer backed by a BullMQ background job queue.
+The Framework Library & Control Mapping pillar uses Gemini with a BullMQ background job queue.
 
 ### 1. API Keys & Configuration
 Configure API keys in `apps/api/.env`:
 
 ```env
-# Gemini API Key (Tier 1 Routine Mappings ~80%)
+# Gemini API Key
 GEMINI_API_KEY="your-gemini-api-key"
-
-# Anthropic API Key (Tier 2 Escalations ~20%)
-ANTHROPIC_API_KEY="your-anthropic-api-key"
 
 # Redis Queue Connection
 REDIS_URL="redis://localhost:6379"
@@ -132,12 +129,10 @@ REDIS_URL="redis://localhost:6379"
 
 - **Where to get keys**:
   - **Gemini**: Obtain from Google AI Studio ([aistudio.google.com](https://aistudio.google.com/)).
-  - **Anthropic (Claude)**: Obtain from Anthropic Console ([console.anthropic.com](https://console.anthropic.com/)).
 
 ### 2. Mock AI Fallback Mode
-If either key is absent or Redis is unreachable in local dev:
+If Gemini is absent or Redis is unreachable in local dev:
 - The system automatically falls back to `MockAiProvider`, generating deterministic fake suggestions with zero API cost.
-- If `ANTHROPIC_API_KEY` is missing, Tier 2 calls seamlessly route to Gemini or Mock mode.
 - Log warnings indicate when mock mode or fallback routing is active.
 
 ### 3. Local Redis Server Setup
@@ -205,7 +200,7 @@ Phase 8 elevates OMNiGRC to production-credible status with end-to-end testing, 
 
 ### 1. System Health Check & Observability
 - Endpoint: `GET /health` (Public)
-- Returns a comprehensive status matrix covering Database (`SELECT 1`), Redis ping/queue, Gemini/Claude AI keys, Resend Email, Slack Webhook, and Sentry DSN.
+- Returns a comprehensive status matrix covering Database (`SELECT 1`), Redis ping/queue, Gemini AI configuration, Resend Email, Slack Webhook, and Sentry DSN.
 - Every HTTP request receives an auto-generated or passed `x-request-id` header for trace propagation across logs and Sentry error interceptors.
 
 ### 2. Testing Suite

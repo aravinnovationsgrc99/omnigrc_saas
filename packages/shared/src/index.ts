@@ -952,7 +952,6 @@ export interface HealthCheckDto {
     database: { status: "up" | "down"; latencyMs?: number };
     redis: { status: "up" | "down" | "mocked"; latencyMs?: number };
     gemini: { status: "configured" | "mocked" };
-    claude: { status: "configured" | "mocked" };
     email: { status: "configured" | "console_mock" };
     slack: { status: "configured" | "not_configured" };
     sentry: { status: "configured" | "not_configured" };

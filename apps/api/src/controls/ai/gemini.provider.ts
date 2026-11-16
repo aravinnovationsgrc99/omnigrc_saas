@@ -96,10 +96,10 @@ export class GeminiProvider implements AiProvider {
   }
 
   private resolveModelName(): string {
-    const configured = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
-    // Protect against unsupported/unbilled legacy model identifiers
-    if (configured === 'gemini-pro-latest' || configured.includes('pro-latest')) {
-      return 'gemini-1.5-flash';
+    const configured = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+    // Do not silently use an obsolete model when an old environment value remains.
+    if (configured === 'gemini-1.5-flash' || configured === 'gemini-pro-latest' || configured.includes('pro-latest')) {
+      return 'gemini-2.5-flash';
     }
     return configured;
   }

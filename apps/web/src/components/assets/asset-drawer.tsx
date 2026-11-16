@@ -61,7 +61,6 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess, onNavigateToRis
   // Directory Members State
   const [members, setMembers] = useState<OrganizationMemberDto[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
-  const [customOwnerMode, setCustomOwnerMode] = useState(false);
 
   const [auditLogs, setAuditLogs] = useState<AuditLogEntryDto[]>([]);
   const [loadingAudit, setLoadingAudit] = useState(false);
@@ -121,7 +120,6 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess, onNavigateToRis
       setDescription(asset.description || '');
       setEnvironment((asset as any).environment || AssetEnvironment.PRODUCTION);
       setIsManaged((asset as any).isManaged !== undefined ? (asset as any).isManaged : true);
-      setCustomOwnerMode(false);
 
       // Fetch audit logs for asset
       setLoadingAudit(true);
@@ -142,7 +140,6 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess, onNavigateToRis
       setDescription('');
       setEnvironment(AssetEnvironment.PRODUCTION);
       setIsManaged(true);
-      setCustomOwnerMode(false);
       setAuditLogs([]);
       setAssociatedRisks([]);
     }
@@ -235,7 +232,7 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess, onNavigateToRis
   );
 
   const memberOptions: SelectOption[] = activeMembers.map((m) => {
-    const val = m.name || m.email || m.userId;
+    const val = m.userId || m.id;
     return {
       value: val,
       label: m.name ? `${m.name} (${m.email || 'No email'})` : (m.email || m.userId),
@@ -255,8 +252,9 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess, onNavigateToRis
           {
             value: owner,
             label: `${owner} (Legacy / Team)`,
-            description: 'Legacy text assignment',
+            description: 'Historical assignment — select an active member to reassign',
             badge: 'Legacy',
+            disabled: true,
           },
         ]
       : []),
@@ -361,43 +359,22 @@ export function AssetDrawer({ asset, isOpen, onClose, onSuccess, onNavigateToRis
               </div>
             </div>
 
-            {/* Treatment Owner Selection with Member Directory Integration & Legacy Fallback */}
+            {/* Organization-backed treatment owner selection */}
             <div style={{ marginBottom: 16 }}>
-              <div className="flex items-center justify-between mb-1.5">
-                <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672' }}>
-                  Treatment Owner *
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setCustomOwnerMode((prev) => !prev)}
-                  className="text-[11px] text-teal-700 hover:text-teal-800 hover:underline font-medium"
-                >
-                  {customOwnerMode ? 'Select from Directory' : 'Custom / Team Name'}
-                </button>
-              </div>
-
-              {customOwnerMode ? (
-                <input
-                  className={`omni-input ${isOwnerInvalid ? 'border-rose-500' : ''}`}
-                  placeholder="e.g. DevOps Team or Priya Nair"
-                  value={owner}
-                  onChange={(e) => setOwner(e.target.value)}
-                  onBlur={() => setOwnerTouched(true)}
-                  required
-                />
-              ) : (
-                <SearchableSelect
-                  options={ownerOptions}
-                  value={owner}
-                  onChange={(val) => {
-                    setOwner(val);
-                    setOwnerTouched(true);
-                  }}
-                  placeholder="Select authorized member or team..."
-                  loading={loadingMembers}
-                  error={isOwnerInvalid ? 'Treatment owner is required.' : null}
-                />
-              )}
+              <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
+                Treatment Owner *
+              </label>
+              <SearchableSelect
+                options={ownerOptions}
+                value={owner}
+                onChange={(val) => {
+                  setOwner(val);
+                  setOwnerTouched(true);
+                }}
+                placeholder="Select an active organization member..."
+                loading={loadingMembers}
+                error={isOwnerInvalid ? 'Treatment owner is required.' : null}
+              />
             </div>
 
             {/* Environment & Managed Infrastructure Status */}

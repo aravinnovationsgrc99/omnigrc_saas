@@ -1345,7 +1345,7 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
                 </h2>
                 <p className="text-xs text-slate-500">
                   {createMode === 'ai'
-                    ? 'AI-assisted standard-aligned policy generation using Claude & Gemini with enterprise governance context.'
+                    ? 'Gemini-assisted, standard-aligned policy generation with enterprise governance context.'
                     : 'Standardized GRC policy document with Markdown authoring, document import, and category assignment.'}
                 </p>
               </div>
@@ -1387,7 +1387,7 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
                   <Sparkles size={16} className="text-teal-700 shrink-0 mt-0.5" />
                   <div>
                     <span className="font-semibold block">Enterprise AI Policy Authoring</span>
-                    Claude and Gemini generate complete, structured clauses tailored to your classification, standard benchmarks, and business scope.
+                    Gemini generates complete, structured clauses tailored to your classification, standard benchmarks, and business scope.
                   </div>
                 </div>
 
