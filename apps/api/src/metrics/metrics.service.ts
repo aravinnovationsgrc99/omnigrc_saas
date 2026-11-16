@@ -39,7 +39,7 @@ export class MetricsService {
     private readonly frameworkEntitlementsService: FrameworkEntitlementsService,
     private readonly frameworkCoverageService: FrameworkCoverageService,
     private readonly effectiveResolver: EffectiveServiceStateResolver,
-  ) {}
+  ) { }
 
   /**
    * Authoritative Single Source of Truth for Overview Metrics across all 7 GRC Domains.
@@ -208,109 +208,109 @@ export class MetricsService {
       // Attention Bounded Queries
       vulnsState.isAvailable
         ? this.prisma.vulnerability.findMany({
-            where: { ...scopeWhere, deletedAt: null, status: { in: [VulnerabilityStatus.OPEN, VulnerabilityStatus.IN_REMEDIATION] }, dueDate: { lt: now } },
-            select: { id: true, title: true, severity: true, dueDate: true },
-            take: 2,
-            orderBy: { dueDate: 'asc' },
-          })
+          where: { ...scopeWhere, deletedAt: null, status: { in: [VulnerabilityStatus.OPEN, VulnerabilityStatus.IN_REMEDIATION] }, dueDate: { lt: now } },
+          select: { id: true, title: true, severity: true, dueDate: true },
+          take: 2,
+          orderBy: { dueDate: 'asc' },
+        })
         : Promise.resolve([]),
       tasksState.isAvailable
         ? this.prisma.complianceTask.findMany({
-            where: { ...obligationWhere, status: { not: TaskStatus.COMPLETE }, dueDate: { lt: now } },
-            select: { id: true, title: true, dueDate: true },
-            take: 2,
-            orderBy: { dueDate: 'asc' },
-          })
+          where: { ...obligationWhere, status: { not: TaskStatus.COMPLETE }, dueDate: { lt: now } },
+          select: { id: true, title: true, dueDate: true },
+          take: 2,
+          orderBy: { dueDate: 'asc' },
+        })
         : Promise.resolve([]),
       auditsState.isAvailable
         ? this.prisma.auditFinding.findMany({
-            where: { organizationId: authCtx.organizationId, status: { in: [FindingStatus.OPEN, FindingStatus.IN_REMEDIATION] }, dueDate: { lt: now } },
-            select: { id: true, title: true, severity: true, dueDate: true },
-            take: 2,
-            orderBy: { dueDate: 'asc' },
-          })
+          where: { organizationId: authCtx.organizationId, status: { in: [FindingStatus.OPEN, FindingStatus.IN_REMEDIATION] }, dueDate: { lt: now } },
+          select: { id: true, title: true, severity: true, dueDate: true },
+          take: 2,
+          orderBy: { dueDate: 'asc' },
+        })
         : Promise.resolve([]),
       auditsState.isAvailable
         ? this.prisma.auditCapa.findMany({
-            where: { organizationId: authCtx.organizationId, status: { in: [CapaStatus.OPEN, CapaStatus.IN_PROGRESS] }, dueDate: { lt: now } },
-            select: { id: true, title: true, dueDate: true },
-            take: 2,
-            orderBy: { dueDate: 'asc' },
-          })
+          where: { organizationId: authCtx.organizationId, status: { in: [CapaStatus.OPEN, CapaStatus.IN_PROGRESS] }, dueDate: { lt: now } },
+          select: { id: true, title: true, dueDate: true },
+          take: 2,
+          orderBy: { dueDate: 'asc' },
+        })
         : Promise.resolve([]),
       policiesState.isAvailable
         ? this.prisma.policy.findMany({
-            where: {
-              ...scopeWhere,
-              deletedAt: null,
-              status: PolicyStatus.PUBLISHED,
-              reviewDate: { lt: now },
-            },
-            select: { id: true, title: true, reviewDate: true },
-            take: 2,
-            orderBy: { reviewDate: 'asc' },
-          })
+          where: {
+            ...scopeWhere,
+            deletedAt: null,
+            status: PolicyStatus.PUBLISHED,
+            reviewDate: { lt: now },
+          },
+          select: { id: true, title: true, reviewDate: true },
+          take: 2,
+          orderBy: { reviewDate: 'asc' },
+        })
         : Promise.resolve([]),
       vendorsState.isAvailable
         ? this.prisma.vendorAssessment.findMany({
-            where: {
-              organizationId: authCtx.organizationId,
-              status: VendorAssessmentStatus.OVERDUE,
-            },
-            select: { id: true, title: true, vendor: { select: { name: true } } },
-            take: 2,
-            orderBy: { createdAt: 'asc' },
-          })
+          where: {
+            organizationId: authCtx.organizationId,
+            status: VendorAssessmentStatus.OVERDUE,
+          },
+          select: { id: true, title: true, vendor: { select: { name: true } } },
+          take: 2,
+          orderBy: { createdAt: 'asc' },
+        })
         : Promise.resolve([]),
 
       // Authoritative Risk Heatmap Database-Level 5x5 GroupBy Aggregation
       riskState.isAvailable
         ? this.prisma.risk.groupBy({
-            by: ['likelihood', 'impact'],
-            where: { ...scopeWhere, deletedAt: null, status: { in: ['OPEN', 'IN_TREATMENT'] } },
-            _count: true,
-          })
+          by: ['likelihood', 'impact'],
+          where: { ...scopeWhere, deletedAt: null, status: { in: ['OPEN', 'IN_TREATMENT'] } },
+          _count: true,
+        })
         : Promise.resolve([] as Array<{ likelihood: number; impact: number; _count: number }>),
 
       // Top High-Severity Risks Query
       riskState.isAvailable
         ? this.prisma.risk.findMany({
-            where: { ...scopeWhere, deletedAt: null, status: { in: ['OPEN', 'IN_TREATMENT'] }, score: { gte: 15 } },
-            select: {
-              id: true,
-              title: true,
-              likelihood: true,
-              impact: true,
-              score: true,
-              status: true,
-              owner: true,
-              asset: { select: { name: true } },
-            },
-            take: 10,
-            orderBy: { score: 'desc' },
-          })
+          where: { ...scopeWhere, deletedAt: null, status: { in: ['OPEN', 'IN_TREATMENT'] }, score: { gte: 15 } },
+          select: {
+            id: true,
+            title: true,
+            likelihood: true,
+            impact: true,
+            score: true,
+            status: true,
+            owner: true,
+            asset: { select: { name: true } },
+          },
+          take: 10,
+          orderBy: { score: 'desc' },
+        })
         : Promise.resolve([]),
 
       // Active Audit Assessments Query
       auditsState.isAvailable
         ? this.prisma.auditAssessment.findMany({
-            where: { organizationId: authCtx.organizationId },
-            select: {
-              id: true,
-              status: true,
-              score: true,
-              auditPlan: { select: { title: true } },
-            },
-            take: 5,
-            orderBy: { createdAt: 'desc' },
-          })
+          where: { organizationId: authCtx.organizationId },
+          select: {
+            id: true,
+            status: true,
+            score: true,
+            auditPlan: { select: { title: true } },
+          },
+          take: 5,
+          orderBy: { createdAt: 'desc' },
+        })
         : Promise.resolve([]),
 
       // Pending Policy Exceptions Query
       policiesState.isAvailable
         ? this.prisma.policyException.count({
-            where: { organizationId: authCtx.organizationId, status: 'PENDING' },
-          })
+          where: { organizationId: authCtx.organizationId, status: 'PENDING' },
+        })
         : Promise.resolve(0),
     ]);
 
@@ -321,10 +321,10 @@ export class MetricsService {
       : [];
     const entitledFrameworks = entitledFrameworkIds.length > 0
       ? await this.prisma.framework.findMany({
-          where: { id: { in: entitledFrameworkIds } },
-          select: { id: true, code: true, name: true },
-          orderBy: { code: 'asc' },
-        })
+        where: { id: { in: entitledFrameworkIds } },
+        select: { id: true, code: true, name: true },
+        orderBy: { code: 'asc' },
+      })
       : [];
 
     const frameworkCoverage: EntitledFrameworkCoverageSummaryDto[] = await Promise.all(
@@ -369,10 +369,10 @@ export class MetricsService {
       entitledFrameworks.length === 0
         ? 'EMPTY'
         : allUnavailable
-        ? 'UNAVAILABLE'
-        : anyUnavailable
-        ? 'PARTIAL'
-        : 'COMPLETE';
+          ? 'UNAVAILABLE'
+          : anyUnavailable
+            ? 'PARTIAL'
+            : 'COMPLETE';
 
     const totalRefSummary = frameworkCoverage.reduce((sum, f) => sum + f.totalReferences, 0);
     const coveredRefSummary = frameworkCoverage.reduce((sum, f) => sum + f.covered, 0);
@@ -596,15 +596,6 @@ export class MetricsService {
     } else {
       this.overviewCache.clear();
     }
-  }
-
-  public getCachedOverviewMetrics(organizationId: string, userId: string = 'anon', role: string = 'user'): OverviewMetricsDto | null {
-    const key = `${organizationId}:${userId}:${role}`;
-    const entry = this.overviewCache.get(key);
-    if (entry && entry.expiresAt > Date.now()) {
-      return entry.data;
-    }
-    return null;
   }
 
   /**
