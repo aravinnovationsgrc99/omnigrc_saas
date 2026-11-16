@@ -43,6 +43,8 @@ services:
       JWT_SECRET: "omnigrc-prod-jwt-secret-key-change-me"
       JWT_REFRESH_SECRET: "omnigrc-prod-jwt-refresh-secret-key-change-me"
       PORT: 4000
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.6-flash}
     depends_on:
       postgres:
         condition: service_healthy

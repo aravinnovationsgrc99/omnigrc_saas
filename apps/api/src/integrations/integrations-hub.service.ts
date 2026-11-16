@@ -39,7 +39,7 @@ export class IntegrationsHubService {
         category: 'AI_LLM',
         status: isGeminiConfigured ? 'CONFIGURED' : 'AVAILABLE',
         description: 'Primary AI LLM router model for compliance framework control mapping & GRC assistance.',
-        details: { model: process.env.GEMINI_MODEL || 'gemini-2.5-flash', tier: 'GEMINI_ONLY' },
+        details: { model: process.env.GEMINI_MODEL || 'gemini-3.6-flash', tier: 'GEMINI_ONLY' },
       },
       {
         id: 'jira-software',

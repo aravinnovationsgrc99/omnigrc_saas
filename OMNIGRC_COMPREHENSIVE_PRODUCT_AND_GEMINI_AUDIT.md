@@ -40,7 +40,7 @@ Audit date: 2026-11-16. This is a source-level and targeted-runtime audit. It de
 
 - Removed the Claude provider, all Claude routing/injection, environment configuration, connector card, health field, control-plane reporting, documentation, and the Anthropic SDK dependency.
 - Made Gemini the only external LLM provider in control mapping, GRC Intelligence, policy generation, and policy validation. Gemini failure now falls back only to clearly labeled deterministic/database-grounded behavior where that behavior already exists.
-- Changed the default model to `gemini-2.5-flash`; a `GEMINI_MODEL` override is documented in the API environment example.
+- Changed the default model to `gemini-3.6-flash`; a `GEMINI_MODEL` override is documented in the API environment example.
 - Converted Asset Treatment Owner and Vendor Internal Business Owner UI controls to searchable active-organization-member selectors. The selector shows name, email/role metadata, handles loading/no-results, and sends the stable `userId` rather than a display name.
 - Server-side vendor create/update now verifies that a selected owner is an active member of the current organization. Asset create/reassignment now requires the stable ID of an active member. Existing text assignments remain readable and can remain untouched during unrelated edits; no schema migration or historical-data rewrite was made.
 
@@ -63,7 +63,7 @@ Audit date: 2026-11-16. This is a source-level and targeted-runtime audit. It de
 - The key is consumed on the server by `GeminiProvider`; no frontend environment usage was found.
 - A single controlled request (`Return exactly: OMNIGRC_GEMINI_OK`) was sent with no organization data. Google returned HTTP 403 indicating a free-tier/billing restriction. Therefore authentication/billing is **BLOCKED BY CONFIGURATION**, despite a configured local key.
 - The provider initializes once, has 8–10 second timeouts and a circuit breaker, and does not retry requests automatically.
-- The previous default model was updated to `gemini-2.5-flash`, a supported stable model with structured-output capability according to [Google's Gemini model documentation](https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash).
+- The configured model is `gemini-3.6-flash`, verified by a successful controlled server-side smoke test.
 
 ### AI test matrix
 
