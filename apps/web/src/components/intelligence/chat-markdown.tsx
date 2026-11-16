@@ -38,7 +38,7 @@ export function renderInlineMarkdown(text: string, isUser = false): React.ReactN
           className={
             isUser
               ? 'underline font-semibold text-white'
-              : 'text-indigo-600 hover:text-indigo-800 underline font-medium'
+              : 'text-slate-900 hover:text-blue-700 underline font-medium'
           }
         >
           {linkMatch[1]}
@@ -54,7 +54,7 @@ export function renderInlineMarkdown(text: string, isUser = false): React.ReactN
           className={
             isUser
               ? 'px-1.5 py-0.5 text-[11px] font-mono bg-white/20 text-white rounded'
-              : 'px-1.5 py-0.5 text-[11px] font-mono bg-indigo-50/80 text-indigo-700 font-semibold rounded border border-indigo-200/50'
+              : 'px-1.5 py-0.5 text-[11px] font-mono bg-slate-100 text-slate-800 font-medium rounded border border-slate-200'
           }
         >
           {part.slice(1, -1)}
@@ -144,7 +144,7 @@ export function ChatMarkdown({ content, isUser = false }: ChatMarkdownProps) {
               <li key={idx} className="flex items-start gap-2">
                 <span
                   className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${
-                    isUser ? 'bg-white/80' : 'bg-teal-500'
+                    isUser ? 'bg-white/80' : 'bg-slate-600'
                   }`}
                 />
                 <span className="flex-1 leading-relaxed">{renderInlineMarkdown(item, isUser)}</span>
@@ -161,7 +161,7 @@ export function ChatMarkdown({ content, isUser = false }: ChatMarkdownProps) {
                   className={`text-[10px] font-bold px-1.5 py-0.2 rounded flex-shrink-0 mt-0.5 ${
                     isUser
                       ? 'bg-white/20 text-white'
-                      : 'bg-indigo-50 text-indigo-700 border border-indigo-200/60'
+                      : 'bg-slate-100 text-slate-700 border border-slate-200'
                   }`}
                 >
                   {idx + 1}.
@@ -278,7 +278,7 @@ export function ChatMarkdown({ content, isUser = false }: ChatMarkdownProps) {
           className={`border-l-2 pl-2.5 py-1 my-1.5 text-[11px] italic rounded-r ${
             isUser
               ? 'border-white/60 bg-white/10 text-white/90'
-              : 'border-teal-500 bg-teal-50/50 text-slate-700'
+              : 'border-slate-400 bg-slate-50 text-slate-700'
           }`}
         >
           {renderInlineMarkdown(quoteText, isUser)}

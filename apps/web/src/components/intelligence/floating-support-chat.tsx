@@ -23,7 +23,6 @@ import {
   Copy,
   Check,
   Compass,
-  Lightbulb,
 } from 'lucide-react';
 import { apiRequest } from '@/lib/api-client';
 import {
@@ -285,20 +284,18 @@ export function FloatingSupportChat({
       data-floating-support="true"
       className={`fixed ${launcherPositionClass} z-45 transition-all duration-300 omni-font-sans`}
     >
-      {/* Floating Launcher Button */}
+      {/* Floating Launcher Button - Sober, solid, polished */}
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
           aria-label="Open GRC Intelligence Assistant"
-          className="group relative flex items-center justify-center gap-2 p-2.5 sm:px-4 sm:py-3 bg-gradient-to-r from-teal-600 via-cyan-600 to-indigo-600 hover:from-teal-700 hover:via-cyan-700 hover:to-indigo-700 text-white font-semibold text-sm rounded-full shadow-[0_4px_20px_rgba(20,184,166,0.35)] hover:shadow-[0_6px_25px_rgba(99,102,241,0.45)] transition-all transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-indigo-400 min-w-[44px] min-h-[44px]"
+          className="group relative flex items-center justify-center gap-2 px-3.5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs rounded-full shadow-lg hover:shadow-xl border border-slate-700/80 transition-all transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-slate-400 min-w-[44px] min-h-[44px]"
         >
           <div className="relative flex items-center justify-center">
-            <Bot className="w-5 h-5 text-cyan-100 group-hover:scale-110 transition-transform" />
-            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full animate-ping opacity-75" />
-            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-indigo-900" />
+            <Bot className="w-4 h-4 text-slate-200" />
+            <span className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-500 rounded-full border border-slate-900" />
           </div>
-          <span className="hidden sm:inline font-semibold tracking-wide">GRC Copilot</span>
-          <Sparkles className="hidden sm:inline w-4 h-4 text-amber-300 animate-pulse" />
+          <span className="hidden sm:inline font-medium tracking-normal text-slate-200">GRC Intelligence</span>
         </button>
       )}
 
@@ -309,48 +306,42 @@ export function FloatingSupportChat({
           aria-modal="true"
           data-floating-support="true"
           aria-label="GRC Intelligence Support Panel"
-          className="fixed bottom-16 sm:bottom-20 right-3 sm:right-6 left-3 sm:left-auto w-auto sm:w-[480px] max-w-[calc(100vw-1.5rem)] h-[620px] max-h-[calc(100vh-5rem)] bg-white border border-indigo-100/90 rounded-2xl shadow-[0_12px_45px_rgba(15,23,42,0.18)] flex flex-col overflow-hidden omni-fade-in z-[70]"
+          className="fixed bottom-16 sm:bottom-20 right-3 sm:right-6 left-3 sm:left-auto w-auto sm:w-[480px] max-w-[calc(100vw-1.5rem)] h-[620px] max-h-[calc(100vh-5rem)] bg-white border border-slate-300 rounded-xl shadow-2xl flex flex-col overflow-hidden omni-fade-in z-[70]"
         >
-          {/* Header */}
-          <div className="relative bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-900 text-white px-4 py-3.5 flex items-center justify-between border-b border-indigo-900/40 shrink-0 overflow-hidden">
-            {/* Ambient decorative light */}
-            <div className="absolute top-0 right-10 w-32 h-32 bg-cyan-500/10 rounded-full blur-2xl pointer-events-none" />
-            <div className="absolute top-0 left-10 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
-
-            <div className="relative flex items-center gap-2.5 min-w-0">
-              <div className="p-2 rounded-xl bg-gradient-to-br from-cyan-500 to-indigo-600 text-white shadow-sm flex-shrink-0">
+          {/* Header - Sober Slate Palette */}
+          <div className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between border-b border-slate-800 shrink-0">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="p-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 flex-shrink-0">
                 <Bot className="w-4 h-4" />
               </div>
               <div className="min-w-0">
-                <h3 className="text-sm font-bold text-white flex items-center gap-1.5 truncate">
-                  <span className="bg-gradient-to-r from-white via-slate-100 to-indigo-200 bg-clip-text text-transparent">
-                    OMNiGRC Intelligence
-                  </span>
+                <h3 className="text-sm font-semibold text-slate-100 flex items-center gap-2 truncate">
+                  <span>OMNiGRC Intelligence</span>
                   {currentProviderMode === 'LIVE_AI' ? (
-                    <span className="text-[10px] font-mono font-semibold bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/40 flex-shrink-0 inline-flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-[10px] font-mono font-medium bg-slate-800 text-emerald-400 px-2 py-0.5 rounded border border-slate-700 flex-shrink-0 inline-flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                       Live AI
                     </span>
                   ) : (
-                    <span className="text-[10px] font-mono font-semibold bg-cyan-500/20 text-cyan-300 px-2 py-0.5 rounded-full border border-cyan-500/40 flex-shrink-0 inline-flex items-center gap-1">
-                      <Database className="w-2.5 h-2.5 text-cyan-400" />
+                    <span className="text-[10px] font-mono font-medium bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700 flex-shrink-0 inline-flex items-center gap-1.5">
+                      <Database className="w-2.5 h-2.5 text-slate-400" />
                       Verified KB
                     </span>
                   )}
                 </h3>
-                <p className="text-[11px] text-indigo-200/80 truncate">
+                <p className="text-[11px] text-slate-400 truncate">
                   {currentView ? `Context: ${currentView}` : 'Organization Grounded Copilot'}
                 </p>
               </div>
             </div>
 
-            <div className="relative flex items-center gap-1 flex-shrink-0">
+            <div className="flex items-center gap-0.5 flex-shrink-0 text-slate-400">
               {messages.length > 0 && (
                 <button
                   onClick={handleClearChat}
                   title="Clear Conversation"
                   aria-label="Clear Conversation"
-                  className="p-1.5 text-slate-300 hover:text-white rounded-lg hover:bg-white/10 transition"
+                  className="p-1.5 hover:text-white rounded-md hover:bg-slate-800 transition"
                 >
                   <RotateCcw className="w-4 h-4" />
                 </button>
@@ -358,14 +349,14 @@ export function FloatingSupportChat({
               <button
                 onClick={() => setIsOpen(false)}
                 aria-label="Minimize Chat Panel"
-                className="p-1.5 text-slate-300 hover:text-white rounded-lg hover:bg-white/10 transition"
+                className="p-1.5 hover:text-white rounded-md hover:bg-slate-800 transition"
               >
                 <Minimize2 className="w-4 h-4" />
               </button>
               <button
                 onClick={() => setIsOpen(false)}
                 aria-label="Close Chat Panel"
-                className="p-1.5 text-slate-300 hover:text-white rounded-lg hover:bg-white/10 transition"
+                className="p-1.5 hover:text-white rounded-md hover:bg-slate-800 transition"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -373,24 +364,22 @@ export function FloatingSupportChat({
           </div>
 
           {/* Chat Messages Body */}
-          <div className="flex-1 min-h-0 overflow-y-auto p-3.5 sm:p-4 space-y-3.5 bg-gradient-to-b from-slate-50/90 via-indigo-50/20 to-slate-50/90 omni-scroll">
+          <div className="flex-1 min-h-0 overflow-y-auto p-3.5 sm:p-4 space-y-3.5 bg-slate-50/60 omni-scroll">
             {/* Welcome Banner */}
-            <div className="p-3.5 rounded-2xl bg-gradient-to-br from-white via-indigo-50/40 to-teal-50/30 border border-indigo-100/90 shadow-xs space-y-2">
+            <div className="p-3.5 rounded-xl bg-white border border-slate-200 shadow-2xs space-y-2">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-xs font-bold text-indigo-950">
-                  <span className="p-1 rounded-lg bg-indigo-100 text-indigo-700">
-                    <Sparkles className="w-3.5 h-3.5" />
-                  </span>
-                  <span>Autonomous GRC Copilot</span>
+                <div className="flex items-center gap-2 text-xs font-semibold text-slate-900">
+                  <Sparkles className="w-3.5 h-3.5 text-slate-700" />
+                  <span>GRC Intelligence Assistant</span>
                 </div>
-                <span className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
-                  Grounded &amp; Auditable
+                <span className="text-[10px] font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                  Enterprise Grounded
                 </span>
               </div>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Query controls, risks, evidence, audit findings, third-party vendors, or framework posture with citations.
+                Query controls, risks, evidence, audit findings, third-party vendors, or framework posture with grounded citations.
               </p>
-              <div className="flex items-center gap-1.5 text-[11px] text-amber-900 bg-amber-50/80 p-2 rounded-xl border border-amber-200/80">
+              <div className="flex items-center gap-1.5 text-[11px] text-amber-800 bg-amber-50/70 p-2 rounded-lg border border-amber-200">
                 <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
                 <span className="leading-snug">Advisory synthesis only. Compliance determinations require human verification.</span>
               </div>
@@ -398,20 +387,20 @@ export function FloatingSupportChat({
 
             {/* Discovery Question Section */}
             {pills.length > 0 && (
-              <div className="rounded-2xl border border-slate-200/90 bg-white shadow-2xs overflow-hidden transition-all">
+              <div className="rounded-xl border border-slate-200 bg-white shadow-2xs overflow-hidden transition-all">
                 {/* Accordion Bar when messages exist */}
                 <div
                   onClick={() => setShowQuestions(!showQuestions)}
-                  className="px-3.5 py-2.5 flex items-center justify-between cursor-pointer bg-gradient-to-r from-slate-50 to-indigo-50/30 hover:bg-slate-100/80 border-b border-slate-100 transition select-none"
+                  className="px-3.5 py-2.5 flex items-center justify-between cursor-pointer bg-slate-50 hover:bg-slate-100/70 border-b border-slate-200/80 transition select-none"
                 >
-                  <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
-                    <Compass className="w-4 h-4 text-indigo-600 flex-shrink-0" />
+                  <div className="flex items-center gap-2 text-xs font-semibold text-slate-800">
+                    <Compass className="w-3.5 h-3.5 text-slate-600 flex-shrink-0" />
                     <span>Suggested Discovery Questions</span>
-                    <span className="text-[10px] font-semibold bg-indigo-100 text-indigo-700 px-1.5 py-0.2 rounded-full">
+                    <span className="text-[10px] font-medium bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded">
                       {pills.length}
                     </span>
                   </div>
-                  <div className="flex items-center gap-1 text-[11px] font-medium text-slate-500 hover:text-indigo-600">
+                  <div className="flex items-center gap-1 text-[11px] font-medium text-slate-500 hover:text-slate-800">
                     <span>{showQuestions ? 'Hide' : 'Browse'}</span>
                     {showQuestions ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                   </div>
@@ -429,16 +418,16 @@ export function FloatingSupportChat({
                           <button
                             key={cat}
                             onClick={() => setSelectedCategory(cat)}
-                            className={`text-[11px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap transition flex items-center gap-1 ${
+                            className={`text-[11px] font-medium px-2.5 py-1 rounded-md whitespace-nowrap transition flex items-center gap-1.5 ${
                               isSelected
-                                ? 'bg-gradient-to-r from-indigo-600 to-teal-600 text-white shadow-xs'
-                                : 'bg-slate-100/80 hover:bg-slate-200/80 text-slate-600'
+                                ? 'bg-slate-900 text-white shadow-2xs'
+                                : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
                             }`}
                           >
                             <span>{cat}</span>
                             <span
-                              className={`text-[9px] px-1 py-0.1 rounded-full ${
-                                isSelected ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+                              className={`text-[9px] px-1 py-0.1 rounded ${
+                                isSelected ? 'bg-slate-700 text-slate-100' : 'bg-slate-200 text-slate-700'
                               }`}
                             >
                               {count}
@@ -455,23 +444,23 @@ export function FloatingSupportChat({
                           key={pill.key}
                           onClick={() => handlePillClick(pill)}
                           disabled={loading}
-                          className="group relative p-2.5 rounded-xl bg-slate-50/70 hover:bg-gradient-to-r hover:from-indigo-50/60 hover:to-teal-50/40 border border-slate-200/80 hover:border-indigo-300 text-left transition-all duration-150 flex items-start justify-between gap-2 disabled:opacity-50 shadow-2xs hover:shadow-xs"
+                          className="group p-2.5 rounded-lg bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-300 text-left transition flex items-start justify-between gap-2 disabled:opacity-50"
                         >
                           <div className="min-w-0 space-y-1">
                             <div className="flex items-center gap-1.5">
-                              <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded bg-indigo-100/90 text-indigo-800">
+                              <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 border border-slate-200">
                                 {pill.category}
                               </span>
-                              <span className="text-xs font-semibold text-slate-900 group-hover:text-indigo-950">
+                              <span className="text-xs font-semibold text-slate-900">
                                 {pill.label}
                               </span>
                             </div>
                             {/* Complete Question Text without line-clamp truncation */}
-                            <p className="text-[11px] text-slate-600 group-hover:text-slate-800 leading-relaxed break-words">
+                            <p className="text-[11px] text-slate-600 leading-relaxed break-words">
                               {pill.prompt}
                             </p>
                           </div>
-                          <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-transform flex-shrink-0 mt-1" />
+                          <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-slate-700 group-hover:translate-x-0.5 transition-transform flex-shrink-0 mt-1" />
                         </button>
                       ))}
                     </div>
@@ -487,22 +476,22 @@ export function FloatingSupportChat({
                 className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'} space-y-1`}
               >
                 {msg.role === 'assistant' && (
-                  <div className="text-[10px] font-semibold text-slate-500 px-1 flex items-center justify-between w-full max-w-[94%] sm:max-w-[90%]">
+                  <div className="text-[10px] font-medium text-slate-500 px-1 flex items-center justify-between w-full max-w-[94%] sm:max-w-[90%]">
                     <div className="flex items-center gap-1.5">
-                      <div className="w-4 h-4 rounded-full bg-gradient-to-br from-indigo-500 to-teal-500 flex items-center justify-center text-white">
+                      <div className="w-4 h-4 rounded bg-slate-200 flex items-center justify-center text-slate-700">
                         <Bot className="w-2.5 h-2.5" />
                       </div>
-                      <span className="font-bold text-slate-700">GRC Assistant</span>
+                      <span className="font-semibold text-slate-700">GRC Assistant</span>
                       {msg.generationMode === 'DATA_GROUNDED' ? (
-                        <span className="text-[9px] font-semibold bg-teal-100 text-teal-900 px-1.5 py-0.2 rounded-full inline-flex items-center gap-0.5 border border-teal-200">
-                          <Database className="w-2 h-2 text-teal-700" /> Verified DB
+                        <span className="text-[9px] font-medium bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded inline-flex items-center gap-0.5 border border-slate-200">
+                          <Database className="w-2 h-2 text-slate-600" /> Verified DB
                         </span>
                       ) : msg.generationMode === 'HYBRID' ? (
-                        <span className="text-[9px] font-semibold bg-indigo-100 text-indigo-900 px-1.5 py-0.2 rounded-full inline-flex items-center gap-0.5 border border-indigo-200">
-                          <Sparkles className="w-2 h-2 text-indigo-700" /> Hybrid AI
+                        <span className="text-[9px] font-medium bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded inline-flex items-center gap-0.5 border border-slate-200">
+                          <Sparkles className="w-2 h-2 text-slate-600" /> Hybrid AI
                         </span>
                       ) : msg.isLiveAi ? (
-                        <span className="text-[9px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded-full inline-flex items-center gap-0.5 border border-emerald-200">
+                        <span className="text-[9px] font-medium bg-emerald-50 text-emerald-800 px-1.5 py-0.2 rounded inline-flex items-center gap-1 border border-emerald-200">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Live AI
                         </span>
                       ) : null}
@@ -526,12 +515,12 @@ export function FloatingSupportChat({
                 )}
 
                 <div
-                  className={`max-w-[94%] sm:max-w-[90%] p-3.5 sm:p-4 rounded-2xl text-xs space-y-3 shadow-xs ${
+                  className={`max-w-[94%] sm:max-w-[90%] p-3.5 sm:p-4 rounded-xl text-xs space-y-3 shadow-2xs ${
                     msg.role === 'user'
-                      ? 'bg-gradient-to-r from-indigo-600 to-teal-600 text-white rounded-br-xs font-medium'
+                      ? 'bg-slate-900 text-white rounded-br-xs font-normal'
                       : msg.isError
                       ? 'bg-red-50 border border-red-200 text-red-900 rounded-bl-xs'
-                      : 'bg-white border border-slate-200/90 text-slate-800 rounded-bl-xs'
+                      : 'bg-white border border-slate-200 text-slate-800 rounded-bl-xs'
                   }`}
                 >
                   {/* Rich Markdown Message Content (Interprets **, ***, headers, lists, code) */}
@@ -541,7 +530,7 @@ export function FloatingSupportChat({
 
                   {/* Advisory Warnings */}
                   {msg.warnings && msg.warnings.length > 0 && (
-                    <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] flex items-start gap-1.5">
+                    <div className="p-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px] flex items-start gap-1.5">
                       <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />
                       <div className="space-y-0.5">
                         {msg.warnings.map((w, wIdx) => (
@@ -562,7 +551,7 @@ export function FloatingSupportChat({
                               {viz.kpis.slice(0, 4).map((k, kIdx) => (
                                 <div
                                   key={kIdx}
-                                  className={`p-2 rounded-xl border text-center ${
+                                  className={`p-2 rounded-lg border text-center ${
                                     k.trend === 'critical'
                                       ? 'bg-red-50 border-red-200 text-red-900'
                                       : k.trend === 'warning'
@@ -581,10 +570,10 @@ export function FloatingSupportChat({
 
                           {/* Bar chart */}
                           {viz.type === 'bar' && viz.chartData && viz.chartData.length > 0 && (
-                            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 space-y-1.5">
+                            <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 space-y-1.5">
                               {viz.title && (
                                 <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                                  <BarChart3 className="w-2.5 h-2.5 text-indigo-600" /> {viz.title}
+                                  <BarChart3 className="w-2.5 h-2.5 text-slate-600" /> {viz.title}
                                 </div>
                               )}
                               <div className="space-y-1.5">
@@ -632,12 +621,12 @@ export function FloatingSupportChat({
 
                           {/* Table */}
                           {viz.type === 'table' && viz.columns && viz.rows && (
-                            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+                            <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
                               <table className="w-full text-left text-[10px]">
                                 <thead>
                                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
                                     {viz.columns.slice(0, 3).map((col) => (
-                                      <th key={col.key} className="py-1.5 px-2 font-semibold uppercase">
+                                      <th key={col.key} className="py-1 px-2 font-semibold uppercase">
                                         {col.label}
                                       </th>
                                     ))}
@@ -673,13 +662,13 @@ export function FloatingSupportChat({
                     msg.structuredAnalysis.metrics.length > 0 && (
                       <div className="pt-2 border-t border-slate-100">
                         <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center gap-1">
-                          <Activity className="w-3 h-3 text-indigo-600" /> Metrics
+                          <Activity className="w-3 h-3 text-slate-600" /> Metrics
                         </div>
                         <div className="grid grid-cols-2 gap-1.5">
                           {msg.structuredAnalysis.metrics.slice(0, 4).map((m, idx) => (
                             <div
                               key={idx}
-                              className={`p-2 rounded-xl border text-center ${
+                              className={`p-2 rounded-lg border text-center ${
                                 m.trend === 'critical'
                                   ? 'bg-red-50 border-red-200 text-red-900'
                                   : m.trend === 'warning'
@@ -700,7 +689,7 @@ export function FloatingSupportChat({
                     <div className="pt-2 border-t border-slate-100 space-y-1.5">
                       <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
                         <span className="flex items-center gap-1">
-                          <ShieldCheck className="w-3.5 h-3.5 text-indigo-600 flex-shrink-0" /> Verified Citations ({msg.citations.length}):
+                          <ShieldCheck className="w-3.5 h-3.5 text-slate-600 flex-shrink-0" /> Verified Citations ({msg.citations.length}):
                         </span>
                       </div>
                       <div className="flex flex-col gap-1.5">
@@ -709,29 +698,28 @@ export function FloatingSupportChat({
                             key={c.id}
                             type="button"
                             onClick={() => handleCitationClick(c)}
-                            className="text-left p-2 rounded-xl bg-slate-50 hover:bg-indigo-50/70 border border-slate-200 hover:border-indigo-300 transition flex items-center justify-between group shadow-2xs"
+                            className="text-left p-2 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 hover:border-slate-300 transition flex items-center justify-between group shadow-2xs"
                           >
                             <div className="min-w-0 pr-1">
-                              <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded bg-indigo-100 text-indigo-900 mr-1.5">
+                              <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.2 rounded bg-slate-200 text-slate-800 mr-1.5">
                                 {c.domain}
                               </span>
-                              <span className="text-xs font-semibold text-slate-900 group-hover:text-indigo-950 truncate">
+                              <span className="text-xs font-semibold text-slate-900 group-hover:text-slate-950 truncate">
                                 {c.title}
                               </span>
                             </div>
-                            <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-600 flex-shrink-0" />
+                            <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700 flex-shrink-0" />
                           </button>
                         ))}
                       </div>
                     </div>
                   )}
 
-                  {/* Suggested Follow-up Questions (Full Text, Clean Typography, No Ellipsis) */}
+                  {/* Suggested Follow-up Questions (Full Text, Clean Typography, Sober Buttons) */}
                   {msg.suggestedFollowUps && msg.suggestedFollowUps.length > 0 && (
                     <div className="pt-2 border-t border-slate-100 space-y-1.5">
-                      <div className="text-[10px] font-bold text-indigo-900/80 uppercase tracking-wider flex items-center gap-1">
-                        <Lightbulb className="w-3 h-3 text-indigo-600" />
-                        <span>Suggested Next Questions:</span>
+                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                        Suggested Follow-ups:
                       </div>
                       <div className="flex flex-col gap-1.5">
                         {msg.suggestedFollowUps.slice(0, 4).map((fu, idx) => (
@@ -740,11 +728,11 @@ export function FloatingSupportChat({
                             type="button"
                             onClick={() => handleSendPrompt(fu)}
                             disabled={loading}
-                            className="group text-left text-xs font-medium px-3 py-2 rounded-xl bg-gradient-to-r from-indigo-50/80 to-teal-50/80 hover:from-indigo-100 hover:to-teal-100 text-indigo-950 border border-indigo-200/80 hover:border-indigo-300 transition-all flex items-center justify-between gap-2 disabled:opacity-50 shadow-2xs hover:shadow-xs"
+                            className="group text-left text-xs font-medium px-3 py-2 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-800 hover:text-slate-900 border border-slate-200 hover:border-slate-300 transition-all flex items-center justify-between gap-2 disabled:opacity-50"
                           >
                             {/* Complete Question Text without max-width truncation */}
                             <span className="leading-snug break-words flex-1">{fu}</span>
-                            <ArrowRight className="w-3.5 h-3.5 text-indigo-600 group-hover:translate-x-0.5 transition-transform flex-shrink-0 ml-1" />
+                            <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700 group-hover:translate-x-0.5 transition-transform flex-shrink-0 ml-1" />
                           </button>
                         ))}
                       </div>
@@ -757,13 +745,13 @@ export function FloatingSupportChat({
                     msg.sourcesUsed.length > 0 && (
                       <div className="pt-2 border-t border-slate-100 space-y-1">
                         <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                          <ShieldCheck className="w-3 h-3 text-indigo-600 flex-shrink-0" /> Sources:
+                          <ShieldCheck className="w-3 h-3 text-slate-600 flex-shrink-0" /> Sources:
                         </div>
                         <div className="flex flex-wrap gap-1">
                           {msg.sourcesUsed.map((src, idx) => (
                             <span
                               key={idx}
-                              className="text-[9px] font-semibold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200/80 break-words max-w-full"
+                              className="text-[9px] font-medium bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200/80 break-words max-w-full"
                             >
                               {src}
                             </span>
@@ -776,7 +764,7 @@ export function FloatingSupportChat({
                   {msg.isError && (
                     <button
                       onClick={() => handleSendPrompt(messages.slice(-2)[0]?.content)}
-                      className="inline-flex items-center gap-1 text-[11px] font-bold text-red-700 hover:text-red-900 underline mt-1"
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-700 hover:text-red-900 underline mt-1"
                     >
                       <RotateCcw className="w-3 h-3" /> Retry Question
                     </button>
@@ -788,14 +776,9 @@ export function FloatingSupportChat({
 
             {/* Loading Indicator */}
             {loading && (
-              <div className="flex items-center gap-2.5 p-3.5 bg-white border border-indigo-150 rounded-2xl text-xs text-indigo-950 max-w-[88%] omni-fade-in shadow-xs">
-                <div className="w-5 h-5 rounded-full bg-gradient-to-br from-indigo-500 to-teal-500 flex items-center justify-center text-white animate-spin">
-                  <Bot className="w-3 h-3" />
-                </div>
-                <div className="space-y-0.5">
-                  <div className="font-semibold text-slate-800">Synthesizing GRC Intelligence...</div>
-                  <div className="text-[10px] text-slate-500">Cross-referencing controls, frameworks &amp; live posture</div>
-                </div>
+              <div className="flex items-center gap-2.5 p-3 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 max-w-[85%] omni-fade-in shadow-2xs">
+                <Bot className="w-4 h-4 text-slate-600 animate-spin flex-shrink-0" />
+                <span className="font-medium text-slate-600">Analyzing GRC context &amp; records...</span>
               </div>
             )}
 
@@ -803,7 +786,7 @@ export function FloatingSupportChat({
           </div>
 
           {/* Footer Form / Mobile Composer */}
-          <div className="p-3 bg-white/95 backdrop-blur-md border-t border-slate-200/90 shrink-0 pb-safe">
+          <div className="p-3 bg-white border-t border-slate-200 shrink-0 pb-safe">
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -817,13 +800,13 @@ export function FloatingSupportChat({
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 disabled={loading}
-                className="flex-1 min-w-0 px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-150 focus:border-indigo-500 transition font-medium disabled:opacity-50"
+                className="flex-1 min-w-0 px-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-700 focus:border-slate-700 transition font-normal disabled:opacity-50"
               />
               <button
                 type="submit"
                 disabled={loading || !prompt.trim()}
                 aria-label="Send Question"
-                className="p-2.5 flex-shrink-0 bg-gradient-to-r from-indigo-600 to-teal-600 hover:from-indigo-700 hover:to-teal-700 text-white rounded-xl shadow-xs disabled:opacity-40 transition-all transform active:scale-95"
+                className="p-2 flex-shrink-0 bg-slate-900 hover:bg-slate-800 text-white rounded-lg transition disabled:opacity-40"
               >
                 <Send className="w-4 h-4" />
               </button>
