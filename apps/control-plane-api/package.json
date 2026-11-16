@@ -3,12 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "prisma generate && nest build",
+    "build": "node scripts/generate-prisma.js && nest build",
     "dev": "nest start --watch",
     "start": "node dist/main.js",
     "test": "jest",
     "test:e2e": "jest --config ./test/jest-e2e.json --runInBand",
-    "prisma:generate": "prisma generate",
+    "prisma:generate": "node scripts/generate-prisma.js",
     "prisma:migrate": "prisma migrate dev",
     "operator:recover": "ts-node scripts/operator-recovery.ts"
   },
