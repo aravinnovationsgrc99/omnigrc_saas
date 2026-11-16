@@ -31,6 +31,7 @@ export class MappingQueueService implements OnModuleInit, OnModuleDestroy {
   private worker: Worker | null = null;
   private redisClient: Redis | null = null;
   private isRedisConnected = false;
+  private isQueuePaused = false;
 
   private readonly DEFAULT_JOB_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
   private readonly MAX_TERMINAL_JOBS = 1000;
@@ -93,6 +94,7 @@ export class MappingQueueService implements OnModuleInit, OnModuleDestroy {
         maxRetriesPerRequest: null,
         enableReadyCheck: false,
         connectTimeout: 5000,
+        keepAlive: 30000,
         retryStrategy: (times) => Math.min(times * 500, 5000),
       });
 
@@ -147,7 +149,10 @@ export class MappingQueueService implements OnModuleInit, OnModuleDestroy {
         },
         {
           connection: this.redisClient,
+          drainDelay: 30000, // 30s wait when drained instead of 5s (83% reduction in idle Upstash/Redis commands)
           stalledInterval: 300000, // 5 minutes operational balance (90% lower idle Redis commands)
+          lockDuration: 60000, // 60s lock duration reduces lock renewal calls
+          maxStalledCount: 1,
         },
       );
 
@@ -242,7 +247,11 @@ export class MappingQueueService implements OnModuleInit, OnModuleDestroy {
 
     try {
       this.jobStore.set(jobId, jobState);
-      await this.bullQueue.add('suggest-mappings', jobPayload, { jobId });
+      await this.bullQueue.add('suggest-mappings', jobPayload, {
+        jobId,
+        removeOnComplete: { count: 50, age: 3600 },
+        removeOnFail: { count: 100, age: 86400 },
+      });
       this.logger.log(`Successfully enqueued durable Control Mapping job "${jobId}".`);
       return jobId;
     } catch (err: any) {
@@ -280,9 +289,10 @@ export class MappingQueueService implements OnModuleInit, OnModuleDestroy {
   }
 
   public async pauseQueue() {
-    if (this.bullQueue) {
+    if (this.bullQueue && !this.isQueuePaused) {
       try {
         await this.bullQueue.pause();
+        this.isQueuePaused = true;
         this.logger.log('MappingQueueService: BullMQ queue paused due to non-valid license state.');
       } catch (err: any) {
         this.logger.warn(`Failed to pause BullMQ queue: ${err.message}`);
@@ -291,9 +301,10 @@ export class MappingQueueService implements OnModuleInit, OnModuleDestroy {
   }
 
   public async resumeQueue() {
-    if (this.bullQueue) {
+    if (this.bullQueue && this.isQueuePaused) {
       try {
         await this.bullQueue.resume();
+        this.isQueuePaused = false;
         this.logger.log('MappingQueueService: BullMQ queue resumed following valid license confirmation.');
       } catch (err: any) {
         this.logger.warn(`Failed to resume BullMQ queue: ${err.message}`);
@@ -339,7 +350,7 @@ export class MappingQueueService implements OnModuleInit, OnModuleDestroy {
         state.error = `Job deferred: license state is ${licenseState.state}`;
       }
       return;
-    } else {
+    } else if (this.isQueuePaused) {
       await this.resumeQueue();
     }
 

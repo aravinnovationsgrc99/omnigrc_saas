@@ -2078,7 +2078,7 @@ export class BusinessAuditsService {
     query: {
       page?: number;
       limit?: number;
-      status?: FindingStatus;
+      status?: string;
       severity?: VulnerabilitySeverity;
       search?: string;
       planId?: string;
@@ -2096,7 +2096,27 @@ export class BusinessAuditsService {
       ...scopeWhere,
     };
 
-    if (query.status) where.status = query.status;
+    if (query.status) {
+      if (
+        query.status === 'ACTIVE_OPEN' ||
+        query.status === 'OPEN_UNRESOLVED' ||
+        query.status === 'UNRESOLVED' ||
+        query.status === 'OPEN_ACTIVE'
+      ) {
+        where.status = {
+          in: [
+            FindingStatus.OPEN,
+            FindingStatus.IN_REMEDIATION,
+            FindingStatus.READY_FOR_VERIFICATION,
+          ],
+        };
+      } else if (typeof query.status === 'string' && query.status.includes(',')) {
+        const statuses = query.status.split(',').map((s) => s.trim() as FindingStatus);
+        where.status = { in: statuses };
+      } else {
+        where.status = query.status as FindingStatus;
+      }
+    }
     if (query.severity) where.severity = query.severity;
     if (query.assessmentId) where.assessmentId = query.assessmentId;
     if (query.planId) {

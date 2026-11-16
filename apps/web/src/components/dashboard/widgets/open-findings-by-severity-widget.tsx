@@ -90,7 +90,7 @@ export function OpenFindingsBySeverityWidget({
         {/* Posture Header Strip */}
         <div className="grid grid-cols-2 gap-2 mb-4">
           <div
-            onClick={() => onNavigateToView?.('audits', { tab: 'findings', status: 'OPEN' })}
+            onClick={() => onNavigateToView?.('audits', { tab: 'findings', status: 'ACTIVE_OPEN' })}
             className="bg-amber-50/50 p-2.5 rounded-lg border border-amber-100/60 hover:bg-amber-100/50 transition-colors cursor-pointer"
             title="Filter Active Open Findings"
           >

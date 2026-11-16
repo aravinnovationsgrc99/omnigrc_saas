@@ -16,6 +16,8 @@ import {
   ControlDto,
   PaginatedControlsDto,
   Role,
+  DepartmentDto,
+  OrganizationMemberDto,
 } from '@omnigrc/shared';
 
 import { apiRequest } from '@/lib/api-client';
@@ -89,6 +91,10 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
   const [residualImpact, setResidualImpact] = useState<number>(0);
   const [status, setStatus] = useState<RiskStatus>(RiskStatus.OPEN);
   const [owner, setOwner] = useState('');
+  const [departmentId, setDepartmentId] = useState<string>('');
+  const [departments, setDepartments] = useState<DepartmentDto[]>([]);
+  const [members, setMembers] = useState<OrganizationMemberDto[]>([]);
+  const [loadingDirectory, setLoadingDirectory] = useState(false);
   const [assetId, setAssetId] = useState<string>('');
   const [frameworkId, setFrameworkId] = useState<string>('');
   const [frameworkVersionId, setFrameworkVersionId] = useState<string>('');
@@ -198,12 +204,27 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
     }
   };
 
-  // Fetch available assets for dropdown selection
+  // Fetch available assets, departments, and members for dropdown selection
   useEffect(() => {
     if (isOpen) {
       apiRequest<PaginatedAssetsDto>('/assets?limit=100')
         .then((res) => setAvailableAssets(res.items))
         .catch(() => setAvailableAssets([]));
+
+      setLoadingDirectory(true);
+      Promise.all([
+        apiRequest<DepartmentDto[]>('/departments').catch(() => []),
+        apiRequest<OrganizationMemberDto[]>('/organization-members').catch(() => []),
+      ])
+        .then(([depts, mems]) => {
+          setDepartments(Array.isArray(depts) ? depts : []);
+          setMembers(Array.isArray(mems) ? mems : []);
+        })
+        .catch(() => {
+          setDepartments([]);
+          setMembers([]);
+        })
+        .finally(() => setLoadingDirectory(false));
     }
   }, [isOpen]);
 
@@ -218,6 +239,7 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
       setResidualImpact(risk.residualImpact || 0);
       setStatus(risk.status || RiskStatus.OPEN);
       setOwner(risk.owner || '');
+      setDepartmentId(risk.departmentId || '');
       setFrameworkId(risk.frameworkId || '');
       setFrameworkReferenceId(risk.frameworkReferenceId || '');
 
@@ -259,6 +281,7 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
       setResidualImpact(0);
       setStatus(RiskStatus.OPEN);
       setOwner('');
+      setDepartmentId('');
       setAssetId(defaultAssetId || '');
       setFrameworkId('');
       setFrameworkVersionId('');
@@ -320,6 +343,7 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
           residualImpact: residualImpact > 0 ? residualImpact : undefined,
           status,
           owner: owner.trim(),
+          departmentId: departmentId || undefined,
           assetId: assetId || null,
           frameworkId: effectiveFrameworkId,
           frameworkReferenceId: effectiveReferenceId,
@@ -347,6 +371,7 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
           residualImpact: residualImpact > 0 ? residualImpact : undefined,
           status,
           owner: owner.trim(),
+          departmentId: departmentId || undefined,
           assetId: assetId || undefined,
           frameworkId: effectiveFrameworkId,
           frameworkReferenceId: effectiveReferenceId,
@@ -594,14 +619,53 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
                 <label style={{ fontSize: 12.5, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 6 }}>
                   Risk Owner *
                 </label>
-                <input
+                <select
                   className={`omni-input w-full ${isOwnerInvalid ? 'border-rose-500' : ''}`}
-                  placeholder="e.g. SecOps Team"
                   value={owner}
-                  onChange={(e) => setOwner(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setOwner(val);
+                    setOwnerTouched(true);
+                    const matchedDept = departments.find(
+                      (d) => d.name === val || `${d.name} Team` === val,
+                    );
+                    if (matchedDept) {
+                      setDepartmentId(matchedDept.id);
+                    }
+                  }}
                   onBlur={() => setOwnerTouched(true)}
                   required
-                />
+                >
+                  <option value="">-- Select Team or Member --</option>
+                  {owner &&
+                    !departments.some((d) => d.name === owner || `${d.name} Team` === owner) &&
+                    !members.some((m) => (m.name || m.email) === owner) && (
+                      <optgroup label="Assigned Owner">
+                        <option value={owner}>{owner} (Current)</option>
+                      </optgroup>
+                    )}
+                  {departments.length > 0 && (
+                    <optgroup label="🏢 Teams & Departments (Live Database)">
+                      {departments.map((d) => (
+                        <option key={d.id} value={`${d.name} Team`}>
+                          {d.name} Team {d.code ? `(${d.code})` : ''}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {members.length > 0 && (
+                    <optgroup label="👤 Organization Members">
+                      {members.map((m) => (
+                        <option key={m.userId || m.id} value={m.name || m.email}>
+                          {m.name || m.email} ({m.role})
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {departments.length === 0 && members.length === 0 && !loadingDirectory && (
+                    <option value="" disabled>No teams or members found (configure in Org Settings)</option>
+                  )}
+                </select>
                 {isOwnerInvalid && (
                   <span className="text-xs text-rose-600 font-medium mt-1 block">Risk owner team or person is required.</span>
                 )}
@@ -706,14 +770,40 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
               <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
                 <div style={{ flex: 1 }}>
                   <label style={{ fontSize: 12, fontWeight: 600, color: '#5B6672', display: 'block', marginBottom: 4 }}>
-                    Treatment Owner
+                    Treatment Owner (Optional)
                   </label>
-                  <input
-                    className="omni-input"
-                    placeholder="e.g. DevOps Engineer / SecOps"
+                  <select
+                    className="omni-input w-full"
                     value={treatmentOwner}
                     onChange={(e) => setTreatmentOwner(e.target.value)}
-                  />
+                  >
+                    <option value="">-- No Treatment Owner Assigned --</option>
+                    {treatmentOwner &&
+                      !departments.some((d) => d.name === treatmentOwner || `${d.name} Team` === treatmentOwner) &&
+                      !members.some((m) => (m.name || m.email) === treatmentOwner) && (
+                        <optgroup label="Assigned Treatment Owner">
+                          <option value={treatmentOwner}>{treatmentOwner} (Current)</option>
+                        </optgroup>
+                      )}
+                    {departments.length > 0 && (
+                      <optgroup label="🏢 Teams & Departments (Live Database)">
+                        {departments.map((d) => (
+                          <option key={d.id} value={`${d.name} Team`}>
+                            {d.name} Team {d.code ? `(${d.code})` : ''}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {members.length > 0 && (
+                      <optgroup label="👤 Organization Members">
+                        {members.map((m) => (
+                          <option key={m.userId || m.id} value={m.name || m.email}>
+                            {m.name || m.email} ({m.role})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
                 </div>
 
                 <div style={{ flex: 1 }}>

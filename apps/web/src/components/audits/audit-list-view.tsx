@@ -118,7 +118,7 @@ export function AuditListView({ initialStatus, initialTab }: AuditListViewProps 
     if (initialStatus) {
       setFilterStatus(initialStatus);
       if (initialTab === 'findings') {
-        setFindingFilterStatus(initialStatus);
+        setFindingFilterStatus(initialStatus === 'OPEN' ? 'ACTIVE_OPEN' : initialStatus);
       }
     }
   }, [initialStatus, initialTab]);
@@ -2109,10 +2109,10 @@ export function AuditListView({ initialStatus, initialTab }: AuditListViewProps 
         <div
           onClick={() => {
             setActiveTab('findings');
-            setFindingFilterStatus(findingFilterStatus === 'OPEN' ? '' : 'OPEN');
+            setFindingFilterStatus('ACTIVE_OPEN');
           }}
           className={`p-3.5 bg-white border rounded-xl shadow-2xs cursor-pointer transition-all hover:shadow-xs ${
-            activeTab === 'findings'
+            activeTab === 'findings' && (findingFilterStatus === 'ACTIVE_OPEN' || !findingFilterStatus)
               ? 'border-rose-500 ring-2 ring-rose-100 bg-rose-50/20'
               : 'border-slate-200 hover:border-slate-300'
           }`}
@@ -2459,12 +2459,13 @@ export function AuditListView({ initialStatus, initialTab }: AuditListViewProps 
                 aria-label="Filter by Finding Status"
                 className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-600"
               >
-                <option value="">All Finding Statuses</option>
-                <option value="OPEN">Open</option>
-                <option value="IN_REMEDIATION">In Remediation</option>
-                <option value="READY_FOR_VERIFICATION">Ready for Verification</option>
-                <option value="VERIFIED">Verified</option>
-                <option value="CLOSED">Closed</option>
+                <option value="ACTIVE_OPEN">Open Findings ({findingsOpenCount} Active / Requires Remediation)</option>
+                <option value="">All Finding Statuses ({summary?.findingsTotal ?? (findings.length > 0 ? 'All' : '')})</option>
+                <option value="OPEN">Status: Open (Pending Remediation)</option>
+                <option value="IN_REMEDIATION">Status: In Remediation</option>
+                <option value="READY_FOR_VERIFICATION">Status: Ready for Verification</option>
+                <option value="VERIFIED">Status: Verified</option>
+                <option value="CLOSED">Status: Closed</option>
               </select>
 
               <select

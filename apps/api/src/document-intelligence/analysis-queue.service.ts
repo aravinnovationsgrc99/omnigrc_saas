@@ -43,6 +43,7 @@ export class AnalysisQueueService implements OnModuleInit, OnModuleDestroy {
         maxRetriesPerRequest: null,
         enableReadyCheck: false,
         connectTimeout: 5000,
+        keepAlive: 30000,
         retryStrategy: (times) => Math.min(times * 500, 5000),
       });
 
@@ -97,7 +98,10 @@ export class AnalysisQueueService implements OnModuleInit, OnModuleDestroy {
         },
         {
           connection: this.redisClient,
+          drainDelay: 30000, // 30s wait when drained instead of 5s (83% reduction in idle Upstash/Redis commands)
           stalledInterval: 300000, // 5 minutes operational balance (90% lower idle Redis commands)
+          lockDuration: 60000, // 60s lock duration reduces lock renewal calls
+          maxStalledCount: 1,
         },
       );
 
@@ -176,6 +180,8 @@ export class AnalysisQueueService implements OnModuleInit, OnModuleDestroy {
         jobId: `doc_analysis_${analysisId}`,
         attempts: 3,
         backoff: { type: 'exponential', delay: 3000 },
+        removeOnComplete: { count: 50, age: 3600 },
+        removeOnFail: { count: 100, age: 86400 },
       });
 
       this.logger.log(`Successfully enqueued durable Document Analysis job "doc_analysis_${analysisId}".`);

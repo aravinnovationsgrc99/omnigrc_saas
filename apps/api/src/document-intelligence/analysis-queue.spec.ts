@@ -184,6 +184,7 @@ describe('AnalysisQueueService Lifecycle & Worker Leak Prevention', () => {
       id: 'analysis-1',
       organizationId: 'org-1',
       evidenceFileName: 'doc.pdf',
+      evidence: { scanStatus: 'CLEAN', status: 'ACTIVE' },
     } as any);
     jest.spyOn(prisma.analysisRun, 'create').mockResolvedValueOnce({ id: 'run-1' } as any);
 
@@ -219,6 +220,7 @@ describe('AnalysisQueueService Lifecycle & Worker Leak Prevention', () => {
         id: 'analysis-fail-1',
         organizationId: 'org-1',
         evidenceFileName: 'scanned.png',
+        evidence: { scanStatus: 'CLEAN', status: 'ACTIVE' },
       } as any);
       jest.spyOn(prisma.analysisRun, 'create').mockResolvedValue({ id: 'run-fail-1' } as any);
 
@@ -268,6 +270,7 @@ describe('AnalysisQueueService Lifecycle & Worker Leak Prevention', () => {
         id: 'analysis-missing-1',
         organizationId: 'org-1',
         evidenceFileName: 'missing.pdf',
+        evidence: { scanStatus: 'CLEAN', status: 'ACTIVE' },
       } as any);
       jest.spyOn(prisma.analysisRun, 'create').mockResolvedValue({ id: 'run-missing-1' } as any);
 
@@ -314,6 +317,7 @@ describe('AnalysisQueueService Lifecycle & Worker Leak Prevention', () => {
         id: 'analysis-traversal-1',
         organizationId: 'org-1',
         evidenceFileName: 'bad.pdf',
+        evidence: { scanStatus: 'CLEAN', status: 'ACTIVE' },
       } as any);
       jest.spyOn(prisma.analysisRun, 'create').mockResolvedValue({ id: 'run-traversal-1' } as any);
 

@@ -186,7 +186,7 @@ export class BusinessAuditsController {
     @CurrentUser() user: any,
     @Query('page') page?: number,
     @Query('limit') limit?: number,
-    @Query('status') status?: FindingStatus,
+    @Query('status') status?: string,
     @Query('severity') severity?: VulnerabilitySeverity,
     @Query('search') search?: string,
     @Query('planId') planId?: string,
