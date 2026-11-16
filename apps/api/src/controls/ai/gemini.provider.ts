@@ -65,6 +65,17 @@ export class GeminiProvider implements AiProvider {
     this.circuitBreaker.consecutiveFailures += 1;
     this.circuitBreaker.lastError = msg;
 
+    if (msg.includes('timed out')) {
+      this.logger.warn(`GeminiProvider request timed out: ${msg}. Consecutive failures: ${this.circuitBreaker.consecutiveFailures}`);
+      if (this.circuitBreaker.consecutiveFailures >= 5) {
+        this.circuitBreaker.isOpen = true;
+        this.circuitBreaker.trippedAt = Date.now();
+        this.circuitBreaker.cooldownMs = 30 * 1000; // 30s cooldown for timeouts
+        this.circuitBreaker.lastStatus = 504;
+      }
+      return;
+    }
+
     if (
       msg.includes('403') ||
       msg.includes('free tier') ||
@@ -104,7 +115,7 @@ export class GeminiProvider implements AiProvider {
     return configured;
   }
 
-  async generateText(systemPrompt: string, userPrompt: string): Promise<string> {
+  async generateText(systemPrompt: string, userPrompt: string, timeoutMs = 45000): Promise<string> {
     if (!this.genAI) {
       throw new Error('Gemini API client not initialized.');
     }
@@ -120,7 +131,7 @@ export class GeminiProvider implements AiProvider {
 
     try {
       const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Gemini API request timed out after 8000ms')), 8000)
+        setTimeout(() => reject(new Error(`Gemini API request timed out after ${timeoutMs}ms`)), timeoutMs)
       );
       const contentPromise = model.generateContent(userPrompt);
       const result = await Promise.race([contentPromise, timeoutPromise]);

@@ -7,11 +7,12 @@ import { AuthModule } from '../auth/auth.module';
 import { ApprovalEngineModule } from '../approval/approval-engine.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { GeminiProvider } from '../controls/ai/gemini.provider';
+import { ClaudeProvider } from '../controls/ai/claude.provider';
 
 @Module({
   imports: [PrismaModule, AuditLogsModule, AuthModule, ApprovalEngineModule, NotificationsModule],
   controllers: [PoliciesController],
-  providers: [PoliciesService, GeminiProvider],
+  providers: [PoliciesService, GeminiProvider, ClaudeProvider],
   exports: [PoliciesService],
 })
 export class PoliciesModule {}

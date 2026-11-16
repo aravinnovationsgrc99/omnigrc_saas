@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   ConflictException,
   Optional,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -58,6 +59,7 @@ import {
 } from 'docx';
 import { NotificationsService } from '../notifications/notifications.service';
 import { GeminiProvider } from '../controls/ai/gemini.provider';
+import { ClaudeProvider } from '../controls/ai/claude.provider';
 
 export const DEFAULT_POLICY_CATEGORIES = [
   'Information Security',
@@ -72,6 +74,7 @@ export const DEFAULT_POLICY_CATEGORIES = [
 
 @Injectable()
 export class PoliciesService {
+  private readonly logger = new Logger(PoliciesService.name);
   // Phase 4: Durable Policy Categories persistent store via PrismaService
 
   constructor(
@@ -80,6 +83,7 @@ export class PoliciesService {
     private readonly resourceAuthService: ResourceAuthorizationService,
     @Optional() private readonly approvalEngineService?: ApprovalEngineService,
     @Optional() private readonly notificationsService?: NotificationsService,
+    @Optional() private readonly claudeProvider?: ClaudeProvider,
     @Optional() private readonly geminiProvider?: GeminiProvider,
   ) {
     this.mapToDto = this.mapToDto.bind(this);
@@ -1833,20 +1837,38 @@ ${dto.keyRequirements || 'Standard enterprise controls, zero trust access princi
     let content = '';
     let providerUsed = 'Deterministic GRC Template (Heuristic Fallback)';
 
-    // Gemini is the sole external LLM provider. If it is unavailable, the
-    // returned template is explicitly identified as deterministic.
-    if (this.geminiProvider && this.geminiProvider.isAvailable()) {
+    // 1. Try Claude first (High stakes / User preferred for Policy Drafting)
+    if (this.claudeProvider && this.claudeProvider.isAvailable()) {
       try {
-        content = await this.geminiProvider.generateText(systemPrompt, userPrompt);
-        providerUsed = 'Gemini (Google)';
+        this.logger.log(`Attempting AI policy draft generation via Claude for "${title}"...`);
+        content = await this.claudeProvider.generateText(systemPrompt, userPrompt, 45000);
+        if (content && content.trim()) {
+          providerUsed = 'Claude (Anthropic)';
+          this.logger.log(`Policy draft generated successfully via Claude (${content.length} chars).`);
+        }
       } catch (err: any) {
-        // Fallback to deterministic template
+        this.logger.warn(`Claude policy drafting failed or timed out: ${err?.message || err}. Falling back to Gemini.`);
       }
     }
 
-    // Fallback to rich deterministic template if Gemini is unavailable.
+    // 2. If Claude fails or is unavailable, fallback to Gemini
+    if (!content && this.geminiProvider && this.geminiProvider.isAvailable()) {
+      try {
+        this.logger.log(`Attempting AI policy draft generation via Gemini for "${title}"...`);
+        content = await this.geminiProvider.generateText(systemPrompt, userPrompt, 45000);
+        if (content && content.trim()) {
+          providerUsed = 'Gemini (Google)';
+          this.logger.log(`Policy draft generated successfully via Gemini (${content.length} chars).`);
+        }
+      } catch (err: any) {
+        this.logger.warn(`Gemini policy drafting failed or timed out: ${err?.message || err}. Falling back to deterministic GRC template.`);
+      }
+    }
+
+    // 3. Fallback to rich deterministic template if both Claude and Gemini are unavailable
     if (!content) {
       providerUsed = 'Deterministic GRC Template (Heuristic Fallback)';
+      this.logger.log(`Using deterministic GRC template fallback for policy "${title}".`);
       const catCode = category.slice(0, 3).toUpperCase();
       content = `# ${title}
 
@@ -2034,13 +2056,23 @@ Content:
 ${content.slice(0, 12000)}`;
 
     let aiRaw = '';
-    // Priority 1: Gemini (User preferred for Policy Validation)
-    if (this.geminiProvider && this.geminiProvider.isAvailable()) {
+    // Priority 1: Claude (if available)
+    if (this.claudeProvider && this.claudeProvider.isAvailable()) {
       try {
-        aiRaw = await this.geminiProvider.generateText(systemPrompt, userPrompt);
-        modelUsed = 'Gemini 1.5 Flash';
-      } catch (err) {
-        // Fallback
+        aiRaw = await this.claudeProvider.generateText(systemPrompt, userPrompt, 45000);
+        modelUsed = 'Claude (Anthropic)';
+      } catch (err: any) {
+        this.logger.warn(`Claude policy validation failed: ${err?.message || err}. Falling back to Gemini.`);
+      }
+    }
+
+    // Priority 2: Gemini
+    if (!aiRaw && this.geminiProvider && this.geminiProvider.isAvailable()) {
+      try {
+        aiRaw = await this.geminiProvider.generateText(systemPrompt, userPrompt, 45000);
+        modelUsed = 'Gemini (Google)';
+      } catch (err: any) {
+        this.logger.warn(`Gemini policy validation failed: ${err?.message || err}. Falling back to rule-based analysis.`);
       }
     }
 

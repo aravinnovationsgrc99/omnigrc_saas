@@ -966,6 +966,64 @@ describe('PoliciesService', () => {
       );
     });
 
+    it('should generate draft via Claude when Claude is available', async () => {
+      const mockClaude = {
+        isAvailable: jest.fn().mockReturnValue(true),
+        generateText: jest.fn().mockResolvedValue('# Claude Draft Policy Content'),
+      };
+      (service as any).claudeProvider = mockClaude;
+
+      const result = await service.generateAiDraft(adminCtx, {
+        title: 'Information Security Policy',
+      });
+
+      expect(mockClaude.generateText).toHaveBeenCalled();
+      expect(result.content).toBe('# Claude Draft Policy Content');
+      expect(result.providerUsed).toBe('Claude (Anthropic)');
+    });
+
+    it('should fall back to Gemini when Claude fails', async () => {
+      const mockClaude = {
+        isAvailable: jest.fn().mockReturnValue(true),
+        generateText: jest.fn().mockRejectedValue(new Error('Claude API error')),
+      };
+      const mockGemini = {
+        isAvailable: jest.fn().mockReturnValue(true),
+        generateText: jest.fn().mockResolvedValue('# Gemini Draft Policy Content'),
+      };
+      (service as any).claudeProvider = mockClaude;
+      (service as any).geminiProvider = mockGemini;
+
+      const result = await service.generateAiDraft(adminCtx, {
+        title: 'Information Security Policy',
+      });
+
+      expect(mockClaude.generateText).toHaveBeenCalled();
+      expect(mockGemini.generateText).toHaveBeenCalled();
+      expect(result.content).toBe('# Gemini Draft Policy Content');
+      expect(result.providerUsed).toBe('Gemini (Google)');
+    });
+
+    it('should fall back to deterministic GRC template when both Claude and Gemini fail', async () => {
+      const mockClaude = {
+        isAvailable: jest.fn().mockReturnValue(true),
+        generateText: jest.fn().mockRejectedValue(new Error('Claude API error')),
+      };
+      const mockGemini = {
+        isAvailable: jest.fn().mockReturnValue(true),
+        generateText: jest.fn().mockRejectedValue(new Error('Gemini API error')),
+      };
+      (service as any).claudeProvider = mockClaude;
+      (service as any).geminiProvider = mockGemini;
+
+      const result = await service.generateAiDraft(adminCtx, {
+        title: 'Information Security Policy',
+      });
+
+      expect(result.providerUsed).toBe('Deterministic GRC Template (Heuristic Fallback)');
+      expect(result.content).toContain('Purpose & Objectives');
+    });
+
     it('should validate policy with AI and return readiness score and actionable findings', async () => {
       prisma.policy.findFirst.mockResolvedValueOnce({
         id: 'pol-val-1',
