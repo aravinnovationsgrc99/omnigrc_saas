@@ -321,7 +321,7 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
         addToast(`Access (${permission}) granted to ${deptName} Team (${successCount} member(s)).`, 'success');
         fetchPolicyShares(selectedPolicy.id);
       } else {
-        addToast(`Team "${deptName}" has no members assigned in Directory yet. Please assign team members in Org Settings.`, 'warning');
+        addToast(`Team "${deptName}" has no members assigned in Directory yet. Please assign team members in Org Settings.`, 'info');
       }
     } else {
       const userId = targetValue.replace('user:', '');
