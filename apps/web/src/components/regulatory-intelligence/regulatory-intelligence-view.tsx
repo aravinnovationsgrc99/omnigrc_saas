@@ -831,10 +831,10 @@ const TABS: { key: TabKey; label: string; icon: React.ElementType }[] = [
 
 function HealthBadge({ status }: { status?: string | null }) {
   const map: Record<string, { label: string; color: string; bg: string; dot: string }> = {
-    HEALTHY:   { label: 'Healthy',   color: '#059669', bg: 'rgba(5,150,105,0.1)',   dot: '#059669' },
-    FAILING:   { label: 'Failing',   color: '#DC2626', bg: 'rgba(220,38,38,0.1)',   dot: '#DC2626' },
-    PAUSED:    { label: 'Paused',    color: '#D97706', bg: 'rgba(217,119,6,0.1)',   dot: '#D97706' },
-    UNTESTED:  { label: 'Untested',  color: '#6B7280', bg: 'rgba(107,114,128,0.1)', dot: '#6B7280' },
+    HEALTHY: { label: 'Healthy', color: '#059669', bg: 'rgba(5,150,105,0.1)', dot: '#059669' },
+    FAILING: { label: 'Failing', color: '#DC2626', bg: 'rgba(220,38,38,0.1)', dot: '#DC2626' },
+    PAUSED: { label: 'Paused', color: '#D97706', bg: 'rgba(217,119,6,0.1)', dot: '#D97706' },
+    UNTESTED: { label: 'Untested', color: '#6B7280', bg: 'rgba(107,114,128,0.1)', dot: '#6B7280' },
   };
   const s = map[status || 'HEALTHY'] || map.HEALTHY;
   return (
@@ -1165,11 +1165,11 @@ function SourcesTab({ showToast }: { showToast: Function }) {
         prev.map((s) =>
           s.id === sourceId
             ? {
-                ...s,
-                healthStatus: 'HEALTHY',
-                lastSuccessfulFetchAt: new Date().toISOString(),
-                _count: { publications: (s._count?.publications || 4) + 1 },
-              }
+              ...s,
+              healthStatus: 'HEALTHY',
+              lastSuccessfulFetchAt: new Date().toISOString(),
+              _count: { publications: (s._count?.publications || 4) + 1 },
+            }
             : s
         )
       );
@@ -1179,11 +1179,11 @@ function SourcesTab({ showToast }: { showToast: Function }) {
         prev.map((s) =>
           s.id === sourceId
             ? {
-                ...s,
-                healthStatus: 'HEALTHY',
-                lastSuccessfulFetchAt: new Date().toISOString(),
-                _count: { publications: (s._count?.publications || 4) + 1 },
-              }
+              ...s,
+              healthStatus: 'HEALTHY',
+              lastSuccessfulFetchAt: new Date().toISOString(),
+              _count: { publications: (s._count?.publications || 4) + 1 },
+            }
             : s
         )
       );
@@ -1681,11 +1681,11 @@ function PublicationsTab({ showToast }: { showToast: Function }) {
       setAiReport((prev) =>
         prev
           ? {
-              ...prev,
-              findings: (prev.findings || []).map((f) =>
-                f.id === findingId ? { ...f, reviewDecision, reviewNotes } : f
-              ),
-            }
+            ...prev,
+            findings: (prev.findings || []).map((f) =>
+              f.id === findingId ? { ...f, reviewDecision, reviewNotes } : f
+            ),
+          }
           : prev
       );
       showToast('Finding review decision saved to audit log.', 'success');
@@ -1695,11 +1695,11 @@ function PublicationsTab({ showToast }: { showToast: Function }) {
       setAiReport((prev) =>
         prev
           ? {
-              ...prev,
-              findings: (prev.findings || []).map((f) =>
-                f.id === findingId ? { ...f, reviewDecision, reviewNotes } : f
-              ),
-            }
+            ...prev,
+            findings: (prev.findings || []).map((f) =>
+              f.id === findingId ? { ...f, reviewDecision, reviewNotes } : f
+            ),
+          }
           : prev
       );
       showToast('Finding review decision saved to audit log.', 'success');
@@ -1761,10 +1761,10 @@ function PublicationsTab({ showToast }: { showToast: Function }) {
 
   const procState = (s: string) => {
     const m: Record<string, { label: string; color: string; bg: string }> = {
-      DISCOVERED:            { label: 'Discovered',            color: '#6B7280', bg: 'rgba(107,114,128,0.1)' },
-      PROCESSING:            { label: 'Processing',            color: '#D97706', bg: 'rgba(217,119,6,0.1)'   },
+      DISCOVERED: { label: 'Discovered', color: '#6B7280', bg: 'rgba(107,114,128,0.1)' },
+      PROCESSING: { label: 'Processing', color: '#D97706', bg: 'rgba(217,119,6,0.1)' },
       OBLIGATIONS_EXTRACTED: { label: 'Obligations Extracted', color: '#1E40AF', bg: 'rgba(30,64,175,0.1)' },
-      REVIEWED:              { label: 'Reviewed',              color: '#059669', bg: 'rgba(5,150,105,0.1)'   },
+      REVIEWED: { label: 'Reviewed', color: '#059669', bg: 'rgba(5,150,105,0.1)' },
     };
     return m[s] || { label: s, color: '#6B7280', bg: 'rgba(107,114,128,0.1)' };
   };
@@ -2163,11 +2163,11 @@ function ObligationsTab({ showToast }: { showToast: Function }) {
 
   const statusColor = (s: string) => {
     const m: Record<string, { color: string; bg: string }> = {
-      CANDIDATE:    { color: '#D97706', bg: 'rgba(217,119,6,0.1)' },
+      CANDIDATE: { color: '#D97706', bg: 'rgba(217,119,6,0.1)' },
       UNDER_REVIEW: { color: '#1E40AF', bg: 'rgba(30,64,175,0.1)' },
-      APPROVED:     { color: '#059669', bg: 'rgba(5,150,105,0.1)' },
-      REJECTED:     { color: '#DC2626', bg: 'rgba(220,38,38,0.1)' },
-      SUPERSEDED:   { color: '#6B7280', bg: 'rgba(107,114,128,0.1)' },
+      APPROVED: { color: '#059669', bg: 'rgba(5,150,105,0.1)' },
+      REJECTED: { color: '#DC2626', bg: 'rgba(220,38,38,0.1)' },
+      SUPERSEDED: { color: '#6B7280', bg: 'rgba(107,114,128,0.1)' },
     };
     return m[s] || { color: '#6B7280', bg: 'rgba(107,114,128,0.08)' };
   };
@@ -3350,10 +3350,10 @@ function RemediationTab({ showToast, initialGap }: { showToast: Function; initia
         prev.map((t) =>
           t.id === id
             ? {
-                ...t,
-                status: 'COMPLETED',
-                evidenceReferences: compEvidenceUrl ? [...(t.evidenceReferences || []), compEvidenceUrl] : t.evidenceReferences,
-              }
+              ...t,
+              status: 'COMPLETED',
+              evidenceReferences: compEvidenceUrl ? [...(t.evidenceReferences || []), compEvidenceUrl] : t.evidenceReferences,
+            }
             : t
         )
       );
@@ -3868,15 +3868,15 @@ export function RegulatoryIntelligenceView() {
       </div>
 
       {/* Tab Body */}
-      {activeTab === 'overview'      && <OverviewTab onNavigateTab={(tab) => setActiveTab(tab)} />}
-      {activeTab === 'sources'       && <SourcesTab showToast={showToast} />}
-      {activeTab === 'catalogue'     && <CatalogueTab />}
-      {activeTab === 'publications'  && <PublicationsTab showToast={showToast} />}
-      {activeTab === 'obligations'   && <ObligationsTab showToast={showToast} />}
+      {activeTab === 'overview' && <OverviewTab onNavigateTab={(tab) => setActiveTab(tab)} />}
+      {activeTab === 'sources' && <SourcesTab showToast={showToast} />}
+      {activeTab === 'catalogue' && <CatalogueTab />}
+      {activeTab === 'publications' && <PublicationsTab showToast={showToast} />}
+      {activeTab === 'obligations' && <ObligationsTab showToast={showToast} />}
       {activeTab === 'applicability' && <ApplicabilityTab showToast={showToast} />}
-      {activeTab === 'mappings'      && <MappingsTab showToast={showToast} />}
-      {activeTab === 'gaps'          && <GapsTab showToast={showToast} onInitiateRemediation={handleInitiateRemediationFromGap} />}
-      {activeTab === 'remediation'   && <RemediationTab showToast={showToast} initialGap={initialGapForRemediation} />}
+      {activeTab === 'mappings' && <MappingsTab showToast={showToast} />}
+      {activeTab === 'gaps' && <GapsTab showToast={showToast} onInitiateRemediation={handleInitiateRemediationFromGap} />}
+      {activeTab === 'remediation' && <RemediationTab showToast={showToast} initialGap={initialGapForRemediation} />}
     </div>
   );
 }

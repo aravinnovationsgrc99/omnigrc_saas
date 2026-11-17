@@ -67,11 +67,13 @@ const DEMO_COVERAGE_DATA: FrameworkCoverageResultDto = {
         { controlId: 'ctrl-pol-01', name: 'CTRL-POL-01: Information Security Policy Maintenance', category: 'Governance', mappingStatus: 'APPROVED', latestTestResult: 'COMPLIANT', hasUnresolvedFinding: false },
         { controlId: 'ctrl-pol-02', name: 'CTRL-POL-02: Annual Executive Policy Review Cadence', category: 'Governance', mappingStatus: 'APPROVED', latestTestResult: 'COMPLIANT', hasUnresolvedFinding: false },
       ],
-      evidenceSummary: { totalCount: 2, cleanActiveCount: 2, evidences: [
-        { id: 'ev-1', title: 'Board Approved InfoSec Charter 2026', fileName: 'infosec_policy_signed.pdf', status: 'APPROVED', scanStatus: 'CLEAN' },
-        { id: 'ev-2', title: 'Annual Policy Attestation Register', fileName: 'attestation_log_q3.xlsx', status: 'APPROVED', scanStatus: 'CLEAN' },
-      ]},
-      approvalSummary: { hasApproval: true, status: 'APPROVED', instances: [{ id: 'app-1', title: 'Annual CISO Information Security Policy Sign-off', status: 'APPROVED' }]},
+      evidenceSummary: {
+        totalCount: 2, cleanActiveCount: 2, evidences: [
+          { id: 'ev-1', title: 'Board Approved InfoSec Charter 2026', fileName: 'infosec_policy_signed.pdf', status: 'APPROVED', scanStatus: 'CLEAN' },
+          { id: 'ev-2', title: 'Annual Policy Attestation Register', fileName: 'attestation_log_q3.xlsx', status: 'APPROVED', scanStatus: 'CLEAN' },
+        ]
+      },
+      approvalSummary: { hasApproval: true, status: 'APPROVED', instances: [{ id: 'app-1', title: 'Annual CISO Information Security Policy Sign-off', status: 'APPROVED' }] },
       testingSummary: { isTestingAvailable: true, totalTests: 2, hasFailures: false, hasUnresolvedFindings: false, latestTestResult: 'COMPLIANT' },
     },
     {
@@ -85,10 +87,12 @@ const DEMO_COVERAGE_DATA: FrameworkCoverageResultDto = {
       mappedControls: [
         { controlId: 'ctrl-enc-01', name: 'CTRL-ENC-01: AES-256 Transport & Storage Encryption', category: 'Data Protection', mappingStatus: 'APPROVED', latestTestResult: 'COMPLIANT', hasUnresolvedFinding: false },
       ],
-      evidenceSummary: { totalCount: 2, cleanActiveCount: 2, evidences: [
-        { id: 'ev-3', title: 'TLS 1.3 Strict Cipher Suite Verification Report', fileName: 'tls_cipher_audit.json', status: 'APPROVED', scanStatus: 'CLEAN' },
-      ]},
-      approvalSummary: { hasApproval: true, status: 'APPROVED', instances: [{ id: 'app-2', title: 'KMS Key Rotation & Cryptographic Standard', status: 'APPROVED' }]},
+      evidenceSummary: {
+        totalCount: 2, cleanActiveCount: 2, evidences: [
+          { id: 'ev-3', title: 'TLS 1.3 Strict Cipher Suite Verification Report', fileName: 'tls_cipher_audit.json', status: 'APPROVED', scanStatus: 'CLEAN' },
+        ]
+      },
+      approvalSummary: { hasApproval: true, status: 'APPROVED', instances: [{ id: 'app-2', title: 'KMS Key Rotation & Cryptographic Standard', status: 'APPROVED' }] },
       testingSummary: { isTestingAvailable: true, totalTests: 1, hasFailures: false, hasUnresolvedFindings: false, latestTestResult: 'COMPLIANT' },
     },
     {
@@ -102,10 +106,12 @@ const DEMO_COVERAGE_DATA: FrameworkCoverageResultDto = {
       mappedControls: [
         { controlId: 'ctrl-log-01', name: 'CTRL-LOG-01: Centralized Syslog & SIEM Log Aggregation', category: 'Security Operations', mappingStatus: 'APPROVED', latestTestResult: 'PARTIALLY_COMPLIANT', hasUnresolvedFinding: true },
       ],
-      evidenceSummary: { totalCount: 1, cleanActiveCount: 1, evidences: [
-        { id: 'ev-4', title: 'SOC 24/7 Monitoring Dashboard Proof', fileName: 'siem_retention_conf.pdf', status: 'APPROVED', scanStatus: 'CLEAN' },
-      ]},
-      approvalSummary: { hasApproval: true, status: 'PENDING', instances: [{ id: 'app-3', title: 'SIEM Ingestion SLA Approval', status: 'PENDING' }]},
+      evidenceSummary: {
+        totalCount: 1, cleanActiveCount: 1, evidences: [
+          { id: 'ev-4', title: 'SOC 24/7 Monitoring Dashboard Proof', fileName: 'siem_retention_conf.pdf', status: 'APPROVED', scanStatus: 'CLEAN' },
+        ]
+      },
+      approvalSummary: { hasApproval: true, status: 'PENDING', instances: [{ id: 'app-3', title: 'SIEM Ingestion SLA Approval', status: 'PENDING' }] },
       testingSummary: { isTestingAvailable: true, totalTests: 1, hasFailures: false, hasUnresolvedFindings: true, latestTestResult: 'PARTIALLY_COMPLIANT' },
     },
     {
@@ -119,10 +125,12 @@ const DEMO_COVERAGE_DATA: FrameworkCoverageResultDto = {
       mappedControls: [
         { controlId: 'ctrl-iam-01', name: 'CTRL-IAM-01: Role-Based Access Control & Quarterly Recertification', category: 'Identity & Access', mappingStatus: 'APPROVED', latestTestResult: 'COMPLIANT', hasUnresolvedFinding: false },
       ],
-      evidenceSummary: { totalCount: 1, cleanActiveCount: 1, evidences: [
-        { id: 'ev-5', title: 'Q3 Okta Access Review Sign-off', fileName: 'q3_user_access_recert.pdf', status: 'APPROVED', scanStatus: 'CLEAN' },
-      ]},
-      approvalSummary: { hasApproval: true, status: 'APPROVED', instances: [{ id: 'app-4', title: 'Privileged Access Lifecycle Policy', status: 'APPROVED' }]},
+      evidenceSummary: {
+        totalCount: 1, cleanActiveCount: 1, evidences: [
+          { id: 'ev-5', title: 'Q3 Okta Access Review Sign-off', fileName: 'q3_user_access_recert.pdf', status: 'APPROVED', scanStatus: 'CLEAN' },
+        ]
+      },
+      approvalSummary: { hasApproval: true, status: 'APPROVED', instances: [{ id: 'app-4', title: 'Privileged Access Lifecycle Policy', status: 'APPROVED' }] },
       testingSummary: { isTestingAvailable: true, totalTests: 1, hasFailures: false, hasUnresolvedFindings: false, latestTestResult: 'COMPLIANT' },
     },
     {
@@ -146,7 +154,7 @@ export function FrameworkCoverageView() {
   const [selectedFrameworkId, setSelectedFrameworkId] = useState<string>('');
   const [versions, setVersions] = useState<VersionItem[]>([]);
   const [selectedVersionId, setSelectedVersionId] = useState<string>('');
-  
+
   const [coverageData, setCoverageData] = useState<FrameworkCoverageResultDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -623,11 +631,10 @@ export function FrameworkCoverageView() {
                                   <div className="flex items-center gap-2 flex-wrap">
                                     {/* Mapping Status Badge */}
                                     <span
-                                      className={`font-semibold px-2 py-0.5 rounded text-[10px] ${
-                                        c.mappingStatus === 'APPROVED' || c.mappingStatus === 'OVERRIDDEN'
-                                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                                          : 'bg-amber-100 text-amber-800 border border-amber-200'
-                                      }`}
+                                      className={`font-semibold px-2 py-0.5 rounded text-[10px] ${c.mappingStatus === 'APPROVED' || c.mappingStatus === 'OVERRIDDEN'
+                                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                        : 'bg-amber-100 text-amber-800 border border-amber-200'
+                                        }`}
                                     >
                                       Mapping: {c.mappingStatus}
                                     </span>
@@ -697,11 +704,10 @@ export function FrameworkCoverageView() {
                                     {ev.status}
                                   </span>
                                   <span
-                                    className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                      ev.scanStatus === 'CLEAN'
-                                        ? 'bg-emerald-100 text-emerald-800'
-                                        : 'bg-amber-100 text-amber-800'
-                                    }`}
+                                    className={`px-2 py-0.5 rounded text-[10px] font-bold ${ev.scanStatus === 'CLEAN'
+                                      ? 'bg-emerald-100 text-emerald-800'
+                                      : 'bg-amber-100 text-amber-800'
+                                      }`}
                                   >
                                     Scan: {ev.scanStatus}
                                   </span>
@@ -728,13 +734,12 @@ export function FrameworkCoverageView() {
                               >
                                 <span className="font-semibold text-slate-900">{app.title}</span>
                                 <span
-                                  className={`px-2.5 py-0.5 rounded text-[10px] font-bold ${
-                                    app.status === 'APPROVED'
-                                      ? 'bg-emerald-100 text-emerald-800'
-                                      : app.status === 'REJECTED'
+                                  className={`px-2.5 py-0.5 rounded text-[10px] font-bold ${app.status === 'APPROVED'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : app.status === 'REJECTED'
                                       ? 'bg-rose-100 text-rose-800'
                                       : 'bg-amber-100 text-amber-800'
-                                  }`}
+                                    }`}
                                 >
                                   {app.status}
                                 </span>
