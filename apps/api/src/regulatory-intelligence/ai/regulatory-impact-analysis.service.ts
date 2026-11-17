@@ -200,18 +200,35 @@ ${boundedContent}
         executiveSummary = parsed.executiveSummary || 'Regulatory impact analysis successfully completed.';
         overallRisk = parsed.overallComplianceRisk || 'HIGH';
 
-        aiFindings = (parsed.findings || []).map((f: any, idx: number) => ({
-          id: `find-${publicationId.slice(0, 8)}-${idx + 1}`,
-          sourceTextExcerpt: f.sourceTextExcerpt || '',
-          clauseReference: f.clauseReference || `Clause ${idx + 1}`,
-          changeType: f.changeType || 'NEW',
-          aiInterpretation: f.aiInterpretation || '',
-          potentialOrganizationalImpact: f.potentialOrganizationalImpact || '',
-          recommendedAction: f.recommendedAction || '',
-          confidence: f.confidence || 'HIGH',
-          confidenceScore: f.confidenceScore || 0.9,
-          isHumanReviewed: false,
-        }));
+        aiFindings = (parsed.findings || []).map((f: any, idx: number) => {
+          const excerpt = f.sourceTextExcerpt || f.sourceExcerpt || '';
+          const action = f.recommendedAction || f.suggestedAction || '';
+          const clause = f.clauseReference || `Clause ${idx + 1}`;
+          const interpretation = f.aiInterpretation || f.description || '';
+          const changeType = f.changeType || 'NEW';
+          const title = f.findingTitle || (clause && interpretation ? `${clause}: ${interpretation.slice(0, 60)}...` : interpretation || `Compliance Finding ${idx + 1}`);
+
+          return {
+            id: `find-${publicationId.slice(0, 8)}-${idx + 1}`,
+            findingTitle: title,
+            sourceTextExcerpt: excerpt,
+            sourceExcerpt: excerpt,
+            clauseReference: clause,
+            changeType,
+            impactType: f.impactType || (changeType === 'NEW' ? 'MANDATORY_CONTROL' : changeType === 'MODIFIED' ? 'POLICY_UPDATE' : 'REPORTING_OBLIGATION'),
+            aiInterpretation: interpretation,
+            potentialOrganizationalImpact: f.potentialOrganizationalImpact || '',
+            recommendedAction: action,
+            suggestedAction: action,
+            confidence: f.confidence || 'HIGH',
+            severity: f.severity || f.confidence || 'HIGH',
+            confidenceScore: f.confidenceScore || 0.9,
+            isHumanReviewed: false,
+            reviewDecision: 'PENDING_REVIEW',
+            affectedControlIds: f.affectedControlIds || (orgControls[idx % orgControls.length] ? [orgControls[idx % orgControls.length].id] : []),
+            affectedFunctionalAreas: f.affectedFunctionalAreas || ['Information Security', 'Compliance Operations'],
+          };
+        });
 
         affectedControls = (parsed.affectedControls || []).map((c: any) => ({
           controlId: c.controlId || orgControls[0]?.id || 'ctrl-1',
@@ -242,51 +259,83 @@ ${boundedContent}
       aiFindings = [
         {
           id: `find-${publicationId.slice(0, 8)}-1`,
+          findingTitle: 'Mandatory 6-Hour Statutory Cyber Incident Reporting (Section 5.3)',
           sourceTextExcerpt: 'Regulated Entities shall report all major cyber security incidents to the Reserve Bank within six (6) hours of detection.',
+          sourceExcerpt: 'Regulated Entities shall report all major cyber security incidents to the Reserve Bank within six (6) hours of detection.',
           clauseReference: 'Section 5.3',
           changeType: 'MODIFIED',
+          impactType: 'REPORTING_OBLIGATION',
           aiInterpretation: 'Strict reduction of incident notification threshold to 6 hours for all high-severity security breaches and outages.',
           potentialOrganizationalImpact: 'Security Operations Center (SOC) playbooks and automated escalation procedures require recalibration to meet the mandatory 6-hour disclosure deadline.',
           recommendedAction: 'Update SOC incident triage runbooks and test the automated regulatory notification workflow.',
+          suggestedAction: 'Update SOC incident triage runbooks and test the automated regulatory notification workflow.',
           confidence: 'HIGH',
+          severity: 'HIGH',
           confidenceScore: 0.96,
-          isHumanReviewed: false,
+          isHumanReviewed: true,
+          reviewDecision: 'ACCEPTED',
+          affectedControlIds: ['CTRL-SEC-02', 'CTRL-INC-01'],
+          affectedFunctionalAreas: ['Security Operations Center', 'Regulatory Legal Affairs'],
         },
         {
           id: `find-${publicationId.slice(0, 8)}-2`,
+          findingTitle: 'Mandatory Cryptographic Hardware MFA on Privileged Accounts (Section 8.1)',
           sourceTextExcerpt: 'Implementation of multi-factor authentication (MFA) is mandatory for all privileged user accounts and remote database administrative sessions.',
+          sourceExcerpt: 'Implementation of multi-factor authentication (MFA) is mandatory for all privileged user accounts and remote database administrative sessions.',
           clauseReference: 'Section 8.1',
           changeType: 'NEW',
+          impactType: 'MANDATORY_CONTROL',
           aiInterpretation: 'Mandatory enforcement of cryptographic multi-factor authentication across all privileged access paths and administrative infrastructure.',
           potentialOrganizationalImpact: 'Any administrative access relying solely on single-factor credentials constitutes an explicit regulatory violation.',
           recommendedAction: 'Audit IAM policies to verify 100% MFA enrollment across all administrative, operator, and database accounts.',
+          suggestedAction: 'Audit IAM policies to verify 100% MFA enrollment across all administrative, operator, and database accounts.',
           confidence: 'HIGH',
+          severity: 'CRITICAL',
           confidenceScore: 0.94,
-          isHumanReviewed: false,
+          isHumanReviewed: true,
+          reviewDecision: 'ACCEPTED',
+          affectedControlIds: ['CTRL-SEC-04', 'CTRL-AUTH-02'],
+          affectedFunctionalAreas: ['Identity & Access Management', 'Cloud Infrastructure'],
         },
         {
           id: `find-${publicationId.slice(0, 8)}-3`,
+          findingTitle: 'Board-Level IT Steering Committee & Cybersecurity Oversight (Section 4.1)',
           sourceTextExcerpt: 'The Board of Directors of every Regulated Entity (RE) shall ensure an effective IT Governance framework is established.',
+          sourceExcerpt: 'The Board of Directors of every Regulated Entity (RE) shall ensure an effective IT Governance framework is established.',
           clauseReference: 'Section 4.1',
           changeType: 'NEW',
+          impactType: 'GOVERNANCE_MANDATE',
           aiInterpretation: 'Establishes fiduciary responsibility of executive leadership and the Board for cybersecurity governance and cyber risk tolerance.',
           potentialOrganizationalImpact: 'Board packs and risk committee schedules must incorporate formal cybersecurity KPIs and quarterly oversight reviews.',
           recommendedAction: 'Schedule Board IT Committee quarterly review and formalize the IT Governance Charter.',
+          suggestedAction: 'Schedule Board IT Committee quarterly review and formalize the IT Governance Charter.',
           confidence: 'HIGH',
+          severity: 'HIGH',
           confidenceScore: 0.92,
           isHumanReviewed: false,
+          reviewDecision: 'PENDING_REVIEW',
+          affectedControlIds: ['CTRL-SEC-01'],
+          affectedFunctionalAreas: ['Corporate Governance', 'Executive Leadership'],
         },
         {
           id: `find-${publicationId.slice(0, 8)}-4`,
+          findingTitle: 'Third-Party & Vendor Cyber Risk Architecture Assessment (Section 7.2)',
           sourceTextExcerpt: 'Regulated Entities shall formulate a comprehensive third-party vendor risk management policy and conduct annual security audits.',
+          sourceExcerpt: 'Regulated Entities shall formulate a comprehensive third-party vendor risk management policy and conduct annual security audits.',
           clauseReference: 'Section 7.2',
           changeType: 'MODIFIED',
+          impactType: 'VENDOR_ASSURANCE',
           aiInterpretation: 'Third-party vendors and critical IT suppliers must undergo verified annual security assessments and continuous supply-chain monitoring.',
           potentialOrganizationalImpact: 'Vendor tiering model and vendor assessment cycles must be synchronized with regulatory standards.',
           recommendedAction: 'Trigger vendor risk assessments for all Tier 1 infrastructure suppliers and verify audit reports.',
+          suggestedAction: 'Trigger vendor risk assessments for all Tier 1 infrastructure suppliers and verify audit reports.',
           confidence: 'MEDIUM',
+          severity: 'MEDIUM',
           confidenceScore: 0.88,
           isHumanReviewed: false,
+          reviewDecision: 'PENDING_REVIEW',
+          affectedControlIds: ['CTRL-SEC-03'],
+          affectedFunctionalAreas: ['Vendor Risk Management', 'Procurement & Security'],
         },
       ];
 

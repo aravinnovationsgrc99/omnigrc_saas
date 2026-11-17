@@ -28,19 +28,27 @@ export class ReviewImpactAnalysisFindingDto {
 
 export interface RegulatoryFindingItem {
   id: string;
+  findingTitle?: string;
   sourceTextExcerpt: string;
+  sourceExcerpt?: string;
   clauseReference?: string;
   changeType: 'NEW' | 'MODIFIED' | 'WITHDRAWN' | 'UNCHANGED';
+  impactType?: string;
   aiInterpretation: string;
   potentialOrganizationalImpact: string;
   recommendedAction: string;
+  suggestedAction?: string;
   confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  severity?: string;
   confidenceScore: number;
   isHumanReviewed: boolean;
   humanReviewDecision?: 'ACCEPTED' | 'REJECTED' | 'NEEDS_FURTHER_ANALYSIS';
+  reviewDecision?: string;
   reviewNotes?: string;
   reviewedById?: string;
   reviewedAt?: string;
+  affectedControlIds?: string[];
+  affectedFunctionalAreas?: string[];
 }
 
 export interface AffectedControlImpact {
