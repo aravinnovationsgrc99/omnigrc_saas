@@ -85,9 +85,10 @@ export function RiskListView({
       if (cellLikelihood && r.likelihood !== cellLikelihood) return false;
       if (cellImpact && r.impact !== cellImpact) return false;
       if (assetIdFilter && r.assetId !== assetIdFilter) return false;
+      if (frameworkFilter && r.frameworkId !== frameworkFilter && r.frameworkCode !== frameworkFilter) return false;
       return true;
     });
-  }, [search, categoryFilter, statusFilter, scoreBandFilter, cellLikelihood, cellImpact, assetIdFilter]);
+  }, [search, categoryFilter, statusFilter, scoreBandFilter, cellLikelihood, cellImpact, assetIdFilter, frameworkFilter]);
 
   const fetchRisks = useCallback(async () => {
     setLoading(true);

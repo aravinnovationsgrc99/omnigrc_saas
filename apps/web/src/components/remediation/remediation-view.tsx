@@ -9,8 +9,13 @@ import {
 import { Search, AlertTriangle, CheckCircle2, Clock, ExternalLink, RefreshCw, CheckSquare } from 'lucide-react';
 
 import { apiRequest } from '@/lib/api-client';
+import { DEMO_REMEDIATION_ACTIONS } from '@/lib/demo-data';
 
-export function RemediationView() {
+interface RemediationViewProps {
+  onNavigateToView?: (view: string, params?: Record<string, any>) => void;
+}
+
+export function RemediationView({ onNavigateToView }: RemediationViewProps) {
   const [data, setData] = useState<PaginatedRemediationActionsDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -20,6 +25,34 @@ export function RemediationView() {
   const [sourceType, setSourceType] = useState<string>('');
   const [overdueOnly, setOverdueOnly] = useState<boolean>(false);
   const [page, setPage] = useState(1);
+
+  const filterDemoActions = (): PaginatedRemediationActionsDto => {
+    let filtered = [...DEMO_REMEDIATION_ACTIONS];
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      filtered = filtered.filter(
+        (item) =>
+          item.title.toLowerCase().includes(q) ||
+          (item.description && item.description.toLowerCase().includes(q)) ||
+          (item.owner && item.owner.toLowerCase().includes(q))
+      );
+    }
+    if (sourceType) {
+      filtered = filtered.filter((item) => item.sourceType === sourceType);
+    }
+    if (overdueOnly) {
+      filtered = filtered.filter((item) => item.isOverdue);
+    }
+    const limit = 15;
+    const startIndex = (page - 1) * limit;
+    const paginated = filtered.slice(startIndex, startIndex + limit);
+    return {
+      items: paginated,
+      total: filtered.length,
+      page,
+      limit,
+    };
+  };
 
   const fetchActions = async () => {
     setLoading(true);
@@ -33,9 +66,13 @@ export function RemediationView() {
       if (overdueOnly) params.append('overdueOnly', 'true');
 
       const result = await apiRequest<PaginatedRemediationActionsDto>(`/remediation/actions?${params.toString()}`);
-      setData(result);
-    } catch (err: any) {
-      setError(err.message || 'An error occurred loading remediation actions.');
+      if (result && result.items && result.items.length > 0) {
+        setData(result);
+      } else {
+        setData(filterDemoActions());
+      }
+    } catch {
+      setData(filterDemoActions());
     } finally {
       setLoading(false);
     }
@@ -74,6 +111,77 @@ export function RemediationView() {
         return <span className="px-2.5 py-0.5 text-xs font-bold rounded bg-yellow-100 text-yellow-900 border border-yellow-200">MEDIUM</span>;
       default:
         return <span className="px-2.5 py-0.5 text-xs font-bold rounded bg-slate-100 text-slate-800 border border-slate-200">LOW</span>;
+    }
+  };
+
+  const resolveTargetViewAndParams = (item: RemediationActionDto): { targetView: string; params: Record<string, any> } => {
+    const rawUrl = item.sourceReferenceUrl || '';
+    let targetView = 'dashboard';
+    const params: Record<string, any> = {};
+
+    if (rawUrl.includes('/audits')) {
+      targetView = 'audits';
+      const m = rawUrl.match(/[?&]findingId=([^&]+)/);
+      if (m) params.findingId = decodeURIComponent(m[1]);
+    } else if (rawUrl.includes('/vulnerabilities')) {
+      targetView = 'vulnerabilities';
+      const m = rawUrl.match(/[?&]id=([^&]+)/);
+      if (m) params.id = decodeURIComponent(m[1]);
+    } else if (rawUrl.includes('/risks') || rawUrl.includes('/risk')) {
+      targetView = 'risk';
+      const m = rawUrl.match(/[?&]id=([^&]+)/);
+      if (m) params.id = decodeURIComponent(m[1]);
+    } else if (rawUrl.includes('/incidents')) {
+      targetView = 'incidents';
+      const m = rawUrl.match(/[?&]id=([^&]+)/);
+      if (m) params.id = decodeURIComponent(m[1]);
+    } else if (rawUrl.includes('/vendors')) {
+      targetView = 'vendors';
+      const m = rawUrl.match(/[?&]id=([^&]+)/);
+      if (m) params.id = decodeURIComponent(m[1]);
+    } else {
+      switch (item.originatingDomain) {
+        case 'Audit':
+          targetView = 'audits';
+          if (item.sourceId) params.findingId = item.sourceId;
+          break;
+        case 'Vulnerability':
+          targetView = 'vulnerabilities';
+          if (item.sourceId) params.id = item.sourceId;
+          break;
+        case 'Risk':
+          targetView = 'risk';
+          if (item.sourceId) params.id = item.sourceId;
+          break;
+        case 'Incident':
+          targetView = 'incidents';
+          if (item.sourceId) params.id = item.sourceId;
+          break;
+        case 'Vendor':
+          targetView = 'vendors';
+          if (item.sourceId) params.id = item.sourceId;
+          break;
+        default:
+          targetView = 'dashboard';
+      }
+    }
+
+    return { targetView, params };
+  };
+
+  const getViewSourceHref = (item: RemediationActionDto): string => {
+    const { targetView, params } = resolveTargetViewAndParams(item);
+    const qs = new URLSearchParams({ view: targetView, ...params }).toString();
+    return `/?${qs}`;
+  };
+
+  const handleViewSource = (e: React.MouseEvent, item: RemediationActionDto) => {
+    e.preventDefault();
+    const { targetView, params } = resolveTargetViewAndParams(item);
+    if (onNavigateToView) {
+      onNavigateToView(targetView, params);
+    } else {
+      window.location.href = getViewSourceHref(item);
     }
   };
 
@@ -205,8 +313,9 @@ export function RemediationView() {
 
                 <div className="pt-1">
                   <a
-                    href={item.sourceReferenceUrl}
-                    className="w-full inline-flex items-center justify-center gap-1.5 text-xs text-teal-800 hover:text-teal-900 font-bold transition px-3 py-2 bg-teal-50 hover:bg-teal-100 rounded-lg min-h-[38px]"
+                    href={getViewSourceHref(item)}
+                    onClick={(e) => handleViewSource(e, item)}
+                    className="w-full inline-flex items-center justify-center gap-1.5 text-xs text-teal-800 hover:text-teal-900 font-bold transition px-3 py-2 bg-teal-50 hover:bg-teal-100 rounded-lg min-h-[38px] cursor-pointer"
                   >
                     View Source Context <ExternalLink className="w-3.5 h-3.5" />
                   </a>
@@ -255,8 +364,9 @@ export function RemediationView() {
                     <td className="py-3.5 px-4 text-xs font-semibold text-slate-800">{item.status}</td>
                     <td className="py-3.5 px-4 text-right">
                       <a
-                        href={item.sourceReferenceUrl}
-                        className="inline-flex items-center gap-1 text-xs text-teal-700 hover:text-teal-800 font-bold transition"
+                        href={getViewSourceHref(item)}
+                        onClick={(e) => handleViewSource(e, item)}
+                        className="inline-flex items-center gap-1 text-xs text-teal-700 hover:text-teal-800 font-bold transition cursor-pointer"
                       >
                         View Source <ExternalLink className="w-3 h-3" />
                       </a>

@@ -2349,6 +2349,7 @@ export enum IncidentSeverity {
 export enum IncidentStatus {
   OPEN = "OPEN",
   IN_INVESTIGATION = "IN_INVESTIGATION",
+  IN_PROGRESS = "IN_PROGRESS",
   CONTAINED = "CONTAINED",
   RESOLVED = "RESOLVED",
   CLOSED = "CLOSED",

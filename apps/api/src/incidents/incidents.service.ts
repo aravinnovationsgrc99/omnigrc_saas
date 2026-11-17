@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Optional } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Optional, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { ResourceAuthorizationService, ResourceAuthContext } from '../auth/resource-authorization.service';
@@ -20,6 +20,20 @@ import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class IncidentsService {
+  private readonly logger = new Logger(IncidentsService.name);
+
+  public static toPrismaStatus(status?: string | null): any {
+    if (!status) return undefined;
+    if (status === 'IN_INVESTIGATION') return 'IN_PROGRESS';
+    return status;
+  }
+
+  public static fromPrismaStatus(status?: string | null): IncidentStatus {
+    if (!status) return IncidentStatus.OPEN;
+    if (status === 'IN_PROGRESS') return IncidentStatus.IN_INVESTIGATION;
+    return status as IncidentStatus;
+  }
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
@@ -48,7 +62,7 @@ export class IncidentsService {
     }
 
     if (query.status) {
-      where.status = query.status;
+      where.status = IncidentsService.toPrismaStatus(query.status);
     }
 
     if (query.category) {
@@ -148,7 +162,8 @@ export class IncidentsService {
       }
     }
 
-    const initialStatus = (dto.status || IncidentStatus.OPEN) as any;
+    const rawStatus = dto.status || IncidentStatus.OPEN;
+    const initialStatus = IncidentsService.toPrismaStatus(rawStatus);
 
     const incident = await this.prisma.incident.create({
       data: {
@@ -165,8 +180,8 @@ export class IncidentsService {
         owner: dto.owner || 'Unassigned',
         businessUnit: dto.businessUnit || null,
         detectedAt: dto.detectedAt ? new Date(dto.detectedAt) : new Date(),
-        containedAt: dto.containedAt ? new Date(dto.containedAt) : (initialStatus === IncidentStatus.CONTAINED ? new Date() : null),
-        resolvedAt: dto.resolvedAt ? new Date(dto.resolvedAt) : (initialStatus === IncidentStatus.RESOLVED ? new Date() : null),
+        containedAt: dto.containedAt ? new Date(dto.containedAt) : (initialStatus === 'CONTAINED' ? new Date() : null),
+        resolvedAt: dto.resolvedAt ? new Date(dto.resolvedAt) : (initialStatus === 'RESOLVED' ? new Date() : null),
         dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
         rootCause: dto.rootCause || null,
         investigationDetails: dto.investigationDetails || null,
@@ -238,17 +253,20 @@ export class IncidentsService {
       );
     }
 
+    const incomingStatus = dto.status !== undefined ? IncidentsService.toPrismaStatus(dto.status) : undefined;
+    const existingStatus = existing.status;
+
     // Lifecycle State Transition & RCA Invariant Validation
-    if (dto.status !== undefined && dto.status !== existing.status) {
-      if (existing.status === IncidentStatus.CLOSED && dto.status !== IncidentStatus.OPEN) {
+    if (incomingStatus !== undefined && incomingStatus !== existingStatus) {
+      if (existingStatus === 'CLOSED' && incomingStatus !== 'OPEN') {
         throw new BadRequestException('Closed incidents can only be transitioned to OPEN (reopened).');
       }
 
-      if (dto.status === IncidentStatus.CLOSED && existing.status !== IncidentStatus.RESOLVED) {
+      if (incomingStatus === 'CLOSED' && existingStatus !== 'RESOLVED') {
         throw new BadRequestException('Incident must be in RESOLVED status before it can be closed.');
       }
 
-      if (dto.status === IncidentStatus.RESOLVED) {
+      if (incomingStatus === 'RESOLVED') {
         const rootCause = dto.rootCause !== undefined ? dto.rootCause : existing.rootCause;
         const invDetails = dto.investigationDetails !== undefined ? dto.investigationDetails : existing.investigationDetails;
         if (!rootCause && !invDetails) {
@@ -263,7 +281,7 @@ export class IncidentsService {
     if (dto.category !== undefined) data.category = dto.category;
     if (dto.priority !== undefined) data.priority = dto.priority;
     if (dto.severity !== undefined) data.severity = dto.severity;
-    if (dto.status !== undefined) data.status = dto.status;
+    if (incomingStatus !== undefined) data.status = incomingStatus;
     if (dto.owner !== undefined) data.owner = dto.owner;
     if (dto.businessUnit !== undefined) data.businessUnit = dto.businessUnit;
     if (dto.detectedAt !== undefined) data.detectedAt = new Date(dto.detectedAt);
@@ -289,10 +307,10 @@ export class IncidentsService {
       data.affectedAssetId = null;
     }
 
-    if (dto.status === IncidentStatus.CONTAINED && !data.containedAt && !existing.containedAt) {
+    if (incomingStatus === 'CONTAINED' && !data.containedAt && !existing.containedAt) {
       data.containedAt = new Date();
     }
-    if (dto.status === IncidentStatus.RESOLVED && !data.resolvedAt && !existing.resolvedAt) {
+    if (incomingStatus === 'RESOLVED' && !data.resolvedAt && !existing.resolvedAt) {
       data.resolvedAt = new Date();
     }
 
@@ -314,32 +332,36 @@ export class IncidentsService {
       metadata: { status: updated.status, severity: updated.severity, category: updated.category },
     });
 
-    if (this.notificationsService && dto.status !== undefined && dto.status !== existing.status) {
-      const recipient = updated.owner && updated.owner !== 'Unassigned' ? updated.owner : existing.createdById;
-      if (recipient) {
-        await this.notificationsService.notify({
-          organizationId: authCtx.organizationId,
-          userId: recipient,
-          type: NotificationType.TASK_ASSIGNED,
-          message: `Incident "${updated.title}" status changed from ${existing.status} to ${updated.status}.`,
-          entityType: 'Incident',
-          entityId: updated.id,
-        });
+    try {
+      if (this.notificationsService && dto.status !== undefined && dto.status !== existing.status) {
+        const recipient = updated.owner && updated.owner !== 'Unassigned' ? updated.owner : existing.createdById;
+        if (recipient) {
+          await this.notificationsService.notify({
+            organizationId: authCtx.organizationId,
+            userId: recipient,
+            type: NotificationType.TASK_ASSIGNED,
+            message: `Incident "${updated.title}" status changed from ${existing.status} to ${updated.status}.`,
+            entityType: 'Incident',
+            entityId: updated.id,
+          });
+        }
       }
-    }
 
-    if (this.notificationsService && dto.status === IncidentStatus.CLOSED && existing.status !== IncidentStatus.CLOSED) {
-      const recipient = updated.owner && updated.owner !== 'Unassigned' ? updated.owner : existing.createdById;
-      if (recipient) {
-        await this.notificationsService.notify({
-          organizationId: authCtx.organizationId,
-          userId: recipient,
-          type: NotificationType.TASK_ASSIGNED,
-          message: `Incident "${updated.title}" has been closed.`,
-          entityType: 'Incident',
-          entityId: updated.id,
-        });
+      if (this.notificationsService && dto.status === IncidentStatus.CLOSED && existing.status !== IncidentStatus.CLOSED) {
+        const recipient = updated.owner && updated.owner !== 'Unassigned' ? updated.owner : existing.createdById;
+        if (recipient) {
+          await this.notificationsService.notify({
+            organizationId: authCtx.organizationId,
+            userId: recipient,
+            type: NotificationType.TASK_ASSIGNED,
+            message: `Incident "${updated.title}" has been closed.`,
+            entityType: 'Incident',
+            entityId: updated.id,
+          });
+        }
       }
+    } catch (err: any) {
+      this.logger.warn(`Failed to dispatch status notification for incident ${updated.id}: ${err?.message}`);
     }
 
     return this.mapToDto(updated);
@@ -584,7 +606,7 @@ export class IncidentsService {
       category: inc.category || null,
       priority: inc.priority || null,
       severity: inc.severity as IncidentSeverity,
-      status: inc.status as IncidentStatus,
+      status: IncidentsService.fromPrismaStatus(inc.status),
       owner: inc.owner,
       businessUnit: inc.businessUnit || null,
       detectedAt: inc.detectedAt ? (typeof inc.detectedAt === 'string' ? inc.detectedAt : inc.detectedAt.toISOString()) : new Date().toISOString(),

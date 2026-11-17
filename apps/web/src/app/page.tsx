@@ -216,7 +216,9 @@ export default function MainPage() {
                   />
                 )}
                 {view === 'incidents' && <IncidentListView />}
-                {view === 'remediation' && <RemediationView />}
+                {view === 'remediation' && (
+                  <RemediationView onNavigateToView={(v, params) => navigateToView(v, params)} />
+                )}
                 {view === 'controls' && <ControlMappingView onNavigateToView={(v) => navigateToView(v)} />}
                 {view === 'frameworks' && <FrameworkLibraryView />}
                 {view === 'policies' && (

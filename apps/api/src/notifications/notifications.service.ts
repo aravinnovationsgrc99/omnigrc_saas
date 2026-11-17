@@ -32,146 +32,158 @@ export class NotificationsService {
    * (c) Slack Webhook (if org-relevant: MAPPING_OVERRIDDEN, POD_STATUS_CHANGED)
    */
   async notify(params: NotifyParams) {
-    const { organizationId, userId, type, message, entityType, entityId } = params;
+    try {
+      const { organizationId, userId, type, message, entityType, entityId } = params;
 
-    // 1. Determine target users
-    let targetUsers: { id: string; email: string; name: string; emailNotifications: boolean }[] = [];
+      // 1. Determine target users
+      let targetUsers: { id: string; email: string; name: string; emailNotifications: boolean }[] = [];
 
-    if (userId) {
-      const u = await this.prisma.user.findFirst({
-        where: {
-          organizationId,
-          OR: [{ id: userId }, { email: userId }],
-        },
-        select: { id: true, email: true, name: true, emailNotifications: true },
-      });
-      if (u) {
-        targetUsers.push(u);
+      if (userId) {
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
+        const orConditions: any[] = [{ email: userId }];
+        if (isUuid) {
+          orConditions.push({ id: userId });
+        } else {
+          orConditions.push({ name: { contains: userId, mode: 'insensitive' } });
+        }
+
+        const u = await this.prisma.user.findFirst({
+          where: {
+            organizationId,
+            OR: orConditions,
+          },
+          select: { id: true, email: true, name: true, emailNotifications: true },
+        });
+        if (u) {
+          targetUsers.push(u);
+        } else {
+          const admins = await this.prisma.user.findMany({
+            where: { organizationId, role: Role.ADMIN },
+            select: { id: true, email: true, name: true, emailNotifications: true },
+          });
+          targetUsers.push(...admins);
+        }
       } else {
-        const admins = await this.prisma.user.findMany({
+        targetUsers = await this.prisma.user.findMany({
           where: { organizationId, role: Role.ADMIN },
           select: { id: true, email: true, name: true, emailNotifications: true },
         });
-        targetUsers.push(...admins);
-      }
-    } else {
-      targetUsers = await this.prisma.user.findMany({
-        where: { organizationId, role: Role.ADMIN },
-        select: { id: true, email: true, name: true, emailNotifications: true },
-      });
-      if (targetUsers.length === 0) {
-        targetUsers = await this.prisma.user.findMany({
-          where: { organizationId },
-          select: { id: true, email: true, name: true, emailNotifications: true },
-        });
-      }
-    }
-
-    // Deduplicate target users by id
-    const uniqueMap = new Map<string, { id: string; email: string; name: string; emailNotifications: boolean }>();
-    for (const u of targetUsers) {
-      uniqueMap.set(u.id, u);
-    }
-    targetUsers = Array.from(uniqueMap.values());
-
-    if (targetUsers.length === 0) {
-      this.logger.warn(`No target users found for notification in org ${organizationId}`);
-      return;
-    }
-
-    // 2. Create in-app Notification database records
-    const notificationRecords = await Promise.all(
-      targetUsers.map((u) =>
-        this.prisma.notification.create({
-          data: {
-            organizationId,
-            userId: u.id,
-            type,
-            message,
-            entityType,
-            entityId,
-            read: false,
-          },
-        }),
-      ),
-    );
-
-    // Map notification types to PriorityLevel
-    const priorityMap: Record<string, PriorityLevel> = {
-      [NotificationType.TASK_ASSIGNED]: PriorityLevel.P0,
-      [NotificationType.POD_STATUS_CHANGED]: PriorityLevel.P0,
-      [NotificationType.MAPPING_OVERRIDDEN]: PriorityLevel.P0,
-      [NotificationType.DUE_DATE_REMINDER]: PriorityLevel.P2,
-      [NotificationType.WEEKLY_DIGEST]: PriorityLevel.P3,
-      [NotificationType.RISK_ESCALATION]: PriorityLevel.P1,
-    };
-    const priority = priorityMap[type] || PriorityLevel.P0;
-
-    // 3. Fan-out to Resend Email for users with emailNotifications enabled
-    const emailRecipients = targetUsers.filter((u) => u.emailNotifications !== false);
-    for (const u of emailRecipients) {
-      const notifRecord = notificationRecords.find((n) => n.userId === u.id);
-      if (notifRecord?.emailSentAt) {
-        // Skip if already marked sent
-        continue;
-      }
-
-      const html = renderAlertEmailHtml({
-        userName: u.name,
-        title: `OMNiGRC Alert: ${type.replace(/_/g, ' ')}`,
-        message,
-        type,
-        entityType,
-        entityId,
-      });
-
-      try {
-        const sentSuccess = await this.resendMailerService.sendEmail(
-          {
-            to: u.email,
-            subject: `[OMNiGRC Alert] ${type.replace(/_/g, ' ')}`,
-            html,
-            organizationId,
-          },
-          priority,
-        );
-
-        // On verified delivery success, durably persist emailSentAt timestamp in DB
-        if (sentSuccess && notifRecord) {
-          await this.prisma.notification.update({
-            where: { id: notifRecord.id },
-            data: { emailSentAt: new Date() },
+        if (targetUsers.length === 0) {
+          targetUsers = await this.prisma.user.findMany({
+            where: { organizationId },
+            select: { id: true, email: true, name: true, emailNotifications: true },
           });
-        } else if (!sentSuccess) {
-          this.logger.warn(`Email delivery suppressed or rejected by provider for ${u.email}`);
         }
-      } catch (err: any) {
-        this.logger.error(`Failed to send email to ${u.email}: ${err.message}`);
       }
-    }
 
-    // 4. Fan-out to Slack if Org Webhook exists & notification type is org-relevant
-    // (MAPPING_OVERRIDDEN, POD_STATUS_CHANGED go to Slack; routine DUE_DATE_REMINDER does not)
-    const slackRelevantTypes = [
-      NotificationType.MAPPING_OVERRIDDEN,
-      NotificationType.POD_STATUS_CHANGED,
-    ];
+      // Deduplicate target users by id
+      const uniqueMap = new Map<string, { id: string; email: string; name: string; emailNotifications: boolean }>();
+      for (const u of targetUsers) {
+        uniqueMap.set(u.id, u);
+      }
+      targetUsers = Array.from(uniqueMap.values());
 
-    if (slackRelevantTypes.includes(type)) {
-      const org = await this.prisma.organization.findUnique({
-        where: { id: organizationId },
-        select: { slackWebhookUrl: true, name: true },
-      });
+      if (targetUsers.length === 0) {
+        this.logger.warn(`No target users found for notification in org ${organizationId}`);
+        return;
+      }
 
-      if (org?.slackWebhookUrl) {
-        await this.slackNotifierService.sendSlackAlert(org.slackWebhookUrl, {
-          title: `${type.replace(/_/g, ' ')} in ${org.name}`,
+      // 2. Create in-app Notification database records
+      const notificationRecords = await Promise.all(
+        targetUsers.map((u) =>
+          this.prisma.notification.create({
+            data: {
+              organizationId,
+              userId: u.id,
+              type,
+              message,
+              entityType,
+              entityId,
+              read: false,
+            },
+          }),
+        ),
+      );
+
+      // Map notification types to PriorityLevel
+      const priorityMap: Record<string, PriorityLevel> = {
+        [NotificationType.TASK_ASSIGNED]: PriorityLevel.P0,
+        [NotificationType.POD_STATUS_CHANGED]: PriorityLevel.P0,
+        [NotificationType.MAPPING_OVERRIDDEN]: PriorityLevel.P0,
+        [NotificationType.DUE_DATE_REMINDER]: PriorityLevel.P2,
+        [NotificationType.WEEKLY_DIGEST]: PriorityLevel.P3,
+        [NotificationType.RISK_ESCALATION]: PriorityLevel.P1,
+      };
+      const priority = priorityMap[type] || PriorityLevel.P0;
+
+      // 3. Fan-out to Resend Email for users with emailNotifications enabled
+      const emailRecipients = targetUsers.filter((u) => u.emailNotifications !== false);
+      for (const u of emailRecipients) {
+        const notifRecord = notificationRecords.find((n) => n.userId === u.id);
+        if (notifRecord?.emailSentAt) {
+          // Skip if already marked sent
+          continue;
+        }
+
+        const html = renderAlertEmailHtml({
+          userName: u.name,
+          title: `OMNiGRC Alert: ${type.replace(/_/g, ' ')}`,
           message,
           type,
           entityType,
           entityId,
         });
+
+        try {
+          const sentSuccess = await this.resendMailerService.sendEmail(
+            {
+              to: u.email,
+              subject: `[OMNiGRC Alert] ${type.replace(/_/g, ' ')}`,
+              html,
+              organizationId,
+            },
+            priority,
+          );
+
+          // On verified delivery success, durably persist emailSentAt timestamp in DB
+          if (sentSuccess && notifRecord) {
+            await this.prisma.notification.update({
+              where: { id: notifRecord.id },
+              data: { emailSentAt: new Date() },
+            });
+          } else if (!sentSuccess) {
+            this.logger.warn(`Email delivery suppressed or rejected by provider for ${u.email}`);
+          }
+        } catch (err: any) {
+          this.logger.error(`Failed to send email to ${u.email}: ${err.message}`);
+        }
       }
+
+      // 4. Fan-out to Slack if Org Webhook exists & notification type is org-relevant
+      // (MAPPING_OVERRIDDEN, POD_STATUS_CHANGED go to Slack; routine DUE_DATE_REMINDER does not)
+      const slackRelevantTypes = [
+        NotificationType.MAPPING_OVERRIDDEN,
+        NotificationType.POD_STATUS_CHANGED,
+      ];
+
+      if (slackRelevantTypes.includes(type)) {
+        const org = await this.prisma.organization.findUnique({
+          where: { id: organizationId },
+          select: { slackWebhookUrl: true, name: true },
+        });
+
+        if (org?.slackWebhookUrl) {
+          await this.slackNotifierService.sendSlackAlert(org.slackWebhookUrl, {
+            title: `${type.replace(/_/g, ' ')} in ${org.name}`,
+            message,
+            type,
+            entityType,
+            entityId,
+          });
+        }
+      }
+    } catch (err: any) {
+      this.logger.error(`Failed to dispatch notification: ${err?.message}`, err?.stack);
     }
   }
 
