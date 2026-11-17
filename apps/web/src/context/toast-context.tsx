@@ -3,7 +3,18 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
 
-export type ToastType = 'success' | 'error' | 'info';
+export type ToastType = 'success' | 'error' | 'info' | 'warning';
+
+export type ToastInput =
+  | string
+  | {
+      message?: string;
+      text?: string;
+      msg?: string;
+      title?: string;
+      type?: ToastType | string;
+      [key: string]: any;
+    };
 
 export interface ToastItem {
   id: string;
@@ -12,8 +23,8 @@ export interface ToastItem {
 }
 
 interface ToastContextType {
-  showToast: (message: string, type?: ToastType) => void;
-  addToast: (message: string, type?: ToastType) => void;
+  showToast: (messageOrOptions: ToastInput, type?: ToastType | string) => void;
+  addToast: (messageOrOptions: ToastInput, type?: ToastType | string) => void;
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
@@ -21,9 +32,34 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined);
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const showToast = useCallback((message: string, type: ToastType = 'success') => {
+  const showToast = useCallback((messageOrOptions: ToastInput, typeArg?: ToastType | string) => {
+    let resolvedMessage = '';
+    let resolvedType: ToastType = 'success';
+
+    if (typeof messageOrOptions === 'string') {
+      resolvedMessage = messageOrOptions;
+      if (typeArg) {
+        resolvedType = (typeArg === 'warning' ? 'warning' : typeArg) as ToastType;
+      }
+    } else if (messageOrOptions && typeof messageOrOptions === 'object') {
+      resolvedMessage =
+        messageOrOptions.message ||
+        messageOrOptions.text ||
+        messageOrOptions.msg ||
+        messageOrOptions.title ||
+        JSON.stringify(messageOrOptions);
+      const objType = messageOrOptions.type || typeArg || 'success';
+      resolvedType = objType as ToastType;
+    } else {
+      resolvedMessage = String(messageOrOptions || '');
+    }
+
+    if (!['success', 'error', 'info', 'warning'].includes(resolvedType)) {
+      resolvedType = 'info';
+    }
+
     const id = Math.random().toString(36).substring(2, 9);
-    setToasts((prev) => [...prev, { id, message, type }]);
+    setToasts((prev) => [...prev, { id, message: String(resolvedMessage), type: resolvedType }]);
 
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -56,10 +92,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         {toasts.map((toast) => {
           const isSuccess = toast.type === 'success';
           const isError = toast.type === 'error';
+          const isWarning = toast.type === 'warning';
 
-          const bgColor = isSuccess ? '#E4F1F0' : isError ? '#F8E6E8' : '#EDEFED';
-          const borderColor = isSuccess ? '#0F6E6A' : isError ? '#B23A48' : '#8B95A1';
-          const textColor = isSuccess ? '#0C5A56' : isError ? '#801F2B' : '#1B2430';
+          const bgColor = isSuccess ? '#E4F1F0' : isError ? '#F8E6E8' : isWarning ? '#FEF3C7' : '#EDEFED';
+          const borderColor = isSuccess ? '#0F6E6A' : isError ? '#B23A48' : isWarning ? '#D97706' : '#8B95A1';
+          const textColor = isSuccess ? '#0C5A56' : isError ? '#801F2B' : isWarning ? '#92400E' : '#1B2430';
 
           return (
             <div
@@ -84,7 +121,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             >
               {isSuccess && <CheckCircle2 size={18} color="#0F6E6A" className="shrink-0" />}
               {isError && <AlertCircle size={18} color="#B23A48" className="shrink-0" />}
-              {!isSuccess && !isError && <Info size={18} color="#5B6672" className="shrink-0" />}
+              {isWarning && <AlertCircle size={18} color="#D97706" className="shrink-0" />}
+              {!isSuccess && !isError && !isWarning && <Info size={18} color="#5B6672" className="shrink-0" />}
               <span style={{ flex: 1 }}>{toast.message}</span>
               <button
                 onClick={() => removeToast(toast.id)}
