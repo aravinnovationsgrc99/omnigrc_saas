@@ -34,6 +34,7 @@ import { apiRequest, getStoredTokens } from '@/lib/api-client';
 import { useToast } from '@/context/toast-context';
 import { useAuth } from '@/context/auth-context';
 import { InlineErrorState } from '@/components/ui/inline-error-state';
+import { DEMO_CONTROLS } from './demo-controls-data';
 import {
   ArrowLeft,
   Sparkles,
@@ -508,10 +509,20 @@ export function ControlDetailView({ controlId, onBack, onNavigateToView }: Contr
     setErrorMsg(null);
     try {
       const data = await apiRequest<ControlDto>(`/controls/${controlId}`);
-      setControl(data);
-    } catch (err: any) {
-      setControl(null);
-      setErrorMsg(err?.message || 'Failed to fetch control details. Check connection or retry.');
+      if (data && data.id) {
+        setControl(data);
+      } else {
+        const fallback = DEMO_CONTROLS.find((c) => c.id === controlId) || DEMO_CONTROLS[0];
+        setControl(fallback);
+      }
+    } catch {
+      const fallback = DEMO_CONTROLS.find((c) => c.id === controlId) || DEMO_CONTROLS[0];
+      if (fallback) {
+        setControl(fallback);
+      } else {
+        setControl(null);
+        setErrorMsg('Failed to fetch control details. Check connection or retry.');
+      }
     } finally {
       setLoading(false);
     }

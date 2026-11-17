@@ -149,6 +149,244 @@ const DEMO_COVERAGE_DATA: FrameworkCoverageResultDto = {
   ],
 };
 
+const DEMO_HIPAA_COVERAGE: FrameworkCoverageResultDto = {
+  framework: {
+    id: 'fw-hipaa',
+    code: 'HIPAA',
+    name: 'Health Insurance Portability and Accountability Act Security Rule',
+  },
+  version: { id: 'v-2013', version: '2013', name: 'HIPAA Final Omnibus Standard' },
+  summary: {
+    totalReferences: 14,
+    covered: 12,
+    partial: 2,
+    notCovered: 0,
+    coveragePercentage: 86,
+  },
+  references: [
+    {
+      referenceId: 'ref-h-164-312-a1',
+      code: '§ 164.312(a)(1)',
+      title: 'Access Control Requirements (Unique User ID & Auto Logoff)',
+      type: 'SPECIFICATION',
+      status: 'COVERED',
+      normativeText: 'Implement technical policies and procedures for electronic information systems that maintain electronic protected health information (ePHI) to allow access only to those persons or software programs that have been granted access rights.',
+      mappedControlsCount: 1,
+      mappedControls: [
+        { controlId: 'c0000000-0000-0000-0000-000000000002', name: 'Role-Based Access Control & Quarterly Permission Reviews', category: 'Identity & Access Management', mappingStatus: 'APPROVED', latestTestResult: 'COMPLIANT', hasUnresolvedFinding: false },
+      ],
+      evidenceSummary: {
+        totalCount: 1,
+        cleanActiveCount: 1,
+        evidences: [
+          { id: 'ev-h1', title: 'Q1 Clinical Staff User Access Audit', fileName: 'clinical_rbac_q1.pdf', status: 'APPROVED', scanStatus: 'CLEAN' },
+        ],
+      },
+      approvalSummary: { hasApproval: true, status: 'APPROVED', instances: [{ id: 'app-h1', title: 'Access Control Sign-off', status: 'APPROVED' }] },
+      testingSummary: { isTestingAvailable: true, totalTests: 1, hasFailures: false, hasUnresolvedFindings: false, latestTestResult: 'COMPLIANT' },
+    },
+    {
+      referenceId: 'ref-h-164-312-e1',
+      code: '§ 164.312(e)(1)',
+      title: 'Transmission Security & In-Transit Cryptography',
+      type: 'SPECIFICATION',
+      status: 'COVERED',
+      normativeText: 'Implement technical security measures to guard against unauthorized access to electronic protected health information that is being transmitted over an electronic communications network.',
+      mappedControlsCount: 1,
+      mappedControls: [
+        { controlId: 'c0000000-0000-0000-0000-000000000001', name: 'Mandatory TLS 1.3 Data Encryption In-Transit', category: 'Data Protection & Cryptography', mappingStatus: 'APPROVED', latestTestResult: 'COMPLIANT', hasUnresolvedFinding: false },
+      ],
+      evidenceSummary: {
+        totalCount: 1,
+        cleanActiveCount: 1,
+        evidences: [
+          { id: 'ev-h2', title: 'TLS 1.3 Strict Cipher Configuration Audit', fileName: 'tls13_meridian_portal.json', status: 'APPROVED', scanStatus: 'CLEAN' },
+        ],
+      },
+      approvalSummary: { hasApproval: true, status: 'APPROVED', instances: [{ id: 'app-h2', title: 'Cryptographic Standard Sign-off', status: 'APPROVED' }] },
+      testingSummary: { isTestingAvailable: true, totalTests: 1, hasFailures: false, hasUnresolvedFindings: false, latestTestResult: 'COMPLIANT' },
+    },
+    {
+      referenceId: 'ref-h-164-308-a7',
+      code: '§ 164.308(a)(7)',
+      title: 'Contingency Plan and Disaster Recovery Procedures',
+      type: 'SPECIFICATION',
+      status: 'COVERED',
+      normativeText: 'Establish (and implement as needed) policies and procedures for responding to an emergency or other occurrence that damages systems that contain electronic protected health information.',
+      mappedControlsCount: 1,
+      mappedControls: [
+        { controlId: 'c0000000-0000-0000-0000-000000000003', name: 'Automated Database Backup & Disaster Recovery Replication', category: 'Infrastructure & Resilience', mappingStatus: 'APPROVED', latestTestResult: 'COMPLIANT', hasUnresolvedFinding: false },
+      ],
+      evidenceSummary: {
+        totalCount: 1,
+        cleanActiveCount: 1,
+        evidences: [
+          { id: 'ev-h3', title: 'RDS PostgreSQL Daily Automated Snapshot Log', fileName: 'rds_snapshot_verification.pdf', status: 'APPROVED', scanStatus: 'CLEAN' },
+        ],
+      },
+      approvalSummary: { hasApproval: true, status: 'APPROVED', instances: [{ id: 'app-h3', title: 'BCDR Sign-off', status: 'APPROVED' }] },
+      testingSummary: { isTestingAvailable: true, totalTests: 1, hasFailures: false, hasUnresolvedFindings: false, latestTestResult: 'COMPLIANT' },
+    },
+    {
+      referenceId: 'ref-h-164-312-b',
+      code: '§ 164.312(b)',
+      title: 'Audit Controls and Log Aggregation',
+      type: 'SPECIFICATION',
+      status: 'PARTIAL',
+      normativeText: 'Implement hardware, software, and/or procedural mechanisms that record and examine activity in information systems that contain or use electronic protected health information.',
+      mappedControlsCount: 1,
+      mappedControls: [
+        { controlId: 'c0000000-0000-0000-0000-000000000004', name: 'Centralized Security Event Auditing & SIEM Monitoring', category: 'Logging & Monitoring', mappingStatus: 'APPROVED', latestTestResult: 'PARTIALLY_COMPLIANT', hasUnresolvedFinding: true },
+      ],
+      evidenceSummary: {
+        totalCount: 1,
+        cleanActiveCount: 1,
+        evidences: [
+          { id: 'ev-h4', title: 'Datadog SIEM 1-Year Retention Verification Proof', fileName: 'siem_retention_proof.pdf', status: 'APPROVED', scanStatus: 'CLEAN' },
+        ],
+      },
+      approvalSummary: { hasApproval: true, status: 'PENDING', instances: [{ id: 'app-h4', title: 'SIEM Review', status: 'PENDING' }] },
+      testingSummary: { isTestingAvailable: true, totalTests: 1, hasFailures: false, hasUnresolvedFindings: true, latestTestResult: 'PARTIALLY_COMPLIANT' },
+    },
+  ],
+};
+
+const DEMO_SOC2_COVERAGE: FrameworkCoverageResultDto = {
+  framework: {
+    id: 'fw-soc-2',
+    code: 'SOC2',
+    name: 'SOC 2 Type II AICPA Trust Services Criteria',
+  },
+  version: { id: 'v-2017', version: '2017', name: '2017 Trust Services Criteria' },
+  summary: {
+    totalReferences: 16,
+    covered: 14,
+    partial: 2,
+    notCovered: 0,
+    coveragePercentage: 88,
+  },
+  references: [
+    {
+      referenceId: 'ref-s-cc61',
+      code: 'CC6.1',
+      title: 'Logical Access Security Controls',
+      type: 'CRITERIA',
+      status: 'COVERED',
+      normativeText: 'The entity implements logical access security software, infrastructure, and architectures over protected information assets to protect them from security events to meet the entity’s objectives.',
+      mappedControlsCount: 1,
+      mappedControls: [
+        { controlId: 'c0000000-0000-0000-0000-000000000002', name: 'Role-Based Access Control & Quarterly Permission Reviews', category: 'Identity & Access Management', mappingStatus: 'APPROVED', latestTestResult: 'COMPLIANT', hasUnresolvedFinding: false },
+      ],
+      evidenceSummary: {
+        totalCount: 1,
+        cleanActiveCount: 1,
+        evidences: [
+          { id: 'ev-s1', title: 'Okta SAML Least-Privilege Role Configuration', fileName: 'okta_least_privilege.pdf', status: 'APPROVED', scanStatus: 'CLEAN' },
+        ],
+      },
+      approvalSummary: { hasApproval: true, status: 'APPROVED', instances: [{ id: 'app-s1', title: 'Logical Access Approval', status: 'APPROVED' }] },
+      testingSummary: { isTestingAvailable: true, totalTests: 1, hasFailures: false, hasUnresolvedFindings: false, latestTestResult: 'COMPLIANT' },
+    },
+    {
+      referenceId: 'ref-s-cc67',
+      code: 'CC6.7',
+      title: 'Transmission & Data Protection',
+      type: 'CRITERIA',
+      status: 'COVERED',
+      normativeText: 'The entity restricts the transmission, movement, and removal of information to authorized internal and external users and processes.',
+      mappedControlsCount: 1,
+      mappedControls: [
+        { controlId: 'c0000000-0000-0000-0000-000000000001', name: 'Mandatory TLS 1.3 Data Encryption In-Transit', category: 'Data Protection & Cryptography', mappingStatus: 'APPROVED', latestTestResult: 'COMPLIANT', hasUnresolvedFinding: false },
+      ],
+      evidenceSummary: {
+        totalCount: 1,
+        cleanActiveCount: 1,
+        evidences: [
+          { id: 'ev-s2', title: 'API Gateway TLS 1.3 Transport Verification', fileName: 'api_tls13_check.json', status: 'APPROVED', scanStatus: 'CLEAN' },
+        ],
+      },
+      approvalSummary: { hasApproval: true, status: 'APPROVED', instances: [{ id: 'app-s2', title: 'Transport Security Sign-off', status: 'APPROVED' }] },
+      testingSummary: { isTestingAvailable: true, totalTests: 1, hasFailures: false, hasUnresolvedFindings: false, latestTestResult: 'COMPLIANT' },
+    },
+    {
+      referenceId: 'ref-s-cc71',
+      code: 'CC7.1',
+      title: 'Vulnerability Management & Monitoring',
+      type: 'CRITERIA',
+      status: 'COVERED',
+      normativeText: 'To meet its objectives, the entity uses detection and monitoring procedures to identify changes to configurations and newly discovered vulnerabilities.',
+      mappedControlsCount: 2,
+      mappedControls: [
+        { controlId: 'c0000000-0000-0000-0000-000000000004', name: 'Centralized Security Event Auditing & SIEM Monitoring', category: 'Logging & Monitoring', mappingStatus: 'APPROVED', latestTestResult: 'COMPLIANT', hasUnresolvedFinding: false },
+        { controlId: 'c0000000-0000-0000-0000-000000000008', name: 'Container & Vulnerability Patching SLA Enforcement', category: 'Vulnerability Management', mappingStatus: 'APPROVED', latestTestResult: 'COMPLIANT', hasUnresolvedFinding: false },
+      ],
+      evidenceSummary: {
+        totalCount: 2,
+        cleanActiveCount: 2,
+        evidences: [
+          { id: 'ev-s3', title: 'Trivy Automated Container Scan Report', fileName: 'container_vuln_report.pdf', status: 'APPROVED', scanStatus: 'CLEAN' },
+        ],
+      },
+      approvalSummary: { hasApproval: true, status: 'APPROVED', instances: [{ id: 'app-s3', title: 'Vulnerability SLA Sign-off', status: 'APPROVED' }] },
+      testingSummary: { isTestingAvailable: true, totalTests: 1, hasFailures: false, hasUnresolvedFindings: false, latestTestResult: 'COMPLIANT' },
+    },
+  ],
+};
+
+const DEMO_DPDP_COVERAGE: FrameworkCoverageResultDto = {
+  framework: {
+    id: 'fw-dpdp-2023',
+    code: 'DPDP',
+    name: 'Digital Personal Data Protection Act (India DPDP 2023)',
+  },
+  version: { id: 'v-2023', version: '2023', name: '2023 Act' },
+  summary: {
+    totalReferences: 10,
+    covered: 8,
+    partial: 2,
+    notCovered: 0,
+    coveragePercentage: 80,
+  },
+  references: [
+    {
+      referenceId: 'ref-d-sec8',
+      code: 'Sec. 8',
+      title: 'Obligations of Data Fiduciary (Security Safeguards & Breach Notification)',
+      type: 'SECTION',
+      status: 'COVERED',
+      normativeText: 'A Data Fiduciary shall protect personal data in its possession or under its control by taking reasonable security safeguards to prevent personal data breach and notify the Data Protection Board of India.',
+      mappedControlsCount: 2,
+      mappedControls: [
+        { controlId: 'c0000000-0000-0000-0000-000000000001', name: 'Mandatory TLS 1.3 Data Encryption In-Transit', category: 'Data Protection & Cryptography', mappingStatus: 'APPROVED', latestTestResult: 'COMPLIANT', hasUnresolvedFinding: false },
+        { controlId: 'c0000000-0000-0000-0000-000000000006', name: 'Data Breach Incident Response & Statutory Notification', category: 'Incident Response & Governance', mappingStatus: 'APPROVED', latestTestResult: 'COMPLIANT', hasUnresolvedFinding: false },
+      ],
+      evidenceSummary: {
+        totalCount: 1,
+        cleanActiveCount: 1,
+        evidences: [
+          { id: 'ev-d1', title: 'DPDP Data Fiduciary Breach Escalation SOP', fileName: 'dpdp_incident_escalation.pdf', status: 'APPROVED', scanStatus: 'CLEAN' },
+        ],
+      },
+      approvalSummary: { hasApproval: true, status: 'APPROVED', instances: [{ id: 'app-d1', title: 'Data Protection Officer Approval', status: 'APPROVED' }] },
+      testingSummary: { isTestingAvailable: true, totalTests: 1, hasFailures: false, hasUnresolvedFindings: false, latestTestResult: 'COMPLIANT' },
+    },
+  ],
+};
+
+function getDemoCoverage(fwIdOrCode: string): FrameworkCoverageResultDto {
+  const clean = (fwIdOrCode || '').toUpperCase();
+  if (clean.includes('SOC') || clean.includes('SOC-2')) {
+    return DEMO_SOC2_COVERAGE;
+  }
+  if (clean.includes('HIPAA')) {
+    return DEMO_HIPAA_COVERAGE;
+  }
+  if (clean.includes('DPDP')) {
+    return DEMO_DPDP_COVERAGE;
+  }
+  return DEMO_COVERAGE_DATA;
+}
+
 export function FrameworkCoverageView() {
   const [frameworks, setFrameworks] = useState<FrameworkItemDto[]>([]);
   const [selectedFrameworkId, setSelectedFrameworkId] = useState<string>('');
@@ -221,10 +459,10 @@ export function FrameworkCoverageView() {
       if (data && data.references && data.references.length > 0) {
         setCoverageData(data);
       } else {
-        setCoverageData(DEMO_COVERAGE_DATA);
+        setCoverageData(getDemoCoverage(fwId));
       }
     } catch {
-      setCoverageData(DEMO_COVERAGE_DATA);
+      setCoverageData(getDemoCoverage(fwId));
     } finally {
       setLoading(false);
     }

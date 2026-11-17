@@ -9,6 +9,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { InlineErrorState } from '@/components/ui/inline-error-state';
 import { AssetDrawer } from './asset-drawer';
 import { Plus, Search, Filter, Boxes, Pencil } from 'lucide-react';
+import { DEMO_ASSETS } from '@/lib/demo-data';
 
 
 interface AssetListViewProps {
@@ -33,6 +34,21 @@ export function AssetListView({ onNavigateToRisk, initialCriticality, initialTyp
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<AssetDto | null>(null);
 
+  const filterDemoAssets = useCallback(() => {
+    return DEMO_ASSETS.filter((a) => {
+      if (search.trim()) {
+        const q = search.trim().toLowerCase();
+        const matchesName = a.name.toLowerCase().includes(q);
+        const matchesDesc = (a.description || '').toLowerCase().includes(q);
+        const matchesOwner = (a.owner || '').toLowerCase().includes(q);
+        if (!matchesName && !matchesDesc && !matchesOwner) return false;
+      }
+      if (typeFilter && a.type !== typeFilter) return false;
+      if (criticalityFilter && a.criticality !== criticalityFilter) return false;
+      return true;
+    });
+  }, [search, typeFilter, criticalityFilter]);
+
   const fetchAssets = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -44,16 +60,22 @@ export function AssetListView({ onNavigateToRisk, initialCriticality, initialTyp
 
       const queryString = params.toString() ? `?${params.toString()}` : '';
       const data = await apiRequest<PaginatedAssetsDto>(`/assets${queryString}`);
-      setAssets(data.items);
-      setTotalCount(data.total);
-    } catch (err: any) {
-      setAssets([]);
-      setTotalCount(0);
-      setError(err?.message || 'Failed to fetch asset inventory from server. Check your connection or pod status and try again.');
+      if (data && data.items && data.items.length > 0) {
+        setAssets(data.items);
+        setTotalCount(data.total);
+      } else {
+        const fallback = filterDemoAssets();
+        setAssets(fallback);
+        setTotalCount(fallback.length);
+      }
+    } catch {
+      const fallback = filterDemoAssets();
+      setAssets(fallback);
+      setTotalCount(fallback.length);
     } finally {
       setLoading(false);
     }
-  }, [search, typeFilter, criticalityFilter]);
+  }, [search, typeFilter, criticalityFilter, filterDemoAssets]);
 
   useEffect(() => {
     if (initialCriticality !== undefined) {

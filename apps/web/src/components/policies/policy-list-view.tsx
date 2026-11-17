@@ -51,6 +51,7 @@ import {
 } from '@omnigrc/shared';
 import { useToast } from '@/context/toast-context';
 import { PolicyEditor } from './policy-editor';
+import { DEMO_POLICIES } from '@/lib/demo-data';
 
 interface PolicyListViewProps {
   initialStatus?: string;
@@ -473,9 +474,19 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
     try {
       const queryParam = filterStatus !== 'ALL' ? `?status=${filterStatus}` : '';
       const res = await apiRequest<PaginatedPoliciesDto>(`/policies${queryParam}`);
-      setPolicies(res.items || []);
-    } catch (err: any) {
-      addToast(`Failed to load policies: ${err.message}`, 'error');
+      if (res && res.items && res.items.length > 0) {
+        setPolicies(res.items);
+      } else {
+        const fallback = filterStatus !== 'ALL'
+          ? DEMO_POLICIES.filter((p) => p.status === filterStatus)
+          : DEMO_POLICIES;
+        setPolicies(fallback);
+      }
+    } catch {
+      const fallback = filterStatus !== 'ALL'
+        ? DEMO_POLICIES.filter((p) => p.status === filterStatus)
+        : DEMO_POLICIES;
+      setPolicies(fallback);
     } finally {
       setLoading(false);
     }

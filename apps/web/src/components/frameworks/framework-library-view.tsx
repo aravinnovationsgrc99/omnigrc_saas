@@ -246,22 +246,20 @@ export function FrameworkLibraryView() {
         <button
           type="button"
           onClick={() => setActiveTab('catalog')}
-          className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${
-            activeTab === 'catalog'
-              ? 'border-teal-700 text-teal-800'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
+          className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${activeTab === 'catalog'
+            ? 'border-teal-700 text-teal-800'
+            : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
         >
           <Library className="w-4 h-4" /> Framework Catalog & Clauses
         </button>
         <button
           type="button"
           onClick={() => setActiveTab('coverage')}
-          className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${
-            activeTab === 'coverage'
-              ? 'border-teal-700 text-teal-800'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
+          className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${activeTab === 'coverage'
+            ? 'border-teal-700 text-teal-800'
+            : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
         >
           <ShieldCheck className="w-4 h-4" /> Coverage & Gap Analysis
         </button>
@@ -290,11 +288,10 @@ export function FrameworkLibraryView() {
                     key={fw.id}
                     type="button"
                     onClick={() => handleSelectFramework(fw)}
-                    className={`w-full text-left p-4 rounded-xl border transition shadow-sm cursor-pointer ${
-                      isSelected
-                        ? 'bg-white border-2 border-teal-700 text-slate-900 shadow-md ring-2 ring-teal-600/10'
-                        : 'bg-white border-slate-200 text-slate-800 hover:bg-slate-50'
-                    }`}
+                    className={`w-full text-left p-4 rounded-xl border transition shadow-sm cursor-pointer ${isSelected
+                      ? 'bg-white border-2 border-teal-700 text-slate-900 shadow-md ring-2 ring-teal-600/10'
+                      : 'bg-white border-slate-200 text-slate-800 hover:bg-slate-50'
+                      }`}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="font-bold text-base flex items-center gap-2 text-slate-900 min-w-0">

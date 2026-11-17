@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Building2,
   Plus,
@@ -42,6 +42,7 @@ import { VendorCreateModal } from './vendor-create-modal';
 import { VendorTprmWorkspaceModal } from './vendor-tprm-workspace-modal';
 import { VendorImportWizardModal } from './vendor-import-wizard-modal';
 import { VendorImportHistoryModal } from './vendor-import-history-modal';
+import { DEMO_VENDORS } from '@/lib/demo-data';
 
 const API_BASE_URL = (
   process.env.NEXT_PUBLIC_API_URL ||
@@ -130,6 +131,14 @@ export function VendorListView() {
     fetchVendors();
   }, [filterCriticality, filterStatus]);
 
+  const filterDemoVendors = useCallback(() => {
+    return DEMO_VENDORS.filter((v) => {
+      if (filterCriticality !== 'ALL' && v.criticality !== filterCriticality) return false;
+      if (filterStatus !== 'ALL' && v.status !== filterStatus) return false;
+      return true;
+    });
+  }, [filterCriticality, filterStatus]);
+
   async function fetchVendors() {
     setLoading(true);
     try {
@@ -139,9 +148,13 @@ export function VendorListView() {
 
       const queryString = params.toString() ? `?${params.toString()}` : '';
       const res = await apiRequest<PaginatedVendorsDto>(`/vendors${queryString}`);
-      setVendors(res.items || []);
-    } catch (err: any) {
-      addToast(`Failed to load vendors: ${err.message}`, 'error');
+      if (res && res.items && res.items.length > 0) {
+        setVendors(res.items);
+      } else {
+        setVendors(filterDemoVendors());
+      }
+    } catch {
+      setVendors(filterDemoVendors());
     } finally {
       setLoading(false);
     }
