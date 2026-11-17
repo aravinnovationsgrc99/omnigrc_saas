@@ -287,6 +287,62 @@ export function ChatMarkdown({ content, isUser = false }: ChatMarkdownProps) {
       continue;
     }
 
+    // Markdown Table (| Header 1 | Header 2 |)
+    if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+      flushParagraph();
+      flushList();
+      const tableLines: string[] = [trimmed];
+      while (
+        i + 1 < lines.length &&
+        lines[i + 1].trim().startsWith('|') &&
+        lines[i + 1].trim().endsWith('|')
+      ) {
+        i++;
+        tableLines.push(lines[i].trim());
+      }
+
+      const headerCells = tableLines[0].split('|').map((c) => c.trim()).slice(1, -1);
+      let startRowIdx = 1;
+      if (tableLines.length > 1) {
+        const sepCells = tableLines[1].split('|').map((c) => c.trim()).slice(1, -1);
+        if (sepCells.every((c) => /^:?-+:?$/.test(c))) {
+          startRowIdx = 2;
+        }
+      }
+
+      const bodyRows = tableLines.slice(startRowIdx).map((tl) =>
+        tl.split('|').map((c) => c.trim()).slice(1, -1)
+      );
+
+      elements.push(
+        <div key={`table-${elements.length}`} className="my-2 overflow-x-auto rounded-lg border border-slate-200">
+          <table className="min-w-full text-[11px] text-left divide-y divide-slate-200">
+            <thead className={isUser ? 'bg-white/20 text-white font-bold' : 'bg-slate-100 text-slate-800 font-bold'}>
+              <tr>
+                {headerCells.map((h, hIdx) => (
+                  <th key={hIdx} className="px-2 py-1.5 border-r border-slate-200 last:border-r-0">
+                    {renderInlineMarkdown(h, isUser)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className={`divide-y divide-slate-100 ${isUser ? 'text-white' : 'bg-white text-slate-700'}`}>
+              {bodyRows.map((rowCells, rIdx) => (
+                <tr key={rIdx} className={rIdx % 2 === 0 ? '' : isUser ? 'bg-white/10' : 'bg-slate-50/50'}>
+                  {rowCells.map((cell, cIdx) => (
+                    <td key={cIdx} className="px-2 py-1.5 border-r border-slate-200 last:border-r-0">
+                      {renderInlineMarkdown(cell, isUser)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+      continue;
+    }
+
     // Bullet list item (*, -, •)
     const bulletMatch = trimmed.match(/^[-*•]\s+(.*)$/);
     if (bulletMatch) {

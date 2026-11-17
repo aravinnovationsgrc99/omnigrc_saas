@@ -67,6 +67,8 @@ describe('Phase 5 Frontend Workflows & Integration Verification', () => {
       mockedApiRequest.mockImplementation(async (url: string) => {
         if (url.startsWith('/assets')) return { items: [], total: 0 };
         if (url.startsWith('/frameworks')) return [];
+        if (url.startsWith('/departments')) return [{ id: 'd-1', name: 'CloudSec' }];
+        if (url.startsWith('/organization-members')) return [{ id: 'm-1', name: 'Lead SRE', email: 'sre@omnigrc.io' }];
         return {};
       });
 
@@ -82,11 +84,15 @@ describe('Phase 5 Frontend Workflows & Integration Verification', () => {
         />
       );
 
+      await waitFor(() => {
+        expect(screen.getAllByText(/CloudSec Team/i).length).toBeGreaterThanOrEqual(1);
+      });
+
       // Title & Owner
       fireEvent.change(screen.getByPlaceholderText(/e\.g\. Unencrypted Patient Health Data/i), {
         target: { value: 'API Gateway Credential Leak' },
       });
-      fireEvent.change(screen.getByPlaceholderText(/e\.g\. SecOps Team/i), {
+      fireEvent.change(screen.getByLabelText('Risk Owner'), {
         target: { value: 'CloudSec Team' },
       });
 
@@ -115,7 +121,7 @@ describe('Phase 5 Frontend Workflows & Integration Verification', () => {
       fireEvent.change(screen.getByLabelText('Treatment Strategy'), {
         target: { value: 'TRANSFER' },
       });
-      fireEvent.change(screen.getByPlaceholderText(/e\.g\. DevOps Engineer/i), {
+      fireEvent.change(screen.getByLabelText('Treatment Owner'), {
         target: { value: 'Lead SRE' },
       });
 

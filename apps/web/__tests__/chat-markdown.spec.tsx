@@ -57,4 +57,23 @@ describe('ChatMarkdown Component Tests', () => {
     expect(container.textContent).toContain('Step one');
     expect(container.textContent).toContain('Step two');
   });
+
+  it('renders markdown tables and interprets **bold** within table cells', () => {
+    const markdown = [
+      '| Property | Value |',
+      '| :--- | :--- |',
+      '| **Organization** | Acme Corp |',
+      '| **Classification** | Internal |',
+    ].join('\n');
+
+    const { container } = render(<ChatMarkdown content={markdown} />);
+    expect(container.querySelector('table')).toBeInTheDocument();
+    expect(container.querySelectorAll('th').length).toBe(2);
+    expect(container.querySelectorAll('tbody tr').length).toBe(2);
+    const strongs = container.querySelectorAll('strong');
+    expect(strongs.length).toBe(2);
+    expect(strongs[0].textContent).toBe('Organization');
+    expect(strongs[1].textContent).toBe('Classification');
+    expect(container.textContent).not.toContain('**');
+  });
 });

@@ -310,6 +310,27 @@ describe('Phase 3 Workflows: Risk Clause Dropdown, Policy Governance & Vulnerabi
       expect(screen.getByText('Mandatory control')).toBeInTheDocument();
     });
 
+    it('PolicyEditor correctly renders **bold** and tables in preview mode without raw asterisks', () => {
+      const content = [
+        '# Access Policy',
+        'This policy enforces **Zero Trust** security benchmark.',
+        '| Attribute | Detail |',
+        '| :--- | :--- |',
+        '| **Scope** | Enterprise Systems |',
+      ].join('\n');
+
+      const { container } = render(<PolicyEditor content={content} onChange={jest.fn()} readOnly={true} />);
+
+      // Since readOnly is true, it defaults to preview mode
+      const strongs = container.querySelectorAll('strong');
+      expect(strongs.length).toBeGreaterThanOrEqual(2);
+      expect(Array.from(strongs).map((s) => s.textContent)).toContain('Zero Trust');
+      expect(Array.from(strongs).map((s) => s.textContent)).toContain('Scope');
+      expect(container.textContent).not.toContain('**Zero Trust**');
+      expect(container.textContent).not.toContain('**Scope**');
+      expect(container.querySelector('table')).toBeInTheDocument();
+    });
+
     it('PolicyCategoriesSettingsCard disables deletion for default categories and blocks deletion for assigned categories', async () => {
       const mockCategories = [
         { id: '1', name: 'Information Security', isDefault: true, policyCount: 4 },

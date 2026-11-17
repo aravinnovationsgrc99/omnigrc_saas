@@ -22,6 +22,7 @@ import {
   X,
 } from 'lucide-react';
 import { useToast } from '@/context/toast-context';
+import { renderInlineMarkdown } from '../intelligence/chat-markdown';
 
 interface PolicyEditorProps {
   content: string;
@@ -40,7 +41,9 @@ export function PolicyEditor({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [viewMode, setViewMode] = useState<'write' | 'preview' | 'split'>('write');
+  const [viewMode, setViewMode] = useState<'write' | 'preview' | 'split'>(
+    readOnly ? 'preview' : 'write',
+  );
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [pendingImportContent, setPendingImportContent] = useState<string | null>(null);
   const [pendingFileName, setPendingFileName] = useState<string>('');
@@ -164,8 +167,11 @@ export function PolicyEditor({
 
     const elements: React.ReactNode[] = [];
 
-    lines.forEach((line, index) => {
-      if (line.trim().startsWith('```')) {
+    for (let index = 0; index < lines.length; index++) {
+      const line = lines[index];
+      const trimmed = line.trim();
+
+      if (trimmed.startsWith('```')) {
         if (inCodeBlock) {
           // end of code block
           elements.push(
@@ -178,51 +184,112 @@ export function PolicyEditor({
         } else {
           inCodeBlock = true;
         }
-        return;
+        continue;
       }
 
       if (inCodeBlock) {
         codeBuffer.push(line);
-        return;
+        continue;
       }
 
-      const trimmed = line.trim();
       if (!trimmed) {
         elements.push(<div key={`sp-${index}`} className="h-2" />);
-        return;
+        continue;
+      }
+
+      // Markdown Tables (| Header 1 | Header 2 |)
+      if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+        const tableLines = [trimmed];
+        while (
+          index + 1 < lines.length &&
+          lines[index + 1].trim().startsWith('|') &&
+          lines[index + 1].trim().endsWith('|')
+        ) {
+          index++;
+          tableLines.push(lines[index].trim());
+        }
+
+        const headerCells = tableLines[0].split('|').map((c) => c.trim()).slice(1, -1);
+        let startRowIdx = 1;
+
+        if (tableLines.length > 1) {
+          const sepCells = tableLines[1].split('|').map((c) => c.trim()).slice(1, -1);
+          const isSeparator = sepCells.every((c) => /^:?-+:?$/.test(c));
+          if (isSeparator) {
+            startRowIdx = 2;
+          }
+        }
+
+        const bodyRows = tableLines.slice(startRowIdx).map((tl) =>
+          tl.split('|').map((c) => c.trim()).slice(1, -1),
+        );
+
+        elements.push(
+          <div key={`table-${index}`} className="my-3 overflow-x-auto rounded-lg border border-slate-200 shadow-2xs">
+            <table className="min-w-full text-xs text-left divide-y divide-slate-200">
+              <thead className="bg-slate-100/90 text-slate-800 font-bold">
+                <tr>
+                  {headerCells.map((h, hIdx) => (
+                    <th key={hIdx} className="px-3 py-2 border-r border-slate-200 last:border-r-0">
+                      {renderInlineMarkdown(h)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {bodyRows.map((rowCells, rIdx) => (
+                  <tr key={rIdx} className={rIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                    {rowCells.map((cell, cIdx) => (
+                      <td key={cIdx} className="px-3 py-2 border-r border-slate-200 last:border-r-0 text-slate-700">
+                        {renderInlineMarkdown(cell)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>,
+        );
+        continue;
       }
 
       if (trimmed.startsWith('# ')) {
         elements.push(
           <h1 key={`h1-${index}`} className="text-xl font-bold text-slate-900 mt-4 mb-2 pb-1 border-b border-slate-200">
-            {trimmed.slice(2)}
+            {renderInlineMarkdown(trimmed.slice(2))}
           </h1>,
         );
       } else if (trimmed.startsWith('## ')) {
         elements.push(
           <h2 key={`h2-${index}`} className="text-base font-bold text-slate-800 mt-3 mb-1.5 pb-0.5 border-b border-slate-100">
-            {trimmed.slice(3)}
+            {renderInlineMarkdown(trimmed.slice(3))}
           </h2>,
         );
       } else if (trimmed.startsWith('### ')) {
         elements.push(
           <h3 key={`h3-${index}`} className="text-sm font-semibold text-slate-800 mt-2 mb-1">
-            {trimmed.slice(4)}
+            {renderInlineMarkdown(trimmed.slice(4))}
           </h3>,
         );
-      } else if (trimmed === '---' || trimmed === '***') {
+      } else if (trimmed.startsWith('#### ')) {
+        elements.push(
+          <h4 key={`h4-${index}`} className="text-xs font-semibold text-slate-800 mt-2 mb-1">
+            {renderInlineMarkdown(trimmed.slice(5))}
+          </h4>,
+        );
+      } else if (trimmed === '---' || trimmed === '***' || trimmed === '___') {
         elements.push(<hr key={`hr-${index}`} className="my-3 border-slate-200" />);
       } else if (trimmed.startsWith('> ')) {
         elements.push(
           <blockquote key={`bq-${index}`} className="border-l-4 border-teal-600 pl-3 py-1 my-2 bg-teal-50/50 text-xs text-slate-700 italic rounded-r">
-            {trimmed.slice(2)}
+            {renderInlineMarkdown(trimmed.slice(2))}
           </blockquote>,
         );
-      } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+      } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ') || trimmed.startsWith('• ')) {
         elements.push(
           <div key={`li-${index}`} className="flex items-start gap-2 text-xs text-slate-700 my-0.5 ml-2">
             <span className="text-teal-700 font-bold">•</span>
-            <span>{trimmed.slice(2)}</span>
+            <span>{renderInlineMarkdown(trimmed.slice(2))}</span>
           </div>,
         );
       } else if (/^\d+\.\s/.test(trimmed)) {
@@ -231,17 +298,17 @@ export function PolicyEditor({
         elements.push(
           <div key={`ol-${index}`} className="flex items-start gap-2 text-xs text-slate-700 my-0.5 ml-2">
             <span className="font-semibold text-slate-900 font-mono text-[11px] min-w-[18px]">{num}</span>
-            <span>{rest}</span>
+            <span>{renderInlineMarkdown(rest)}</span>
           </div>,
         );
       } else {
         elements.push(
           <p key={`p-${index}`} className="text-xs text-slate-700 leading-relaxed my-1">
-            {trimmed}
+            {renderInlineMarkdown(trimmed)}
           </p>,
         );
       }
-    });
+    }
 
     if (inCodeBlock && codeBuffer.length > 0) {
       elements.push(

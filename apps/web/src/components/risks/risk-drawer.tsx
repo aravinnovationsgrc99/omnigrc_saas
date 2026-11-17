@@ -620,6 +620,7 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
                   Risk Owner *
                 </label>
                 <select
+                  aria-label="Risk Owner"
                   className={`omni-input w-full ${isOwnerInvalid ? 'border-rose-500' : ''}`}
                   value={owner}
                   onChange={(e) => {
@@ -773,6 +774,7 @@ export function RiskDrawer({ risk, isOpen, onClose, onSuccess, defaultAssetId, z
                     Treatment Owner (Optional)
                   </label>
                   <select
+                    aria-label="Treatment Owner"
                     className="omni-input w-full"
                     value={treatmentOwner}
                     onChange={(e) => setTreatmentOwner(e.target.value)}

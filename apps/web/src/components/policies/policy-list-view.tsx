@@ -35,6 +35,8 @@ import {
   Lock,
   Eye,
   Calendar,
+  ChevronDown,
+  Copy,
 } from 'lucide-react';
 import { apiRequest, getApiBaseUrl, getStoredTokens } from '@/lib/api-client';
 import {
@@ -175,6 +177,11 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
   const [submittingInternalShare, setSubmittingInternalShare] = useState(false);
   const [revokingShareId, setRevokingShareId] = useState<string | null>(null);
 
+  // Quick Share Dropdown State
+  const [shareDropdownOpen, setShareDropdownOpen] = useState(false);
+  const [quickShareTarget, setQuickShareTarget] = useState('');
+  const [submittingQuickShare, setSubmittingQuickShare] = useState(false);
+
   // Email Sharing State
   const [shareEmails, setShareEmails] = useState('');
   const [shareCustomMessage, setShareCustomMessage] = useState('');
@@ -277,30 +284,108 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
     setShareActiveTab('members');
     fetchPolicyShares(policy.id);
     fetchOrgMembers();
+    fetchDepartments();
+  }
+
+  async function executeGrantShare(targetValue: string, permission: 'VIEW' | 'DOWNLOAD' | 'EDIT', expires?: string) {
+    if (!selectedPolicy || !targetValue) {
+      addToast('Please select a team or member to grant access.', 'error');
+      return;
+    }
+
+    if (targetValue.startsWith('dept:')) {
+      const deptId = targetValue.replace('dept:', '');
+      const dept = departments.find((d) => d.id === deptId);
+      const deptName = dept?.name || 'Department';
+
+      // Find members belonging to this department
+      const deptMembers = orgMembers.filter((m) =>
+        m.departments?.some((d: any) => d.id === deptId || d.name === deptName),
+      );
+
+      if (deptMembers.length > 0) {
+        let successCount = 0;
+        for (const m of deptMembers) {
+          try {
+            await apiRequest(`/policies/${selectedPolicy.id}/shares`, {
+              method: 'POST',
+              body: JSON.stringify({
+                sharedWithUserId: m.userId || m.id,
+                permission,
+                expiresAt: expires ? new Date(expires).toISOString() : undefined,
+              }),
+            });
+            successCount++;
+          } catch {}
+        }
+        addToast(`Access (${permission}) granted to ${deptName} Team (${successCount} member(s)).`, 'success');
+        fetchPolicyShares(selectedPolicy.id);
+      } else {
+        addToast(`Team "${deptName}" has no members assigned in Directory yet. Please assign team members in Org Settings.`, 'warning');
+      }
+    } else {
+      const userId = targetValue.replace('user:', '');
+      const member = orgMembers.find((m) => (m.userId || m.id) === userId);
+      const name = member?.name || member?.email || 'User';
+
+      await apiRequest(`/policies/${selectedPolicy.id}/shares`, {
+        method: 'POST',
+        body: JSON.stringify({
+          sharedWithUserId: userId,
+          permission,
+          expiresAt: expires ? new Date(expires).toISOString() : undefined,
+        }),
+      });
+      addToast(`Access (${permission}) granted to ${name}.`, 'success');
+      fetchPolicyShares(selectedPolicy.id);
+    }
   }
 
   async function handleGrantInternalShare(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedPolicy || !selectedMemberId) {
-      addToast('Please select a member to grant policy access.', 'error');
+      addToast('Please select a team or member to grant policy access.', 'error');
       return;
     }
     setSubmittingInternalShare(true);
     try {
-      await apiRequest(`/policies/${selectedPolicy.id}/shares`, {
-        method: 'POST',
-        body: JSON.stringify({
-          sharedWithUserId: selectedMemberId,
-          permission: selectedPermission,
-          expiresAt: shareExpiresAt ? new Date(shareExpiresAt).toISOString() : undefined,
-        }),
-      });
-      addToast(`Access granted (${selectedPermission}) to user.`, 'success');
-      fetchPolicyShares(selectedPolicy.id);
+      await executeGrantShare(selectedMemberId, selectedPermission, shareExpiresAt);
     } catch (err: any) {
       addToast(`Failed to grant share: ${err.message}`, 'error');
     } finally {
       setSubmittingInternalShare(false);
+    }
+  }
+
+  async function handleQuickGrantShare(e?: React.FormEvent) {
+    if (e) e.preventDefault();
+    if (!selectedPolicy || !quickShareTarget) {
+      addToast('Please select a team or member from the dropdown.', 'error');
+      return;
+    }
+    setSubmittingQuickShare(true);
+    try {
+      await executeGrantShare(quickShareTarget, selectedPermission);
+      setShareDropdownOpen(false);
+      setQuickShareTarget('');
+    } catch (err: any) {
+      addToast(`Failed to grant share: ${err.message}`, 'error');
+    } finally {
+      setSubmittingQuickShare(false);
+    }
+  }
+
+  function handleCopyPolicyLink() {
+    if (!selectedPolicy) return;
+    const url = `${window.location.origin}/dashboard?view=policies&policyId=${selectedPolicy.id}`;
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(url).then(() => {
+        addToast('Policy link copied to clipboard.', 'success');
+      }).catch(() => {
+        addToast(`Link: ${url}`, 'info');
+      });
+    } else {
+      addToast(`Link: ${url}`, 'info');
     }
   }
 
@@ -1814,7 +1899,7 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
 
       {/* Map Control to Policy Modal */}
       {showMapControlModal && selectedPolicy && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 omni-fade-in">
+        <div className="fixed inset-0 z-[80] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 omni-fade-in">
           <div className="bg-white rounded-xl max-w-lg w-full p-6 shadow-xl">
             <div className="flex items-center justify-between border-b pb-3 mb-4">
               <div className="flex items-center gap-2">
@@ -1889,7 +1974,7 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
 
       {/* Policy Sharing & Granular Access Control Drawer / Modal */}
       {showShareModal && selectedPolicy && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 omni-fade-in">
+        <div className="fixed inset-0 z-[80] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 omni-fade-in">
           <div className="bg-white rounded-xl max-w-2xl w-full p-6 shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b pb-3 mb-4">
               <div className="flex items-center gap-2 text-teal-800">
@@ -1962,23 +2047,37 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
                   className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-3"
                 >
                   <span className="text-xs font-bold text-slate-800 block uppercase tracking-wider">
-                    Grant Granular User Permission
+                    Grant Granular User or Team Permission
                   </span>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="sm:col-span-1">
                       <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Select Member
+                        Select Team or Member
                       </label>
                       <select
                         value={selectedMemberId}
                         onChange={(e) => setSelectedMemberId(e.target.value)}
                         className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-teal-600"
                       >
-                        {orgMembers.map((m) => (
-                          <option key={m.userId} value={m.userId}>
-                            {m.name || m.email} ({m.role})
-                          </option>
-                        ))}
+                        <option value="">-- Select Team or Member --</option>
+                        {departments.length > 0 && (
+                          <optgroup label="🏢 Organization Departments & Teams (Live Database)">
+                            {departments.map((d) => (
+                              <option key={`dept:${d.id}`} value={`dept:${d.id}`}>
+                                {d.name} Team {d.code ? `(${d.code})` : ''}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {orgMembers.length > 0 && (
+                          <optgroup label="👤 Organization Members">
+                            {orgMembers.map((m) => (
+                              <option key={`user:${m.userId || m.id}`} value={`user:${m.userId || m.id}`}>
+                                {m.name || m.email} ({m.role})
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
                       </select>
                     </div>
                     <div>
@@ -2209,7 +2308,7 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
 
       {/* AI Validation Results Modal */}
       {showValidationModal && validationResult && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 omni-fade-in">
+        <div className="fixed inset-0 z-[80] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 omni-fade-in">
           <div className="bg-white rounded-xl max-w-2xl w-full p-6 shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b pb-3 mb-4">
               <div className="flex items-center gap-2">
@@ -2355,13 +2454,120 @@ export function PolicyListView({ initialStatus, initialFilter, initialTab }: Pol
                 >
                   <FileText size={13} className="text-blue-700" /> Export Word (.docx)
                 </button>
-                <button
-                  onClick={() => handleOpenShareModal(selectedPolicy)}
-                  className="px-2.5 py-1 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded flex items-center gap-1 transition"
-                  title="Manage team access permissions & sharing"
-                >
-                  <Share2 size={13} /> Share Access
-                </button>
+                <div className="relative">
+                  <button
+                    onClick={() => {
+                      setShareDropdownOpen(!shareDropdownOpen);
+                      fetchDepartments();
+                      fetchOrgMembers();
+                    }}
+                    className={`px-2.5 py-1 text-xs font-semibold rounded flex items-center gap-1 transition ${
+                      shareDropdownOpen
+                        ? 'bg-teal-50 text-teal-800 border border-teal-300'
+                        : 'text-slate-700 bg-white border border-slate-200 hover:bg-slate-50'
+                    }`}
+                    title="Manage team access permissions & sharing"
+                  >
+                    <Share2 size={13} className={shareDropdownOpen ? 'text-teal-700' : ''} />
+                    Share Access
+                    <ChevronDown size={12} className={`transition-transform ${shareDropdownOpen ? 'rotate-180 text-teal-700' : 'text-slate-400'}`} />
+                  </button>
+
+                  {/* Share Access Popover Dropdown */}
+                  {shareDropdownOpen && (
+                    <div className="absolute right-0 top-full mt-1.5 w-80 bg-white rounded-xl shadow-xl border border-slate-200 p-4 z-[80] space-y-3 omni-fade-in text-left">
+                      <div className="flex items-center justify-between border-b pb-2">
+                        <div className="flex items-center gap-1.5 font-bold text-xs text-slate-800">
+                          <Share2 size={13} className="text-teal-700" /> Share Policy Access
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShareDropdownOpen(false)}
+                          className="text-slate-400 hover:text-slate-600 p-0.5"
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+
+                      <form onSubmit={handleQuickGrantShare} className="space-y-3">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                            Grant Access to Team or Member
+                          </label>
+                          <select
+                            value={quickShareTarget}
+                            onChange={(e) => setQuickShareTarget(e.target.value)}
+                            className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-teal-600"
+                          >
+                            <option value="">-- Select Team or Member --</option>
+                            {departments.length > 0 && (
+                              <optgroup label="🏢 Teams & Departments (Live Database)">
+                                {departments.map((d) => (
+                                  <option key={`dept:${d.id}`} value={`dept:${d.id}`}>
+                                    {d.name} Team {d.code ? `(${d.code})` : ''}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )}
+                            {orgMembers.length > 0 && (
+                              <optgroup label="👤 Organization Members">
+                                {orgMembers.map((m) => (
+                                  <option key={`user:${m.userId || m.id}`} value={`user:${m.userId || m.id}`}>
+                                    {m.name || m.email} ({m.role})
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                            Permission Level
+                          </label>
+                          <select
+                            value={selectedPermission}
+                            onChange={(e) => setSelectedPermission(e.target.value as any)}
+                            className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-teal-600"
+                          >
+                            <option value="VIEW">VIEW (Read & Attest)</option>
+                            <option value="DOWNLOAD">DOWNLOAD (Read & Export DOCX/MD)</option>
+                            <option value="EDIT">EDIT (Modify Drafts & Metadata)</option>
+                          </select>
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={!quickShareTarget || submittingQuickShare}
+                          className="w-full py-1.5 px-3 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white font-semibold text-xs rounded-lg flex items-center justify-center gap-1.5 transition shadow-2xs"
+                        >
+                          <UserCheck size={13} />
+                          {submittingQuickShare ? 'Granting...' : 'Grant Access'}
+                        </button>
+                      </form>
+
+                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                        <button
+                          type="button"
+                          onClick={handleCopyPolicyLink}
+                          className="text-slate-600 hover:text-slate-900 flex items-center gap-1 font-medium hover:underline"
+                        >
+                          <Copy size={11} /> Copy Link
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShareDropdownOpen(false);
+                            handleOpenShareModal(selectedPolicy);
+                          }}
+                          className="text-teal-700 hover:text-teal-900 font-semibold flex items-center gap-1 hover:underline"
+                        >
+                          All Shares & Audit →
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
                 {selectedPolicy.status === 'DRAFT' && !isEditingDraft && (
                   <button
                     onClick={() => setIsEditingDraft(true)}
